@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
+  import Loader from '$lib/components/ui/Loader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import { AlertTriangle, Receipt, FileWarning } from '@lucide/svelte'
   import { listOpenInvoicesRemote } from './reminders.remote'
@@ -60,9 +61,7 @@
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
     {#if loading && items.length === 0}
-      <div class="text-base-content/60 flex h-32 items-center justify-center">
-        <span class="loading loading-spinner"></span>
-      </div>
+      <Loader />
     {:else if items.length === 0}
       <EmptyState
         icon={Receipt}

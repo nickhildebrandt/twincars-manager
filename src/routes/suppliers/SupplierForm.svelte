@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+
   type Supplier = {
     name?: string | null
     contactPerson?: string | null
@@ -43,22 +45,23 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const init = untrack(() => initial)
 
-  let name = $state(initial.name ?? '')
-  let contactPerson = $state(initial.contactPerson ?? '')
-  let street = $state(initial.street ?? '')
-  let zip = $state(initial.zip ?? '')
-  let city = $state(initial.city ?? '')
-  let country = $state(initial.country ?? 'Deutschland')
-  let phone = $state(initial.phone ?? '')
-  let fax = $state(initial.fax ?? '')
-  let email = $state(initial.email ?? '')
-  let website = $state(initial.website ?? '')
-  let bankName = $state(initial.bankName ?? '')
-  let iban = $state(initial.iban ?? '')
-  let bic = $state(initial.bic ?? '')
-  let notes = $state(initial.notes ?? '')
-  let customerNumberAtSupplier = $state(initial.customerNumberAtSupplier ?? '')
+  let name = $state(init.name ?? '')
+  let contactPerson = $state(init.contactPerson ?? '')
+  let street = $state(init.street ?? '')
+  let zip = $state(init.zip ?? '')
+  let city = $state(init.city ?? '')
+  let country = $state(init.country ?? 'Deutschland')
+  let phone = $state(init.phone ?? '')
+  let fax = $state(init.fax ?? '')
+  let email = $state(init.email ?? '')
+  let website = $state(init.website ?? '')
+  let bankName = $state(init.bankName ?? '')
+  let iban = $state(init.iban ?? '')
+  let bic = $state(init.bic ?? '')
+  let notes = $state(init.notes ?? '')
+  let customerNumberAtSupplier = $state(init.customerNumberAtSupplier ?? '')
 
   let errorMsg = $state<string | null>(null)
 

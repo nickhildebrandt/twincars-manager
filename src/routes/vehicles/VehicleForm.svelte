@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Vehicle } from '$lib/server/db/schema'
 
   type Props = {
@@ -28,22 +29,23 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const init = untrack(() => initial)
 
-  let make = $state(initial.make ?? '')
-  let model = $state(initial.model ?? '')
-  let licensePlate = $state(initial.licensePlate ?? '')
-  let vin = $state(initial.vin ?? '')
-  let firstRegistration = $state(initial.firstRegistration ?? '')
-  let mileageKm = $state<number | string>(initial.mileageKm ?? '')
-  let nextHu = $state(initial.nextHu ?? '')
-  let hsn = $state(initial.hsn ?? '')
-  let tsn = $state(initial.tsn ?? '')
-  let displacementCcm = $state<number | string>(initial.displacementCcm ?? '')
-  let powerKw = $state<number | string>(initial.powerKw ?? '')
-  let fuelType = $state(initial.fuelType ?? '')
-  let gearbox = $state(initial.gearbox ?? '')
-  let bodyType = $state(initial.bodyType ?? '')
-  let notes = $state(initial.notes ?? '')
+  let make = $state(init.make ?? '')
+  let model = $state(init.model ?? '')
+  let licensePlate = $state(init.licensePlate ?? '')
+  let vin = $state(init.vin ?? '')
+  let firstRegistration = $state(init.firstRegistration ?? '')
+  let mileageKm = $state<number | string>(init.mileageKm ?? '')
+  let nextHu = $state(init.nextHu ?? '')
+  let hsn = $state(init.hsn ?? '')
+  let tsn = $state(init.tsn ?? '')
+  let displacementCcm = $state<number | string>(init.displacementCcm ?? '')
+  let powerKw = $state<number | string>(init.powerKw ?? '')
+  let fuelType = $state(init.fuelType ?? '')
+  let gearbox = $state(init.gearbox ?? '')
+  let bodyType = $state(init.bodyType ?? '')
+  let notes = $state(init.notes ?? '')
 
   let errorMsg = $state<string | null>(null)
 
@@ -131,6 +133,8 @@
             class="input input-bordered"
             type="number"
             min="0"
+            max="9999999"
+            step="1"
             bind:value={mileageKm}
           />
         </label>
@@ -158,6 +162,8 @@
             class="input input-bordered"
             type="number"
             min="0"
+            max="99999"
+            step="1"
             bind:value={displacementCcm}
           />
         </label>
@@ -167,6 +173,8 @@
             class="input input-bordered"
             type="number"
             min="0"
+            max="9999"
+            step="1"
             bind:value={powerKw}
           />
         </label>

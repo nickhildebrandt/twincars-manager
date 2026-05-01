@@ -4,6 +4,7 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
+  import Loader from '$lib/components/ui/Loader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Plus, Users2, Pencil, Trash2 } from '@lucide/svelte'
   import { listEmployeesRemote, deleteEmployeeRemote } from './employees.remote'
@@ -11,7 +12,7 @@
   import { toast } from '$lib/stores/toast.svelte'
 
   let page = $state(1)
-  let size = $state<10 | 25 | 50 | 100>(25)
+  const size = 25
   let q = $state('')
 
   const eQ = $derived(
@@ -60,10 +61,11 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
+    {#if loading && items.length > 0}
+      <Loader variant="bar" />
+    {/if}
     {#if loading && items.length === 0}
-      <div class="text-base-content/60 flex h-32 items-center justify-center">
-        <span class="loading loading-spinner"></span>
-      </div>
+      <Loader />
     {:else if items.length === 0}
       <EmptyState
         icon={Users2}
@@ -135,10 +137,6 @@
         {pageCount}
         {size}
         onPage={(p) => (page = p)}
-        onSize={(s) => {
-          size = s as 10 | 25 | 50 | 100
-          page = 1
-        }}
       />
     {/if}
   </div>

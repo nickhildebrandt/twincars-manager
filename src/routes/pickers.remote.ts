@@ -13,11 +13,13 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   vehicles,
+  vehicleListings,
+  vehicleSales,
   employees,
   items,
   suppliers
 } from '$lib/server/db/schema'
-import { and, asc, count, eq, ilike, or } from 'drizzle-orm'
+import { and, asc, count, eq, ilike, isNull, or } from 'drizzle-orm'
 
 const pickerSchema = object({
   q: optional(pipe(string(), trim(), maxLength(200))),
@@ -179,7 +181,8 @@ export const pickEmployeesRemote = query(
 )
 
 /**
- * Paginated, searchable item picker.
+ * Paginated, searchable item picker. Returns full pricing data so callers
+ * can pre-fill positions on invoices/offers.
  *
  * @group integration
  * @module pickers
@@ -201,7 +204,11 @@ export const pickItemsRemote = query(
         .select({
           id: items.id,
           articleNumber: items.articleNumber,
-          description: items.description
+          description: items.description,
+          kind: items.kind,
+          unit: items.unit,
+          unitPriceNet: items.unitPriceNet,
+          stockOnHand: items.stockOnHand
         })
         .from(items)
         .where(where)
@@ -212,8 +219,87 @@ export const pickItemsRemote = query(
     ])
     const out = rows.map((r) => ({
       id: r.id,
-      label: `${r.articleNumber} — ${r.description}`
+      label: `${r.articleNumber} — ${r.description}`,
+      articleNumber: r.articleNumber,
+      description: r.description,
+      kind: r.kind,
+      unit: r.unit ?? 'Stk',
+      unitPriceNet: Number(r.unitPriceNet ?? 0),
+      stockOnHand: r.stockOnHand
     }))
+    return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
+  }
+)
+
+/**
+ * Picker for vehicles still in stock (have a listing, not yet sold).
+ * Returns pricing data for invoice/offer positions.
+ *
+ * @group integration
+ * @module pickers
+ */
+export const pickInventoryVehiclesRemote = query(
+  pickerSchema,
+  async ({ q, page, size }) => {
+    const offset = (page - 1) * size
+    const filters = [
+      eq(vehicles.archived, false),
+      eq(vehicleListings.status, 'available'),
+      isNull(vehicleSales.id)
+    ]
+    if (q) {
+      const term = `%${q}%`
+      filters.push(
+        or(
+          ilike(vehicles.licensePlate, term),
+          ilike(vehicles.vin, term),
+          ilike(vehicles.make, term),
+          ilike(vehicles.model, term)
+        )!
+      )
+    }
+    const where = and(...filters)
+    const [rows, totalRow] = await Promise.all([
+      db
+        .select({
+          id: vehicles.id,
+          plate: vehicles.licensePlate,
+          vin: vehicles.vin,
+          make: vehicles.make,
+          model: vehicles.model,
+          firstRegistration: vehicles.firstRegistration,
+          salesPriceGross: vehicleListings.salesPriceGross,
+          differentialTax: vehicleListings.differentialTax
+        })
+        .from(vehicles)
+        .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+        .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+        .where(where)
+        .orderBy(asc(vehicles.make), asc(vehicles.model))
+        .limit(size)
+        .offset(offset),
+      db
+        .select({ value: count() })
+        .from(vehicles)
+        .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+        .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+        .where(where)
+    ])
+    const out = rows.map((r) => {
+      const makeModel = [r.make, r.model].filter(Boolean).join(' ') || '—'
+      const ident = r.plate ?? r.vin ?? ''
+      return {
+        id: r.id,
+        label: `${makeModel}${ident ? ' · ' + ident : ''}`,
+        plate: r.plate,
+        vin: r.vin,
+        make: r.make,
+        model: r.model,
+        firstRegistration: r.firstRegistration,
+        salesPriceGross: Number(r.salesPriceGross ?? 0),
+        differentialTax: r.differentialTax
+      }
+    })
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
 )

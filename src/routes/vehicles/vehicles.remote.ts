@@ -6,6 +6,9 @@ import {
   picklist,
   pipe,
   number,
+  integer,
+  minValue,
+  maxValue,
   string,
   trim,
   maxLength
@@ -27,13 +30,17 @@ const vehicleInputSchema = object({
   licensePlate: optional(pipe(string(), trim(), maxLength(20))),
   vin: optional(pipe(string(), trim(), maxLength(25))),
   firstRegistration: optional(pipe(string(), trim(), maxLength(10))),
-  mileageKm: optional(number()),
+  mileageKm: optional(
+    pipe(number(), integer(), minValue(0), maxValue(9_999_999))
+  ),
   nextHu: optional(pipe(string(), trim(), maxLength(10))),
   nextAu: optional(pipe(string(), trim(), maxLength(10))),
   hsn: optional(pipe(string(), trim(), maxLength(10))),
   tsn: optional(pipe(string(), trim(), maxLength(10))),
-  displacementCcm: optional(number()),
-  powerKw: optional(number()),
+  displacementCcm: optional(
+    pipe(number(), integer(), minValue(0), maxValue(99_999))
+  ),
+  powerKw: optional(pipe(number(), integer(), minValue(0), maxValue(9_999))),
   colorCode: optional(pipe(string(), trim(), maxLength(30))),
   engineNumber: optional(pipe(string(), trim(), maxLength(50))),
   fuelType: optional(pipe(string(), trim(), maxLength(30))),

@@ -6,9 +6,15 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { formatEuro } from '$lib/utils/money'
-  import { Plus, Trash2 } from '@lucide/svelte'
-  import { pickCustomersRemote, pickVehiclesRemote } from '../../pickers.remote'
+  import { Plus, Trash2, Package, Car, Pencil } from '@lucide/svelte'
+  import {
+    pickCustomersRemote,
+    pickVehiclesRemote,
+    pickItemsRemote,
+    pickInventoryVehiclesRemote
+  } from '../../pickers.remote'
 
+  type PositionSource = 'free' | 'item' | 'vehicle'
   type Position = {
     description: string
     quantity: number | string
@@ -16,6 +22,10 @@
     unitPriceNet: number | string
     discountPercent: number | string
     taxRate: number | string
+    source: PositionSource
+    sourceRef?: string
+    kind: string
+    articleNumber?: string
   }
 
   const today = new Date().toISOString().slice(0, 10)
@@ -35,19 +45,26 @@
   let footer = $state('')
   let notes = $state('')
 
-  let positions = $state<Position[]>([
-    {
-      description: '',
-      quantity: 1,
-      unit: 'Stk',
-      unitPriceNet: 0,
-      discountPercent: 0,
-      taxRate: 19
-    }
-  ])
+  const blankPosition = (): Position => ({
+    description: '',
+    quantity: 1,
+    unit: 'Stk',
+    unitPriceNet: 0,
+    discountPercent: 0,
+    taxRate: 19,
+    source: 'free',
+    kind: 'article'
+  })
+
+  let positions = $state<Position[]>([blankPosition()])
 
   let busy = $state(false)
   let errorMsg = $state<string | null>(null)
+
+  let itemPickerValue = $state('')
+  let itemPickerLabel = $state('')
+  let vehicleSourceValue = $state('')
+  let vehicleSourceLabel = $state('')
 
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
     pickCustomersRemote({
@@ -56,6 +73,20 @@
     }).run()
   const searchVehicles = (params: { q: string; page: number; size: number }) =>
     pickVehiclesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+  const searchItems = (params: { q: string; page: number; size: number }) =>
+    pickItemsRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+  const searchInventoryVehicles = (params: {
+    q: string
+    page: number
+    size: number
+  }) =>
+    pickInventoryVehiclesRemote({
       ...params,
       size: params.size as 10 | 25 | 50 | 100
     }).run()
@@ -77,21 +108,87 @@
   })
 
   const addPosition = () => {
+    positions = [...positions, blankPosition()]
+  }
+
+  const addItemPosition = (item: {
+    id: string
+    label: string
+    articleNumber: string
+    description: string
+    kind: string
+    unit: string
+    unitPriceNet: number
+  }) => {
     positions = [
       ...positions,
       {
-        description: '',
+        description: item.description,
         quantity: 1,
-        unit: 'Stk',
-        unitPriceNet: 0,
+        unit: item.unit,
+        unitPriceNet: item.unitPriceNet,
         discountPercent: 0,
-        taxRate: 19
+        taxRate: 19,
+        source: 'item',
+        sourceRef: item.id,
+        kind: item.kind,
+        articleNumber: item.articleNumber
       }
     ]
+    itemPickerValue = ''
+    itemPickerLabel = ''
   }
+
+  const addVehiclePosition = (v: {
+    id: string
+    label: string
+    plate: string | null
+    vin: string | null
+    make: string | null
+    model: string | null
+    firstRegistration: string | null
+    salesPriceGross: number
+    differentialTax: boolean
+  }) => {
+    const lines = [
+      [v.make, v.model].filter(Boolean).join(' '),
+      v.plate ? `Kennz.: ${v.plate}` : '',
+      v.vin ? `FIN: ${v.vin}` : '',
+      v.firstRegistration ? `EZ: ${v.firstRegistration}` : ''
+    ].filter(Boolean)
+    const description = `Fahrzeug ${lines.join(' · ')}`
+    const taxRate = v.differentialTax ? 0 : 19
+    const priceNet = v.differentialTax
+      ? v.salesPriceGross
+      : Math.round((v.salesPriceGross / 1.19) * 100) / 100
+    positions = [
+      ...positions,
+      {
+        description,
+        quantity: 1,
+        unit: 'Stk',
+        unitPriceNet: priceNet,
+        discountPercent: 0,
+        taxRate,
+        source: 'vehicle',
+        sourceRef: v.id,
+        kind: 'vehicle'
+      }
+    ]
+    vehicleSourceValue = ''
+    vehicleSourceLabel = ''
+  }
+
   const removePosition = (idx: number) => {
     positions = positions.filter((_, i) => i !== idx)
   }
+
+  const sourceBadge = (s: PositionSource) =>
+    s === 'item'
+      ? { class: 'badge-info', label: 'Artikel' }
+      : s === 'vehicle'
+        ? { class: 'badge-warning', label: 'Fahrzeug' }
+        : { class: 'badge-ghost', label: 'Frei' }
 
   const submit = async (e: Event) => {
     e.preventDefault()
@@ -103,7 +200,9 @@
         unit: p.unit,
         unitPriceNet: Number(p.unitPriceNet) || 0,
         discountPercent: Number(p.discountPercent) || 0,
-        taxRate: Number(p.taxRate) || 19
+        taxRate: Number(p.taxRate) || 19,
+        kind: p.kind,
+        articleNumber: p.articleNumber || undefined
       }))
       .filter((p) => p.description !== '')
     if (cleaned.length === 0) {
@@ -201,17 +300,53 @@
 
   <div class="card border-base-300 bg-base-100 border">
     <div class="card-body gap-3">
-      <div class="flex items-center justify-between">
+      <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 class="card-title text-base">Positionen</h3>
-        <button type="button" class="btn btn-sm gap-2" onclick={addPosition}>
-          <Plus size={14} /> Position hinzufügen
-        </button>
+        <div class="flex flex-wrap gap-2">
+          <button
+            type="button"
+            class="btn btn-sm gap-2"
+            onclick={addPosition}
+            data-testid="add-free-position"
+          >
+            <Pencil size={14} /> Freie Position
+          </button>
+          <div class="form-control">
+            <SearchablePicker
+              bind:value={itemPickerValue}
+              bind:valueLabel={itemPickerLabel}
+              placeholder="+ Artikel/Leistung"
+              dialogTitle="Artikel auswählen"
+              search={searchItems}
+              onSelect={(it) => {
+                if (it)
+                  addItemPosition(it as Parameters<typeof addItemPosition>[0])
+              }}
+            />
+          </div>
+          <div class="form-control">
+            <SearchablePicker
+              bind:value={vehicleSourceValue}
+              bind:valueLabel={vehicleSourceLabel}
+              placeholder="+ Fahrzeug aus Bestand"
+              dialogTitle="Fahrzeug aus Bestand auswählen"
+              search={searchInventoryVehicles}
+              onSelect={(it) => {
+                if (it)
+                  addVehiclePosition(
+                    it as Parameters<typeof addVehiclePosition>[0]
+                  )
+              }}
+            />
+          </div>
+        </div>
       </div>
       <div class="overflow-x-auto">
         <table class="table-sm table">
           <thead>
             <tr>
               <th>#</th>
+              <th class="w-24">Quelle</th>
               <th>Beschreibung</th>
               <th class="w-20 text-right">Menge</th>
               <th class="w-20">Einheit</th>
@@ -223,8 +358,28 @@
           </thead>
           <tbody>
             {#each positions as p, idx (idx)}
+              {@const b = sourceBadge(p.source)}
               <tr>
                 <td class="text-base-content/60">{idx + 1}</td>
+                <td>
+                  <span class="badge badge-sm {b.class} gap-1">
+                    {#if p.source === 'item'}
+                      <Package size={10} />
+                    {:else if p.source === 'vehicle'}
+                      <Car size={10} />
+                    {:else}
+                      <Pencil size={10} />
+                    {/if}
+                    {b.label}
+                  </span>
+                  {#if p.source === 'item' && p.articleNumber}
+                    <div
+                      class="text-base-content/60 mt-0.5 font-mono text-[10px]"
+                    >
+                      {p.articleNumber}
+                    </div>
+                  {/if}
+                </td>
                 <td>
                   <input
                     class="input input-bordered input-sm w-full"

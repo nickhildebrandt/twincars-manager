@@ -1,0 +1,110 @@
+<script lang="ts">
+  import { page } from '$app/stores'
+  import PageHeader from '$lib/components/layout/PageHeader.svelte'
+  import Loader from '$lib/components/ui/Loader.svelte'
+  import { getOfferRemote } from '../offers.remote'
+  import { handleClientError } from '$lib/utils/client-error'
+  import { formatEuro } from '$lib/utils/money'
+
+  const id = $derived($page.params.id ?? '')
+  const q = $derived(id ? getOfferRemote({ id }) : null)
+  const data = $derived(q?.current)
+  const loading = $derived(q?.loading ?? true)
+
+  $effect(() => {
+    if (q?.error) handleClientError(q.error)
+  })
+
+  const typeLabel = (t: string) =>
+    t === 'offer'
+      ? 'Angebot'
+      : t === 'cost_estimate'
+        ? 'Kostenvoranschlag'
+        : 'Auftragsbestätigung'
+</script>
+
+<PageHeader
+  title={data
+    ? `${typeLabel(data.doc.type)} ${data.doc.documentNumber}`
+    : 'Dokument'}
+  back="/offers"
+/>
+
+{#if loading}
+  <div class="card border-base-300 bg-base-100 border">
+    <div class="card-body"><Loader /></div>
+  </div>
+{:else if data}
+  <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
+    <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+      <div class="card-body p-0">
+        <table class="table-zebra table">
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Beschreibung</th>
+              <th class="text-right">Menge</th>
+              <th class="text-right">Einzelpreis</th>
+              <th class="text-right">MwSt</th>
+              <th class="text-right">Brutto</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each data.items as it (it.id)}
+              <tr>
+                <td>{it.positionNumber}</td>
+                <td>{it.description}</td>
+                <td class="text-right">{Number(it.quantity)} {it.unit ?? ''}</td
+                >
+                <td class="text-right font-mono"
+                  >{formatEuro(Number(it.unitPriceNet))}</td
+                >
+                <td class="text-right">{Number(it.taxRate)} %</td>
+                <td class="text-right font-mono"
+                  >{formatEuro(Number(it.lineTotalGross))}</td
+                >
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card border-base-300 bg-base-100 border">
+      <div class="card-body">
+        <h3 class="card-title text-base">Summen</h3>
+        <dl class="grid grid-cols-2 gap-y-1 text-sm">
+          <dt class="text-base-content/60">Datum</dt>
+          <dd class="text-right">{data.doc.issueDate}</dd>
+          <dt class="text-base-content/60">Gültig bis</dt>
+          <dd class="text-right">{data.doc.dueDate ?? '—'}</dd>
+          <dt class="text-base-content/60">Netto</dt>
+          <dd class="text-right font-mono"
+            >{formatEuro(Number(data.doc.netTotal))}</dd
+          >
+          <dt class="text-base-content/60">MwSt</dt>
+          <dd class="text-right font-mono"
+            >{formatEuro(Number(data.doc.taxTotal))}</dd
+          >
+          <dt class="text-base-content/60">Rabatt</dt>
+          <dd class="text-right font-mono"
+            >{formatEuro(Number(data.doc.discountTotal))}</dd
+          >
+          <dt class="font-semibold">Brutto</dt>
+          <dd class="text-right font-mono font-semibold"
+            >{formatEuro(Number(data.doc.grossTotal))}</dd
+          >
+        </dl>
+      </div>
+    </div>
+
+    {#if data.doc.footer}
+      <div class="card border-base-300 bg-base-100 border lg:col-span-3">
+        <div class="card-body">
+          <h3 class="card-title text-base">Endtext</h3>
+          <p class="text-sm whitespace-pre-line">{data.doc.footer}</p>
+        </div>
+      </div>
+    {/if}
+  </div>
+{/if}

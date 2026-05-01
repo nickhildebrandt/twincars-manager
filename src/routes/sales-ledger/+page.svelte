@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
+  import Loader from '$lib/components/ui/Loader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import { BookOpen, TrendingUp } from '@lucide/svelte'
   import { getSalesLedgerRemote } from './sales-ledger.remote'
@@ -65,9 +66,7 @@
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
     {#if loading}
-      <div class="text-base-content/60 flex h-32 items-center justify-center">
-        <span class="loading loading-spinner"></span>
-      </div>
+      <Loader />
     {:else if rows.length === 0}
       <EmptyState icon={BookOpen} title="Keine Rechnungen im Zeitraum" />
     {:else}

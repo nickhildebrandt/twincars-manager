@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import type { Customer } from '$lib/server/db/schema'
 
   type Props = {
@@ -24,19 +25,20 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const init = untrack(() => initial)
 
-  let company = $state(initial.company ?? '')
-  let salutation = $state(initial.salutation ?? '')
-  let firstName = $state(initial.firstName ?? '')
-  let lastName = $state(initial.lastName ?? '')
-  let street = $state(initial.street ?? '')
-  let zip = $state(initial.zip ?? '')
-  let city = $state(initial.city ?? '')
-  let phone = $state(initial.phone ?? '')
-  let mobile = $state(initial.mobile ?? '')
-  let email = $state(initial.email ?? '')
-  let website = $state(initial.website ?? '')
-  let notes = $state(initial.notes ?? '')
+  let company = $state(init.company ?? '')
+  let salutation = $state(init.salutation ?? '')
+  let firstName = $state(init.firstName ?? '')
+  let lastName = $state(init.lastName ?? '')
+  let street = $state(init.street ?? '')
+  let zip = $state(init.zip ?? '')
+  let city = $state(init.city ?? '')
+  let phone = $state(init.phone ?? '')
+  let mobile = $state(init.mobile ?? '')
+  let email = $state(init.email ?? '')
+  let website = $state(init.website ?? '')
+  let notes = $state(init.notes ?? '')
 
   let errorMsg = $state<string | null>(null)
 

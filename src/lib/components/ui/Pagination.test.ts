@@ -6,6 +6,7 @@ import Pagination from './Pagination.svelte'
 
 /**
  * Component tests for Pagination — page-button rendering and callback firing.
+ * Page size is fixed app-wide at 25; the component does not render a selector.
  *
  * @group component
  * @module Pagination
@@ -45,21 +46,10 @@ describe('Pagination', () => {
     expect(onPage).toHaveBeenCalledWith(3)
   })
 
-  it('renders the size selector when onSize is provided', async () => {
-    const user = userEvent.setup()
-    const onSize = vi.fn()
+  it('does not render a size selector', () => {
     render(Pagination, {
-      props: {
-        page: 1,
-        pageCount: 5,
-        total: 100,
-        size: 25,
-        onPage: vi.fn(),
-        onSize
-      }
+      props: { page: 1, pageCount: 5, total: 100, size: 25, onPage: vi.fn() }
     })
-    const select = screen.getByLabelText(/seitengröße/i) as HTMLSelectElement
-    await user.selectOptions(select, '50')
-    expect(onSize).toHaveBeenCalledWith(50)
+    expect(screen.queryByLabelText(/seitengröße/i)).not.toBeInTheDocument()
   })
 })

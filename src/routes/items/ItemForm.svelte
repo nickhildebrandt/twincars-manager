@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+
   type Item = {
     articleNumber?: string | null
     description?: string | null
@@ -35,27 +37,26 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const init = untrack(() => initial)
 
-  let articleNumber = $state(initial.articleNumber ?? '')
-  let description = $state(initial.description ?? '')
+  let articleNumber = $state(init.articleNumber ?? '')
+  let description = $state(init.description ?? '')
   let kind = $state<'service' | 'material' | 'article' | 'pass_through'>(
-    (initial.kind as 'service' | 'material' | 'article' | 'pass_through') ??
+    (init.kind as 'service' | 'material' | 'article' | 'pass_through') ??
       'article'
   )
-  let unit = $state(initial.unit ?? 'Stk')
+  let unit = $state(init.unit ?? 'Stk')
   let unitPriceNet = $state<number | string>(
-    Number(initial.unitPriceNet ?? '') || ''
+    Number(init.unitPriceNet ?? '') || ''
   )
   let purchasePriceNet = $state<number | string>(
-    Number(initial.purchasePriceNet ?? '') || ''
+    Number(init.purchasePriceNet ?? '') || ''
   )
-  let stockOnHand = $state<number | string>(
-    (initial.stockOnHand as number) ?? 0
-  )
-  let stockMin = $state<number | string>((initial.stockMin as number) ?? '')
-  let stockMax = $state<number | string>((initial.stockMax as number) ?? '')
-  let discontinued = $state(Boolean(initial.discontinued))
-  let notes = $state(initial.notes ?? '')
+  let stockOnHand = $state<number | string>((init.stockOnHand as number) ?? 0)
+  let stockMin = $state<number | string>((init.stockMin as number) ?? '')
+  let stockMax = $state<number | string>((init.stockMax as number) ?? '')
+  let discontinued = $state(Boolean(init.discontinued))
+  let notes = $state(init.notes ?? '')
 
   let errorMsg = $state<string | null>(null)
 

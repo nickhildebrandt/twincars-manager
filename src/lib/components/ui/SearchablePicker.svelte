@@ -1,6 +1,7 @@
 <script lang="ts" generics="T extends { id: string; label: string }">
   import { Search, X, ChevronDown } from '@lucide/svelte'
   import Pagination from './Pagination.svelte'
+  import Loader from './Loader.svelte'
 
   type Props = {
     value: string
@@ -32,7 +33,7 @@
   let dialog = $state<HTMLDialogElement | null>(null)
   let q = $state('')
   let page = $state(1)
-  let size = $state<10 | 25 | 50 | 100>(25)
+  const size = 25
   let items = $state<T[]>([])
   let total = $state(0)
   let pageCount = $state(1)
@@ -151,7 +152,7 @@
     <div class="scroll-y min-h-0 flex-1 overflow-y-auto">
       {#if loading && items.length === 0}
         <div class="flex h-full items-center justify-center">
-          <span class="loading loading-spinner"></span>
+          <Loader />
         </div>
       {:else if items.length === 0}
         <div
@@ -185,11 +186,6 @@
       {size}
       onPage={(p) => {
         page = p
-        void runSearch()
-      }}
-      onSize={(s) => {
-        size = s as 10 | 25 | 50 | 100
-        page = 1
         void runSearch()
       }}
     />
