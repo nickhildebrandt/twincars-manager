@@ -68,10 +68,20 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id } = toDelete
     try {
       await busy.run(() =>
-        deleteLedgerEntryRemote({ id: toDelete!.id }).updates(
-          listLedgerEntriesRemote
+        deleteLedgerEntryRemote({ id }).updates(
+          listLedgerEntriesRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            direction
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((e) => e.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
         )
       )
       toast.success(`Buchung gelöscht.`)

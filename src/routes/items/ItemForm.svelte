@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   type Item = {
     articleNumber?: string | null
@@ -19,7 +20,6 @@
     initial?: Item
     onSave: (values: ItemFormValues) => Promise<void> | void
     onCancel?: () => void
-    busy?: boolean
   }
 
   export type ItemFormValues = {
@@ -36,7 +36,7 @@
     notes?: string
   }
 
-  const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const { initial = {}, onSave, onCancel }: Props = $props()
 
   /** Snapshot the initial prop once at mount — see CustomerForm for rationale. */
   const init = untrack(() => ({ ...initial }))
@@ -209,14 +209,18 @@
     </fieldset>
 
     <div class="card-actions justify-end gap-2">
-      {#if onCancel}<button
+      {#if onCancel}
+        <button
           type="button"
           class="btn btn-ghost"
           onclick={onCancel}
-          disabled={busy}>Abbrechen</button
-        >{/if}
-      <button type="submit" class="btn btn-primary" disabled={busy}>
-        {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
+          disabled={busy.active}>Abbrechen</button
+        >
+      {/if}
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+        {#if busy.active}
+          <span class="loading loading-spinner loading-sm"></span>
+        {/if}
         Speichern
       </button>
     </div>

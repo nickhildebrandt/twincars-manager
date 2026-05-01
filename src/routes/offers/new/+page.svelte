@@ -492,9 +492,17 @@
   </div>
 
   <div class="flex flex-wrap justify-end gap-2">
-    <button type="button" class="btn btn-ghost" onclick={() => goto('/offers')}
-      >Abbrechen</button
+    <button
+      type="button"
+      class="btn btn-ghost"
+      onclick={() => goto('/offers')}
+      disabled={busy.active}>Abbrechen</button
     >
-    <button type="submit" class="btn btn-primary">Speichern</button>
+    <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      {#if busy.active}
+        <span class="loading loading-spinner loading-sm"></span>
+      {/if}
+      Speichern
+    </button>
   </div>
 </form>

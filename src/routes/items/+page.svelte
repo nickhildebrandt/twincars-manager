@@ -49,11 +49,25 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, name } = toDelete
     try {
+      // Optimistic single-flight: row vanishes immediately, server-flight
+      // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
-        deleteItemRemote({ id: toDelete!.id }).updates(listItemsRemote)
+        deleteItemRemote({ id }).updates(
+          listItemsRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            kind
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((i) => i.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
-      toast.success(`„${toDelete.name}" gelöscht.`)
+      toast.success(`„${name}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

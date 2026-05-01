@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   type Supplier = {
     name?: string | null
@@ -23,7 +24,6 @@
     initial?: Supplier
     onSave: (values: SupplierFormValues) => Promise<void> | void
     onCancel?: () => void
-    busy?: boolean
   }
 
   export type SupplierFormValues = {
@@ -44,7 +44,7 @@
     customerNumberAtSupplier?: string
   }
 
-  const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const { initial = {}, onSave, onCancel }: Props = $props()
 
   /** Snapshot the initial prop once at mount — see CustomerForm for rationale. */
   const init = untrack(() => ({ ...initial }))
@@ -248,11 +248,13 @@
           type="button"
           class="btn btn-ghost"
           onclick={onCancel}
-          disabled={busy}>Abbrechen</button
+          disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button type="submit" class="btn btn-primary" disabled={busy}>
-        {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+        {#if busy.active}
+          <span class="loading loading-spinner loading-sm"></span>
+        {/if}
         Speichern
       </button>
     </div>

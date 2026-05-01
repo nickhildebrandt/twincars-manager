@@ -50,11 +50,23 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, name } = toDelete
     try {
       await busy.run(() =>
-        deleteSupplierRemote({ id: toDelete!.id }).updates(listSuppliersRemote)
+        deleteSupplierRemote({ id }).updates(
+          listSuppliersRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            archived: 'active'
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((s) => s.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
-      toast.success(`Lieferant „${toDelete.name}" gelöscht.`)
+      toast.success(`Lieferant „${name}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

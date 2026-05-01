@@ -69,12 +69,24 @@
 
   const performDelete = async () => {
     if (!toDeleteId) return
+    const id = toDeleteId
     try {
-      // Single-flight: refresh the active filter/page combo as part of the
-      // delete response — no extra round-trip. `busy.run` locks the UI
-      // until the response arrives.
+      // Optimistic single-flight: the deleted row vanishes immediately via
+      // `withOverride`; the same response carries the authoritative refresh
+      // for whatever filter / page combo is currently rendered.
       await busy.run(() =>
-        deleteCustomerRemote({ id: toDeleteId! }).updates(listCustomersRemote)
+        deleteCustomerRemote({ id }).updates(
+          listCustomersRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            archived: archivedFilter
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((c) => c.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
       toast.success(`Kunde „${toDeleteName}" gelöscht.`)
       toDeleteId = null

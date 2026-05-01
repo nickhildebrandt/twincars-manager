@@ -49,11 +49,33 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, nr } = toDelete
     try {
+      // Optimistic single-flight: row vanishes immediately, server-flight
+      // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
-        deleteOfferRemote({ id: toDelete!.id }).updates(listOffersRemote)
+        deleteOfferRemote({ id }).updates(
+          listOffersRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            subtype
+          }).withOverride(
+            // The query has a polymorphic return type (depending on whether
+            // a subtype is selected); cast keeps the optimistic update
+            // generic across both shapes.
+            (current) =>
+              ({
+                ...current,
+                items: (current.items as { id: string }[]).filter(
+                  (o) => o.id !== id
+                ),
+                total: Math.max(0, current.total - 1)
+              }) as typeof current
+          )
+        )
       )
-      toast.success(`„${toDelete.nr}" gelöscht.`)
+      toast.success(`„${nr}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

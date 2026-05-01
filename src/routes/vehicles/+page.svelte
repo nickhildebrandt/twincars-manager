@@ -49,11 +49,21 @@
 
   const remove = async (id: string, label: string) => {
     try {
-      // Single-flight: refresh the current filter/page combination as part
-      // of the delete response, no extra round-trip. `busy.run` locks the
-      // UI until the response arrives.
+      // Optimistic single-flight: row vanishes immediately, server-flight
+      // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
-        deleteVehicleRemote({ id }).updates(listVehiclesRemote)
+        deleteVehicleRemote({ id }).updates(
+          listVehiclesRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            archived: 'active'
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((v) => v.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
       toast.success(`Fahrzeug „${label}" gelöscht.`)
     } catch (err) {

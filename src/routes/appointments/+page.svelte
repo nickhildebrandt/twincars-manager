@@ -47,13 +47,22 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, title } = toDelete
     try {
       await busy.run(() =>
-        deleteAppointmentRemote({ id: toDelete!.id }).updates(
-          listAppointmentsRemote
+        deleteAppointmentRemote({ id }).updates(
+          listAppointmentsRemote({
+            page: pageNum,
+            size,
+            q: q || undefined
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((a) => a.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
         )
       )
-      toast.success(`Termin „${toDelete.title}" gelöscht.`)
+      toast.success(`Termin „${title}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

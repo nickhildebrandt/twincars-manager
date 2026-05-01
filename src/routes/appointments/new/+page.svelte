@@ -182,9 +182,15 @@
       <button
         type="button"
         class="btn btn-ghost"
-        onclick={() => goto('/appointments')}>Abbrechen</button
+        onclick={() => goto('/appointments')}
+        disabled={busy.active}>Abbrechen</button
       >
-      <button type="submit" class="btn btn-primary">Speichern</button>
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+        {#if busy.active}
+          <span class="loading loading-spinner loading-sm"></span>
+        {/if}
+        Speichern
+      </button>
     </div>
   </div>
 </form>

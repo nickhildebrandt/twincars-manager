@@ -1,16 +1,18 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Vehicle } from '$lib/server/db/schema'
+  import { busy } from '$lib/stores/busy.svelte'
 
   /**
    * Props for the vehicle form. `initial` is read once at mount time to seed
    * the editable state — subsequent prop changes do not reset the form.
+   * Submit / cancel buttons read the global busy store so they disable as
+   * soon as the user triggers a save, before the 250 ms overlay mounts.
    */
   type Props = {
     initial?: Partial<Vehicle>
     onSave: (values: VehicleFormValues) => Promise<void> | void
     onCancel?: () => void
-    busy?: boolean
   }
 
   /**
@@ -37,7 +39,7 @@
     notes?: string
   }
 
-  const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
+  const { initial = {}, onSave, onCancel }: Props = $props()
 
   /**
    * Read `initial` exactly once at component setup. `untrack` is the
@@ -239,11 +241,13 @@
           type="button"
           class="btn btn-ghost"
           onclick={onCancel}
-          disabled={busy}>Abbrechen</button
+          disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button type="submit" class="btn btn-primary" disabled={busy}>
-        {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+        {#if busy.active}
+          <span class="loading loading-spinner loading-sm"></span>
+        {/if}
         Speichern
       </button>
     </div>

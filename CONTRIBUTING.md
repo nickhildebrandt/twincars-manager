@@ -139,31 +139,144 @@ JSDoc every export with `@group integration` and `@module <name>`.
 - Component re-mounts on every `[id]` change, so the `untrack` snapshot
   is the right call.
 
-## 6. Loading and busy state (one mechanism, app-wide)
+## 6. Loading and busy state (tiered, app-wide)
 
-- The single source of truth is **`busy`** in
-  `src/lib/stores/busy.svelte.ts`. It is a counting semaphore: `begin()`
-  before a transition, `end()` after, or simply `await busy.run(() => ...)`.
-- The `AppShell` watches `busy.active` and renders a full-area
-  `Loader variant="overlay"` over the main content slot. While busy:
-  - the outer chrome (sidebar + header) stays visible and interactive;
-  - the main slot is `aria-busy` and `inert` so the user cannot click
-    around mid-transition.
-- **Every** mutation, navigation between detail records, or page-level data
-  transition runs inside `busy.run(...)`. No ad-hoc local `let busy = …`
-  on form components — that pattern is removed.
-- Page navigation is wired up centrally in `+layout.svelte` via
-  `beforeNavigate(busy.begin)` / `afterNavigate(busy.end)`. New pages do
-  not need to opt in.
-- The `Loader` component has four variants:
-  | Variant | Use case |
-  | --------- | ------------------------------------------------------------------------ |
-  | `block` | inline empty card / section while a one-off query loads |
-  | `inline` | small spinner + label inside a button or row |
-  | `bar` | thin top-of-card progress bar during list refetches |
-  | `overlay` | full-area cover over `position: relative` parent — used by AppShell only |
-- The label is always **"Inhalte werden geladen"** unless a more specific
-  string really helps. Same wording everywhere.
+The app uses one **tiered loading mechanism**. The same store drives every
+indicator, but the visual response scales with how long the operation
+actually takes — fast CRUD never flashes a loader, slow tasks lock the
+view properly.
+
+### The `busy` store
+
+Single source of truth: `src/lib/stores/busy.svelte.ts`. It exposes two
+reactive flags:
+
+| Flag          | Meaning                                                  | UI driven by it                |
+| ------------- | -------------------------------------------------------- | ------------------------------ |
+| `busy.active` | at least one operation is currently running              | thin top progress bar          |
+| `busy.slow`   | at least one operation has been running for **≥ 250 ms** | full-area overlay on main slot |
+
+Use either:
+
+```ts
+// Async wrapper — preferred.
+await busy.run(() => deleteCustomerRemote({ id }).updates(...))
+
+// Manual lifecycle — only for paired event boundaries (e.g. SvelteKit
+// beforeNavigate / afterNavigate). begin() returns the end-callback.
+const end = busy.begin()
+try { ... } finally { end() }
+```
+
+### Why three signals (top bar / inline / overlay)?
+
+1. **Top progress bar** (always visible while `busy.active`).
+   Mounted unconditionally in `AppShell`, animates a 2 px DaisyUI
+   `progress` bar across the top of the viewport. Gives the user instant
+   feedback without blocking anything. **This is the default loading
+   signal for almost every operation.**
+
+2. **Inline button busy** (immediate, local).
+   Submit and primary action buttons read `busy.active` directly:
+
+   ```svelte
+   <button type="submit" class="btn btn-primary" disabled={busy.active}>
+     {#if busy.active}
+       <span class="loading loading-spinner loading-sm"></span>
+     {/if}
+     Speichern
+   </button>
+   ```
+
+   This prevents double-clicks during the first 250 ms before the overlay
+   even mounts, and shows feedback exactly where the user clicked.
+
+3. **Full-area overlay** (only when `busy.slow`, i.e. ≥ 250 ms).
+   `AppShell` mounts `Loader variant="overlay"` over the main content slot
+   and marks it `aria-busy` / `inert`. Sidebar and header stay
+   interactive, so the user can navigate away from a slow task. Anything
+   that finishes within 250 ms — the vast majority of CRUD against a
+   local Postgres — never triggers this overlay.
+
+### Optimistic updates for mutations
+
+For deletions and status changes use the SvelteKit single-flight
+optimistic pattern. The row vanishes (or the badge flips) immediately;
+the same response carries the authoritative refresh.
+
+```ts
+await busy.run(() =>
+  deleteCustomerRemote({ id }).updates(
+    listCustomersRemote({ page, size, q, archived }).withOverride(
+      (current) => ({
+        ...current,
+        items: current.items.filter((c) => c.id !== id),
+        total: Math.max(0, current.total - 1)
+      })
+    )
+  )
+)
+```
+
+This is the standard pattern for every list-page delete. Always pass
+the **specific** filter/page combo currently rendered, so the override
+acts on the user's view.
+
+### Stale-while-revalidate for filter / pagination
+
+List pages keep the previously-resolved data via a `lastResult` snapshot
+(`query.current ?? lastResult`). The previous rows stay on screen while
+the next page loads; the top progress bar signals the refetch. Never
+blank the table or replace it with a loader during a filter/pagination
+change.
+
+### Page navigation
+
+Wired centrally in `+layout.svelte`:
+
+```svelte
+let endNavigation: (() => void) | null = null
+beforeNavigate(() => {
+  endNavigation?.()
+  endNavigation = busy.begin()
+})
+afterNavigate(() => {
+  endNavigation?.()
+  endNavigation = null
+})
+```
+
+Every route change — including `/customers/[id]` → `/customers/[other]`
+— flips the busy state. Fast navigations show only the top bar; slow
+ones get the overlay too. New pages do not opt in to anything.
+
+### `Loader` component variants
+
+`src/lib/components/ui/Loader.svelte` exposes four DaisyUI/Tailwind
+variants. Pick the right one:
+
+| Variant   | Use case                                                                     |
+| --------- | ---------------------------------------------------------------------------- |
+| `block`   | inline empty card / section while a one-off query loads                      |
+| `inline`  | small spinner + label inside a button or row                                 |
+| `bar`     | thin top-of-card progress bar during list refetches                          |
+| `overlay` | full-area cover over a `position: relative` parent — used by `AppShell` only |
+
+### Forbidden loading patterns
+
+- ❌ Local per-component `let busy = $state(false)` — use the global store.
+- ❌ Showing a full-screen spinner for every transition — the tiered model
+  (top bar → 250 ms overlay) is the standard.
+- ❌ Skeleton rows or full-card loaders on detail pages — top-level
+  `await` plus the global tier handles it.
+- ❌ Custom keyframes / `<style>` blocks for spinners.
+- ❌ Pessimistic deletes that refresh the whole list before showing the
+  user the row is gone — use `withOverride`.
+
+### Wording
+
+The loader label is always **"Inhalte werden geladen"** unless a much
+more specific phrase clearly helps. Same wording everywhere.
 
 ## 7. UI / styling
 
@@ -250,6 +363,10 @@ JSDoc every export with `@group integration` and `@module <name>`.
 - ❌ `<style>` blocks, custom CSS files, inline `style="..."` for theming.
 - ❌ Tables where only one column or icon is clickable.
 - ❌ Page-size dropdowns, ad-hoc loading spinners, partial loaders.
+- ❌ Showing the full overlay for every operation — the tiered model
+  (top bar → 250 ms overlay) is mandatory.
+- ❌ Pessimistic deletes that refresh the whole list before showing the
+  user the row is gone — use `mutation.updates(query.withOverride(...))`.
 - ❌ "Roll your own" widgets where DaisyUI already ships an equivalent.
 
 ## 14. Adding a new module

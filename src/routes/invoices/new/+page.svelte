@@ -533,9 +533,15 @@
       type="button"
       class="btn btn-ghost"
       onclick={() => goto('/invoices')}
+      disabled={busy.active}
     >
       Abbrechen
     </button>
-    <button type="submit" class="btn btn-primary"> Rechnung speichern </button>
+    <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      {#if busy.active}
+        <span class="loading loading-spinner loading-sm"></span>
+      {/if}
+      Rechnung speichern
+    </button>
   </div>
 </form>

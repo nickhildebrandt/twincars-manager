@@ -47,11 +47,25 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, nr } = toDelete
     try {
+      // Optimistic single-flight: row vanishes immediately, server-flight
+      // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
-        deleteInvoiceRemote({ id: toDelete!.id }).updates(listInvoicesRemote)
+        deleteInvoiceRemote({ id }).updates(
+          listInvoicesRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            status
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((i) => i.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
-      toast.success(`Rechnung „${toDelete.nr}" gelöscht.`)
+      toast.success(`Rechnung „${nr}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

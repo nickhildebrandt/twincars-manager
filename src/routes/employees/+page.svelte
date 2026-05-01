@@ -50,11 +50,23 @@
 
   const remove = async () => {
     if (!toDelete) return
+    const { id, name } = toDelete
     try {
       await busy.run(() =>
-        deleteEmployeeRemote({ id: toDelete!.id }).updates(listEmployeesRemote)
+        deleteEmployeeRemote({ id }).updates(
+          listEmployeesRemote({
+            page: pageNum,
+            size,
+            q: q || undefined,
+            archived: 'active'
+          }).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((e) => e.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
       )
-      toast.success(`Mitarbeiter „${toDelete.name}" gelöscht.`)
+      toast.success(`Mitarbeiter „${name}" gelöscht.`)
       toDelete = null
     } catch (err) {
       handleClientError(err)

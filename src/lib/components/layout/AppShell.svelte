@@ -59,6 +59,25 @@
   const TOP_BAR_HEIGHT = 'h-[68px]'
 </script>
 
+<!--
+  Top progress bar — driven by `busy.active`. Sits above the navbar with
+  `position: fixed`, ~2 px tall, animated. Mounted unconditionally so the
+  fade-in/out transition is smooth; opacity is the only thing toggled. The
+  bar is the *primary* loading signal for the entire app (~95 % of CRUD
+  finishes inside the 250 ms window before the overlay even mounts).
+-->
+<div
+  class="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 transition-opacity duration-150"
+  class:opacity-0={!busy.active}
+  class:opacity-100={busy.active}
+  aria-hidden={!busy.active}
+>
+  <progress
+    class="progress progress-primary block h-full w-full"
+    aria-label="Lädt"
+  ></progress>
+</div>
+
 <div class="drawer lg:drawer-open">
   <input id="app-drawer" type="checkbox" class="drawer-toggle" />
 
@@ -123,19 +142,20 @@
     </header>
 
     <!--
-      Page content. The wrapper is `relative` so the global busy overlay can
-      sit on top of the current view (sidebar + header stay interactive).
-      The main slot is also marked `aria-busy` and `inert` while busy, so
-      keyboard users and screen readers cannot trigger actions during a
-      transition.
+      Page content. The wrapper is `relative` so the global busy overlay
+      can sit on top of the current view (sidebar + header stay
+      interactive). The overlay only appears when an operation has been
+      running for ≥ 250 ms (`busy.slow`), so quick CRUD never flickers.
+      During that slow window the slot is `aria-busy` and `inert`, blocking
+      both pointer and keyboard interaction.
     -->
     <main
       class="scroll-y relative flex-1 p-4 sm:p-6 lg:p-8"
-      aria-busy={busy.active}
-      inert={busy.active}
+      aria-busy={busy.slow}
+      inert={busy.slow}
     >
       {@render children?.()}
-      {#if busy.active}
+      {#if busy.slow}
         <Loader variant="overlay" />
       {/if}
     </main>

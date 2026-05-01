@@ -27,12 +27,19 @@
 
   /**
    * Wire SvelteKit navigation into the global busy state. Every page change
-   * — including switching between detail records — flips the overlay so
-   * the user sees a consistent loading indication and cannot click around
-   * mid-transition.
+   * — including switching between detail records — flips the busy state.
+   * The top progress bar shows immediately; the overlay only kicks in if
+   * the navigation takes longer than 250 ms.
    */
-  beforeNavigate(() => busy.begin())
-  afterNavigate(() => busy.end())
+  let endNavigation: (() => void) | null = null
+  beforeNavigate(() => {
+    endNavigation?.()
+    endNavigation = busy.begin()
+  })
+  afterNavigate(() => {
+    endNavigation?.()
+    endNavigation = null
+  })
 </script>
 
 <svelte:head>
