@@ -59,32 +59,19 @@
   const TOP_BAR_HEIGHT = 'h-[68px]'
 </script>
 
-<!--
-  Top progress bar — driven by `busy.active`. Sits above the navbar with
-  `position: fixed`, ~2 px tall, animated. Mounted unconditionally so the
-  fade-in/out transition is smooth; opacity is the only thing toggled. The
-  bar is the *primary* loading signal for the entire app (~95 % of CRUD
-  finishes inside the 250 ms window before the overlay even mounts).
--->
-<div
-  class="pointer-events-none fixed inset-x-0 top-0 z-50 h-0.5 transition-opacity duration-150"
-  class:opacity-0={!busy.active}
-  class:opacity-100={busy.active}
-  aria-hidden={!busy.active}
->
-  <progress
-    class="progress progress-primary block h-full w-full"
-    aria-label="Lädt"
-  ></progress>
-</div>
-
 <div class="drawer lg:drawer-open">
   <input id="app-drawer" type="checkbox" class="drawer-toggle" />
 
   <div class="drawer-content bg-base-200 flex min-h-dvh flex-col">
-    <!-- Top header (matches sidebar header height for clean horizontal alignment) -->
+    <!--
+      Top header (matches sidebar header height for clean horizontal
+      alignment). The header is `relative` so the global loading bar can
+      live inside it, anchored at the very bottom — overlaying the
+      border-b instead of pushing content down. This is the single
+      loading bar in the entire app: no other component owns one.
+    -->
     <header
-      class="navbar sticky top-0 z-30 {TOP_BAR_HEIGHT} border-base-300 bg-base-100 min-h-0 border-b px-4 shadow-sm"
+      class="navbar sticky top-0 z-30 {TOP_BAR_HEIGHT} border-base-300 bg-base-100 relative min-h-0 border-b px-4 shadow-sm"
     >
       <div class="navbar-start gap-2">
         <label
@@ -138,6 +125,26 @@
             </button>
           {/if}
         {/if}
+      </div>
+
+      <!--
+        The single global loading bar. Anchored at the bottom of the
+        sticky header, overlapping the border-b. `position: absolute`
+        plus `pointer-events-none` keeps it purely decorative — the
+        layout below the header never shifts when the bar appears or
+        disappears. Opacity is the only animated property.
+      -->
+      <div
+        class="pointer-events-none absolute inset-x-0 bottom-0 h-0.5 transition-opacity duration-150"
+        class:opacity-0={!busy.active}
+        class:opacity-100={busy.active}
+        aria-hidden={!busy.active}
+        data-testid="global-loading-bar"
+      >
+        <progress
+          class="progress progress-primary block h-full w-full"
+          aria-label="Lädt"
+        ></progress>
       </div>
     </header>
 

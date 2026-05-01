@@ -6,18 +6,21 @@
    * - `block` (default): centered spinner + label, intended for inline use
    *   inside a card or section.
    * - `inline`: small spinner + label rendered inline-flex.
-   * - `bar`: thin DaisyUI progress bar, used as a top-of-card refetch hint.
    * - `overlay`: absolute-positioned full-area cover with a translucent
    *   background and a centered spinner; sits inside a `relative` parent
    *   (typically the AppShell main slot) to lock the content area while a
    *   transition is in flight.
+   *
+   * Note: there is no `bar` variant here on purpose. The single global
+   *       loading bar lives inside `AppShell`'s sticky header — no other
+   *       component is allowed to render its own progress bar.
    *
    * All styling is DaisyUI / Tailwind only — no custom CSS.
    */
   type Props = {
     size?: 'sm' | 'md' | 'lg'
     label?: string
-    variant?: 'block' | 'inline' | 'bar' | 'overlay'
+    variant?: 'block' | 'inline' | 'overlay'
   }
 
   const {
@@ -36,9 +39,6 @@
     <span class="loading loading-spinner {spinnerClass}"></span>
     <span>{label}</span>
   </span>
-{:else if variant === 'bar'}
-  <progress class="progress progress-primary h-0.5 w-full" aria-label={label}
-  ></progress>
 {:else if variant === 'overlay'}
   <div
     class="bg-base-100/70 absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 backdrop-blur-sm"

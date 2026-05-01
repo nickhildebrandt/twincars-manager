@@ -140,9 +140,6 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
-    {#if loading}
-      <Loader variant="bar" />
-    {/if}
     {#if items.length === 0}
       <EmptyState
         icon={Calculator}

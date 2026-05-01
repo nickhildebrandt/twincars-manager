@@ -168,13 +168,20 @@ const end = busy.begin()
 try { ... } finally { end() }
 ```
 
-### Why three signals (top bar / inline / overlay)?
+### Why three signals (header bar / inline / overlay)?
 
-1. **Top progress bar** (always visible while `busy.active`).
-   Mounted unconditionally in `AppShell`, animates a 2 px DaisyUI
-   `progress` bar across the top of the viewport. Gives the user instant
-   feedback without blocking anything. **This is the default loading
-   signal for almost every operation.**
+1. **Header loading bar** — the _single_ progress bar in the entire app.
+   Lives inside the sticky `AppShell` header, anchored at the bottom of
+   the header element via `position: absolute; bottom: 0` so it overlays
+   the header's `border-b`. It is mounted unconditionally and only
+   toggles `opacity` between 0 and 1 when `busy.active` flips.
+   - **The page layout never shifts when the bar appears or disappears.**
+     The bar reserves no flow space — it's purely decorative on top of
+     the existing border line.
+   - **No other component is allowed to render a progress bar.** Tables,
+     cards, dialogs, forms, sections — none of them get their own bar.
+     The only place the user ever sees a loading bar is right below the
+     header, and there is exactly one of them globally.
 
 2. **Inline button busy** (immediate, local).
    Submit and primary action buttons read `busy.active` directly:
@@ -252,21 +259,29 @@ ones get the overlay too. New pages do not opt in to anything.
 
 ### `Loader` component variants
 
-`src/lib/components/ui/Loader.svelte` exposes four DaisyUI/Tailwind
-variants. Pick the right one:
+`src/lib/components/ui/Loader.svelte` exposes three DaisyUI/Tailwind
+variants. There is intentionally **no `bar` variant** — the single global
+progress bar lives directly in `AppShell` and no component is allowed to
+render its own.
 
 | Variant   | Use case                                                                     |
 | --------- | ---------------------------------------------------------------------------- |
-| `block`   | inline empty card / section while a one-off query loads                      |
+| `block`   | centered spinner + label inside a card body (e.g. SearchablePicker dialog)   |
 | `inline`  | small spinner + label inside a button or row                                 |
-| `bar`     | thin top-of-card progress bar during list refetches                          |
 | `overlay` | full-area cover over a `position: relative` parent — used by `AppShell` only |
 
 ### Forbidden loading patterns
 
 - ❌ Local per-component `let busy = $state(false)` — use the global store.
-- ❌ Showing a full-screen spinner for every transition — the tiered model
-  (top bar → 250 ms overlay) is the standard.
+- ❌ **A second progress bar anywhere.** The header bar is the only one.
+  No `<progress>` over a card, no `Loader variant="bar"` in a table, no
+  rolling-your-own. If you feel a bar would help in the content area, the
+  answer is: it would not — the header bar already covers it.
+- ❌ Loading indicators that **shift the page layout** when they appear or
+  disappear. The header bar overlays the header border for exactly this
+  reason — never render anything that adds flow height during load.
+- ❌ Showing a full-screen spinner for every transition — the tiered
+  model (header bar → 250 ms overlay) is the standard.
 - ❌ Skeleton rows or full-card loaders on detail pages — top-level
   `await` plus the global tier handles it.
 - ❌ Custom keyframes / `<style>` blocks for spinners.
@@ -363,8 +378,14 @@ more specific phrase clearly helps. Same wording everywhere.
 - ❌ `<style>` blocks, custom CSS files, inline `style="..."` for theming.
 - ❌ Tables where only one column or icon is clickable.
 - ❌ Page-size dropdowns, ad-hoc loading spinners, partial loaders.
+- ❌ A loading bar anywhere except the AppShell header. The header bar
+  is the single global progress indicator — no second bar in tables,
+  cards, dialogs, or anywhere else.
+- ❌ Loading indicators that shift the page layout when they appear or
+  disappear. Anything that signals "loading" must overlay existing
+  pixels, not add height to the flow.
 - ❌ Showing the full overlay for every operation — the tiered model
-  (top bar → 250 ms overlay) is mandatory.
+  (header bar → 250 ms overlay) is mandatory.
 - ❌ Pessimistic deletes that refresh the whole list before showing the
   user the row is gone — use `mutation.updates(query.withOverride(...))`.
 - ❌ "Roll your own" widgets where DaisyUI already ships an equivalent.
