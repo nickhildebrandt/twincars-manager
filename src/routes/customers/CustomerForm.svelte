@@ -2,6 +2,10 @@
   import { untrack } from 'svelte'
   import type { Customer } from '$lib/server/db/schema'
 
+  /**
+   * Props for the customer form. `initial` is read once at mount time to seed
+   * the editable state — subsequent prop changes do not reset the form.
+   */
   type Props = {
     initial?: Partial<Customer>
     onSave: (values: CustomerFormValues) => Promise<void> | void
@@ -9,6 +13,10 @@
     busy?: boolean
   }
 
+  /**
+   * Output of the customer form, ready to be sent to a remote create/update
+   * command. Empty strings are normalized to `undefined`.
+   */
   export type CustomerFormValues = {
     company?: string
     salutation?: string
@@ -25,7 +33,14 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
-  const init = untrack(() => initial)
+
+  /**
+   * Read `initial` exactly once at component setup. `untrack` is the
+   * documented Svelte 5 way to opt out of reactivity here — we deliberately
+   * want the form to seed from the initial prop value, then become editable
+   * state owned by this component.
+   */
+  const init = untrack(() => ({ ...initial }))
 
   let company = $state(init.company ?? '')
   let salutation = $state(init.salutation ?? '')

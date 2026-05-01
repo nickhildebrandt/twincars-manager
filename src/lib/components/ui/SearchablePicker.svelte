@@ -31,6 +31,7 @@
   }: Props = $props()
 
   let dialog = $state<HTMLDialogElement | null>(null)
+  let searchInput = $state<HTMLInputElement | null>(null)
   let q = $state('')
   let page = $state(1)
   const size = 25
@@ -57,6 +58,9 @@
     if (disabled) return
     page = 1
     dialog?.showModal()
+    // Focus the search input after the dialog is shown — replaces the
+    // accessibility-flagged `autofocus` attribute with explicit focus.
+    queueMicrotask(() => searchInput?.focus())
     void runSearch()
   }
 
@@ -86,33 +90,33 @@
   }
 </script>
 
-<button
-  type="button"
-  class="input input-bordered flex w-full items-center justify-between gap-2"
-  {disabled}
-  onclick={open}
->
-  <span
-    class={value
-      ? 'text-base-content truncate'
-      : 'text-base-content/50 truncate'}
+<div class="relative w-full">
+  <button
+    type="button"
+    class="input input-bordered flex w-full items-center justify-between gap-2 pr-16"
+    {disabled}
+    onclick={open}
   >
-    {value ? valueLabel : placeholder}
-  </span>
-  <span class="flex items-center gap-1">
-    {#if value}
-      <button
-        type="button"
-        class="btn btn-ghost btn-square btn-xs"
-        aria-label="Auswahl entfernen"
-        onclick={handleClear}
-      >
-        <X size={14} />
-      </button>
-    {/if}
-    <ChevronDown size={16} class="opacity-60" />
-  </span>
-</button>
+    <span
+      class={value
+        ? 'text-base-content truncate'
+        : 'text-base-content/50 truncate'}
+    >
+      {value ? valueLabel : placeholder}
+    </span>
+    <ChevronDown size={16} class="shrink-0 opacity-60" />
+  </button>
+  {#if value && !disabled}
+    <button
+      type="button"
+      class="btn btn-ghost btn-square btn-xs absolute top-1/2 right-8 -translate-y-1/2"
+      aria-label="Auswahl entfernen"
+      onclick={handleClear}
+    >
+      <X size={14} />
+    </button>
+  {/if}
+</div>
 
 <dialog bind:this={dialog} class="modal">
   <!--
@@ -139,13 +143,13 @@
       >
         <Search size={14} class="opacity-60" />
         <input
+          bind:this={searchInput}
           type="search"
           class="grow"
           placeholder="Suchen…"
           value={q}
           oninput={handleQuery}
           maxlength="200"
-          autofocus
         />
       </label>
     </div>

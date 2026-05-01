@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
+
   type Employee = Record<string, string | number | boolean | null | undefined>
 
   type Props = {
@@ -40,41 +42,42 @@
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
 
-  let firstName = $state((initial.firstName as string) ?? '')
-  let lastName = $state((initial.lastName as string) ?? '')
-  let personnelNumber = $state((initial.personnelNumber as string) ?? '')
-  let salutation = $state((initial.salutation as string) ?? '')
-  let birthday = $state((initial.birthday as string) ?? '')
-  let street = $state((initial.street as string) ?? '')
-  let zip = $state((initial.zip as string) ?? '')
-  let city = $state((initial.city as string) ?? '')
-  let privateEmail = $state((initial.privateEmail as string) ?? '')
-  let privatePhone = $state((initial.privatePhone as string) ?? '')
-  let mobile = $state((initial.mobile as string) ?? '')
-  let hireDate = $state((initial.hireDate as string) ?? '')
-  let position = $state((initial.position as string) ?? '')
-  let department = $state((initial.department as string) ?? '')
-  let employmentType = $state((initial.employmentType as string) ?? '')
-  let weeklyHours = $state<number | string>(
-    (initial.weeklyHours as number) ?? ''
-  )
+  /** Snapshot the initial prop once at mount — see CustomerForm for rationale. */
+  const init = untrack(() => ({ ...initial }))
+
+  let firstName = $state((init.firstName as string) ?? '')
+  let lastName = $state((init.lastName as string) ?? '')
+  let personnelNumber = $state((init.personnelNumber as string) ?? '')
+  let salutation = $state((init.salutation as string) ?? '')
+  let birthday = $state((init.birthday as string) ?? '')
+  let street = $state((init.street as string) ?? '')
+  let zip = $state((init.zip as string) ?? '')
+  let city = $state((init.city as string) ?? '')
+  let privateEmail = $state((init.privateEmail as string) ?? '')
+  let privatePhone = $state((init.privatePhone as string) ?? '')
+  let mobile = $state((init.mobile as string) ?? '')
+  let hireDate = $state((init.hireDate as string) ?? '')
+  let position = $state((init.position as string) ?? '')
+  let department = $state((init.department as string) ?? '')
+  let employmentType = $state((init.employmentType as string) ?? '')
+  let weeklyHours = $state<number | string>((init.weeklyHours as number) ?? '')
   let monthlySalary = $state<number | string>(
-    (initial.monthlySalary as number) ?? ''
+    (init.monthlySalary as number) ?? ''
   )
-  let hourlyWage = $state<number | string>((initial.hourlyWage as number) ?? '')
+  let hourlyWage = $state<number | string>((init.hourlyWage as number) ?? '')
   let vacationDaysPerYear = $state<number | string>(
-    (initial.vacationDaysPerYear as number) ?? ''
+    (init.vacationDaysPerYear as number) ?? ''
   )
-  let taxId = $state((initial.taxId as string) ?? '')
-  let taxClass = $state((initial.taxClass as string) ?? '')
+  let taxId = $state((init.taxId as string) ?? '')
+  let taxClass = $state((init.taxClass as string) ?? '')
   let socialInsuranceNumber = $state(
-    (initial.socialInsuranceNumber as string) ?? ''
+    (init.socialInsuranceNumber as string) ?? ''
   )
-  let healthInsurance = $state((initial.healthInsurance as string) ?? '')
-  let bankAccountHolder = $state((initial.bankAccountHolder as string) ?? '')
-  let bankIban = $state((initial.bankIban as string) ?? '')
-  let bankBic = $state((initial.bankBic as string) ?? '')
-  let bankName = $state((initial.bankName as string) ?? '')
+  let healthInsurance = $state((init.healthInsurance as string) ?? '')
+  let bankAccountHolder = $state((init.bankAccountHolder as string) ?? '')
+  let bankIban = $state((init.bankIban as string) ?? '')
+  let bankBic = $state((init.bankBic as string) ?? '')
+  let bankName = $state((init.bankName as string) ?? '')
 
   let errorMsg = $state<string | null>(null)
 

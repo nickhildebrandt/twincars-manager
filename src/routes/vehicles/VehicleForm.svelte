@@ -2,6 +2,10 @@
   import { untrack } from 'svelte'
   import type { Vehicle } from '$lib/server/db/schema'
 
+  /**
+   * Props for the vehicle form. `initial` is read once at mount time to seed
+   * the editable state — subsequent prop changes do not reset the form.
+   */
   type Props = {
     initial?: Partial<Vehicle>
     onSave: (values: VehicleFormValues) => Promise<void> | void
@@ -9,6 +13,11 @@
     busy?: boolean
   }
 
+  /**
+   * Output of the vehicle form. Numeric fields use `string | number` while
+   * editing because `<input type="number">` may briefly hold a non-numeric
+   * intermediate value.
+   */
   export type VehicleFormValues = {
     make?: string
     model?: string
@@ -29,7 +38,14 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
-  const init = untrack(() => initial)
+
+  /**
+   * Read `initial` exactly once at component setup. `untrack` is the
+   * documented Svelte 5 way to opt out of reactivity here — we deliberately
+   * want the form to seed from the initial prop value, then become editable
+   * state owned by this component.
+   */
+  const init = untrack(() => ({ ...initial }))
 
   let make = $state(init.make ?? '')
   let model = $state(init.model ?? '')

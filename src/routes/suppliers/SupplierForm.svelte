@@ -45,7 +45,9 @@
   }
 
   const { initial = {}, onSave, onCancel, busy = false }: Props = $props()
-  const init = untrack(() => initial)
+
+  /** Snapshot the initial prop once at mount — see CustomerForm for rationale. */
+  const init = untrack(() => ({ ...initial }))
 
   let name = $state(init.name ?? '')
   let contactPerson = $state(init.contactPerson ?? '')

@@ -84,8 +84,10 @@
             <span class="hidden sm:inline">Zurück</span>
           </button>
         {/if}
+      </div>
+      <div class="navbar-center">
         <h1
-          class="px-1 text-base font-semibold sm:text-lg"
+          class="truncate px-1 text-base font-semibold sm:text-lg"
           data-testid="page-title"
         >
           {currentTitle}
