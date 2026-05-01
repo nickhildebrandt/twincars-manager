@@ -531,16 +531,176 @@ inside pickers is also fixed at 25.
   `untrack(() => ({ ...initial }))`. Avoid the
   `state_referenced_locally` warning instead of suppressing it.
 
-## 12. Validation and errors
+## 12. Validation and error handling
 
-- **Valibot in every remote function.** No `'unchecked'` shortcuts.
-- Keep reusable schemas in `src/lib/server/db/validation.ts`.
-- `handleValidationError` in `hooks.server.ts` returns a friendly
-  German message ("Ungültige Eingabe für „Feld“: …"); `handleError`
-  hides server stack traces behind a generic "Ein interner Fehler ist
-  aufgetreten." in production.
-- On the client, route errors through `handleClientError(err, baseMessage?)`
-  → toast. The single-toast policy stays.
+Error handling is the part of the app that non-technical users most
+notice when something goes wrong, so it has its own end-to-end
+contract. Two rules drive everything below:
+
+1. **The user always sees a clear German sentence.** Never English,
+   never an HTTP status by itself, never a stack trace, never a SQL
+   fragment, never a file path.
+2. **The user never sees anything private.** Internal error details
+   (DB errors, server stacks, schema names, payloads) live in server
+   logs and the browser console — they do **not** leak to the toast
+   or to a rendered error page.
+
+Both are enforced in code, not just by convention.
+
+### 12.1 Server-side errors
+
+#### Validation (Valibot)
+
+- **Every remote function validates its argument with Valibot.** Never
+  pass `'unchecked'` for an exposed `query` / `command`.
+- Reusable schemas live in `src/lib/server/db/validation.ts`. Always
+  reach for the existing one (`emailSchema`, `zipSchema`,
+  `moneySchema`, `dateStringSchema`, `phoneSchema`, …) before writing
+  a new validator. Each existing schema already carries a German
+  error message.
+- When you write a new schema, supply a **German** message for every
+  pipe step:
+  ```ts
+  pipe(
+    string('Bitte einen Wert eingeben.'),
+    trim(),
+    minLength(1, 'Pflichtfeld.'),
+    maxLength(50, 'Maximal 50 Zeichen.')
+  )
+  ```
+  Valibot's built-in defaults are English. If you forget the message,
+  `handleValidationError` falls back to a generic German sentence —
+  but that's a degraded UX, not a target.
+- Numeric fields backed by Postgres `int` need realistic bounds
+  (`maxValue(9_999_999)` for `mileageKm`, etc.) so a hostile payload
+  cannot turn into a 500 from an integer overflow.
+
+#### `handleValidationError` (in `src/hooks.server.ts`)
+
+Catches Valibot failures and produces the message the user sees.
+Format: `Ungültige Eingabe für „<field>": <reason>`. Only the **first**
+issue is surfaced — multi-field error walls confuse non-technical users.
+If the underlying schema didn't supply a German message (i.e. Valibot's
+English default leaked through), we substitute "Bitte prüfen Sie Ihre
+Eingabe." rather than show English.
+
+#### `handleError`
+
+Catches anything else that throws on the server.
+
+- **5xx**: the original error object is logged to the server console
+  (`[server-error] …`). The user receives only `Ein interner Fehler ist
+aufgetreten.` — no stack, no DB error, no original message.
+- **4xx with a curated message**: `error(404, 'Kunde nicht gefunden.')`
+  and friends already supply a safe German message. We let SvelteKit
+  forward it untouched.
+- **4xx without a message**: fallback `Die Anfrage konnte nicht
+bearbeitet werden.`
+
+#### Throwing inside a remote function
+
+Use SvelteKit's `error(status, 'german message')` for any case that
+needs a specific status / message. The message **must be in German**
+and must not embed any internal field that isn't safe to show
+(no IDs from foreign systems, no file paths, no SQL).
+
+```ts
+import { error } from '@sveltejs/kit'
+
+export const getCustomerRemote = query(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    const row = await getCustomer(id)
+    if (!row) error(404, 'Kunde nicht gefunden.')
+    return row
+  }
+)
+```
+
+### 12.2 Client-side errors
+
+#### `handleClientError(err, baseMessage?)`
+
+Every `await` in a page or form's catch block goes through
+`src/lib/utils/client-error.ts → handleClientError`:
+
+```ts
+try {
+  const created = await busy.run(() => createCustomerRemote(values))
+  toast.success('Kunde angelegt.')
+  goto(`/customers/${created.id}`)
+} catch (err) {
+  handleClientError(err, 'Kunde konnte nicht angelegt werden')
+}
+```
+
+Behaviour:
+
+- The toast text is **only** the curated German message returned by
+  the server hooks (or by an explicit `error(...)` inside the remote).
+  Anything else — a raw `Error.message`, an English Valibot default
+  that slipped through, a network failure with no body — collapses to
+  the generic German fallback `Es ist leider ein Fehler aufgetreten.`
+- The original `error` is always logged to `console.error`
+  (`[client-error] …`) so a developer can still inspect it. The user
+  never sees it.
+- The optional `baseMessage` argument lets the caller add context
+  (`"Kunde konnte nicht angelegt werden"`); the colon and the curated
+  detail are appended automatically.
+
+#### Toasts
+
+- Single-toast store (`$lib/stores/toast.svelte`). Only one toast at a
+  time on screen — replacements queue cleanly.
+- Use `toast.success(...)` for confirmations, `toast.error(...)` only
+  via `handleClientError` (i.e. never on the bare path).
+
+#### `+error.svelte`
+
+The root-level `src/routes/+error.svelte` renders whenever a route
+throws (top-level `await` rejects, server `error(...)` is hit). It
+shows the curated message in a small DaisyUI card with status-aware
+copy (404, 403, 400, 5xx) and two clear actions: "Zurück" and "Zum
+Dashboard". Never any technical detail beyond `App.Error.message`.
+
+### 12.3 Page-level conventions
+
+- **Forms**: every `onSave` / submit handler must be wrapped in
+  `try { await busy.run(() => …) } catch (err) { handleClientError(err, '…') }`.
+  No bare `await` of a mutation.
+- **List deletes / status changes**: same pattern. Optimistic updates
+  via `withOverride` (section 6) compose with `handleClientError` —
+  a thrown error rolls back the override and surfaces the German
+  message.
+- **Detail pages**: top-level `await` is allowed to throw because
+  `+error.svelte` will catch it. Do not add a try/catch around it
+  yourself — the framework handles the swap.
+
+### 12.4 Required wording catalogue
+
+To keep messages consistent across the app, the following German
+templates are canonical. Reuse the wording when adding new modules.
+
+| Situation                          | Wording                                                                              |
+| ---------------------------------- | ------------------------------------------------------------------------------------ |
+| Generic fallback (toast)           | `Es ist leider ein Fehler aufgetreten.`                                              |
+| 5xx (server)                       | `Ein interner Fehler ist aufgetreten.`                                               |
+| Valibot rejection                  | `Ungültige Eingabe für „<field>": <reason>`                                          |
+| Unknown 4xx                        | `Die Anfrage konnte nicht bearbeitet werden.`                                        |
+| Record not found (`error(404, …)`) | `<Entity> nicht gefunden.` (e.g. `Kunde nicht gefunden.`)                            |
+| Mutation context (`baseMessage`)   | `<Entity> konnte nicht <verb> werden` (e.g. `Kunde konnte nicht gespeichert werden`) |
+
+### 12.5 Forbidden error patterns
+
+- ❌ Showing `error.message` (or `err.toString()`, or `JSON.stringify(err)`)
+  to the user. Always run it through `handleClientError`.
+- ❌ Custom `try { ... } catch (e) { alert(e) }`. Use the toast.
+- ❌ Hiding errors silently (`catch {}`). Log and toast — or rethrow.
+- ❌ Leaking server-only fields (`error.cause`, SQL, file paths) into
+  `error(status, …)`. Curated German message only.
+- ❌ English default Valibot messages in production schemas. Always
+  pass a German message into every pipe step.
+- ❌ Per-page custom error boxes that bypass the toast / `+error.svelte`.
 
 ## 13. Testing
 
@@ -592,6 +752,13 @@ inside pickers is also fixed at 25.
   client-side slicing for pagination (see section 10).
 - ❌ List pages that forget to reset `pageNum = 1` on filter / search
   change.
+- ❌ Showing a raw `Error.message`, an HTTP status, a stack trace, a
+  SQL fragment or any other internal detail to the user. Every error
+  goes through `handleClientError` (toast) or the curated
+  `+error.svelte` (full page) — see section 12.
+- ❌ English Valibot defaults reaching production. Every pipe step
+  carries a German message.
+- ❌ Silent `catch {}` blocks. Log and toast — or rethrow.
 - ❌ "Roll your own" widgets where DaisyUI already ships an equivalent.
 
 ## 16. Adding a new module
