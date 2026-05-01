@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { untrack } from 'svelte'
+  import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import VehicleForm, { type VehicleFormValues } from '../../VehicleForm.svelte'
@@ -7,19 +8,14 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
 
-  const id = $derived($page.params.id ?? '')
-  const q = $derived(id ? getVehicleRemote({ id }) : null)
-  const v = $derived(q?.current)
-  const loading = $derived(q?.loading ?? true)
+  const id = untrack(() => page.params.id!)
+
+  /** Top-level await: SSR carries the form values, hydration reuses cache. */
+  const v = await getVehicleRemote({ id })
 
   let busy = $state(false)
 
-  $effect(() => {
-    if (q?.error) handleClientError(q.error)
-  })
-
   const handleSave = async (values: VehicleFormValues) => {
-    if (!id) return
     busy = true
     try {
       await updateVehicleRemote({ id, values })
@@ -33,16 +29,11 @@
   }
 </script>
 
-<PageHeader title="Fahrzeug bearbeiten" subtitle={v?.licensePlate ?? ''} />
-{#if loading}
-  <div class="card border-base-300 bg-base-100 border">
-    <div class="card-body"><div class="skeleton h-6 w-1/3"></div></div>
-  </div>
-{:else if v}
-  <VehicleForm
-    initial={v}
-    onSave={handleSave}
-    onCancel={() => goto(`/vehicles/${v.id}`)}
-    {busy}
-  />
-{/if}
+<PageHeader title="Fahrzeug bearbeiten" subtitle={v.licensePlate ?? ''} />
+
+<VehicleForm
+  initial={v}
+  onSave={handleSave}
+  onCancel={() => goto(`/vehicles/${v.id}`)}
+  {busy}
+/>

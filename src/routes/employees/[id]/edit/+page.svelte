@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { page } from '$app/stores'
+  import { untrack } from 'svelte'
+  import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmployeeForm, {
@@ -12,18 +13,14 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
 
-  const id = $derived($page.params.id ?? '')
-  const q = $derived(id ? getEmployeeRemote({ id }) : null)
-  const e = $derived(q?.current)
-  const loading = $derived(q?.loading ?? true)
+  const id = untrack(() => page.params.id!)
+
+  /** Top-level await: SSR carries the form values, hydration reuses cache. */
+  const e = await getEmployeeRemote({ id })
 
   let busy = $state(false)
-  $effect(() => {
-    if (q?.error) handleClientError(q.error)
-  })
 
   const handleSave = async (values: EmployeeFormValues) => {
-    if (!id) return
     busy = true
     try {
       await updateEmployeeRemote({ id, values })
@@ -37,19 +34,11 @@
   }
 </script>
 
-<PageHeader
-  title="Mitarbeiter bearbeiten"
-  subtitle={e?.personnelNumber ?? ''}
+<PageHeader title="Mitarbeiter bearbeiten" subtitle={e.personnelNumber ?? ''} />
+
+<EmployeeForm
+  initial={e as never}
+  onSave={handleSave}
+  onCancel={() => goto(`/employees/${e.id}`)}
+  {busy}
 />
-{#if loading}
-  <div class="card border-base-300 bg-base-100 border">
-    <div class="card-body"><div class="skeleton h-6 w-1/3"></div></div>
-  </div>
-{:else if e}
-  <EmployeeForm
-    initial={e as never}
-    onSave={handleSave}
-    onCancel={() => goto(`/employees/${e.id}`)}
-    {busy}
-  />
-{/if}
