@@ -14,28 +14,33 @@
     if (variant === 'error') return AlertCircle
     return Info
   }
+
+  const t = $derived(toast.current)
+  const Icon = $derived(t ? iconFor(t.variant) : Info)
 </script>
 
-<div class="toast toast-top toast-end z-50">
-  {#each toast.toasts as t (t.id)}
-    {@const Icon = iconFor(t.variant)}
+{#if t}
+  <div class="toast toast-top toast-end z-[60] pe-4 pt-4">
     <div
-      class="alert"
+      role="status"
+      aria-live="polite"
+      class="alert max-w-md min-w-[20rem] shadow-lg"
       class:alert-success={t.variant === 'success'}
       class:alert-warning={t.variant === 'warning'}
       class:alert-error={t.variant === 'error'}
       class:alert-info={t.variant === 'info'}
-      role="status"
+      data-toast-id={t.id}
     >
       <Icon size={18} />
-      <span>{t.message}</span>
+      <span class="text-sm">{t.message}</span>
       <button
+        type="button"
         class="btn btn-ghost btn-square btn-xs"
-        aria-label="Schließen"
-        onclick={() => toast.dismiss(t.id)}
+        aria-label="Benachrichtigung schließen"
+        onclick={() => toast.dismiss()}
       >
         <X size={14} />
       </button>
     </div>
-  {/each}
-</div>
+  </div>
+{/if}

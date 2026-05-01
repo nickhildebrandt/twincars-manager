@@ -1,7 +1,64 @@
 @import 'tailwindcss';
 @plugin 'daisyui' {
-  themes:
-    corporate --default,
-    business --prefersdark;
+  themes: corporate --default;
   logs: false;
+}
+
+/* Stable scrollbar gutter so content does not shift when a scrollbar appears
+   or disappears. Applies to the document and all `.scroll-y` containers. */
+html,
+body {
+  scrollbar-gutter: stable;
+}
+
+.scroll-y {
+  overflow-y: auto;
+  scrollbar-gutter: stable;
+}
+
+/* DaisyUI form-control: keep the label-text ABOVE the input and let the
+   input take full available width. We always lay out inputs in grids that
+   define column spans, so the inner control should fill its cell. */
+.form-control {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  width: 100%;
+}
+.form-control > .label-text {
+  display: block;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-base-content);
+  opacity: 0.85;
+}
+.form-control > .input,
+.form-control > .select,
+.form-control > .textarea,
+.form-control > .file-input {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* All inputs inside a fieldset default to 100 % width too — this catches
+   plain textarea/select usage outside of form-control wrappers. */
+.fieldset > .input,
+.fieldset > .select,
+.fieldset > .textarea,
+.fieldset > .file-input {
+  width: 100%;
+  max-width: 100%;
+}
+
+/* Stat-value scaling for narrow viewports */
+.stat-value {
+  font-size: 1.875rem;
+  line-height: 2.25rem;
+}
+
+/* Toolbar/Toolbar variants — single source of truth for inputs in
+   non-form-control wrappers (e.g. search bars in headers) */
+.input.input-search {
+  width: 100%;
+  max-width: 100%;
 }

@@ -1,28 +1,11 @@
 <script lang="ts">
   import { page } from '$app/stores'
   import { navigation } from './navigation'
-  import {
-    Menu as MenuIcon,
-    Search,
-    Plus,
-    Bell,
-    Sun,
-    Moon,
-    Wrench
-  } from '@lucide/svelte'
+  import { Menu as MenuIcon, Wrench } from '@lucide/svelte'
   import type { Snippet } from 'svelte'
 
   type Props = { children?: Snippet; companyName?: string }
   const { children, companyName = 'TwinCarsManager' }: Props = $props()
-
-  let theme = $state<'corporate' | 'business'>('corporate')
-
-  const toggleTheme = () => {
-    theme = theme === 'corporate' ? 'business' : 'corporate'
-    if (typeof document !== 'undefined') {
-      document.documentElement.setAttribute('data-theme', theme)
-    }
-  }
 
   const isActive = (href: string, exact = false) => {
     const pathname = $page.url.pathname
@@ -40,15 +23,19 @@
       .find((i) => $page.url.pathname.startsWith(i.href))
     return prefixMatch?.label ?? 'TwinCarsManager'
   })
+
+  // Shared height for the header bar AND the sidebar logo block, so both
+  // align perfectly along the same horizontal divider line.
+  const TOP_BAR_HEIGHT = 'h-[68px]'
 </script>
 
 <div class="drawer lg:drawer-open">
   <input id="app-drawer" type="checkbox" class="drawer-toggle" />
 
   <div class="drawer-content bg-base-200 flex min-h-dvh flex-col">
-    <!-- Top header -->
+    <!-- Top header (matches sidebar header height for clean horizontal alignment) -->
     <header
-      class="navbar border-base-300 bg-base-100 sticky top-0 z-30 border-b px-3 shadow-sm"
+      class="navbar sticky top-0 z-30 {TOP_BAR_HEIGHT} border-base-300 bg-base-100 min-h-0 border-b px-4 shadow-sm"
     >
       <div class="navbar-start gap-2">
         <label
@@ -58,43 +45,18 @@
         >
           <MenuIcon size={22} />
         </label>
-        <h1 class="px-2 text-base font-semibold sm:text-lg">{currentTitle}</h1>
-      </div>
-
-      <div class="navbar-end gap-2">
-        <label class="input input-sm hidden w-64 md:flex">
-          <Search size={16} class="opacity-60" />
-          <input type="search" placeholder="Suchen…" class="grow" />
-        </label>
-
-        <a class="btn btn-primary btn-sm gap-2" href="/customers/new">
-          <Plus size={16} />
-          <span class="hidden sm:inline">Neu</span>
-        </a>
-
-        <button
-          class="btn btn-ghost btn-square btn-sm"
-          aria-label="Benachrichtigungen"
+        <h1
+          class="px-1 text-base font-semibold sm:text-lg"
+          data-testid="page-title"
         >
-          <Bell size={18} />
-        </button>
-
-        <button
-          class="btn btn-ghost btn-square btn-sm"
-          aria-label="Theme umschalten"
-          onclick={toggleTheme}
-        >
-          {#if theme === 'corporate'}
-            <Moon size={18} />
-          {:else}
-            <Sun size={18} />
-          {/if}
-        </button>
+          {currentTitle}
+        </h1>
       </div>
+      <div class="navbar-end"></div>
     </header>
 
     <!-- Page content -->
-    <main class="flex-1 p-4 sm:p-6 lg:p-8">
+    <main class="scroll-y flex-1 p-4 sm:p-6 lg:p-8">
       {@render children?.()}
     </main>
 
@@ -113,8 +75,11 @@
       class="drawer-overlay"
     ></label>
 
-    <div class="bg-base-100 border-base-300 flex h-dvh w-72 flex-col border-r">
-      <div class="border-base-300 flex items-center gap-2 border-b px-4 py-4">
+    <div class="border-base-300 bg-base-100 flex h-dvh w-72 flex-col border-r">
+      <!-- Sidebar logo block — same height as header, single divider -->
+      <div
+        class="{TOP_BAR_HEIGHT} border-base-300 flex items-center gap-3 border-b px-4"
+      >
         <div class="bg-primary/10 text-primary rounded-lg p-2">
           <Wrench size={22} />
         </div>
@@ -124,7 +89,7 @@
         </div>
       </div>
 
-      <nav class="flex-1 overflow-y-auto px-2 py-3">
+      <nav class="scroll-y flex-1 px-2 py-3">
         {#each navigation as group (group.label)}
           <div class="mb-3">
             <div

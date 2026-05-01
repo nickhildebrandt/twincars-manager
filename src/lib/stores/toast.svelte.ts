@@ -7,39 +7,62 @@ export type Toast = {
   variant: ToastVariant
   message: string
   timeout: number
+  createdAt: number
 }
 
 /**
- * Global toast state. Imported by the AppShell to render a toast tray and
- * by any component that wants to push a notification.
+ * Global toast state — only one toast is visible at a time.
+ * A new toast replaces the previous one immediately, so users always see the
+ * latest message instead of a stack of overlapping notifications.
+ *
+ * The toast auto-dismisses after `timeout` ms; calling `push` again before
+ * timeout cancels the pending dismissal.
  */
 function createToastStore() {
-  let toasts = $state<Toast[]>([])
+  let current = $state<Toast | null>(null)
+  let timer: ReturnType<typeof setTimeout> | null = null
 
-  const dismiss = (id: string) => {
-    toasts = toasts.filter((t) => t.id !== id)
+  const dismiss = () => {
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
+    }
+    current = null
   }
 
   const push = (
     message: string,
     variant: ToastVariant = 'info',
-    timeout = 4000
+    timeout = 4500
   ) => {
-    const id = nanoid(8)
-    toasts = [...toasts, { id, message, variant, timeout }]
-    if (timeout > 0 && typeof window !== 'undefined') {
-      setTimeout(() => dismiss(id), timeout)
+    if (timer) {
+      clearTimeout(timer)
+      timer = null
     }
-    return id
+    const t: Toast = {
+      id: nanoid(8),
+      variant,
+      message,
+      timeout,
+      createdAt: Date.now()
+    }
+    current = t
+    if (timeout > 0 && typeof window !== 'undefined') {
+      timer = setTimeout(() => {
+        if (current?.id === t.id) current = null
+        timer = null
+      }, timeout)
+    }
+    return t.id
   }
 
   return {
-    get toasts() {
-      return toasts
+    get current() {
+      return current
     },
     push,
     success: (msg: string) => push(msg, 'success'),
-    error: (msg: string) => push(msg, 'error'),
+    error: (msg: string) => push(msg, 'error', 6000),
     warning: (msg: string) => push(msg, 'warning'),
     info: (msg: string) => push(msg, 'info'),
     dismiss
