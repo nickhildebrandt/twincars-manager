@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
@@ -119,13 +120,12 @@
           </thead>
           <tbody>
             {#each items as i (i.id)}
-              <tr class="hover:bg-base-200/50">
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/items/${i.id}`)}
+              >
                 <td class="font-mono text-xs">{i.articleNumber}</td>
-                <td>
-                  <a href="/items/{i.id}" class="link link-hover font-medium">
-                    {i.description}
-                  </a>
-                </td>
+                <td class="font-medium">{i.description}</td>
                 <td>
                   <span class="badge badge-ghost badge-sm"
                     >{kindLabel(i.kind)}</span
@@ -136,7 +136,7 @@
                   >{formatEuro(Number(i.unitPriceNet ?? 0))}</td
                 >
                 <td class="text-right">{i.stockOnHand}</td>
-                <td>
+                <td onclick={(ev) => ev.stopPropagation()}>
                   <div class="flex justify-end gap-1">
                     <a
                       class="btn btn-ghost btn-sm btn-square"

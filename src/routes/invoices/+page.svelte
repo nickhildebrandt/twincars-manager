@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
@@ -126,15 +127,12 @@
           </thead>
           <tbody>
             {#each items as i (i.id)}
-              <tr class="hover:bg-base-200/50">
-                <td class="font-mono text-xs">
-                  <a
-                    href="/invoices/{i.id}"
-                    class="link link-hover font-medium"
-                  >
-                    {i.documentNumber}
-                  </a>
-                </td>
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/invoices/${i.id}`)}
+              >
+                <td class="font-mono text-xs font-medium">{i.documentNumber}</td
+                >
                 <td>{i.issueDate}</td>
                 <td>{i.customerName ?? ''}</td>
                 <td class="font-mono">{i.vehiclePlate ?? ''}</td>
@@ -147,7 +145,7 @@
                     >{statusLabel(i.status)}</span
                   >
                 </td>
-                <td>
+                <td onclick={(ev) => ev.stopPropagation()}>
                   <div class="flex justify-end gap-1">
                     <button
                       class="btn btn-ghost btn-sm btn-square text-error"

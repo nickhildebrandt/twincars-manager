@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
@@ -86,12 +87,12 @@
           </thead>
           <tbody>
             {#each items as i (i.id)}
-              <tr class="hover:bg-base-200/50">
-                <td class="font-mono text-xs">
-                  <a class="link link-hover font-medium" href="/invoices/{i.id}"
-                    >{i.documentNumber}</a
-                  >
-                </td>
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/invoices/${i.id}`)}
+              >
+                <td class="font-mono text-xs font-medium">{i.documentNumber}</td
+                >
                 <td>{i.issueDate}</td>
                 <td>{i.dueDate ?? '—'}</td>
                 <td>{i.customerName ?? ''}</td>

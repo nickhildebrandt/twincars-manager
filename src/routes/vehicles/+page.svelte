@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
@@ -87,20 +88,18 @@
           </thead>
           <tbody>
             {#each items as v (v.id)}
-              <tr class="hover:bg-base-200/50">
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/vehicles/${v.id}`)}
+              >
                 <td class="font-mono">{v.licensePlate ?? ''}</td>
-                <td>
-                  <a
-                    href="/vehicles/{v.id}"
-                    class="link link-hover font-medium"
-                  >
-                    {[v.make, v.model].filter(Boolean).join(' ') || '—'}
-                  </a>
+                <td class="font-medium">
+                  {[v.make, v.model].filter(Boolean).join(' ') || '—'}
                 </td>
                 <td class="font-mono text-xs">{v.vin ?? ''}</td>
                 <td>{v.firstRegistration ?? ''}</td>
                 <td>{v.nextHu ?? ''}</td>
-                <td>
+                <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end gap-1">
                     <a
                       class="btn btn-ghost btn-sm btn-square"

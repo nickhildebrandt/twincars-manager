@@ -1,12 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
+  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import { createOfferRemote } from '../offers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2 } from '@lucide/svelte'
-  import { getInvoicePickers } from '../../invoices/new/pickers.remote'
+  import { pickCustomersRemote, pickVehiclesRemote } from '../../pickers.remote'
 
   type Position = {
     description: string
@@ -25,7 +26,9 @@
     'cost_estimate'
   )
   let customerId = $state('')
+  let customerLabel = $state('')
   let vehicleId = $state('')
+  let vehicleLabel = $state('')
   let issueDate = $state(today)
   let dueDate = $state(due.toISOString().slice(0, 10))
   let header = $state('')
@@ -46,8 +49,16 @@
   let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
-  const pickersQ = $derived(getInvoicePickers())
-  const pickers = $derived(pickersQ.current ?? { customers: [], vehicles: [] })
+  const searchCustomers = (params: { q: string; page: number; size: number }) =>
+    pickCustomersRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+  const searchVehicles = (params: { q: string; page: number; size: number }) =>
+    pickVehiclesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const round2 = (v: number) => Math.round(v * 100) / 100
   const totals = $derived.by(() => {
@@ -144,24 +155,28 @@
               <option value="order_confirmation">Auftragsbestätigung</option>
             </select>
           </label>
-          <label class="form-control sm:col-span-2">
+          <div class="form-control sm:col-span-2">
             <span class="label-text">Kunde</span>
-            <select class="select select-bordered" bind:value={customerId}>
-              <option value="">— wählen —</option>
-              {#each pickers.customers as c (c.id)}
-                <option value={c.id}>{c.label}</option>
-              {/each}
-            </select>
-          </label>
-          <label class="form-control sm:col-span-2">
+            <SearchablePicker
+              bind:value={customerId}
+              bind:valueLabel={customerLabel}
+              placeholder="— Kunde suchen und auswählen —"
+              dialogTitle="Kunden auswählen"
+              search={searchCustomers}
+              onSelect={() => {}}
+            />
+          </div>
+          <div class="form-control sm:col-span-2">
             <span class="label-text">Fahrzeug</span>
-            <select class="select select-bordered" bind:value={vehicleId}>
-              <option value="">— optional —</option>
-              {#each pickers.vehicles as v (v.id)}
-                <option value={v.id}>{v.label}</option>
-              {/each}
-            </select>
-          </label>
+            <SearchablePicker
+              bind:value={vehicleId}
+              bind:valueLabel={vehicleLabel}
+              placeholder="— optional —"
+              dialogTitle="Fahrzeug auswählen"
+              search={searchVehicles}
+              onSelect={() => {}}
+            />
+          </div>
           <label class="form-control">
             <span class="label-text">Datum *</span>
             <input

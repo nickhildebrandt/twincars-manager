@@ -126,20 +126,16 @@
           </thead>
           <tbody>
             {#each items as c (c.id)}
-              <tr class="hover:bg-base-200/50">
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/customers/${c.id}`)}
+              >
                 <td class="font-mono text-xs">{c.customerNumber}</td>
-                <td>
-                  <a
-                    class="link link-hover font-medium"
-                    href="/customers/{c.id}"
-                  >
-                    {customerLabel(c)}
-                  </a>
-                </td>
+                <td class="font-medium">{customerLabel(c)}</td>
                 <td>{c.city ?? ''}</td>
                 <td>{c.phone ?? ''}</td>
                 <td>{c.email ?? ''}</td>
-                <td>
+                <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end gap-1">
                     <a
                       class="btn btn-ghost btn-sm btn-square"

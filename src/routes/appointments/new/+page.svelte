@@ -1,10 +1,13 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
+  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import { createAppointmentRemote } from '../appointments.remote'
   import {
-    createAppointmentRemote,
-    getPickersRemote
-  } from '../appointments.remote'
+    pickCustomersRemote,
+    pickVehiclesRemote,
+    pickEmployeesRemote
+  } from '../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
 
@@ -18,8 +21,11 @@
 
   let title = $state('')
   let customerId = $state('')
+  let customerLabel = $state('')
   let vehicleId = $state('')
+  let vehicleLabel = $state('')
   let employeeId = $state('')
+  let employeeLabel = $state('')
   let startsAt = $state(fmtLocalIso(start))
   let endsAt = $state(fmtLocalIso(end))
   let notes = $state('')
@@ -28,10 +34,21 @@
   let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
-  const pickersQ = $derived(getPickersRemote())
-  const pickers = $derived(
-    pickersQ.current ?? { customers: [], vehicles: [], employees: [] }
-  )
+  const searchCustomers = (params: { q: string; page: number; size: number }) =>
+    pickCustomersRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+  const searchVehicles = (params: { q: string; page: number; size: number }) =>
+    pickVehiclesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+  const searchEmployees = (params: { q: string; page: number; size: number }) =>
+    pickEmployeesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const submit = async (e: Event) => {
     e.preventDefault()
@@ -117,33 +134,39 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Verknüpfungen</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control">
+        <div class="form-control">
           <span class="label-text">Kunde</span>
-          <select class="select select-bordered" bind:value={customerId}>
-            <option value="">— wählen —</option>
-            {#each pickers.customers as c (c.id)}
-              <option value={c.id}>{c.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="form-control">
+          <SearchablePicker
+            bind:value={customerId}
+            bind:valueLabel={customerLabel}
+            placeholder="— wählen —"
+            dialogTitle="Kunden auswählen"
+            search={searchCustomers}
+            onSelect={() => {}}
+          />
+        </div>
+        <div class="form-control">
           <span class="label-text">Fahrzeug</span>
-          <select class="select select-bordered" bind:value={vehicleId}>
-            <option value="">— wählen —</option>
-            {#each pickers.vehicles as v (v.id)}
-              <option value={v.id}>{v.label}</option>
-            {/each}
-          </select>
-        </label>
-        <label class="form-control">
+          <SearchablePicker
+            bind:value={vehicleId}
+            bind:valueLabel={vehicleLabel}
+            placeholder="— wählen —"
+            dialogTitle="Fahrzeug auswählen"
+            search={searchVehicles}
+            onSelect={() => {}}
+          />
+        </div>
+        <div class="form-control">
           <span class="label-text">Mitarbeiter</span>
-          <select class="select select-bordered" bind:value={employeeId}>
-            <option value="">— wählen —</option>
-            {#each pickers.employees as e (e.id)}
-              <option value={e.id}>{e.label}</option>
-            {/each}
-          </select>
-        </label>
+          <SearchablePicker
+            bind:value={employeeId}
+            bind:valueLabel={employeeLabel}
+            placeholder="— wählen —"
+            dialogTitle="Mitarbeiter auswählen"
+            search={searchEmployees}
+            onSelect={() => {}}
+          />
+        </div>
       </div>
     </fieldset>
 
