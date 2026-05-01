@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   object,
@@ -23,6 +23,11 @@ import {
   updateVehicle
 } from '$lib/server/services/vehicle-service'
 
+/**
+ * Validation schema shared by `createVehicleRemote` and
+ * `updateVehicleRemote`. Numeric fields are bounded to fit Postgres `int`
+ * (max 2_147_483_647) plus business-realistic ceilings.
+ */
 const vehicleInputSchema = object({
   customerId: optional(idSchema),
   make: optional(pipe(string(), trim(), maxLength(100))),
@@ -49,6 +54,9 @@ const vehicleInputSchema = object({
   notes: optional(notesSchema)
 })
 
+/**
+ * Schema for the paginated vehicle list query.
+ */
 const listSchema = object({
   page: number(),
   size: picklist([10, 25, 50, 100]),
@@ -80,7 +88,7 @@ export const listVehiclesRemote = query(listSchema, async (params) => {
 })
 
 /**
- * Load a single vehicle by id.
+ * Load a single vehicle by id. Throws `404` if not found.
  *
  * @group integration
  * @module vehicles
@@ -95,18 +103,30 @@ export const getVehicleRemote = query(
 )
 
 /**
- * Vehicle count for dashboard.
+ * Total vehicle count for the dashboard.
  *
  * @group integration
  * @module vehicles
  */
 export const countVehiclesRemote = query(async () => countVehicles())
 
-const toDate = (v: string | undefined): Date | null | undefined =>
-  v ? new Date(v) : v === '' ? null : undefined
+/**
+ * Refresh the dashboard count plus every list instance the client requested
+ * via `.updates(listVehiclesRemote)`. Caps at 4 instances per request.
+ */
+const refreshListsAndCount = async (): Promise<void> => {
+  await Promise.all([
+    countVehiclesRemote().refresh(),
+    requested(listVehiclesRemote, 4).refreshAll()
+  ])
+}
 
 /**
  * Create a vehicle.
+ *
+ * @remarks
+ * Single-flight mutation. Pass `listVehiclesRemote` to `.updates(...)` on the
+ * client to refresh the current view inside the same response.
  *
  * @group integration
  * @module vehicles
@@ -120,8 +140,7 @@ export const createVehicleRemote = command(
       nextHu: input.nextHu ?? null,
       nextAu: input.nextAu ?? null
     } as never)
-    void listVehiclesRemote({ page: 1, size: 25 }).refresh()
-    void countVehiclesRemote().refresh()
+    await refreshListsAndCount()
     return data
   }
 )
@@ -136,8 +155,10 @@ export const updateVehicleRemote = command(
   object({ id: idSchema, values: vehicleInputSchema }),
   async ({ id, values }) => {
     const data = await updateVehicle(id, values as never)
-    void listVehiclesRemote({ page: 1, size: 25 }).refresh()
-    void getVehicleRemote({ id }).refresh()
+    await Promise.all([
+      getVehicleRemote({ id }).refresh(),
+      refreshListsAndCount()
+    ])
     return data
   }
 )
@@ -152,7 +173,6 @@ export const deleteVehicleRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteVehicle(id)
-    void listVehiclesRemote({ page: 1, size: 25 }).refresh()
-    void countVehiclesRemote().refresh()
+    await refreshListsAndCount()
   }
 )

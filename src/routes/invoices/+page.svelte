@@ -35,7 +35,7 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteInvoiceRemote({ id: toDelete.id })
+      await deleteInvoiceRemote({ id: toDelete.id }).updates(listInvoicesRemote)
       toast.success(`Rechnung „${toDelete.nr}" gelöscht.`)
       toDelete = null
     } catch (err) {

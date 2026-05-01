@@ -28,7 +28,9 @@
 
   const remove = async (id: string, label: string) => {
     try {
-      await deleteVehicleRemote({ id })
+      // Single-flight: refresh the current filter/page combination as part
+      // of the delete response, no extra round-trip.
+      await deleteVehicleRemote({ id }).updates(listVehiclesRemote)
       toast.success(`Fahrzeug „${label}" gelöscht.`)
     } catch (err) {
       handleClientError(err)

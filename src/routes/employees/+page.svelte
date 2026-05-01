@@ -33,7 +33,9 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteEmployeeRemote({ id: toDelete.id })
+      await deleteEmployeeRemote({ id: toDelete.id }).updates(
+        listEmployeesRemote
+      )
       toast.success(`Mitarbeiter „${toDelete.name}" gelöscht.`)
       toDelete = null
     } catch (err) {

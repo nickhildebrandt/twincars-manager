@@ -51,7 +51,9 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteLedgerEntryRemote({ id: toDelete.id })
+      await deleteLedgerEntryRemote({ id: toDelete.id }).updates(
+        listLedgerEntriesRemote
+      )
       toast.success(`Buchung gelöscht.`)
       toDelete = null
     } catch (err) {

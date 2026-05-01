@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   object,
@@ -100,6 +100,9 @@ export const getEmployeeRemote = query(
 /**
  * Create employee.
  *
+ * @remarks
+ * Single-flight mutation. Pass `listEmployeesRemote` to `.updates(...)`.
+ *
  * @group integration
  * @module employees
  */
@@ -110,7 +113,7 @@ export const createEmployeeRemote = command(
       values.personnelNumber || (await nextPersonnelNumber())
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await createEmployee({ ...(values as any), personnelNumber })
-    void listEmployeesRemote({ page: 1, size: 25 }).refresh()
+    await requested(listEmployeesRemote, 4).refreshAll()
     return data
   }
 )
@@ -126,8 +129,10 @@ export const updateEmployeeRemote = command(
   async ({ id, values }) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await updateEmployee(id, values as any)
-    void listEmployeesRemote({ page: 1, size: 25 }).refresh()
-    void getEmployeeRemote({ id }).refresh()
+    await Promise.all([
+      getEmployeeRemote({ id }).refresh(),
+      requested(listEmployeesRemote, 4).refreshAll()
+    ])
     return data
   }
 )
@@ -142,6 +147,6 @@ export const deleteEmployeeRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteEmployee(id)
-    void listEmployeesRemote({ page: 1, size: 25 }).refresh()
+    await requested(listEmployeesRemote, 4).refreshAll()
   }
 )

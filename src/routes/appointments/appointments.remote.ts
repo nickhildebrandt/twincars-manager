@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import {
   maxLength,
   number,
@@ -117,7 +117,7 @@ export const createAppointmentRemote = command(inputSchema, async (values) => {
     notes: values.notes ?? null,
     status: values.status ?? 'scheduled'
   })
-  void listAppointmentsRemote({ page: 1, size: 25 }).refresh()
+  await requested(listAppointmentsRemote, 4).refreshAll()
   return data
 })
 
@@ -131,6 +131,6 @@ export const deleteAppointmentRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteAppointment(id)
-    void listAppointmentsRemote({ page: 1, size: 25 }).refresh()
+    await requested(listAppointmentsRemote, 4).refreshAll()
   }
 )

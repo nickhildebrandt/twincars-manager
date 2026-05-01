@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   array,
@@ -85,6 +85,10 @@ export const getInvoiceRemote = query(
 /**
  * Create a new invoice with positions.
  *
+ * @remarks
+ * Single-flight mutation. Pass `listInvoicesRemote` to `.updates(...)` on the
+ * client to refresh the current view in the same flight.
+ *
  * @group integration
  * @module invoices
  */
@@ -92,12 +96,15 @@ export const createInvoiceRemote = command(inputSchema, async (values) => {
   if (values.items.length === 0)
     error(400, 'Bitte mindestens eine Position eingeben.')
   const created = await createDocument({ type: 'invoice', ...values })
-  void listInvoicesRemote({ page: 1, size: 25 }).refresh()
+  await requested(listInvoicesRemote, 4).refreshAll()
   return created
 })
 
 /**
- * Update the status of an invoice.
+ * Update the payment / lifecycle status of an invoice.
+ *
+ * @group integration
+ * @module invoices
  */
 export const setInvoiceStatusRemote = command(
   object({
@@ -106,18 +113,23 @@ export const setInvoiceStatusRemote = command(
   }),
   async ({ id, status }) => {
     await setDocumentStatus(id, status)
-    void listInvoicesRemote({ page: 1, size: 25 }).refresh()
-    void getInvoiceRemote({ id }).refresh()
+    await Promise.all([
+      getInvoiceRemote({ id }).refresh(),
+      requested(listInvoicesRemote, 4).refreshAll()
+    ])
   }
 )
 
 /**
  * Delete an invoice.
+ *
+ * @group integration
+ * @module invoices
  */
 export const deleteInvoiceRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteDocument(id)
-    void listInvoicesRemote({ page: 1, size: 25 }).refresh()
+    await requested(listInvoicesRemote, 4).refreshAll()
   }
 )

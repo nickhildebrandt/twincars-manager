@@ -33,7 +33,9 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteAppointmentRemote({ id: toDelete.id })
+      await deleteAppointmentRemote({ id: toDelete.id }).updates(
+        listAppointmentsRemote
+      )
       toast.success(`Termin „${toDelete.title}" gelöscht.`)
       toDelete = null
     } catch (err) {

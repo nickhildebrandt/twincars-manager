@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   object,
@@ -87,6 +87,9 @@ export const getSupplierRemote = query(
 /**
  * Create supplier.
  *
+ * @remarks
+ * Single-flight mutation. Pass `listSuppliersRemote` to `.updates(...)`.
+ *
  * @group integration
  * @module suppliers
  */
@@ -94,7 +97,7 @@ export const createSupplierRemote = command(
   supplierInputSchema,
   async (values) => {
     const data = await createSupplier(values)
-    void listSuppliersRemote({ page: 1, size: 25 }).refresh()
+    await requested(listSuppliersRemote, 4).refreshAll()
     return data
   }
 )
@@ -109,8 +112,10 @@ export const updateSupplierRemote = command(
   object({ id: idSchema, values: supplierInputSchema }),
   async ({ id, values }) => {
     const data = await updateSupplier(id, values)
-    void listSuppliersRemote({ page: 1, size: 25 }).refresh()
-    void getSupplierRemote({ id }).refresh()
+    await Promise.all([
+      getSupplierRemote({ id }).refresh(),
+      requested(listSuppliersRemote, 4).refreshAll()
+    ])
     return data
   }
 )
@@ -125,6 +130,6 @@ export const deleteSupplierRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteSupplier(id)
-    void listSuppliersRemote({ page: 1, size: 25 }).refresh()
+    await requested(listSuppliersRemote, 4).refreshAll()
   }
 )

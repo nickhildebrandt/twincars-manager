@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   array,
@@ -118,23 +118,33 @@ export const getOfferRemote = query(
 )
 
 /**
- * Create a new offer/KV/AB.
+ * Create a new offer / Kostenvoranschlag / Auftragsbestätigung.
+ *
+ * @remarks
+ * Single-flight mutation. Pass `listOffersRemote` to `.updates(...)` on the
+ * client to refresh the caller's current filter/page combo in the same flight.
+ *
+ * @group integration
+ * @module offers
  */
 export const createOfferRemote = command(inputSchema, async (values) => {
   if (values.items.length === 0)
     error(400, 'Bitte mindestens eine Position eingeben.')
   const created = await createDocument(values)
-  void listOffersRemote({ page: 1, size: 25 }).refresh()
+  await requested(listOffersRemote, 4).refreshAll()
   return created
 })
 
 /**
- * Delete an offer/KV/AB.
+ * Delete an offer / Kostenvoranschlag / Auftragsbestätigung.
+ *
+ * @group integration
+ * @module offers
  */
 export const deleteOfferRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteDocument(id)
-    void listOffersRemote({ page: 1, size: 25 }).refresh()
+    await requested(listOffersRemote, 4).refreshAll()
   }
 )

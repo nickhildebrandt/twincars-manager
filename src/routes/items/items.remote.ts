@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   maxLength,
@@ -82,6 +82,10 @@ const toRow = (
 /**
  * Create item.
  *
+ * @remarks
+ * Single-flight mutation. Pass `listItemsRemote` to `.updates(...)` to refresh
+ * the active list view in the same response.
+ *
  * @group integration
  * @module items
  */
@@ -92,7 +96,7 @@ export const createItemRemote = command(itemInputSchema, async (values) => {
     ...(toRow(values as any) as any),
     articleNumber
   })
-  void listItemsRemote({ page: 1, size: 25 }).refresh()
+  await requested(listItemsRemote, 4).refreshAll()
   return data
 })
 
@@ -107,8 +111,10 @@ export const updateItemRemote = command(
   async ({ id, values }) => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await updateItem(id, toRow(values as any) as any)
-    void listItemsRemote({ page: 1, size: 25 }).refresh()
-    void getItemRemote({ id }).refresh()
+    await Promise.all([
+      getItemRemote({ id }).refresh(),
+      requested(listItemsRemote, 4).refreshAll()
+    ])
     return data
   }
 )
@@ -123,6 +129,6 @@ export const deleteItemRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteItem(id)
-    void listItemsRemote({ page: 1, size: 25 }).refresh()
+    await requested(listItemsRemote, 4).refreshAll()
   }
 )

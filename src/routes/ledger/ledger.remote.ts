@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   maxLength,
@@ -10,11 +10,7 @@ import {
   string,
   trim
 } from 'valibot'
-import {
-  idSchema,
-  longTextSchema,
-  moneySchema
-} from '$lib/server/db/validation'
+import { idSchema, moneySchema } from '$lib/server/db/validation'
 import {
   createLedgerEntry,
   deleteLedgerEntry,
@@ -112,7 +108,7 @@ export const createLedgerEntryRemote = command(
       paymentStatus: values.paymentStatus ?? 'paid',
       source: 'manual'
     })
-    void listLedgerEntriesRemote({ page: 1, size: 25 }).refresh()
+    await requested(listLedgerEntriesRemote, 4).refreshAll()
     return data
   }
 )
@@ -127,6 +123,6 @@ export const deleteLedgerEntryRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteLedgerEntry(id)
-    void listLedgerEntriesRemote({ page: 1, size: 25 }).refresh()
+    await requested(listLedgerEntriesRemote, 4).refreshAll()
   }
 )
