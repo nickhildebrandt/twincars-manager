@@ -23,7 +23,7 @@
 </script>
 
 <PageHeader
-  title="Neues Fahrzeug"
+  title="Neues Fahrzeug anlegen"
   subtitle="Stammdaten und Technik erfassen."
 />
 <VehicleForm onSave={handleSave} onCancel={() => goto('/vehicles')} {busy} />

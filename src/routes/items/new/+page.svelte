@@ -22,7 +22,7 @@
 </script>
 
 <PageHeader
-  title="Neuer Artikel"
+  title="Neuen Artikel anlegen"
   subtitle="Leistung, Material oder Artikel anlegen."
 />
 <ItemForm onSave={handleSave} onCancel={() => goto('/items')} {busy} />

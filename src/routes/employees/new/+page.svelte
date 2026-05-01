@@ -21,5 +21,5 @@
   }
 </script>
 
-<PageHeader title="Neuer Mitarbeiter" subtitle="Stammdaten erfassen." />
+<PageHeader title="Neuen Mitarbeiter anlegen" subtitle="Stammdaten erfassen." />
 <EmployeeForm onSave={handleSave} onCancel={() => goto('/employees')} {busy} />

@@ -23,7 +23,7 @@
 </script>
 
 <PageHeader
-  title="Neuer Kunde"
+  title="Neuen Kunden anlegen"
   subtitle="Geben Sie die Stammdaten des Kunden ein."
 />
 

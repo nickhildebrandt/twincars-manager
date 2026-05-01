@@ -3,6 +3,7 @@
   import { navigation } from './navigation'
   import { Menu as MenuIcon, Wrench } from '@lucide/svelte'
   import type { Snippet } from 'svelte'
+  import { pageTitle } from '$lib/stores/page-title.svelte'
 
   type Props = { children?: Snippet; companyName?: string }
   const { children, companyName = 'TwinCarsManager' }: Props = $props()
@@ -13,7 +14,7 @@
     return pathname === href || pathname.startsWith(href + '/')
   }
 
-  const currentTitle = $derived.by(() => {
+  const routeTitle = $derived.by(() => {
     const all = navigation.flatMap((g) => g.items)
     const exactMatch = all.find((i) => i.exact && i.href === $page.url.pathname)
     if (exactMatch) return exactMatch.label
@@ -23,6 +24,8 @@
       .find((i) => $page.url.pathname.startsWith(i.href))
     return prefixMatch?.label ?? 'TwinCarsManager'
   })
+
+  const currentTitle = $derived(pageTitle.current ?? routeTitle)
 
   // Shared height for the header bar AND the sidebar logo block, so both
   // align perfectly along the same horizontal divider line.

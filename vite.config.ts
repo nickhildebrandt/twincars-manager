@@ -7,6 +7,7 @@ export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), svelteTesting()],
   ssr: { noExternal: ['daisyui'] },
   optimizeDeps: { exclude: ['@lucide/svelte'] },
+  build: { target: 'esnext' },
   test: {
     globals: true,
     environment: 'jsdom',

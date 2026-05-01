@@ -21,5 +21,5 @@
   }
 </script>
 
-<PageHeader title="Neuer Lieferant" subtitle="Stammdaten erfassen." />
+<PageHeader title="Neuen Lieferanten anlegen" subtitle="Stammdaten erfassen." />
 <SupplierForm onSave={handleSave} onCancel={() => goto('/suppliers')} {busy} />

@@ -59,7 +59,7 @@
 </script>
 
 <PageHeader
-  title="Neue Buchung"
+  title="Neue Buchung anlegen"
   subtitle="Manuelle Ein- oder Ausgabe erfassen."
 />
 

@@ -28,26 +28,31 @@
 </script>
 
 <div
-  class="border-base-300 bg-base-100 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:items-center sm:justify-between"
+  class="border-base-300 bg-base-100 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:flex-wrap sm:items-center"
 >
-  <div class="flex flex-1 flex-wrap items-center gap-2">
-    <label class="input input-sm w-full sm:w-72">
-      <Search size={16} class="opacity-60" />
-      <input
-        type="search"
-        class="grow"
-        {placeholder}
-        value={query}
-        oninput={handleInput}
-        maxlength="200"
-      />
-    </label>
-    {#if filters}
+  <!-- Search input grows to fill available space -->
+  <label
+    class="input input-bordered input-sm flex w-full items-center gap-2 sm:min-w-[16rem] sm:flex-1"
+  >
+    <Search size={16} class="opacity-60" />
+    <input
+      type="search"
+      class="grow"
+      {placeholder}
+      value={query}
+      oninput={handleInput}
+      maxlength="200"
+    />
+  </label>
+
+  {#if filters}
+    <div class="flex flex-wrap items-center gap-2">
       {@render filters()}
-    {/if}
-  </div>
+    </div>
+  {/if}
+
   {#if actions}
-    <div class="flex shrink-0 flex-wrap items-center gap-2"
+    <div class="flex flex-wrap items-center gap-2 sm:ms-auto"
       >{@render actions()}</div
     >
   {/if}

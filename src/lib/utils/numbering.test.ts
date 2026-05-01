@@ -29,4 +29,22 @@ describe('renderNumber', () => {
   it('keeps sequences without padding when N width is small', () => {
     expect(renderNumber('K-{N}', 12345)).toBe('K-12345')
   })
+
+  it('renders 5-digit padding (KU template)', () => {
+    expect(renderNumber('KU-{NNNNN}', 7)).toBe('KU-00007')
+  })
+
+  it('handles complex template with multiple placeholders', () => {
+    const out = renderNumber(
+      'AN-{YYYY}-{MM}-{NNNN}',
+      1,
+      new Date('2026-01-15T00:00:00Z')
+    )
+    expect(out).toBe('AN-2026-01-0001')
+  })
+
+  it('uses current time as default', () => {
+    const out = renderNumber('{YYYY}-{NN}', 5)
+    expect(out).toMatch(/^\d{4}-05$/)
+  })
 })

@@ -29,18 +29,18 @@
 </script>
 
 <div
-  class="flex flex-col items-center justify-between gap-3 px-1 py-3 sm:flex-row"
+  class="border-base-300 flex flex-col items-center justify-between gap-3 border-t px-4 py-3 sm:flex-row sm:px-6"
   role="navigation"
   aria-label="Seitennavigation"
 >
   <div class="text-base-content/60 text-sm">
-    {total.toLocaleString('de-DE')} Treffer · Seite {pageProp} von {Math.max(
-      1,
-      pageCount
-    )}
+    <span class="text-base-content font-medium"
+      >{total.toLocaleString('de-DE')}</span
+    >
+    Treffer · Seite {pageProp} von {Math.max(1, pageCount)}
   </div>
 
-  <div class="flex items-center gap-2">
+  <div class="flex items-center gap-3">
     <div class="join">
       <button
         type="button"

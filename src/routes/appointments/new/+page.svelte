@@ -67,7 +67,7 @@
 </script>
 
 <PageHeader
-  title="Neuer Termin"
+  title="Neuen Termin anlegen"
   subtitle="Werkstatt- oder Kundentermin anlegen."
 />
 
