@@ -5,12 +5,13 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { Pencil, ArrowLeft } from '@lucide/svelte'
 
-  const q = $derived(getVehicleRemote({ id: $page.params.id ?? '' }))
-  const v = $derived(q.current)
-  const loading = $derived(q.loading)
+  const id = $derived($page.params.id ?? '')
+  const q = $derived(id ? getVehicleRemote({ id }) : null)
+  const v = $derived(q?.current)
+  const loading = $derived(q?.loading ?? true)
 
   $effect(() => {
-    if (q.error) handleClientError(q.error)
+    if (q?.error) handleClientError(q.error)
   })
 </script>
 

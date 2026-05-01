@@ -5,12 +5,13 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { Pencil, ArrowLeft } from '@lucide/svelte'
 
-  const customerQ = $derived(getCustomerRemote({ id: $page.params.id ?? '' }))
-  const customer = $derived(customerQ.current)
-  const loading = $derived(customerQ.loading)
+  const id = $derived($page.params.id ?? '')
+  const customerQ = $derived(id ? getCustomerRemote({ id }) : null)
+  const customer = $derived(customerQ?.current)
+  const loading = $derived(customerQ?.loading ?? true)
 
   $effect(() => {
-    if (customerQ.error) handleClientError(customerQ.error)
+    if (customerQ?.error) handleClientError(customerQ.error)
   })
 
   const labelOf = () => {

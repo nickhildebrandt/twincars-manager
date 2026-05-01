@@ -1,0 +1,128 @@
+import { command, query } from '$app/server'
+import { error } from '@sveltejs/kit'
+import {
+  maxLength,
+  number,
+  object,
+  optional,
+  picklist,
+  pipe,
+  string,
+  trim
+} from 'valibot'
+import { idSchema, notesSchema } from '$lib/server/db/validation'
+import {
+  createItem,
+  deleteItem,
+  getItem,
+  listItems,
+  nextArticleNumber,
+  updateItem
+} from '$lib/server/services/item-service'
+
+const itemInputSchema = object({
+  articleNumber: optional(pipe(string(), trim(), maxLength(50))),
+  description: pipe(string(), trim(), maxLength(500)),
+  kind: picklist(['service', 'material', 'article', 'pass_through']),
+  unit: optional(pipe(string(), trim(), maxLength(20))),
+  unitPriceNet: optional(number()),
+  purchasePriceNet: optional(number()),
+  stockOnHand: optional(number()),
+  stockMin: optional(number()),
+  stockMax: optional(number()),
+  discontinued: optional(picklist(['true', 'false'])),
+  notes: optional(notesSchema)
+})
+
+const listSchema = object({
+  page: number(),
+  size: picklist([10, 25, 50, 100]),
+  q: optional(pipe(string(), trim(), maxLength(200))),
+  kind: optional(pipe(string(), trim(), maxLength(20)))
+})
+
+/**
+ * Paginated item list.
+ *
+ * @group integration
+ * @module items
+ */
+export const listItemsRemote = query(listSchema, async (params) => {
+  const kind = params.kind && params.kind !== 'all' ? params.kind : undefined
+  return listItems({ ...params, kind })
+})
+
+/**
+ * Load a single item.
+ *
+ * @group integration
+ * @module items
+ */
+export const getItemRemote = query(object({ id: idSchema }), async ({ id }) => {
+  const e = await getItem(id)
+  if (!e) error(404, 'Artikel nicht gefunden.')
+  return e
+})
+
+const toRow = (
+  v: typeof itemInputSchema.entries extends never
+    ? never
+    : Record<string, unknown>
+) => {
+  const out: Record<string, unknown> = { ...v }
+  if (typeof out.unitPriceNet === 'number')
+    out.unitPriceNet = String(out.unitPriceNet)
+  if (typeof out.purchasePriceNet === 'number')
+    out.purchasePriceNet = String(out.purchasePriceNet)
+  if (out.discontinued === 'true') out.discontinued = true
+  if (out.discontinued === 'false') out.discontinued = false
+  return out
+}
+
+/**
+ * Create item.
+ *
+ * @group integration
+ * @module items
+ */
+export const createItemRemote = command(itemInputSchema, async (values) => {
+  const articleNumber = values.articleNumber || (await nextArticleNumber())
+  const data = await createItem({
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    ...(toRow(values as any) as any),
+    articleNumber
+  })
+  void listItemsRemote({ page: 1, size: 25 }).refresh()
+  return data
+})
+
+/**
+ * Update item.
+ *
+ * @group integration
+ * @module items
+ */
+export const updateItemRemote = command(
+  object({ id: idSchema, values: itemInputSchema }),
+  async ({ id, values }) => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = await updateItem(id, toRow(values as any) as any)
+    void listItemsRemote({ page: 1, size: 25 }).refresh()
+    void getItemRemote({ id }).refresh()
+    return data
+  }
+)
+
+/**
+ * Delete item.
+ *
+ * @group integration
+ * @module items
+ */
+export const deleteItemRemote = command(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    await deleteItem(id)
+    void listItemsRemote({ page: 1, size: 25 }).refresh()
+  }
+)
