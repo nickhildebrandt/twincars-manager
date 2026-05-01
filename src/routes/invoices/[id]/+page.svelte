@@ -4,9 +4,14 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import { CheckCircle2 } from '@lucide/svelte'
   import { getInvoiceRemote, setInvoiceStatusRemote } from '../invoices.remote'
+  import PdfViewer from '$lib/components/ui/PdfViewer.svelte'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import {
+    documentStatusBadge,
+    documentStatusLabel
+  } from '$lib/utils/status-labels'
   import { formatEuro } from '$lib/utils/money'
 
   const id = untrack(() => page.params.id!)
@@ -73,6 +78,12 @@
     <div class="card-body">
       <h3 class="card-title text-base">Summen</h3>
       <dl class="grid grid-cols-2 gap-y-1 text-sm">
+        <dt class="text-base-content/60">Status</dt>
+        <dd class="text-right">
+          <span class="badge badge-sm {documentStatusBadge(data.doc.status)}">
+            {documentStatusLabel(data.doc.status)}
+          </span>
+        </dd>
         <dt class="text-base-content/60">Datum</dt>
         <dd class="text-right">{data.doc.issueDate}</dd>
         <dt class="text-base-content/60">Fällig</dt>
@@ -105,4 +116,8 @@
       </div>
     </div>
   {/if}
+
+  <div class="lg:col-span-3">
+    <PdfViewer documentId={data.doc.id} />
+  </div>
 </div>

@@ -22,6 +22,10 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import {
+    paymentStatusBadge,
+    paymentStatusLabel
+  } from '$lib/utils/status-labels'
   import { formatEuro } from '$lib/utils/money'
 
   let pageNum = $state(1)
@@ -189,11 +193,9 @@
                 </td>
                 <td>
                   <span
-                    class="badge badge-sm"
-                    class:badge-success={e.paymentStatus === 'paid'}
-                    class:badge-warning={e.paymentStatus === 'open'}
+                    class="badge badge-sm {paymentStatusBadge(e.paymentStatus)}"
                   >
-                    {e.paymentStatus}
+                    {paymentStatusLabel(e.paymentStatus)}
                   </span>
                 </td>
                 <td>

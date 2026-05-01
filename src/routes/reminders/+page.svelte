@@ -3,9 +3,19 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
-  import { AlertTriangle, Receipt, FileWarning } from '@lucide/svelte'
-  import { listOpenInvoicesRemote } from './reminders.remote'
+  import { AlertTriangle, Receipt, FileWarning, BellPlus } from '@lucide/svelte'
+  import {
+    createReminderRemote,
+    listOpenInvoicesRemote
+  } from './reminders.remote'
+  import { handleClientError } from '$lib/utils/client-error'
+  import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
+  import {
+    reminderLevelBadge,
+    reminderLevelLabel
+  } from '$lib/utils/status-labels'
 
   /** Top-level await: SSR carries the data; hydration reuses the cache. */
   const items = await listOpenInvoicesRemote()
@@ -17,13 +27,26 @@
     return { open, overdue: overdue.length, overdueSum }
   })
 
-  const reminderBadge = (lvl: number) => {
-    if (lvl === 0) return 'badge-info'
-    if (lvl === 1) return 'badge-warning'
-    return 'badge-error'
+  const nextReminderLabel = (lvl: number): string => {
+    const next = lvl + 1
+    if (next > 4) return 'Alle Stufen erreicht'
+    return reminderLevelLabel(next)
   }
-  const reminderLabel = (lvl: number) =>
-    lvl === 0 ? 'noch nicht fällig' : `Mahnstufe ${lvl}`
+
+  const createNextReminder = async (invoiceId: string, level: number) => {
+    if (level >= 4) return
+    try {
+      await busy.run(() =>
+        createReminderRemote({
+          invoiceId,
+          level: (level + 1) as 1 | 2 | 3 | 4
+        }).updates(listOpenInvoicesRemote)
+      )
+      toast.success('Mahnung erzeugt.')
+    } catch (err) {
+      handleClientError(err, 'Mahnung konnte nicht erzeugt werden')
+    }
+  }
 </script>
 
 <PageHeader
@@ -70,10 +93,10 @@
               <th>Fällig</th>
               <th>Kunde</th>
               <th class="text-right">Brutto</th>
-              <th class="text-right">Bezahlt</th>
               <th class="text-right">Offen</th>
               <th>Verzug</th>
               <th>Mahnstufe</th>
+              <th class="text-right">Aktion</th>
             </tr>
           </thead>
           <tbody>
@@ -88,7 +111,6 @@
                 <td>{i.dueDate ?? '—'}</td>
                 <td>{i.customerName ?? ''}</td>
                 <td class="text-right font-mono">{formatEuro(i.grossTotal)}</td>
-                <td class="text-right font-mono">{formatEuro(i.totalPaid)}</td>
                 <td class="text-right font-mono font-semibold"
                   >{formatEuro(i.openAmount)}</td
                 >
@@ -100,9 +122,24 @@
                   {/if}
                 </td>
                 <td>
-                  <span class="badge badge-sm {reminderBadge(i.reminderLevel)}">
-                    {reminderLabel(i.reminderLevel)}
+                  <span
+                    class="badge badge-sm {reminderLevelBadge(i.reminderLevel)}"
+                  >
+                    {reminderLevelLabel(i.reminderLevel)}
                   </span>
+                </td>
+                <td onclick={(e) => e.stopPropagation()}>
+                  <div class="flex justify-end">
+                    <button
+                      type="button"
+                      class="btn btn-sm btn-primary gap-1"
+                      disabled={i.reminderLevel >= 4 || busy.active}
+                      onclick={() => createNextReminder(i.id, i.reminderLevel)}
+                    >
+                      <BellPlus size={14} />
+                      {nextReminderLabel(i.reminderLevel)}
+                    </button>
+                  </div>
                 </td>
               </tr>
             {/each}

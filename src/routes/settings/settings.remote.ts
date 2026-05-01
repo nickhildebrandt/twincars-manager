@@ -1,4 +1,5 @@
 import { command, query } from '$app/server'
+import { boolean, integer, maxValue, minValue } from 'valibot'
 import { error } from '@sveltejs/kit'
 import { eq } from 'drizzle-orm'
 import {
@@ -49,6 +50,20 @@ const companyDataSchema = object({
   defaultVatRate: optional(number()),
   salutationStyle: picklist(['Sie', 'Du']),
   pdfFooter: optional(pipe(string(), trim(), maxLength(10000)))
+})
+
+const reminderSettingsSchema = object({
+  reminderAutoEnabled: boolean(),
+  smallBusinessExempt: boolean(),
+  reminderDays1: pipe(number(), integer(), minValue(0), maxValue(365)),
+  reminderDays2: pipe(number(), integer(), minValue(0), maxValue(365)),
+  reminderDays3: pipe(number(), integer(), minValue(0), maxValue(365)),
+  reminderDays4: pipe(number(), integer(), minValue(0), maxValue(365)),
+  reminderFee1: pipe(number(), minValue(0), maxValue(1_000)),
+  reminderFee2: pipe(number(), minValue(0), maxValue(1_000)),
+  reminderFee3: pipe(number(), minValue(0), maxValue(1_000)),
+  reminderFee4: pipe(number(), minValue(0), maxValue(1_000)),
+  reminderInterestRate: pipe(number(), minValue(0), maxValue(50))
 })
 
 const smtpUpdateSchema = object({
@@ -126,6 +141,37 @@ export const updateCompanyRemote = command(companyDataSchema, async (data) => {
     .where(eq(companySettings.id, settings.id))
   void getAllSettingsRemote().refresh()
 })
+
+/**
+ * Persist Mahnwesen / dunning settings.
+ *
+ * @group integration
+ * @module settings
+ */
+export const updateReminderSettingsRemote = command(
+  reminderSettingsSchema,
+  async (data) => {
+    const settings = await getSettings()
+    await db
+      .update(companySettings)
+      .set({
+        reminderAutoEnabled: data.reminderAutoEnabled,
+        smallBusinessExempt: data.smallBusinessExempt,
+        reminderDays1: data.reminderDays1,
+        reminderDays2: data.reminderDays2,
+        reminderDays3: data.reminderDays3,
+        reminderDays4: data.reminderDays4,
+        reminderFee1: String(data.reminderFee1),
+        reminderFee2: String(data.reminderFee2),
+        reminderFee3: String(data.reminderFee3),
+        reminderFee4: String(data.reminderFee4),
+        reminderInterestRate: String(data.reminderInterestRate),
+        updatedAt: new Date()
+      })
+      .where(eq(companySettings.id, settings.id))
+    void getAllSettingsRemote().refresh()
+  }
+)
 
 /**
  * Persist SMTP credentials. Password only updated if non-empty.

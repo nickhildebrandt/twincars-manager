@@ -82,12 +82,11 @@
     }
   }
 
-  const typeLabel = (t: string) =>
-    t === 'offer'
-      ? 'Angebot'
-      : t === 'cost_estimate'
-        ? 'Kostenvoranschlag'
-        : 'Auftragsbestätigung'
+  import {
+    documentStatusBadge,
+    documentStatusLabel,
+    documentTypeLabel as typeLabel
+  } from '$lib/utils/status-labels'
 </script>
 
 <PageHeader
@@ -160,7 +159,9 @@
                   >{formatEuro(Number(o.grossTotal))}</td
                 >
                 <td>
-                  <span class="badge badge-sm badge-info">{o.status}</span>
+                  <span class="badge badge-sm {documentStatusBadge(o.status)}"
+                    >{documentStatusLabel(o.status)}</span
+                  >
                 </td>
                 <td onclick={(ev) => ev.stopPropagation()}>
                   <div class="flex justify-end gap-1">

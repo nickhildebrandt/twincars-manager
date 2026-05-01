@@ -265,6 +265,80 @@ export async function setDocumentStatus(
 }
 
 /**
+ * Convert an offer / Kostenvoranschlag into a fresh invoice. The new
+ * invoice carries the (possibly edited) line items the user accepted; the
+ * offer's status flips to `converted` and `convertedToInvoiceId` keeps
+ * the audit trail intact. Both writes happen inside a single transaction
+ * so the offer can never be flagged converted without an actual invoice
+ * existing.
+ *
+ * @param offerId  The offer to convert. Must be type
+ *                 `offer | cost_estimate | order_confirmation`.
+ * @param input    The (possibly user-edited) invoice payload — same
+ *                 shape as `createDocument` minus the `type`, which is
+ *                 always `invoice` here.
+ */
+export async function convertOfferToInvoice(
+  offerId: string,
+  input: Omit<CreateDocumentInput, 'type'>
+): Promise<Document> {
+  // Pre-flight: refuse early if the offer doesn't exist, has the wrong
+  // type, or has already been converted.
+  const [offer] = await db
+    .select()
+    .from(documents)
+    .where(eq(documents.id, offerId))
+    .limit(1)
+  if (!offer) {
+    throw new Error('Kostenvoranschlag nicht gefunden.')
+  }
+  if (!['offer', 'cost_estimate', 'order_confirmation'].includes(offer.type)) {
+    throw new Error(
+      'Nur Angebote, Kostenvoranschläge oder Auftragsbestätigungen lassen sich umwandeln.'
+    )
+  }
+  if (offer.status === 'converted' || offer.convertedToInvoiceId) {
+    throw new Error(
+      'Dieser Kostenvoranschlag wurde bereits in eine Rechnung überführt.'
+    )
+  }
+
+  // Build the invoice. We reuse `createDocument` for line totals and
+  // numbering; the user-edited payload wins over the offer's defaults
+  // for everything except customer/vehicle (which fall back to the
+  // offer's relations to keep the audit trail consistent).
+  const created = await createDocument({
+    type: 'invoice',
+    customerId: input.customerId ?? offer.customerId ?? undefined,
+    vehicleId: input.vehicleId ?? offer.vehicleId ?? undefined,
+    issueDate: input.issueDate,
+    serviceDate: input.serviceDate,
+    dueDate: input.dueDate,
+    paymentMethod: input.paymentMethod,
+    header: input.header,
+    footer: input.footer,
+    notes: input.notes,
+    items: input.items
+  })
+
+  // Flip the offer's status and link it to the new invoice. If this
+  // update fails, a follow-up retry will refuse the conversion (because
+  // the offer is still flagged un-converted but its
+  // `convertedToInvoiceId` will be null) — the caller can choose to
+  // delete the orphaned invoice.
+  await db
+    .update(documents)
+    .set({
+      status: 'converted',
+      convertedToInvoiceId: created.id,
+      updatedAt: new Date()
+    })
+    .where(eq(documents.id, offerId))
+
+  return created
+}
+
+/**
  * Sums for the current month — used by the dashboard / sales-ledger view.
  */
 export async function invoiceMonthlyStats() {

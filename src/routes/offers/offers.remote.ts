@@ -19,6 +19,7 @@ import {
 } from '$lib/server/db/validation'
 import {
   createDocument,
+  convertOfferToInvoice,
   deleteDocument,
   getDocument,
   listDocuments
@@ -44,6 +45,24 @@ const inputSchema = object({
   vehicleId: optional(idSchema),
   issueDate: pipe(string(), trim(), maxLength(10)),
   dueDate: optional(pipe(string(), trim(), maxLength(10))),
+  header: optional(longTextSchema),
+  footer: optional(longTextSchema),
+  notes: optional(notesSchema),
+  items: pipe(array(itemSchema), maxLength(500))
+})
+
+/**
+ * Schema for the offer→invoice conversion payload. Same shape as a
+ * regular invoice creation but never carries `type` — that's always
+ * `invoice` on the way in.
+ */
+const convertSchema = object({
+  customerId: optional(idSchema),
+  vehicleId: optional(idSchema),
+  issueDate: pipe(string(), trim(), maxLength(10)),
+  serviceDate: optional(pipe(string(), trim(), maxLength(10))),
+  dueDate: optional(pipe(string(), trim(), maxLength(10))),
+  paymentMethod: optional(pipe(string(), trim(), maxLength(30))),
   header: optional(longTextSchema),
   footer: optional(longTextSchema),
   notes: optional(notesSchema),
@@ -146,5 +165,34 @@ export const deleteOfferRemote = command(
   async ({ id }) => {
     await deleteDocument(id)
     await requested(listOffersRemote, 4).refreshAll()
+  }
+)
+
+/**
+ * Convert an offer / Kostenvoranschlag into a fresh invoice. The user has
+ * already (optionally) edited positions, quantities, discounts and
+ * dates on the convert page; we forward the curated payload to the
+ * service-layer transaction.
+ *
+ * On success: a new invoice exists, the source offer's status flips to
+ * `converted`, and `documents.convertedToInvoiceId` links the two so
+ * the offer remains in history.
+ *
+ * @group integration
+ * @module offers
+ */
+export const convertOfferToInvoiceRemote = command(
+  object({ offerId: idSchema, values: convertSchema }),
+  async ({ offerId, values }) => {
+    if (values.items.length === 0)
+      error(400, 'Bitte mindestens eine Position eingeben.')
+    try {
+      const created = await convertOfferToInvoice(offerId, values)
+      await requested(listOffersRemote, 4).refreshAll()
+      return created
+    } catch (e) {
+      if (e instanceof Error) error(400, e.message)
+      throw e
+    }
   }
 )

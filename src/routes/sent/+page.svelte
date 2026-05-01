@@ -8,6 +8,10 @@
   import { Send } from '@lucide/svelte'
   import { listSentRemote } from './sent.remote'
   import { handleClientError } from '$lib/utils/client-error'
+  import {
+    sentMessageStatusBadge,
+    sentMessageStatusLabel
+  } from '$lib/utils/status-labels'
 
   let pageNum = $state(1)
   const size = 25
@@ -110,11 +114,9 @@
                 <td>{m.subject}</td>
                 <td>
                   <span
-                    class="badge badge-sm"
-                    class:badge-success={m.status === 'sent'}
-                    class:badge-error={m.status === 'failed'}
+                    class="badge badge-sm {sentMessageStatusBadge(m.status)}"
                   >
-                    {m.status}
+                    {sentMessageStatusLabel(m.status)}
                   </span>
                 </td>
               </tr>

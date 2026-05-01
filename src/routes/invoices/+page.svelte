@@ -72,20 +72,10 @@
     }
   }
 
-  const statusBadge = (s: string) => {
-    if (s === 'paid') return 'badge-success'
-    if (s === 'open') return 'badge-warning'
-    if (s === 'cancelled') return 'badge-ghost'
-    return 'badge-info'
-  }
-  const statusLabel = (s: string) =>
-    s === 'paid'
-      ? 'Bezahlt'
-      : s === 'open'
-        ? 'Offen'
-        : s === 'cancelled'
-          ? 'Storniert'
-          : 'Entwurf'
+  import {
+    documentStatusBadge as statusBadge,
+    documentStatusLabel as statusLabel
+  } from '$lib/utils/status-labels'
 </script>
 
 <PageHeader

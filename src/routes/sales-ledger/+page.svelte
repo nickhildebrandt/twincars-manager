@@ -9,6 +9,10 @@
   import { getSalesLedgerRemote } from './sales-ledger.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { formatEuro } from '$lib/utils/money'
+  import {
+    documentStatusBadge,
+    documentStatusLabel
+  } from '$lib/utils/status-labels'
 
   let period = $state<'this_month' | 'last_month' | 'this_year' | 'all'>(
     'this_month'
@@ -111,7 +115,11 @@
                 <td class="text-right font-mono font-semibold"
                   >{formatEuro(Number(r.grossTotal))}</td
                 >
-                <td><span class="badge badge-sm">{r.status}</span></td>
+                <td>
+                  <span class="badge badge-sm {documentStatusBadge(r.status)}">
+                    {documentStatusLabel(r.status)}
+                  </span>
+                </td>
               </tr>
             {/each}
           </tbody>

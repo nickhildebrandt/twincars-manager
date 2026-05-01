@@ -10,8 +10,19 @@ import {
   numeric,
   jsonb,
   index,
-  uniqueIndex
+  uniqueIndex,
+  customType
 } from 'drizzle-orm/pg-core'
+
+/**
+ * Postgres `bytea` column mapped to `Buffer` in Node. We store generated
+ * PDFs in the database (single-tenant Werkstatt app — no separate object
+ * storage worth the complexity). Always pair with `data_hash` so we can
+ * decide whether a re-render is needed.
+ */
+const bytea = customType<{ data: Buffer; default: false }>({
+  dataType: () => 'bytea'
+})
 import { sql } from 'drizzle-orm'
 
 const nowDefault = sql`now()`
@@ -54,6 +65,43 @@ export const companySettings = pgTable('company_settings', {
   logoMime: varchar('logo_mime', { length: 50 }),
   logoData: text('logo_data'),
   pdfFooter: text('pdf_footer').notNull().default(''),
+  /**
+   * Whether the user opted into the §19 UStG Kleinunternehmerregelung.
+   * When true, every invoice PDF carries the standard German notice
+   * instead of a tax breakdown.
+   */
+  smallBusinessExempt: boolean('small_business_exempt')
+    .notNull()
+    .default(false),
+  /* Mahnwesen-Defaults — see settings UI for documentation. */
+  reminderAutoEnabled: boolean('reminder_auto_enabled').notNull().default(true),
+  /** Days after due date for the first reminder (Zahlungserinnerung). */
+  reminderDays1: integer('reminder_days_1').notNull().default(3),
+  /** Days after due date for the 1. Mahnung. */
+  reminderDays2: integer('reminder_days_2').notNull().default(10),
+  /** Days after due date for the 2. Mahnung. */
+  reminderDays3: integer('reminder_days_3').notNull().default(20),
+  /** Days after due date for the letzte Mahnung. */
+  reminderDays4: integer('reminder_days_4').notNull().default(30),
+  reminderFee1: numeric('reminder_fee_1', { precision: 12, scale: 2 })
+    .notNull()
+    .default('0.00'),
+  reminderFee2: numeric('reminder_fee_2', { precision: 12, scale: 2 })
+    .notNull()
+    .default('5.00'),
+  reminderFee3: numeric('reminder_fee_3', { precision: 12, scale: 2 })
+    .notNull()
+    .default('10.00'),
+  reminderFee4: numeric('reminder_fee_4', { precision: 12, scale: 2 })
+    .notNull()
+    .default('15.00'),
+  /** Annual default-interest rate in percent (Verzugszinsen p.a.). */
+  reminderInterestRate: numeric('reminder_interest_rate', {
+    precision: 5,
+    scale: 2
+  })
+    .notNull()
+    .default('9.62'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .default(nowDefault),
@@ -376,6 +424,19 @@ export const documents = pgTable(
     header: text('header'),
     footer: text('footer'),
     notes: text('notes'),
+    /**
+     * For an offer / Kostenvoranschlag: id of the invoice it was
+     * converted into. The offer's status flips to `converted` and stays
+     * traceable instead of disappearing from history.
+     */
+    convertedToInvoiceId: uuid('converted_to_invoice_id'),
+    /**
+     * For an invoice: which dunning level we are currently at.
+     * 0 = no reminder, 1 = Zahlungserinnerung, 2 = 1. Mahnung,
+     * 3 = 2. Mahnung, 4 = letzte Mahnung. Lets us prevent generating a
+     * second reminder for the same level.
+     */
+    reminderLevel: integer('reminder_level').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .default(nowDefault),
@@ -387,7 +448,8 @@ export const documents = pgTable(
     uniqueIndex('documents_document_number_idx').on(t.documentNumber),
     index('documents_customer_id_idx').on(t.customerId),
     index('documents_type_status_idx').on(t.type, t.status),
-    index('documents_issue_date_idx').on(t.issueDate)
+    index('documents_issue_date_idx').on(t.issueDate),
+    index('documents_converted_to_invoice_idx').on(t.convertedToInvoiceId)
   ]
 )
 
@@ -435,6 +497,84 @@ export const documentPayments = pgTable('document_payments', {
     .notNull()
     .default(nowDefault)
 })
+
+/**
+ * Generated PDF for a document. We store the rendered bytes in `bytea`
+ * together with a content hash so the renderer can decide cheaply whether
+ * a re-render is needed: when the document changes we recompute the hash
+ * over its canonical input shape; if it differs from `inputHash`, the
+ * cached PDF is stale and gets regenerated, otherwise it's served as is.
+ *
+ * `bytea` is intentionally kept off the default `select *` of the
+ * documents/list queries — the service-layer helpers in
+ * `pdf-service.ts` only touch this table when the actual bytes are
+ * needed.
+ */
+export const documentPdfs = pgTable(
+  'document_pdfs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    documentId: uuid('document_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    /** Canonical hash over the inputs that influenced this render. */
+    inputHash: varchar('input_hash', { length: 64 }).notNull(),
+    /** Filename suggested for download (e.g. `RE-2026-0001.pdf`). */
+    filename: varchar('filename', { length: 200 }).notNull(),
+    mime: varchar('mime', { length: 50 }).notNull().default('application/pdf'),
+    /** Size in bytes of `data`. */
+    size: integer('size').notNull(),
+    data: bytea('data').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(nowDefault)
+  },
+  (t) => [uniqueIndex('document_pdfs_document_id_idx').on(t.documentId)]
+)
+
+/**
+ * Dunning record. Always points at the parent invoice. `level` is the
+ * dunning stage (1..4 — see `documents.reminderLevel`). A unique index on
+ * `(invoiceId, level)` enforces "no second reminder for the same level".
+ */
+export const reminders = pgTable(
+  'reminders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Auto-generated dunning number, e.g. `M-2026-0001`. */
+    documentNumber: varchar('document_number', { length: 50 })
+      .notNull()
+      .unique(),
+    invoiceId: uuid('invoice_id')
+      .notNull()
+      .references(() => documents.id, { onDelete: 'cascade' }),
+    /** 1 = Zahlungserinnerung, 2 = 1. Mahnung, 3 = 2. Mahnung, 4 = letzte. */
+    level: integer('level').notNull(),
+    issueDate: date('issue_date').notNull(),
+    /** New due date communicated in the reminder. */
+    dueDate: date('due_date').notNull(),
+    /** Reminder fee (Mahngebühr) in EUR. */
+    fee: numeric('fee', { precision: 12, scale: 2 }).notNull().default('0'),
+    /** Default-interest amount accrued at the time of the reminder. */
+    interest: numeric('interest', { precision: 12, scale: 2 })
+      .notNull()
+      .default('0'),
+    /** `open` (created), `sent` (mailed), `paid`, `cancelled`. */
+    status: varchar('status', { length: 20 }).notNull().default('open'),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .default(nowDefault),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .default(nowDefault)
+  },
+  (t) => [
+    uniqueIndex('reminders_invoice_level_idx').on(t.invoiceId, t.level),
+    index('reminders_invoice_id_idx').on(t.invoiceId),
+    index('reminders_status_idx').on(t.status)
+  ]
+)
 
 /* ────────────────────────────────────────────────────────────────────── */
 /* Mitarbeiter und Lohn                                                   */
@@ -723,6 +863,10 @@ export type Vehicle = typeof vehicles.$inferSelect
 export type NewVehicle = typeof vehicles.$inferInsert
 export type Document = typeof documents.$inferSelect
 export type DocumentItem = typeof documentItems.$inferSelect
+export type DocumentPdf = typeof documentPdfs.$inferSelect
+export type NewDocumentPdf = typeof documentPdfs.$inferInsert
+export type Reminder = typeof reminders.$inferSelect
+export type NewReminder = typeof reminders.$inferInsert
 export type Employee = typeof employees.$inferSelect
 export type LedgerEntry = typeof ledgerEntries.$inferSelect
 export type CompanySettings = typeof companySettings.$inferSelect

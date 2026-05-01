@@ -14,6 +14,10 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import {
+    appointmentStatusBadge,
+    appointmentStatusLabel
+  } from '$lib/utils/status-labels'
 
   let pageNum = $state(1)
   const size = 25
@@ -138,12 +142,9 @@
                 <td>{a.employeeName ?? ''}</td>
                 <td>
                   <span
-                    class="badge badge-sm"
-                    class:badge-success={a.status === 'completed'}
-                    class:badge-ghost={a.status === 'cancelled'}
-                    class:badge-info={a.status === 'scheduled'}
+                    class="badge badge-sm {appointmentStatusBadge(a.status)}"
                   >
-                    {a.status}
+                    {appointmentStatusLabel(a.status)}
                   </span>
                 </td>
                 <td>

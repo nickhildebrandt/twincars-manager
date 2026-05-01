@@ -4,24 +4,27 @@
     Building2,
     Banknote,
     Image as ImageIcon,
-    Mail,
     Server,
-    FileText
+    FileText,
+    AlertTriangle
   } from '@lucide/svelte'
   import {
     getAllSettingsRemote,
     updateCompanyRemote,
+    updateReminderSettingsRemote,
     updateSmtpRemote
   } from './settings.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
-  type Tab = 'company' | 'bank' | 'branding' | 'mail' | 'smtp'
+  type Tab = 'company' | 'bank' | 'branding' | 'mail' | 'smtp' | 'reminders'
   const tabs: { id: Tab; label: string; icon: typeof Building2 }[] = [
     { id: 'company', label: 'Firmendaten', icon: Building2 },
     { id: 'bank', label: 'Bank & Steuer', icon: Banknote },
     { id: 'branding', label: 'Erscheinungsbild', icon: ImageIcon },
     { id: 'mail', label: 'Mailvorlagen', icon: FileText },
+    { id: 'reminders', label: 'Mahnwesen', icon: AlertTriangle },
     { id: 'smtp', label: 'SMTP', icon: Server }
   ]
 
@@ -62,6 +65,19 @@
   let fromAddress = $state('')
   let fromName = $state('')
 
+  // Mahnwesen fields
+  let reminderAutoEnabled = $state(true)
+  let smallBusinessExempt = $state(false)
+  let reminderDays1 = $state(3)
+  let reminderDays2 = $state(10)
+  let reminderDays3 = $state(20)
+  let reminderDays4 = $state(30)
+  let reminderFee1 = $state(0)
+  let reminderFee2 = $state(5)
+  let reminderFee3 = $state(10)
+  let reminderFee4 = $state(15)
+  let reminderInterestRate = $state(9.62)
+
   let initialised = $state(false)
 
   $effect(() => {
@@ -92,63 +108,94 @@
       fromAddress = data.smtp.fromAddress
       fromName = data.smtp.fromName
     }
+    reminderAutoEnabled = data.company.reminderAutoEnabled
+    smallBusinessExempt = data.company.smallBusinessExempt
+    reminderDays1 = data.company.reminderDays1
+    reminderDays2 = data.company.reminderDays2
+    reminderDays3 = data.company.reminderDays3
+    reminderDays4 = data.company.reminderDays4
+    reminderFee1 = Number(data.company.reminderFee1)
+    reminderFee2 = Number(data.company.reminderFee2)
+    reminderFee3 = Number(data.company.reminderFee3)
+    reminderFee4 = Number(data.company.reminderFee4)
+    reminderInterestRate = Number(data.company.reminderInterestRate)
     initialised = true
   })
-
-  let busy = $state(false)
 
   const saveCompany = async (e: Event) => {
     e.preventDefault()
     if (!data) return
-    busy = true
     try {
-      await updateCompanyRemote({
-        companyName,
-        owner: owner || undefined,
-        street,
-        zip,
-        city,
-        state: bundesland,
-        phone,
-        mobile: mobile || undefined,
-        email,
-        website: website || undefined,
-        salutationStyle: salutation,
-        vatId: vatId || undefined,
-        taxNumber: taxNumber || undefined,
-        bankName: bankName || undefined,
-        iban: iban || undefined,
-        bic: bic || undefined,
-        pdfFooter
-      })
+      await busy.run(() =>
+        updateCompanyRemote({
+          companyName,
+          owner: owner || undefined,
+          street,
+          zip,
+          city,
+          state: bundesland,
+          phone,
+          mobile: mobile || undefined,
+          email,
+          website: website || undefined,
+          salutationStyle: salutation,
+          vatId: vatId || undefined,
+          taxNumber: taxNumber || undefined,
+          bankName: bankName || undefined,
+          iban: iban || undefined,
+          bic: bic || undefined,
+          pdfFooter
+        })
+      )
       toast.success('Einstellungen gespeichert.')
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 
   const saveSmtp = async (e: Event) => {
     e.preventDefault()
-    busy = true
     try {
-      await updateSmtpRemote({
-        host: smtpHost,
-        port: Number(smtpPort),
-        secure: smtpSecure,
-        username: smtpUser,
-        password: smtpPassword || undefined,
-        fromAddress,
-        fromName,
-        replyTo: undefined
-      })
+      await busy.run(() =>
+        updateSmtpRemote({
+          host: smtpHost,
+          port: Number(smtpPort),
+          secure: smtpSecure,
+          username: smtpUser,
+          password: smtpPassword || undefined,
+          fromAddress,
+          fromName,
+          replyTo: undefined
+        })
+      )
       smtpPassword = ''
       toast.success('SMTP-Konfiguration gespeichert.')
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
+    }
+  }
+
+  const saveReminders = async (e: Event) => {
+    e.preventDefault()
+    try {
+      await busy.run(() =>
+        updateReminderSettingsRemote({
+          reminderAutoEnabled,
+          smallBusinessExempt,
+          reminderDays1,
+          reminderDays2,
+          reminderDays3,
+          reminderDays4,
+          reminderFee1,
+          reminderFee2,
+          reminderFee3,
+          reminderFee4,
+          reminderInterestRate
+        })
+      )
+      toast.success('Mahnwesen-Einstellungen gespeichert.')
+    } catch (err) {
+      handleClientError(err)
     }
   }
 </script>
@@ -314,8 +361,8 @@
           </label>
         </fieldset>
         <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary" disabled={busy}>
-            {#if busy}<span class="loading loading-spinner loading-sm"
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
+            {#if busy.active}<span class="loading loading-spinner loading-sm"
               ></span>{/if}
             Speichern
           </button>
@@ -374,8 +421,8 @@
           </div>
         </fieldset>
         <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary" disabled={busy}>
-            {#if busy}<span class="loading loading-spinner loading-sm"
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
+            {#if busy.active}<span class="loading loading-spinner loading-sm"
               ></span>{/if}
             Speichern
           </button>
@@ -399,8 +446,8 @@
           ></textarea>
         </fieldset>
         <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary" disabled={busy}>
-            {#if busy}<span class="loading loading-spinner loading-sm"
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
+            {#if busy.active}<span class="loading loading-spinner loading-sm"
               ></span>{/if}
             Speichern
           </button>
@@ -418,6 +465,160 @@
           worden und werden bereits beim E-Mail-Versand verwendet.
         </p>
       </div>
+    {:else if activeTab === 'reminders'}
+      <form onsubmit={saveReminders} class="flex flex-col gap-4">
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Allgemein</legend>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="label cursor-pointer justify-start gap-3">
+              <input
+                type="checkbox"
+                class="toggle toggle-primary"
+                bind:checked={reminderAutoEnabled}
+              />
+              <span>Mahnungen automatisch erzeugen lassen</span>
+            </label>
+            <label class="label cursor-pointer justify-start gap-3">
+              <input
+                type="checkbox"
+                class="toggle toggle-primary"
+                bind:checked={smallBusinessExempt}
+              />
+              <span>Kleinunternehmer (§ 19 UStG)</span>
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend"
+            >Mahnstufen — Tage nach Fälligkeit</legend
+          >
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <label class="form-control">
+              <span class="label-text">Zahlungserinnerung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="365"
+                step="1"
+                bind:value={reminderDays1}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">1. Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="365"
+                step="1"
+                bind:value={reminderDays2}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">2. Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="365"
+                step="1"
+                bind:value={reminderDays3}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">Letzte Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="365"
+                step="1"
+                bind:value={reminderDays4}
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Mahngebühren (€)</legend>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <label class="form-control">
+              <span class="label-text">Zahlungserinnerung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.01"
+                bind:value={reminderFee1}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">1. Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.01"
+                bind:value={reminderFee2}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">2. Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.01"
+                bind:value={reminderFee3}
+              />
+            </label>
+            <label class="form-control">
+              <span class="label-text">Letzte Mahnung</span>
+              <input
+                class="input input-bordered"
+                type="number"
+                min="0"
+                max="1000"
+                step="0.01"
+                bind:value={reminderFee4}
+              />
+            </label>
+          </div>
+        </fieldset>
+
+        <fieldset class="fieldset">
+          <legend class="fieldset-legend">Verzugszinsen</legend>
+          <label class="form-control max-w-xs">
+            <span class="label-text">Zinssatz pro Jahr (%)</span>
+            <input
+              class="input input-bordered"
+              type="number"
+              min="0"
+              max="50"
+              step="0.01"
+              bind:value={reminderInterestRate}
+            />
+            <span class="label-text-alt text-base-content/60 mt-1 text-xs">
+              Standard: 9,62 % p. a. (Basiszinssatz + 8,12 % bei B2B nach § 288
+              Abs. 2 BGB).
+            </span>
+          </label>
+        </fieldset>
+
+        <div class="flex justify-end">
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
+            {#if busy.active}
+              <span class="loading loading-spinner loading-sm"></span>
+            {/if}
+            Speichern
+          </button>
+        </div>
+      </form>
     {:else if activeTab === 'smtp'}
       <form onsubmit={saveSmtp} class="flex flex-col gap-4">
         <fieldset class="fieldset">
@@ -496,8 +697,8 @@
           </div>
         </fieldset>
         <div class="flex justify-end">
-          <button type="submit" class="btn btn-primary" disabled={busy}>
-            {#if busy}<span class="loading loading-spinner loading-sm"
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
+            {#if busy.active}<span class="loading loading-spinner loading-sm"
               ></span>{/if}
             Speichern
           </button>

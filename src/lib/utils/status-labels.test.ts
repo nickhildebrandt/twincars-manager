@@ -1,0 +1,110 @@
+import { describe, expect, it } from 'vitest'
+import {
+  appointmentStatusLabel,
+  documentStatusBadge,
+  documentStatusLabel,
+  documentTypeLabel,
+  itemKindLabel,
+  paymentStatusLabel,
+  reminderLevelBadge,
+  reminderLevelLabel,
+  sentMessageStatusLabel
+} from './status-labels'
+
+describe('documentStatusLabel', () => {
+  it('maps every documented status to a German term', () => {
+    expect(documentStatusLabel('draft')).toBe('Entwurf')
+    expect(documentStatusLabel('created')).toBe('Erstellt')
+    expect(documentStatusLabel('sent')).toBe('Versendet')
+    expect(documentStatusLabel('open')).toBe('Offen')
+    expect(documentStatusLabel('paid')).toBe('Bezahlt')
+    expect(documentStatusLabel('cancelled')).toBe('Storniert')
+    expect(documentStatusLabel('converted')).toBe('In Rechnung überführt')
+    expect(documentStatusLabel('overdue')).toBe('Überfällig')
+  })
+
+  it('falls back to a dash for unknown / null statuses', () => {
+    expect(documentStatusLabel(null)).toBe('—')
+    expect(documentStatusLabel(undefined)).toBe('—')
+    expect(documentStatusLabel('foo')).toBe('—')
+  })
+
+  it('never returns the original english string for known states', () => {
+    for (const en of ['draft', 'paid', 'sent', 'overdue']) {
+      const out = documentStatusLabel(en)
+      expect(out).not.toBe(en)
+    }
+  })
+})
+
+describe('documentStatusBadge', () => {
+  it('uses success for paid and warning for open', () => {
+    expect(documentStatusBadge('paid')).toBe('badge-success')
+    expect(documentStatusBadge('open')).toBe('badge-warning')
+    expect(documentStatusBadge('overdue')).toBe('badge-error')
+    expect(documentStatusBadge('converted')).toBe('badge-info')
+    expect(documentStatusBadge('draft')).toBe('badge-ghost')
+  })
+})
+
+describe('paymentStatusLabel', () => {
+  it('maps payment statuses', () => {
+    expect(paymentStatusLabel('paid')).toBe('Bezahlt')
+    expect(paymentStatusLabel('open')).toBe('Offen')
+    expect(paymentStatusLabel('partial')).toBe('Teilweise gezahlt')
+  })
+})
+
+describe('appointmentStatusLabel', () => {
+  it('maps appointment statuses', () => {
+    expect(appointmentStatusLabel('scheduled')).toBe('Geplant')
+    expect(appointmentStatusLabel('completed')).toBe('Abgeschlossen')
+    expect(appointmentStatusLabel('cancelled')).toBe('Abgesagt')
+  })
+})
+
+describe('sentMessageStatusLabel', () => {
+  it('maps sent-message statuses', () => {
+    expect(sentMessageStatusLabel('sent')).toBe('Gesendet')
+    expect(sentMessageStatusLabel('failed')).toBe('Fehlgeschlagen')
+    expect(sentMessageStatusLabel('pending')).toBe('In Warteschlange')
+  })
+})
+
+describe('reminderLevelLabel', () => {
+  it('returns the right escalation step for each level', () => {
+    expect(reminderLevelLabel(0)).toBe('Noch keine Mahnung')
+    expect(reminderLevelLabel(1)).toBe('Zahlungserinnerung')
+    expect(reminderLevelLabel(2)).toBe('1. Mahnung')
+    expect(reminderLevelLabel(3)).toBe('2. Mahnung')
+    expect(reminderLevelLabel(4)).toBe('Letzte Mahnung')
+  })
+
+  it('escalates badge color from ghost → error', () => {
+    expect(reminderLevelBadge(0)).toBe('badge-ghost')
+    expect(reminderLevelBadge(1)).toBe('badge-info')
+    expect(reminderLevelBadge(2)).toBe('badge-warning')
+    expect(reminderLevelBadge(3)).toBe('badge-error')
+    expect(reminderLevelBadge(4)).toBe('badge-error')
+  })
+})
+
+describe('documentTypeLabel', () => {
+  it('translates each document type to German', () => {
+    expect(documentTypeLabel('invoice')).toBe('Rechnung')
+    expect(documentTypeLabel('offer')).toBe('Angebot')
+    expect(documentTypeLabel('cost_estimate')).toBe('Kostenvoranschlag')
+    expect(documentTypeLabel('order_confirmation')).toBe('Auftragsbestätigung')
+    expect(documentTypeLabel('reminder')).toBe('Mahnung')
+  })
+})
+
+describe('itemKindLabel', () => {
+  it('translates known item kinds', () => {
+    expect(itemKindLabel('service')).toBe('Leistung')
+    expect(itemKindLabel('material')).toBe('Material')
+    expect(itemKindLabel('article')).toBe('Artikel')
+    expect(itemKindLabel('pass_through')).toBe('Durchlaufposten')
+    expect(itemKindLabel('vehicle')).toBe('Fahrzeug')
+  })
+})
