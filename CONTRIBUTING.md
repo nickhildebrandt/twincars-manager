@@ -117,10 +117,11 @@ JSDoc every export with `@group integration` and `@module <name>`.
 </script>
 ```
 
-- Page size is **fixed at 25**. No size selector.
-- Filter / search / pagination changes never blank the table — the previous
-  result stays visible while the global busy overlay (or a thin
-  `Loader variant="bar"`) signals the refetch.
+- Page size is **fixed at 25**. No size selector. Full pagination rules
+  in section 10.
+- Filter / search / pagination changes never blank the table — the
+  previous result stays visible (stale-while-revalidate) while the
+  header loading bar signals the refetch.
 
 ### Detail and edit pages
 
@@ -321,7 +322,202 @@ more specific phrase clearly helps. Same wording everywhere.
 - The detail view shows everything: stamm­daten, addresses, contact, notes,
   totals — the user should never have to search for a field.
 
-## 9. Forms
+## 9. Picking "the one" out of "the many"
+
+When a form references another record — an invoice referencing a customer,
+a position referencing an article, an appointment referencing an employee
+— we **never** use a plain `<select>` populated with all rows, and we
+never roll a custom typeahead. Every relation is selected through the
+shared `SearchablePicker` component fed by a dedicated
+`pickXRemote` query.
+
+Why this is the only allowed pattern:
+
+- The "many" side can be large (thousands of customers, vehicles, items).
+  A `<select>` would either ship everything to the client or invent its
+  own ad-hoc fetching.
+- One picker pattern across the whole app is what non-technical users
+  expect — the same dialog, the same search box, the same pagination,
+  the same "X" to clear, on every screen.
+- It composes cleanly with the rest of the architecture: server-side
+  search, server-side pagination, Valibot-validated arguments, dehydrated
+  cache, no client-side filtering.
+
+### The picker remote function
+
+All pickers live in `src/routes/pickers.remote.ts` so they are
+discoverable and share a single Valibot schema:
+
+```ts
+const pickerSchema = object({
+  q: optional(pipe(string(), trim(), maxLength(200))),
+  page: number(),
+  size: picklist([10, 25, 50, 100])
+})
+
+export const pickCustomersRemote = query(
+  pickerSchema,
+  async ({ q, page, size }) => {
+    // ILIKE on the relevant columns, ordered, paginated
+    const rows = await db.select({ ... }).from(customers)
+      .where(and(eq(customers.archived, false), q ? or(...) : undefined))
+      .orderBy(...)
+      .limit(size)
+      .offset((page - 1) * size)
+
+    return buildResult(
+      rows.map((r) => ({
+        id: r.id,
+        // human-readable label that the dialog shows
+        label: `${r.company || `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || r.number}`,
+        // any extra fields the caller wants to pre-fill the form with
+      })),
+      total,
+      page,
+      size
+    )
+  }
+)
+```
+
+Rules:
+
+- The function must take `{ q, page, size }`. `size` is `picklist([10, 25, 50, 100])` so a malicious client cannot request an unbounded page.
+- The return shape is `{ items: T[], total, page, size, pageCount }` where every `T` has at least `id: string` and `label: string`. Add extra fields (price, kind, plate, etc.) when the caller needs them to pre-fill the host form.
+- Search via `ILIKE` against the columns the user is most likely to type — name, number, plate, VIN, etc.
+- Always order deterministically; never ship random results.
+
+### The component
+
+```svelte
+<script lang="ts">
+  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import { pickCustomersRemote } from '../../pickers.remote'
+
+  let customerId = $state('')
+  let customerLabel = $state('')
+
+  const searchCustomers = (params: { q: string; page: number; size: number }) =>
+    pickCustomersRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
+</script>
+
+<SearchablePicker
+  bind:value={customerId}
+  bind:valueLabel={customerLabel}
+  placeholder="— Kunde suchen und auswählen —"
+  dialogTitle="Kunden auswählen"
+  search={searchCustomers}
+  onSelect={(item) => {
+    /* optional: pre-fill other form fields from item extras */
+  }}
+/>
+```
+
+What the component guarantees:
+
+- The trigger looks like a normal `input` so the form layout stays
+  consistent with the rest of the form fields.
+- The dialog has **fixed dimensions** (640 px tall, max width 2xl,
+  internal scroll) — the size never depends on the result count, so
+  opening it does not make the page jump.
+- Search input has **250 ms debounce** and uses real focus management
+  (no `autofocus`, no double-button-in-button anti-patterns).
+- Pagination at the bottom of the dialog is the standard `Pagination`
+  component (see section 10).
+- A clear "X" button on the trigger (only visible when something is
+  selected) wipes both `value` and `valueLabel` and fires
+  `onSelect(null)`.
+- Selecting an item binds `value` and `valueLabel` and closes the dialog.
+
+### Forbidden picker patterns
+
+- ❌ `<select>` for relationships, unless the option list is truly
+  hard-coded and small (e.g. "Anrede: Herr / Frau / Familie").
+- ❌ A custom inline typeahead built from scratch — use SearchablePicker.
+- ❌ Loading the entire list of customers / vehicles / items into the
+  client and filtering locally.
+- ❌ A picker without server-side search / pagination.
+- ❌ Picker remotes outside `pickers.remote.ts` — keep them centralized.
+
+## 10. Pagination
+
+Pagination is **server-side and fixed at 25 entries per page** across the
+entire app. There are no page-size selectors anywhere in the UI.
+
+Why fixed 25:
+
+- One predictable layout that fits comfortably on a 1080p screen and
+  prints sensibly on A4.
+- Less UI noise — non-technical users do not have to choose between
+  10 / 25 / 50 / 100.
+- Bounded server response, predictable network and DB cost.
+- Every list page test assumes 25 → tests stay simple and deterministic.
+
+### The shared `Pagination` component
+
+`src/lib/components/ui/Pagination.svelte` renders:
+
+- A total-count caption on the left ("X Treffer · Seite Y von Z").
+- A DaisyUI `join` of buttons on the right: first / prev / numeric
+  buttons (sliding window of 5) / next / last.
+- **No size selector.** Adding one is forbidden — see the red list.
+
+The component takes:
+
+```ts
+type Props = {
+  page: number
+  pageCount: number
+  total: number
+  size?: number // accepted for compat, ignored
+  onPage: (page: number) => void
+}
+```
+
+### List-page pagination contract
+
+- The list remote function takes `{ page, size, q?, ...filters }` and
+  returns `{ items, total, page, size, pageCount }`.
+- The page component holds `let pageNum = $state(1)` and `const size =
+25`. Both are passed to the query in a `$derived`.
+- Filter, search, or `archivedFilter` changes **must reset
+  `pageNum = 1`** (`onQuery={() => (pageNum = 1)}`), otherwise the user
+  could end up on a non-existent page after narrowing the result set.
+- The `Pagination` component receives `{ total, page: pageNum, pageCount,
+size, onPage: (p) => (pageNum = p) }`.
+- Stale-while-revalidate (section 6) keeps the previous result visible
+  while the next page loads — the table never blanks.
+
+```svelte
+<Pagination
+  {total}
+  page={pageNum}
+  {pageCount}
+  {size}
+  onPage={(p) => (pageNum = p)}
+/>
+```
+
+### Pagination inside pickers
+
+Pickers reuse the exact same `Pagination` component. The dialog manages
+its own internal `page` state — the host page never sees it. Page size
+inside pickers is also fixed at 25.
+
+### Forbidden pagination patterns
+
+- ❌ Page-size dropdowns or any user-facing size selector.
+- ❌ Hard-coded page sizes other than 25 in new code.
+- ❌ Infinite scroll in business lists (the explicit page numbers and
+  total counts are part of the audit trail in this app).
+- ❌ Client-side slicing of an already-fetched array. Pagination always
+  goes server-side via `LIMIT` / `OFFSET` in the remote function.
+- ❌ Forgetting to reset `pageNum = 1` on filter / search change.
+
+## 11. Forms
 
 - Forms are plain Svelte components with `<input bind:value>` and a single
   `onSave` callback. Their submit handler delegates the mutation to
@@ -335,7 +531,7 @@ more specific phrase clearly helps. Same wording everywhere.
   `untrack(() => ({ ...initial }))`. Avoid the
   `state_referenced_locally` warning instead of suppressing it.
 
-## 10. Validation and errors
+## 12. Validation and errors
 
 - **Valibot in every remote function.** No `'unchecked'` shortcuts.
 - Keep reusable schemas in `src/lib/server/db/validation.ts`.
@@ -346,7 +542,7 @@ more specific phrase clearly helps. Same wording everywhere.
 - On the client, route errors through `handleClientError(err, baseMessage?)`
   → toast. The single-toast policy stays.
 
-## 11. Testing
+## 13. Testing
 
 - **Unit and component tests** with Vitest + `@testing-library/svelte`,
   co-located next to the source file (`X.svelte` ↔ `X.test.ts`).
@@ -357,7 +553,7 @@ more specific phrase clearly helps. Same wording everywhere.
 - Type checking: `npx svelte-check --tsconfig ./tsconfig.json` must report
   **0 errors / 0 warnings** before commit.
 
-## 12. Git workflow
+## 14. Git workflow
 
 - Commit small, well-described chunks. Imperative German is fine for the
   subject if it stays short; English is preferred for new contributors.
@@ -366,7 +562,7 @@ more specific phrase clearly helps. Same wording everywhere.
 - Never commit secrets (`.env`, dumps, mdb files). `.env.example` is the
   only env template that lives in git.
 
-## 13. What to avoid (red list)
+## 15. What to avoid (red list)
 
 - ❌ `+layout.server.ts`, `+page.server.ts`, `+server.ts`, `actions`,
   `use:enhance` for app data flow.
@@ -388,9 +584,17 @@ more specific phrase clearly helps. Same wording everywhere.
   (header bar → 250 ms overlay) is mandatory.
 - ❌ Pessimistic deletes that refresh the whole list before showing the
   user the row is gone — use `mutation.updates(query.withOverride(...))`.
+- ❌ `<select>` for relationships, custom typeaheads, or client-side
+  filtering of the "many" side. Every one-to-many selection goes
+  through `SearchablePicker` + a `pickXRemote` query in
+  `pickers.remote.ts` (see section 9).
+- ❌ Page sizes other than 25, page-size dropdowns, infinite scroll, or
+  client-side slicing for pagination (see section 10).
+- ❌ List pages that forget to reset `pageNum = 1` on filter / search
+  change.
 - ❌ "Roll your own" widgets where DaisyUI already ships an equivalent.
 
-## 14. Adding a new module
+## 16. Adding a new module
 
 When you scaffold a new module (e.g. payroll), copy the **customers** and
 **vehicles** modules as templates:
@@ -401,10 +605,13 @@ When you scaffold a new module (e.g. payroll), copy the **customers** and
    commands using the input schema; mutations refresh via
    `requested(listXRemote, 4).refreshAll()`.
 3. `src/routes/<x>/+page.svelte` — list page with the standard
-   `untrack(() => query)` snapshot + `lastResult` fallback.
+   `untrack(() => query)` snapshot + `lastResult` fallback. Pagination
+   contract from section 10. Rows fully clickable per section 8.
 4. `src/routes/<x>/[id]/+page.svelte` — top-level await detail page.
 5. `src/routes/<x>/[id]/edit/+page.svelte` and `src/routes/<x>/new/+page.svelte`
-   — form pages calling `busy.run(...)` inside their `handleSave`.
+   — form pages calling `busy.run(...)` inside their `handleSave`. If the
+   form references another entity, add a `pickXRemote` query in
+   `pickers.remote.ts` and use `SearchablePicker` (section 9).
 6. Co-located tests for service logic, schemas, and the form component.
 
 If the new module breaks any of these conventions, the convention is right —
