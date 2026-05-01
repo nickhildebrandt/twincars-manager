@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
@@ -11,28 +12,48 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
 
-  let page = $state(1)
+  let pageNum = $state(1)
   const size = 25
   let q = $state('')
   let archivedFilter = $state<'active' | 'archived' | 'all'>('active')
 
-  const customersQ = $derived(
+  /**
+   * Anchored remote query, reactive to filter/page state. The first
+   * resolution is awaited inline below — that gives the SSR renderer a
+   * fully populated HTML response. Subsequent param changes are observed
+   * via `query.current` and `query.loading`, so the previous list stays
+   * visible while the next page is loading (smooth pagination, no flicker).
+   */
+  const query = $derived(
     listCustomersRemote({
-      page,
+      page: pageNum,
       size,
       q: q || undefined,
       archived: archivedFilter
     })
   )
 
-  const result = $derived(customersQ.current)
-  const items = $derived(result?.items ?? [])
-  const total = $derived(result?.total ?? 0)
-  const pageCount = $derived(result?.pageCount ?? 1)
-  const loading = $derived(customersQ.loading)
+  // Top-level await: SvelteKit suspends rendering until the initial query
+  // resolves, so SSR carries the data and hydration has nothing to swap in.
+  // `untrack` makes the explicit "snapshot once for SSR" intent clear —
+  // subsequent param changes flow through `query.current` (see below).
+  const initial = await untrack(() => query)
+
+  // Cache the last successful result across param changes so the table
+  // stays populated during a refetch instead of dropping to empty state.
+  let lastResult = $state<typeof initial>(initial)
+  $effect(() => {
+    if (query.current) lastResult = query.current
+  })
+
+  const result = $derived(query.current ?? lastResult)
+  const items = $derived(result.items)
+  const total = $derived(result.total)
+  const pageCount = $derived(result.pageCount)
+  const loading = $derived(query.loading)
 
   $effect(() => {
-    if (customersQ.error) handleClientError(customersQ.error)
+    if (query.error) handleClientError(query.error)
   })
 
   let confirmOpen = $state(false)
@@ -48,8 +69,8 @@
   const performDelete = async () => {
     if (!toDeleteId) return
     try {
-      // Single-flight: ask the server to refresh THIS specific list view
-      // (current page + filter combo) inside the same response.
+      // Single-flight: refresh the active filter/page combo as part of the
+      // delete response — no extra round-trip from the client.
       await deleteCustomerRemote({ id: toDeleteId }).updates(
         listCustomersRemote
       )
@@ -74,13 +95,13 @@
     <Toolbar
       bind:query={q}
       placeholder="Kunden suchen: Name, Kundennr., Ort, Telefon ..."
-      onQuery={() => (page = 1)}
+      onQuery={() => (pageNum = 1)}
     >
       {#snippet filters()}
         <select
           class="select select-sm select-bordered"
           bind:value={archivedFilter}
-          onchange={() => (page = 1)}
+          onchange={() => (pageNum = 1)}
         >
           <option value="active">Aktiv</option>
           <option value="archived">Archiviert</option>
@@ -93,12 +114,10 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
-    {#if loading && items.length > 0}
+    {#if loading}
       <Loader variant="bar" />
     {/if}
-    {#if loading && items.length === 0}
-      <Loader />
-    {:else if items.length === 0}
+    {#if items.length === 0}
       <EmptyState
         icon={Users}
         title="Noch keine Kunden"
@@ -159,10 +178,10 @@
       </div>
       <Pagination
         {total}
-        {page}
+        page={pageNum}
         {pageCount}
         {size}
-        onPage={(p) => (page = p)}
+        onPage={(p) => (pageNum = p)}
       />
     {/if}
   </div>
