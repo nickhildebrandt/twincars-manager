@@ -1,4 +1,4 @@
-import { command, query } from '$app/server'
+import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
   maxLength,
@@ -14,7 +14,6 @@ import {
   addressLineSchema,
   citySchema,
   idSchema,
-  listParamsSchema,
   notesSchema,
   optionalEmailSchema,
   phoneSchema,
@@ -30,6 +29,11 @@ import {
   updateCustomer
 } from '$lib/server/services/customer-service'
 
+/**
+ * Validation schema shared by `createCustomerRemote` and
+ * `updateCustomerRemote`. All fields are optional at the schema level — the
+ * service layer enforces business rules (e.g. at least name or company).
+ */
 const customerInputSchema = object({
   company: optional(pipe(string(), trim(), maxLength(200))),
   salutation: optional(pipe(string(), trim(), maxLength(30))),
@@ -53,8 +57,12 @@ const customerInputSchema = object({
   customerNumber: optional(pipe(string(), trim(), maxLength(50)))
 })
 
-const listSchemaWithFilters = object({
-  page: pipe(number()),
+/**
+ * Schema for the paginated customer list query. `size` is `picklist`-bounded
+ * so a malicious client cannot request arbitrarily large pages.
+ */
+const listSchema = object({
+  page: number(),
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
   sort: optional(pipe(string(), trim(), maxLength(30))),
@@ -62,32 +70,34 @@ const listSchemaWithFilters = object({
 })
 
 /**
- * Paginated, searchable customer list.
+ * Paginated, searchable, archive-filterable customer list.
+ *
+ * @remarks
+ * The `archived` filter accepts the human-readable values `'active' |
+ * 'archived' | 'all'` and is mapped to a boolean (or omitted) before being
+ * passed to the service layer.
  *
  * @group integration
  * @module customers
  */
-export const listCustomersRemote = query(
-  listSchemaWithFilters,
-  async (params) => {
-    const archivedFilter =
-      params.archived === 'archived'
-        ? true
-        : params.archived === 'active'
-          ? false
-          : undefined
-    return listCustomers({
-      page: params.page,
-      size: params.size,
-      q: params.q,
-      sort: params.sort,
-      archived: archivedFilter
-    })
-  }
-)
+export const listCustomersRemote = query(listSchema, async (params) => {
+  const archivedFilter =
+    params.archived === 'archived'
+      ? true
+      : params.archived === 'active'
+        ? false
+        : undefined
+  return listCustomers({
+    page: params.page,
+    size: params.size,
+    q: params.q,
+    sort: params.sort,
+    archived: archivedFilter
+  })
+})
 
 /**
- * Load a single customer by id.
+ * Load a single customer by id. Throws `404` if the customer does not exist.
  *
  * @group integration
  * @module customers
@@ -102,7 +112,8 @@ export const getCustomerRemote = query(
 )
 
 /**
- * Total active-customer count for dashboards.
+ * Total active-customer count for the dashboard. Cached request-scoped on the
+ * server so multiple components on the same page share one DB roundtrip.
  *
  * @group integration
  * @module customers
@@ -110,7 +121,24 @@ export const getCustomerRemote = query(
 export const countCustomersRemote = query(async () => countCustomers())
 
 /**
+ * Refresh the dashboard count plus every list instance the client requested
+ * via `.updates(listCustomersRemote)`. Up to 4 instances per request — enough
+ * for filter combos rendered simultaneously, capped to bound DoS risk.
+ */
+const refreshListsAndCount = async (): Promise<void> => {
+  await Promise.all([
+    countCustomersRemote().refresh(),
+    requested(listCustomersRemote, 4).refreshAll()
+  ])
+}
+
+/**
  * Create a new customer.
+ *
+ * @remarks
+ * Single-flight mutation. Clients should request updates with
+ * `await createCustomerRemote(input).updates(listCustomersRemote)` so the
+ * caller's specific filter/page combination is refreshed in the same flight.
  *
  * @group integration
  * @module customers
@@ -119,14 +147,17 @@ export const createCustomerRemote = command(
   customerInputSchema,
   async (input) => {
     const data = await createCustomer(input)
-    void listCustomersRemote({ page: 1, size: 25 }).refresh()
-    void countCustomersRemote().refresh()
+    await refreshListsAndCount()
     return data
   }
 )
 
 /**
  * Update an existing customer.
+ *
+ * @remarks
+ * Refreshes the matching `getCustomerRemote({ id })` plus any active list
+ * instances requested by the client.
  *
  * @group integration
  * @module customers
@@ -135,14 +166,20 @@ export const updateCustomerRemote = command(
   object({ id: idSchema, values: customerInputSchema }),
   async ({ id, values }) => {
     const data = await updateCustomer(id, values)
-    void listCustomersRemote({ page: 1, size: 25 }).refresh()
-    void getCustomerRemote({ id }).refresh()
+    await Promise.all([
+      getCustomerRemote({ id }).refresh(),
+      refreshListsAndCount()
+    ])
     return data
   }
 )
 
 /**
  * Delete a customer.
+ *
+ * @remarks
+ * Refreshes the dashboard count and any active list instances requested by
+ * the client.
  *
  * @group integration
  * @module customers
@@ -151,7 +188,6 @@ export const deleteCustomerRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
     await deleteCustomer(id)
-    void listCustomersRemote({ page: 1, size: 25 }).refresh()
-    void countCustomersRemote().refresh()
+    await refreshListsAndCount()
   }
 )

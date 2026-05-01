@@ -48,7 +48,11 @@
   const performDelete = async () => {
     if (!toDeleteId) return
     try {
-      await deleteCustomerRemote({ id: toDeleteId })
+      // Single-flight: ask the server to refresh THIS specific list view
+      // (current page + filter combo) inside the same response.
+      await deleteCustomerRemote({ id: toDeleteId }).updates(
+        listCustomersRemote
+      )
       toast.success(`Kunde „${toDeleteName}" gelöscht.`)
       toDeleteId = null
     } catch (err) {
