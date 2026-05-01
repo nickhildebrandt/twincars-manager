@@ -29,14 +29,8 @@
 
 <PageHeader
   title="Dashboard"
-  subtitle="Willkommen zurück. Hier sehen Sie alles Wichtige auf einen Blick."
->
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/invoices/new">
-      <Plus size={16} /> Neue Rechnung
-    </a>
-  {/snippet}
-</PageHeader>
+  primaryAction={{ label: 'Neue Rechnung', href: '/invoices/new', icon: Plus }}
+/>
 
 <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
   <StatCard

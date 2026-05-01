@@ -54,15 +54,8 @@
 
 <PageHeader
   title="Leistungen, Material, Artikel"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Stammdaten für Leistungen und Artikel.'}
+  primaryAction={{ label: 'Neuer Artikel', href: '/items/new', icon: Plus }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/items/new">
-      <Plus size={16} /> Neuer Artikel
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

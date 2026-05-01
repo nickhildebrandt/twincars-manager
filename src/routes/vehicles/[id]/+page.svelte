@@ -19,19 +19,11 @@
   title={loading
     ? 'Lädt …'
     : `${v?.make ?? ''} ${v?.model ?? ''}`.trim() || 'Fahrzeug'}
-  subtitle={v?.licensePlate ?? ''}
->
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/vehicles"
-      ><ArrowLeft size={16} /> Zur Liste</a
-    >
-    {#if v}
-      <a class="btn btn-primary btn-sm gap-2" href="/vehicles/{v.id}/edit"
-        ><Pencil size={16} /> Bearbeiten</a
-      >
-    {/if}
-  {/snippet}
-</PageHeader>
+  back="/vehicles"
+  primaryAction={v
+    ? { label: 'Bearbeiten', href: `/vehicles/${v.id}/edit`, icon: Pencil }
+    : undefined}
+/>
 
 {#if v}
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">

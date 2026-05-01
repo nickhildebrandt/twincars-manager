@@ -60,15 +60,8 @@
 
 <PageHeader
   title="Rechnungen"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Rechnungen erstellen, versenden und Zahlungen verfolgen.'}
+  primaryAction={{ label: 'Neue Rechnung', href: '/invoices/new', icon: Plus }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/invoices/new">
-      <Plus size={16} /> Neue Rechnung
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

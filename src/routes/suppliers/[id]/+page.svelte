@@ -14,18 +14,13 @@
   })
 </script>
 
-<PageHeader title={s?.name ?? 'Lieferant'} subtitle={s?.contactPerson ?? ''}>
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/suppliers"
-      ><ArrowLeft size={16} /> Zur Liste</a
-    >
-    {#if s}
-      <a class="btn btn-primary btn-sm gap-2" href="/suppliers/{s.id}/edit"
-        ><Pencil size={16} /> Bearbeiten</a
-      >
-    {/if}
-  {/snippet}
-</PageHeader>
+<PageHeader
+  title={s?.name ?? 'Lieferant'}
+  back="/suppliers"
+  primaryAction={s
+    ? { label: 'Bearbeiten', href: `/suppliers/${s.id}/edit`, icon: Pencil }
+    : undefined}
+/>
 
 {#if s}
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">

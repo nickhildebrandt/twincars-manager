@@ -1,5 +1,6 @@
 <script lang="ts" generics="T extends { id: string; label: string }">
   import { Search, X, ChevronDown } from '@lucide/svelte'
+  import Pagination from './Pagination.svelte'
 
   type Props = {
     value: string
@@ -31,7 +32,7 @@
   let dialog = $state<HTMLDialogElement | null>(null)
   let q = $state('')
   let page = $state(1)
-  const size = 25
+  let size = $state<10 | 25 | 50 | 100>(25)
   let items = $state<T[]>([])
   let total = $state(0)
   let pageCount = $state(1)
@@ -113,12 +114,17 @@
 </button>
 
 <dialog bind:this={dialog} class="modal">
-  <div class="modal-box flex max-h-[80vh] flex-col p-0">
+  <!--
+		Stable dialog dimensions: fixed width, fixed height — independent of how
+		many results are loaded. The list area scrolls inside.
+	-->
+  <div class="modal-box flex h-[640px] w-full max-w-2xl flex-col p-0">
     <header
       class="border-base-300 flex items-center justify-between border-b px-4 py-3"
     >
       <h3 class="text-base font-semibold">{dialogTitle}</h3>
       <button
+        type="button"
         class="btn btn-ghost btn-square btn-sm"
         aria-label="Schließen"
         onclick={close}
@@ -142,15 +148,17 @@
         />
       </label>
     </div>
-    <div class="scroll-y flex-1 overflow-y-auto">
+    <div class="scroll-y min-h-0 flex-1 overflow-y-auto">
       {#if loading && items.length === 0}
-        <div class="flex h-32 items-center justify-center">
+        <div class="flex h-full items-center justify-center">
           <span class="loading loading-spinner"></span>
         </div>
       {:else if items.length === 0}
-        <div class="text-base-content/60 p-6 text-center text-sm"
-          >{emptyText}</div
+        <div
+          class="text-base-content/60 flex h-full items-center justify-center text-sm"
         >
+          {emptyText}
+        </div>
       {:else}
         <ul class="divide-base-300 divide-y">
           {#each items as item (item.id)}
@@ -170,40 +178,21 @@
         </ul>
       {/if}
     </div>
-    <footer
-      class="border-base-300 flex items-center justify-between border-t px-4 py-3 text-sm"
-    >
-      <span class="text-base-content/60">
-        {total.toLocaleString('de-DE')} Treffer · Seite {page} / {Math.max(
-          1,
-          pageCount
-        )}
-      </span>
-      <div class="join">
-        <button
-          type="button"
-          class="btn btn-sm join-item"
-          disabled={page <= 1 || loading}
-          onclick={() => {
-            page = Math.max(1, page - 1)
-            void runSearch()
-          }}
-        >
-          Zurück
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm join-item"
-          disabled={page >= pageCount || loading}
-          onclick={() => {
-            page = Math.min(pageCount, page + 1)
-            void runSearch()
-          }}
-        >
-          Weiter
-        </button>
-      </div>
-    </footer>
+    <Pagination
+      {page}
+      {pageCount}
+      {total}
+      {size}
+      onPage={(p) => {
+        page = p
+        void runSearch()
+      }}
+      onSize={(s) => {
+        size = s as 10 | 25 | 50 | 100
+        page = 1
+        void runSearch()
+      }}
+    />
   </div>
   <button
     type="button"

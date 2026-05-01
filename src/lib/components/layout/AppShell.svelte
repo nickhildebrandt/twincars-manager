@@ -1,9 +1,10 @@
 <script lang="ts">
+  import { goto } from '$app/navigation'
   import { page } from '$app/stores'
   import { navigation } from './navigation'
-  import { Menu as MenuIcon, Wrench } from '@lucide/svelte'
+  import { Menu as MenuIcon, Wrench, ArrowLeft, Plus } from '@lucide/svelte'
   import type { Snippet } from 'svelte'
-  import { pageTitle } from '$lib/stores/page-title.svelte'
+  import { pageHeader } from '$lib/stores/page-title.svelte'
 
   type Props = { children?: Snippet; companyName?: string }
   const { children, companyName = 'TwinCarsManager' }: Props = $props()
@@ -25,7 +26,31 @@
     return prefixMatch?.label ?? 'TwinCarsManager'
   })
 
-  const currentTitle = $derived(pageTitle.current ?? routeTitle)
+  const currentTitle = $derived(pageHeader.title ?? routeTitle)
+  const back = $derived(pageHeader.backTarget)
+  const primary = $derived(pageHeader.primaryAction)
+
+  const handleBack = () => {
+    const target = pageHeader.backTarget
+    if (typeof target === 'function') {
+      target()
+      return
+    }
+    if (typeof target === 'string') {
+      goto(target)
+      return
+    }
+    if (typeof window !== 'undefined' && window.history.length > 1) {
+      window.history.back()
+    }
+  }
+
+  const handlePrimary = () => {
+    const a = pageHeader.primaryAction
+    if (!a) return
+    if (a.href) goto(a.href)
+    else if (a.onClick) a.onClick()
+  }
 
   // Shared height for the header bar AND the sidebar logo block, so both
   // align perfectly along the same horizontal divider line.
@@ -48,6 +73,17 @@
         >
           <MenuIcon size={22} />
         </label>
+        {#if back}
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm gap-1"
+            aria-label="Zurück"
+            onclick={handleBack}
+          >
+            <ArrowLeft size={18} />
+            <span class="hidden sm:inline">Zurück</span>
+          </button>
+        {/if}
         <h1
           class="px-1 text-base font-semibold sm:text-lg"
           data-testid="page-title"
@@ -55,7 +91,31 @@
           {currentTitle}
         </h1>
       </div>
-      <div class="navbar-end"></div>
+      <div class="navbar-end gap-2">
+        {#if primary}
+          {@const Icon = primary.icon ?? Plus}
+          {#if primary.href}
+            <a
+              class="btn btn-primary btn-sm gap-2"
+              href={primary.href}
+              data-testid="header-primary-action"
+            >
+              <Icon size={16} />
+              <span>{primary.label}</span>
+            </a>
+          {:else}
+            <button
+              type="button"
+              class="btn btn-primary btn-sm gap-2"
+              onclick={handlePrimary}
+              data-testid="header-primary-action"
+            >
+              <Icon size={16} />
+              <span>{primary.label}</span>
+            </button>
+          {/if}
+        {/if}
+      </div>
     </header>
 
     <!-- Page content -->

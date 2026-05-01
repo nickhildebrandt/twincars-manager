@@ -29,19 +29,11 @@
 
 <PageHeader
   title={data ? `Rechnung ${data.doc.documentNumber}` : 'Rechnung'}
-  subtitle={data ? `Stand: ${data.doc.status}` : ''}
->
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/invoices"
-      ><ArrowLeft size={16} /> Zur Liste</a
-    >
-    {#if data && data.doc.status !== 'paid'}
-      <button class="btn btn-success btn-sm gap-2" onclick={markPaid}>
-        <CheckCircle2 size={16} /> Als bezahlt markieren
-      </button>
-    {/if}
-  {/snippet}
-</PageHeader>
+  back="/invoices"
+  primaryAction={data && data.doc.status !== 'paid'
+    ? { label: 'Als bezahlt markieren', onClick: markPaid, icon: CheckCircle2 }
+    : undefined}
+/>
 
 {#if loading}
   <div class="card border-base-300 bg-base-100 border">

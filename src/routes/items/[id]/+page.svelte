@@ -17,19 +17,11 @@
 
 <PageHeader
   title={i?.description ?? 'Artikel'}
-  subtitle={i?.articleNumber ?? ''}
->
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/items"
-      ><ArrowLeft size={16} /> Zur Liste</a
-    >
-    {#if i}
-      <a class="btn btn-primary btn-sm gap-2" href="/items/{i.id}/edit"
-        ><Pencil size={16} /> Bearbeiten</a
-      >
-    {/if}
-  {/snippet}
-</PageHeader>
+  back="/items"
+  primaryAction={i
+    ? { label: 'Bearbeiten', href: `/items/${i.id}/edit`, icon: Pencil }
+    : undefined}
+/>
 
 {#if i}
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">

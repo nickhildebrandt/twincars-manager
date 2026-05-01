@@ -16,19 +16,11 @@
 
 <PageHeader
   title={e ? `${e.firstName} ${e.lastName}` : 'Mitarbeiter'}
-  subtitle={e?.personnelNumber ?? ''}
->
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/employees"
-      ><ArrowLeft size={16} /> Zur Liste</a
-    >
-    {#if e}
-      <a class="btn btn-primary btn-sm gap-2" href="/employees/{e.id}/edit"
-        ><Pencil size={16} /> Bearbeiten</a
-      >
-    {/if}
-  {/snippet}
-</PageHeader>
+  back="/employees"
+  primaryAction={e
+    ? { label: 'Bearbeiten', href: `/employees/${e.id}/edit`, icon: Pencil }
+    : undefined}
+/>
 
 {#if e}
   <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">

@@ -54,15 +54,12 @@
 
 <PageHeader
   title="Termine"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Werkstatt- und Kundentermine.'}
+  primaryAction={{
+    label: 'Neuer Termin',
+    href: '/appointments/new',
+    icon: Plus
+  }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/appointments/new">
-      <Plus size={16} /> Neuer Termin
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

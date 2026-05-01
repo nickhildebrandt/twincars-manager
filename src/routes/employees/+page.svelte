@@ -43,15 +43,12 @@
 
 <PageHeader
   title="Mitarbeiter"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Mitarbeiter-Stammdaten verwalten.'}
+  primaryAction={{
+    label: 'Neuer Mitarbeiter',
+    href: '/employees/new',
+    icon: Plus
+  }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/employees/new">
-      <Plus size={16} /> Neuer Mitarbeiter
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

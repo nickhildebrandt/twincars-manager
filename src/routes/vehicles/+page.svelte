@@ -37,15 +37,8 @@
 
 <PageHeader
   title="Fahrzeuge"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Verwalten Sie Kunden- und Bestandsfahrzeuge.'}
+  primaryAction={{ label: 'Neues Fahrzeug', href: '/vehicles/new', icon: Plus }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/vehicles/new">
-      <Plus size={16} /> Neues Fahrzeug
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

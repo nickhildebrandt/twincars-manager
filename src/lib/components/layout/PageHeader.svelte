@@ -1,28 +1,31 @@
 <script lang="ts">
   import type { Snippet } from 'svelte'
-  import { pageTitle } from '$lib/stores/page-title.svelte'
+  import {
+    pageHeader,
+    type BackTarget,
+    type PrimaryAction
+  } from '$lib/stores/page-title.svelte'
 
   type Props = {
     title: string
-    // `subtitle` is intentionally accepted for backwards compatibility but
-    // no longer rendered — the page title is shown in the app header bar.
+    // Optional back navigation (URL or callback). Renders the back arrow before
+    // the title in the app's top header bar.
+    back?: BackTarget
+    // Optional primary action (e.g. "Neuer Kunde") rendered top-right in the
+    // header bar.
+    primaryAction?: PrimaryAction
+    // Subtitle is accepted for backwards compatibility but no longer rendered.
     subtitle?: string
-    actions?: Snippet
     toolbar?: Snippet
   }
-  const { title, actions, toolbar }: Props = $props()
+  const { title, back, primaryAction, toolbar }: Props = $props()
 
   $effect(() => {
-    pageTitle.set(title)
-    return () => pageTitle.reset()
+    pageHeader.set({ title, back, primaryAction })
+    return () => pageHeader.reset()
   })
 </script>
 
-{#if actions}
-  <div class="mb-4 flex items-center justify-end gap-2">
-    {@render actions()}
-  </div>
-{/if}
 {#if toolbar}
   <div class="mb-4">
     {@render toolbar()}

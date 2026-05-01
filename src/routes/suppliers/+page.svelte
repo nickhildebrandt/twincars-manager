@@ -43,15 +43,12 @@
 
 <PageHeader
   title="Lieferanten"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Lieferantenstamm pflegen.'}
+  primaryAction={{
+    label: 'Neuer Lieferant',
+    href: '/suppliers/new',
+    icon: Plus
+  }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/suppliers/new">
-      <Plus size={16} /> Neuer Lieferant
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

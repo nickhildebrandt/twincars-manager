@@ -54,15 +54,8 @@
 
 <PageHeader
   title="Angebote / Kostenvoranschläge"
-  subtitle={total > 0
-    ? `${total.toLocaleString('de-DE')} Einträge`
-    : 'Angebote, Kostenvoranschläge und Auftragsbestätigungen verwalten.'}
+  primaryAction={{ label: 'Neues Angebot', href: '/offers/new', icon: Plus }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/offers/new">
-      <Plus size={16} /> Neues Angebot
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}

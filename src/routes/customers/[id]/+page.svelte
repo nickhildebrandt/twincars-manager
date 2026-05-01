@@ -26,22 +26,15 @@
 
 <PageHeader
   title={loading ? 'Lädt …' : labelOf()}
-  subtitle={customer?.customerNumber}
->
-  {#snippet actions()}
-    <a class="btn btn-ghost btn-sm gap-2" href="/customers">
-      <ArrowLeft size={16} /> Zur Liste
-    </a>
-    {#if customer}
-      <a
-        class="btn btn-primary btn-sm gap-2"
-        href="/customers/{customer.id}/edit"
-      >
-        <Pencil size={16} /> Bearbeiten
-      </a>
-    {/if}
-  {/snippet}
-</PageHeader>
+  back="/customers"
+  primaryAction={customer
+    ? {
+        label: 'Bearbeiten',
+        href: `/customers/${customer.id}/edit`,
+        icon: Pencil
+      }
+    : undefined}
+/>
 
 {#if loading}
   <div class="card border-base-300 bg-base-100 border">

@@ -61,13 +61,8 @@
 
 <PageHeader
   title="Buchhaltung"
-  subtitle="Ein- und Ausgaben — manuelle und automatische Buchungen."
+  primaryAction={{ label: 'Neue Buchung', href: '/ledger/new', icon: Plus }}
 >
-  {#snippet actions()}
-    <a class="btn btn-primary btn-sm gap-2" href="/ledger/new">
-      <Plus size={16} /> Neue Buchung
-    </a>
-  {/snippet}
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}
