@@ -12,24 +12,20 @@
   } from '../../customers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the form values, hydration reuses cache. */
   const customer = await getCustomerRemote({ id })
 
-  let busy = $state(false)
-
   const handleSave = async (values: CustomerFormValues) => {
-    busy = true
     try {
-      await updateCustomerRemote({ id, values })
+      await busy.run(() => updateCustomerRemote({ id, values }))
       toast.success('Kunde gespeichert.')
       goto(`/customers/${id}`)
     } catch (err) {
       handleClientError(err, 'Kunde konnte nicht gespeichert werden')
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -40,5 +36,4 @@
   initial={customer}
   onSave={handleSave}
   onCancel={() => goto(`/customers/${customer.id}`)}
-  {busy}
 />

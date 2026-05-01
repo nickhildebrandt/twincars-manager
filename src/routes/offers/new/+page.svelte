@@ -5,6 +5,7 @@
   import { createOfferRemote } from '../offers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2, Package, Car, Pencil } from '@lucide/svelte'
   import {
@@ -58,7 +59,6 @@
 
   let positions = $state<Position[]>([blankPosition()])
 
-  let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
   let itemPickerValue = $state('')
@@ -209,25 +209,24 @@
       errorMsg = 'Bitte mindestens eine Position eingeben.'
       return
     }
-    busy = true
     try {
-      const created = await createOfferRemote({
-        type,
-        customerId: customerId || undefined,
-        vehicleId: vehicleId || undefined,
-        issueDate,
-        dueDate,
-        header: header.trim() || undefined,
-        footer: footer.trim() || undefined,
-        notes: notes.trim() || undefined,
-        items: cleaned
-      })
+      const created = await busy.run(() =>
+        createOfferRemote({
+          type,
+          customerId: customerId || undefined,
+          vehicleId: vehicleId || undefined,
+          issueDate,
+          dueDate,
+          header: header.trim() || undefined,
+          footer: footer.trim() || undefined,
+          notes: notes.trim() || undefined,
+          items: cleaned
+        })
+      )
       toast.success(`Dokument ${created.documentNumber} erstellt.`)
       goto(`/offers/${created.id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -493,15 +492,9 @@
   </div>
 
   <div class="flex flex-wrap justify-end gap-2">
-    <button
-      type="button"
-      class="btn btn-ghost"
-      onclick={() => goto('/offers')}
-      disabled={busy}>Abbrechen</button
+    <button type="button" class="btn btn-ghost" onclick={() => goto('/offers')}
+      >Abbrechen</button
     >
-    <button type="submit" class="btn btn-primary" disabled={busy}>
-      {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-      Speichern
-    </button>
+    <button type="submit" class="btn btn-primary">Speichern</button>
   </div>
 </form>

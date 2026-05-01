@@ -11,6 +11,7 @@
   import { listInvoicesRemote, deleteInvoiceRemote } from './invoices.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
 
   let pageNum = $state(1)
@@ -47,7 +48,9 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteInvoiceRemote({ id: toDelete.id }).updates(listInvoicesRemote)
+      await busy.run(() =>
+        deleteInvoiceRemote({ id: toDelete!.id }).updates(listInvoicesRemote)
+      )
       toast.success(`Rechnung „${toDelete.nr}" gelöscht.`)
       toDelete = null
     } catch (err) {

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Loader from '$lib/components/ui/Loader.svelte'
@@ -97,12 +98,11 @@
           </thead>
           <tbody>
             {#each rows as r (r.id)}
-              <tr>
-                <td class="font-mono text-xs"
-                  ><a class="link link-hover" href="/invoices/{r.id}"
-                    >{r.documentNumber}</a
-                  ></td
-                >
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/invoices/${r.id}`)}
+              >
+                <td class="font-mono text-xs">{r.documentNumber}</td>
                 <td>{r.issueDate}</td>
                 <td>{r.customerName ?? ''}</td>
                 <td class="text-right font-mono"

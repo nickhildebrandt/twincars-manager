@@ -7,24 +7,20 @@
   import { getItemRemote, updateItemRemote } from '../../items.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the form values, hydration reuses cache. */
   const i = await getItemRemote({ id })
 
-  let busy = $state(false)
-
   const handleSave = async (values: ItemFormValues) => {
-    busy = true
     try {
-      await updateItemRemote({ id, values })
+      await busy.run(() => updateItemRemote({ id, values }))
       toast.success('Artikel gespeichert.')
       goto(`/items/${id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -35,5 +31,4 @@
   initial={i}
   onSave={handleSave}
   onCancel={() => goto(`/items/${i.id}`)}
-  {busy}
 />

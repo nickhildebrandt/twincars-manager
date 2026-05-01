@@ -5,19 +5,15 @@
   import { createVehicleRemote } from '../vehicles.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
-
-  let busy = $state(false)
+  import { busy } from '$lib/stores/busy.svelte'
 
   const handleSave = async (values: VehicleFormValues) => {
-    busy = true
     try {
-      const created = await createVehicleRemote(values)
+      const created = await busy.run(() => createVehicleRemote(values))
       toast.success('Fahrzeug angelegt.')
       goto(`/vehicles/${created.id}`)
     } catch (err) {
       handleClientError(err, 'Fahrzeug konnte nicht angelegt werden')
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -26,4 +22,4 @@
   title="Neues Fahrzeug anlegen"
   subtitle="Stammdaten und Technik erfassen."
 />
-<VehicleForm onSave={handleSave} onCancel={() => goto('/vehicles')} {busy} />
+<VehicleForm onSave={handleSave} onCancel={() => goto('/vehicles')} />

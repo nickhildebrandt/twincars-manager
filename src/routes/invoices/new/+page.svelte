@@ -7,6 +7,7 @@
   import { getInventoryVehicleRemote } from '../../inventory/inventory.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2, Package, Car, Pencil } from '@lucide/svelte'
   import {
@@ -60,7 +61,6 @@
 
   let positions = $state<Position[]>([blankPosition()])
 
-  let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
   let itemPickerValue = $state('')
@@ -235,26 +235,25 @@
       errorMsg = 'Bitte mindestens eine Position mit Beschreibung anlegen.'
       return
     }
-    busy = true
     try {
-      const created = await createInvoiceRemote({
-        customerId: customerId || undefined,
-        vehicleId: vehicleId || undefined,
-        issueDate,
-        serviceDate,
-        dueDate,
-        paymentMethod,
-        header: header.trim() || undefined,
-        footer: footer.trim() || undefined,
-        notes: notes.trim() || undefined,
-        items: cleaned
-      })
+      const created = await busy.run(() =>
+        createInvoiceRemote({
+          customerId: customerId || undefined,
+          vehicleId: vehicleId || undefined,
+          issueDate,
+          serviceDate,
+          dueDate,
+          paymentMethod,
+          header: header.trim() || undefined,
+          footer: footer.trim() || undefined,
+          notes: notes.trim() || undefined,
+          items: cleaned
+        })
+      )
       toast.success(`Rechnung ${created.documentNumber} erstellt.`)
       goto(`/invoices/${created.id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -534,13 +533,9 @@
       type="button"
       class="btn btn-ghost"
       onclick={() => goto('/invoices')}
-      disabled={busy}
     >
       Abbrechen
     </button>
-    <button type="submit" class="btn btn-primary" disabled={busy}>
-      {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-      Rechnung speichern
-    </button>
+    <button type="submit" class="btn btn-primary"> Rechnung speichern </button>
   </div>
 </form>

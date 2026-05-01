@@ -5,18 +5,15 @@
   import { createItemRemote } from '../items.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
-  let busy = $state(false)
   const handleSave = async (values: ItemFormValues) => {
-    busy = true
     try {
-      const created = await createItemRemote(values)
+      const created = await busy.run(() => createItemRemote(values))
       toast.success('Artikel angelegt.')
       goto(`/items/${created.id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -25,4 +22,4 @@
   title="Neuen Artikel anlegen"
   subtitle="Leistung, Material oder Artikel anlegen."
 />
-<ItemForm onSave={handleSave} onCancel={() => goto('/items')} {busy} />
+<ItemForm onSave={handleSave} onCancel={() => goto('/items')} />

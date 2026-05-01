@@ -11,6 +11,7 @@
   import { listEmployeesRemote, deleteEmployeeRemote } from './employees.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
   const size = 25
@@ -50,8 +51,8 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteEmployeeRemote({ id: toDelete.id }).updates(
-        listEmployeesRemote
+      await busy.run(() =>
+        deleteEmployeeRemote({ id: toDelete!.id }).updates(listEmployeesRemote)
       )
       toast.success(`Mitarbeiter „${toDelete.name}" gelöscht.`)
       toDelete = null

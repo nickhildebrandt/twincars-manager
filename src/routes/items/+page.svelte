@@ -11,6 +11,7 @@
   import { listItemsRemote, deleteItemRemote } from './items.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
 
   let pageNum = $state(1)
@@ -49,7 +50,9 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteItemRemote({ id: toDelete.id }).updates(listItemsRemote)
+      await busy.run(() =>
+        deleteItemRemote({ id: toDelete!.id }).updates(listItemsRemote)
+      )
       toast.success(`„${toDelete.name}" gelöscht.`)
       toDelete = null
     } catch (err) {

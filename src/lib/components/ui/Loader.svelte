@@ -1,8 +1,23 @@
 <script lang="ts">
+  /**
+   * Standard loader component.
+   *
+   * Variants:
+   * - `block` (default): centered spinner + label, intended for inline use
+   *   inside a card or section.
+   * - `inline`: small spinner + label rendered inline-flex.
+   * - `bar`: thin DaisyUI progress bar, used as a top-of-card refetch hint.
+   * - `overlay`: absolute-positioned full-area cover with a translucent
+   *   background and a centered spinner; sits inside a `relative` parent
+   *   (typically the AppShell main slot) to lock the content area while a
+   *   transition is in flight.
+   *
+   * All styling is DaisyUI / Tailwind only — no custom CSS.
+   */
   type Props = {
     size?: 'sm' | 'md' | 'lg'
     label?: string
-    variant?: 'block' | 'inline' | 'bar'
+    variant?: 'block' | 'inline' | 'bar' | 'overlay'
   }
 
   const {
@@ -22,15 +37,17 @@
     <span>{label}</span>
   </span>
 {:else if variant === 'bar'}
+  <progress class="progress progress-primary h-0.5 w-full" aria-label={label}
+  ></progress>
+{:else if variant === 'overlay'}
   <div
-    class="bg-base-200 relative h-0.5 overflow-hidden"
+    class="bg-base-100/70 absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 backdrop-blur-sm"
     role="status"
     aria-live="polite"
-    aria-label={label}
+    aria-busy="true"
   >
-    <div
-      class="bg-primary absolute inset-y-0 w-1/3 animate-[loader-bar_1.2s_ease-in-out_infinite]"
-    ></div>
+    <span class="loading loading-spinner loading-lg text-primary"></span>
+    <span class="text-base-content/70 text-sm">{label}</span>
   </div>
 {:else}
   <div
@@ -42,14 +59,3 @@
     <span class="text-sm">{label}</span>
   </div>
 {/if}
-
-<style>
-  @keyframes loader-bar {
-    0% {
-      left: -33%;
-    }
-    100% {
-      left: 100%;
-    }
-  }
-</style>

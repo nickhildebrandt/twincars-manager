@@ -5,6 +5,8 @@
   import { Menu as MenuIcon, Wrench, ArrowLeft, Plus } from '@lucide/svelte'
   import type { Snippet } from 'svelte'
   import { pageHeader } from '$lib/stores/page-title.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
+  import Loader from '$lib/components/ui/Loader.svelte'
 
   type Props = { children?: Snippet; companyName?: string }
   const { children, companyName = 'TwinCarsManager' }: Props = $props()
@@ -120,9 +122,22 @@
       </div>
     </header>
 
-    <!-- Page content -->
-    <main class="scroll-y flex-1 p-4 sm:p-6 lg:p-8">
+    <!--
+      Page content. The wrapper is `relative` so the global busy overlay can
+      sit on top of the current view (sidebar + header stay interactive).
+      The main slot is also marked `aria-busy` and `inert` while busy, so
+      keyboard users and screen readers cannot trigger actions during a
+      transition.
+    -->
+    <main
+      class="scroll-y relative flex-1 p-4 sm:p-6 lg:p-8"
+      aria-busy={busy.active}
+      inert={busy.active}
+    >
       {@render children?.()}
+      {#if busy.active}
+        <Loader variant="overlay" />
+      {/if}
     </main>
 
     <footer

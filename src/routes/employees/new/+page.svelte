@@ -5,21 +5,18 @@
   import { createEmployeeRemote } from '../employees.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
-  let busy = $state(false)
   const handleSave = async (values: EmployeeFormValues) => {
-    busy = true
     try {
-      const created = await createEmployeeRemote(values)
+      const created = await busy.run(() => createEmployeeRemote(values))
       toast.success('Mitarbeiter angelegt.')
       goto(`/employees/${created.id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
 
 <PageHeader title="Neuen Mitarbeiter anlegen" subtitle="Stammdaten erfassen." />
-<EmployeeForm onSave={handleSave} onCancel={() => goto('/employees')} {busy} />
+<EmployeeForm onSave={handleSave} onCancel={() => goto('/employees')} />

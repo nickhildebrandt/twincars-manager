@@ -11,6 +11,7 @@
   import { listCustomersRemote, deleteCustomerRemote } from './customers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
   const size = 25
@@ -70,9 +71,10 @@
     if (!toDeleteId) return
     try {
       // Single-flight: refresh the active filter/page combo as part of the
-      // delete response — no extra round-trip from the client.
-      await deleteCustomerRemote({ id: toDeleteId }).updates(
-        listCustomersRemote
+      // delete response — no extra round-trip. `busy.run` locks the UI
+      // until the response arrives.
+      await busy.run(() =>
+        deleteCustomerRemote({ id: toDeleteId! }).updates(listCustomersRemote)
       )
       toast.success(`Kunde „${toDeleteName}" gelöscht.`)
       toDeleteId = null

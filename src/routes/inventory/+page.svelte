@@ -6,7 +6,7 @@
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import Loader from '$lib/components/ui/Loader.svelte'
-  import { Plus, Warehouse, Eye, Receipt } from '@lucide/svelte'
+  import { Plus, Warehouse, Receipt } from '@lucide/svelte'
   import { listInventoryRemote } from './inventory.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { formatEuro } from '$lib/utils/money'
@@ -91,7 +91,10 @@
           </thead>
           <tbody>
             {#each items as v (v.id)}
-              <tr class="hover:bg-base-200/50">
+              <tr
+                class="hover:bg-base-200/50 cursor-pointer"
+                onclick={() => goto(`/vehicles/${v.id}`)}
+              >
                 <td class="font-medium">
                   {[v.make, v.model].filter(Boolean).join(' ') || '—'}
                 </td>
@@ -114,15 +117,8 @@
                     <span class="badge badge-ghost badge-sm">Regelbest.</span>
                   {/if}
                 </td>
-                <td>
+                <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end gap-1">
-                    <a
-                      class="btn btn-ghost btn-sm btn-square"
-                      href="/vehicles/{v.id}"
-                      aria-label="Details"
-                    >
-                      <Eye size={16} />
-                    </a>
                     <button
                       type="button"
                       class="btn btn-primary btn-sm gap-1"

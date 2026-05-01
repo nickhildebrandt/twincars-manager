@@ -5,19 +5,15 @@
   import { createCustomerRemote } from '../customers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
-
-  let busy = $state(false)
+  import { busy } from '$lib/stores/busy.svelte'
 
   const handleSave = async (values: CustomerFormValues) => {
-    busy = true
     try {
-      const created = await createCustomerRemote(values)
+      const created = await busy.run(() => createCustomerRemote(values))
       toast.success('Kunde angelegt.')
       goto(`/customers/${created.id}`)
     } catch (err) {
       handleClientError(err, 'Kunde konnte nicht angelegt werden')
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -27,4 +23,4 @@
   subtitle="Geben Sie die Stammdaten des Kunden ein."
 />
 
-<CustomerForm onSave={handleSave} onCancel={() => goto('/customers')} {busy} />
+<CustomerForm onSave={handleSave} onCancel={() => goto('/customers')} />

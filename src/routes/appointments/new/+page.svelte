@@ -10,6 +10,7 @@
   } from '../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const now = new Date()
   const start = new Date(now.getTime() + 60 * 60 * 1000)
@@ -31,7 +32,6 @@
   let notes = $state('')
   let status = $state<'scheduled' | 'completed' | 'cancelled'>('scheduled')
 
-  let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
@@ -61,24 +61,23 @@
       errorMsg = 'Endzeit muss nach Startzeit liegen.'
       return
     }
-    busy = true
     try {
-      await createAppointmentRemote({
-        title: title.trim(),
-        customerId: customerId || undefined,
-        vehicleId: vehicleId || undefined,
-        employeeId: employeeId || undefined,
-        startsAt,
-        endsAt,
-        notes: notes.trim() || undefined,
-        status
-      })
+      await busy.run(() =>
+        createAppointmentRemote({
+          title: title.trim(),
+          customerId: customerId || undefined,
+          vehicleId: vehicleId || undefined,
+          employeeId: employeeId || undefined,
+          startsAt,
+          endsAt,
+          notes: notes.trim() || undefined,
+          status
+        })
+      )
       toast.success('Termin angelegt.')
       goto('/appointments')
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -183,13 +182,9 @@
       <button
         type="button"
         class="btn btn-ghost"
-        onclick={() => goto('/appointments')}
-        disabled={busy}>Abbrechen</button
+        onclick={() => goto('/appointments')}>Abbrechen</button
       >
-      <button type="submit" class="btn btn-primary" disabled={busy}>
-        {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-        Speichern
-      </button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
     </div>
   </div>
 </form>

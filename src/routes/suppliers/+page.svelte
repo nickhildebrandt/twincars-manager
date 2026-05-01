@@ -11,6 +11,7 @@
   import { listSuppliersRemote, deleteSupplierRemote } from './suppliers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
   const size = 25
@@ -50,8 +51,8 @@
   const remove = async () => {
     if (!toDelete) return
     try {
-      await deleteSupplierRemote({ id: toDelete.id }).updates(
-        listSuppliersRemote
+      await busy.run(() =>
+        deleteSupplierRemote({ id: toDelete!.id }).updates(listSuppliersRemote)
       )
       toast.success(`Lieferant „${toDelete.name}" gelöscht.`)
       toDelete = null

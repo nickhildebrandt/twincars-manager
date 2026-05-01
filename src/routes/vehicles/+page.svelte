@@ -10,6 +10,7 @@
   import { listVehiclesRemote, deleteVehicleRemote } from './vehicles.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
   const size = 25
@@ -49,8 +50,11 @@
   const remove = async (id: string, label: string) => {
     try {
       // Single-flight: refresh the current filter/page combination as part
-      // of the delete response, no extra round-trip.
-      await deleteVehicleRemote({ id }).updates(listVehiclesRemote)
+      // of the delete response, no extra round-trip. `busy.run` locks the
+      // UI until the response arrives.
+      await busy.run(() =>
+        deleteVehicleRemote({ id }).updates(listVehiclesRemote)
+      )
       toast.success(`Fahrzeug „${label}" gelöscht.`)
     } catch (err) {
       handleClientError(err)

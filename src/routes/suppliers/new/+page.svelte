@@ -5,21 +5,18 @@
   import { createSupplierRemote } from '../suppliers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
-  let busy = $state(false)
   const handleSave = async (values: SupplierFormValues) => {
-    busy = true
     try {
-      const created = await createSupplierRemote(values)
+      const created = await busy.run(() => createSupplierRemote(values))
       toast.success('Lieferant angelegt.')
       goto(`/suppliers/${created.id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
 
 <PageHeader title="Neuen Lieferanten anlegen" subtitle="Stammdaten erfassen." />
-<SupplierForm onSave={handleSave} onCancel={() => goto('/suppliers')} {busy} />
+<SupplierForm onSave={handleSave} onCancel={() => goto('/suppliers')} />

@@ -7,6 +7,7 @@
   } from '../ledger.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -19,7 +20,6 @@
   let paymentMethod = $state('')
   let paymentStatus = $state<'paid' | 'open' | 'partial'>('paid')
 
-  let busy = $state(false)
   let errorMsg = $state<string | null>(null)
 
   const cats = $derived(listCategoriesRemote({ direction }))
@@ -36,24 +36,23 @@
       errorMsg = 'Bitte einen Betrag größer 0 eingeben.'
       return
     }
-    busy = true
     try {
-      await createLedgerEntryRemote({
-        direction,
-        entryDate,
-        amountGross: Number(amountGross),
-        taxRate,
-        categoryId: categoryId || undefined,
-        description: description.trim(),
-        paymentMethod: paymentMethod || undefined,
-        paymentStatus
-      })
+      await busy.run(() =>
+        createLedgerEntryRemote({
+          direction,
+          entryDate,
+          amountGross: Number(amountGross),
+          taxRate,
+          categoryId: categoryId || undefined,
+          description: description.trim(),
+          paymentMethod: paymentMethod || undefined,
+          paymentStatus
+        })
+      )
       toast.success('Buchung gespeichert.')
       goto('/ledger')
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -148,13 +147,9 @@
       <button
         type="button"
         class="btn btn-ghost"
-        onclick={() => goto('/ledger')}
-        disabled={busy}>Abbrechen</button
+        onclick={() => goto('/ledger')}>Abbrechen</button
       >
-      <button type="submit" class="btn btn-primary" disabled={busy}>
-        {#if busy}<span class="loading loading-spinner loading-sm"></span>{/if}
-        Speichern
-      </button>
+      <button type="submit" class="btn btn-primary">Speichern</button>
     </div>
   </div>
 </form>

@@ -6,6 +6,7 @@
   import { getInvoiceRemote, setInvoiceStatusRemote } from '../invoices.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
 
   const id = untrack(() => page.params.id!)
@@ -18,7 +19,7 @@
 
   const markPaid = async () => {
     try {
-      await setInvoiceStatusRemote({ id, status: 'paid' })
+      await busy.run(() => setInvoiceStatusRemote({ id, status: 'paid' }))
       toast.success('Rechnung als bezahlt markiert.')
     } catch (err) {
       handleClientError(err)

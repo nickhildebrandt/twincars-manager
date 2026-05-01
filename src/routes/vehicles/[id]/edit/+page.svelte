@@ -7,24 +7,20 @@
   import { getVehicleRemote, updateVehicleRemote } from '../../vehicles.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the form values, hydration reuses cache. */
   const v = await getVehicleRemote({ id })
 
-  let busy = $state(false)
-
   const handleSave = async (values: VehicleFormValues) => {
-    busy = true
     try {
-      await updateVehicleRemote({ id, values })
+      await busy.run(() => updateVehicleRemote({ id, values }))
       toast.success('Fahrzeug gespeichert.')
       goto(`/vehicles/${id}`)
     } catch (err) {
       handleClientError(err)
-    } finally {
-      busy = false
     }
   }
 </script>
@@ -35,5 +31,4 @@
   initial={v}
   onSave={handleSave}
   onCancel={() => goto(`/vehicles/${v.id}`)}
-  {busy}
 />

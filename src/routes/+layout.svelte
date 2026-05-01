@@ -1,10 +1,11 @@
 <script lang="ts">
   import '../app.css'
-  import { goto } from '$app/navigation'
+  import { goto, beforeNavigate, afterNavigate } from '$app/navigation'
   import { page } from '$app/state'
   import AppShell from '$lib/components/layout/AppShell.svelte'
   import ToastTray from '$lib/components/ui/ToastTray.svelte'
   import { getLayoutContext } from './layout.remote'
+  import { busy } from '$lib/stores/busy.svelte'
 
   const { children } = $props()
 
@@ -23,6 +24,15 @@
     if (typeof window === 'undefined') return
     goto('/setup')
   })
+
+  /**
+   * Wire SvelteKit navigation into the global busy state. Every page change
+   * — including switching between detail records — flips the overlay so
+   * the user sees a consistent loading indication and cannot click around
+   * mid-transition.
+   */
+  beforeNavigate(() => busy.begin())
+  afterNavigate(() => busy.end())
 </script>
 
 <svelte:head>
