@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
@@ -12,21 +13,34 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { formatEuro } from '$lib/utils/money'
 
-  let page = $state(1)
+  let pageNum = $state(1)
   const size = 25
   let q = $state('')
   let kind = $state<
     'all' | 'service' | 'material' | 'article' | 'pass_through'
   >('all')
 
-  const iQ = $derived(listItemsRemote({ page, size, q: q || undefined, kind }))
-  const items = $derived(iQ.current?.items ?? [])
-  const total = $derived(iQ.current?.total ?? 0)
-  const pageCount = $derived(iQ.current?.pageCount ?? 1)
-  const loading = $derived(iQ.loading)
+  const query = $derived(
+    listItemsRemote({ page: pageNum, size, q: q || undefined, kind })
+  )
+
+  /** Top-level await: SSR carries the data, hydration reuses the cache. */
+  const initial = await untrack(() => query)
+
+  /** Cache last successful result so paginating doesn't flash empty state. */
+  let lastResult = $state<typeof initial>(initial)
+  $effect(() => {
+    if (query.current) lastResult = query.current
+  })
+
+  const result = $derived(query.current ?? lastResult)
+  const items = $derived(result.items)
+  const total = $derived(result.total)
+  const pageCount = $derived(result.pageCount)
+  const loading = $derived(query.loading)
 
   $effect(() => {
-    if (iQ.error) handleClientError(iQ.error)
+    if (query.error) handleClientError(query.error)
   })
 
   let confirmOpen = $state(false)
@@ -61,13 +75,13 @@
     <Toolbar
       bind:query={q}
       placeholder="Artikel suchen: Nr., Beschreibung ..."
-      onQuery={() => (page = 1)}
+      onQuery={() => (pageNum = 1)}
     >
       {#snippet filters()}
         <select
           class="select select-sm select-bordered"
           bind:value={kind}
-          onchange={() => (page = 1)}
+          onchange={() => (pageNum = 1)}
         >
           <option value="all">Alle Typen</option>
           <option value="service">Leistung</option>
@@ -82,12 +96,10 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
-    {#if loading && items.length > 0}
+    {#if loading}
       <Loader variant="bar" />
     {/if}
-    {#if loading && items.length === 0}
-      <Loader />
-    {:else if items.length === 0}
+    {#if items.length === 0}
       <EmptyState
         icon={Package}
         title="Noch keine Artikel"
@@ -159,10 +171,10 @@
       </div>
       <Pagination
         {total}
-        {page}
+        page={pageNum}
         {pageCount}
         {size}
-        onPage={(p) => (page = p)}
+        onPage={(p) => (pageNum = p)}
       />
     {/if}
   </div>

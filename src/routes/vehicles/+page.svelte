@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
@@ -10,20 +11,39 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
 
-  let page = $state(1)
+  let pageNum = $state(1)
   const size = 25
   let q = $state('')
 
-  const vehiclesQ = $derived(
-    listVehiclesRemote({ page, size, q: q || undefined, archived: 'active' })
+  const query = $derived(
+    listVehiclesRemote({
+      page: pageNum,
+      size,
+      q: q || undefined,
+      archived: 'active'
+    })
   )
-  const items = $derived(vehiclesQ.current?.items ?? [])
-  const total = $derived(vehiclesQ.current?.total ?? 0)
-  const pageCount = $derived(vehiclesQ.current?.pageCount ?? 1)
-  const loading = $derived(vehiclesQ.loading)
+
+  // Top-level await: SvelteKit suspends rendering until the initial query
+  // resolves so SSR carries the data, and hydration reuses the dehydrated
+  // cache without re-fetching.
+  const initial = await untrack(() => query)
+
+  // Cache the last successful result across param changes so the table
+  // stays populated during a refetch instead of dropping to empty state.
+  let lastResult = $state<typeof initial>(initial)
+  $effect(() => {
+    if (query.current) lastResult = query.current
+  })
+
+  const result = $derived(query.current ?? lastResult)
+  const items = $derived(result.items)
+  const total = $derived(result.total)
+  const pageCount = $derived(result.pageCount)
+  const loading = $derived(query.loading)
 
   $effect(() => {
-    if (vehiclesQ.error) handleClientError(vehiclesQ.error)
+    if (query.error) handleClientError(query.error)
   })
 
   const remove = async (id: string, label: string) => {
@@ -46,19 +66,17 @@
     <Toolbar
       bind:query={q}
       placeholder="Fahrzeuge suchen: Kennzeichen, FIN, Marke ..."
-      onQuery={() => (page = 1)}
+      onQuery={() => (pageNum = 1)}
     />
   {/snippet}
 </PageHeader>
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
-    {#if loading && items.length > 0}
+    {#if loading}
       <Loader variant="bar" />
     {/if}
-    {#if loading && items.length === 0}
-      <Loader />
-    {:else if items.length === 0}
+    {#if items.length === 0}
       <EmptyState
         icon={Car}
         title="Noch keine Fahrzeuge"
@@ -120,10 +138,10 @@
       </div>
       <Pagination
         {total}
-        {page}
+        page={pageNum}
         {pageCount}
         {size}
-        onPage={(p) => (page = p)}
+        onPage={(p) => (pageNum = p)}
       />
     {/if}
   </div>

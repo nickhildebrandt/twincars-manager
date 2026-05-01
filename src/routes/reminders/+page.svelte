@@ -2,19 +2,13 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import { AlertTriangle, Receipt, FileWarning } from '@lucide/svelte'
   import { listOpenInvoicesRemote } from './reminders.remote'
-  import { handleClientError } from '$lib/utils/client-error'
   import { formatEuro } from '$lib/utils/money'
 
-  const oQ = $derived(listOpenInvoicesRemote())
-  const items = $derived(oQ.current ?? [])
-  const loading = $derived(oQ.loading)
-  $effect(() => {
-    if (oQ.error) handleClientError(oQ.error)
-  })
+  /** Top-level await: SSR carries the data; hydration reuses the cache. */
+  const items = await listOpenInvoicesRemote()
 
   const totals = $derived.by(() => {
     const open = items.reduce((s, i) => s + i.openAmount, 0)
@@ -60,9 +54,7 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
-    {#if loading && items.length === 0}
-      <Loader />
-    {:else if items.length === 0}
+    {#if items.length === 0}
       <EmptyState
         icon={Receipt}
         title="Keine offenen Rechnungen"
