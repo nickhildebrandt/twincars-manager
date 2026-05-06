@@ -47,6 +47,7 @@ const baseSettings: CompanySettings = {
   reminderFee3: '10.00',
   reminderFee4: '15.00',
   reminderInterestRate: '9.62',
+  payrollGenerationDay: 25,
   createdAt: new Date('2026-01-01T00:00:00Z'),
   updatedAt: new Date('2026-01-01T00:00:00Z')
 }
@@ -126,6 +127,7 @@ const baseInput = (): DocumentRenderInput => ({
   doc: { ...baseDoc },
   items: [{ ...baseItem }],
   customer: { ...baseCustomer },
+  vehicle: null,
   settings: { ...baseSettings }
 })
 
@@ -178,15 +180,18 @@ describe('computeDocumentInputHash', () => {
     const reordered = baseInput()
     // Build a swapped-key copy of doc — same content, different insertion
     // order. The canonical sort inside the helper has to neutralize this.
-    reordered.doc = {
-      updatedAt: baseDoc.updatedAt,
-      createdAt: baseDoc.createdAt,
-      grossTotal: baseDoc.grossTotal,
-      taxTotal: baseDoc.taxTotal,
-      netTotal: baseDoc.netTotal,
-      discountTotal: baseDoc.discountTotal,
-      ...baseDoc
-    }
+    // Object.assign on a fresh object preserves the *new* insertion order.
+    reordered.doc = Object.assign(
+      {
+        updatedAt: baseDoc.updatedAt,
+        createdAt: baseDoc.createdAt,
+        grossTotal: baseDoc.grossTotal,
+        taxTotal: baseDoc.taxTotal,
+        netTotal: baseDoc.netTotal,
+        discountTotal: baseDoc.discountTotal
+      },
+      baseDoc
+    )
     const b = computeDocumentInputHash(reordered)
     expect(a).toBe(b)
   })

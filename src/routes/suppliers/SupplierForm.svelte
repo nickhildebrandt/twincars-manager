@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   type Supplier = {
     name?: string | null
@@ -83,6 +84,7 @@
       errorMsg = 'Bitte eine gültige E-Mail-Adresse eingeben.'
       return
     }
+    formDirty.clear()
     await onSave({
       name: name.trim(),
       contactPerson: u(contactPerson),
@@ -101,9 +103,17 @@
       customerNumberAtSupplier: u(customerNumberAtSupplier)
     })
   }
+
+  const markDirty = () => formDirty.set(true)
+  $effect(() => () => formDirty.clear())
 </script>
 
-<form onsubmit={submit} class="card border-base-300 bg-base-100 border">
+<form
+  onsubmit={submit}
+  oninput={markDirty}
+  onchange={markDirty}
+  class="card border-base-300 bg-base-100 border"
+>
   <div class="card-body gap-4">
     {#if errorMsg}<div class="alert alert-error"><span>{errorMsg}</span></div
       >{/if}
@@ -111,26 +121,26 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Firma</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="form-control sm:col-span-2">
+        <label class="flex w-full flex-col gap-1 sm:col-span-2">
           <span class="label-text">Firmenname *</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="200"
             bind:value={name}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Kontaktperson</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={contactPerson}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Kundennummer beim Lieferanten</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="50"
             bind:value={customerNumberAtSupplier}
           />
@@ -141,30 +151,34 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Anschrift</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control sm:col-span-3">
+        <label class="flex w-full flex-col gap-1 sm:col-span-3">
           <span class="label-text">Straße + Hausnummer</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="200"
             bind:value={street}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">PLZ</span>
-          <input class="input input-bordered" maxlength="10" bind:value={zip} />
+          <input
+            class="input input-bordered w-full"
+            maxlength="10"
+            bind:value={zip}
+          />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Ort</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="150"
             bind:value={city}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Land</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={country}
           />
@@ -175,31 +189,35 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Kontakt</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Telefon</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             bind:value={phone}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Fax</span>
-          <input class="input input-bordered" maxlength="30" bind:value={fax} />
+          <input
+            class="input input-bordered w-full"
+            maxlength="30"
+            bind:value={fax}
+          />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">E-Mail</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="email"
             maxlength="254"
             bind:value={email}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Website</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="2048"
             bind:value={website}
           />
@@ -210,25 +228,29 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Bankdaten</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control sm:col-span-3">
+        <label class="flex w-full flex-col gap-1 sm:col-span-3">
           <span class="label-text">Bankname</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={bankName}
           />
         </label>
-        <label class="form-control sm:col-span-2">
+        <label class="flex w-full flex-col gap-1 sm:col-span-2">
           <span class="label-text">IBAN</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="34"
             bind:value={iban}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">BIC</span>
-          <input class="input input-bordered" maxlength="11" bind:value={bic} />
+          <input
+            class="input input-bordered w-full"
+            maxlength="11"
+            bind:value={bic}
+          />
         </label>
       </div>
     </fieldset>
@@ -236,7 +258,7 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Notiz</legend>
       <textarea
-        class="textarea textarea-bordered min-h-24"
+        class="textarea textarea-bordered min-h-24 w-full"
         maxlength="2000"
         bind:value={notes}
       ></textarea>

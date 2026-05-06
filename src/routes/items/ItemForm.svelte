@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   type Item = {
     articleNumber?: string | null
@@ -72,6 +73,7 @@
       errorMsg = 'Bitte eine Beschreibung eingeben.'
       return
     }
+    formDirty.clear()
     await onSave({
       articleNumber: u(articleNumber),
       description: description.trim(),
@@ -86,9 +88,17 @@
       notes: u(notes)
     })
   }
+
+  const markDirty = () => formDirty.set(true)
+  $effect(() => () => formDirty.clear())
 </script>
 
-<form onsubmit={submit} class="card border-base-300 bg-base-100 border">
+<form
+  onsubmit={submit}
+  oninput={markDirty}
+  onchange={markDirty}
+  class="card border-base-300 bg-base-100 border"
+>
   <div class="card-body gap-4">
     {#if errorMsg}<div class="alert alert-error"><span>{errorMsg}</span></div
       >{/if}
@@ -96,36 +106,36 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Stammdaten</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Art-Nr. (auto)</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="50"
             placeholder="auto"
             bind:value={articleNumber}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Typ</span>
-          <select class="select select-bordered" bind:value={kind}>
+          <select class="select select-bordered w-full" bind:value={kind}>
             <option value="service">Leistung</option>
             <option value="material">Material</option>
             <option value="article">Artikel</option>
             <option value="pass_through">Durchlaufposten</option>
           </select>
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Einheit</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="20"
             bind:value={unit}
           />
         </label>
-        <label class="form-control sm:col-span-3">
+        <label class="flex w-full flex-col gap-1 sm:col-span-3">
           <span class="label-text">Beschreibung *</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="500"
             bind:value={description}
           />
@@ -136,20 +146,20 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Preise</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Einzelpreis netto (€)</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             step="0.01"
             bind:value={unitPriceNet}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Einkaufspreis netto (€)</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             step="0.01"
@@ -162,27 +172,27 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Lager</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Bestand</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             bind:value={stockOnHand}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Mindestbestand</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             bind:value={stockMin}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Maximalbestand</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             bind:value={stockMax}
@@ -202,7 +212,7 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Notiz</legend>
       <textarea
-        class="textarea textarea-bordered min-h-24"
+        class="textarea textarea-bordered min-h-24 w-full"
         maxlength="2000"
         bind:value={notes}
       ></textarea>

@@ -11,7 +11,7 @@
     try {
       const created = await busy.run(() => createItemRemote(values))
       toast.success('Artikel angelegt.')
-      goto(`/items/${created.id}`)
+      goto(`/items/${created.id}`, { replaceState: true })
     } catch (err) {
       handleClientError(err)
     }

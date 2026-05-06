@@ -6,7 +6,6 @@ import {
   mailTemplates,
   ledgerCategories
 } from './schema'
-import { sql } from 'drizzle-orm'
 
 export const defaultMailTemplates: Array<{
   key: string
@@ -126,13 +125,21 @@ Viele Grüße
   }
 ]
 
+/**
+ * Nummern-Schema: Kunden- und Belegnummern sind aus rechtlichen
+ * Gründen reine Zähler — der Betrieb muss nahtlos an die alte
+ * KFZ-Kaufmann-DB anschließen können (z.B. Rechnung 19086 → 19087
+ * nach Datenübernahme). Mahnungen behalten ihren eigenen
+ * Jahres-Prefix, weil Legacy keine eigene Mahn-Nummer kannte und wir
+ * dort frei bei 1 starten können.
+ */
 const defaultNumberRanges = [
-  { kind: 'invoice', formatTemplate: 'RE-{YYYY}-{NNNN}' },
-  { kind: 'offer', formatTemplate: 'AN-{YYYY}-{NNNN}' },
-  { kind: 'cost_estimate', formatTemplate: 'KV-{YYYY}-{NNNN}' },
-  { kind: 'order_confirmation', formatTemplate: 'AB-{YYYY}-{NNNN}' },
+  { kind: 'invoice', formatTemplate: '{N}' },
+  { kind: 'offer', formatTemplate: '{N}' },
+  { kind: 'cost_estimate', formatTemplate: '{N}' },
+  { kind: 'order_confirmation', formatTemplate: '{N}' },
   { kind: 'reminder', formatTemplate: 'MA-{YYYY}-{NNNN}' },
-  { kind: 'customer', formatTemplate: 'KU-{NNNNN}' }
+  { kind: 'customer', formatTemplate: '{N}' }
 ]
 
 const defaultLedgerCategories = [
@@ -171,26 +178,23 @@ export async function seedDefaults() {
   }
 
   for (const r of defaultNumberRanges) {
-    await db.execute(sql`
-			INSERT INTO number_ranges (kind, format_template, next_value)
-			VALUES (${r.kind}, ${r.formatTemplate}, 1)
-			ON CONFLICT (kind) DO NOTHING
-		`)
+    await db
+      .insert(numberRanges)
+      .values({ kind: r.kind, formatTemplate: r.formatTemplate, nextValue: 1 })
+      .onConflictDoNothing({ target: numberRanges.kind })
   }
 
   for (const t of defaultMailTemplates) {
-    await db.execute(sql`
-			INSERT INTO mail_templates (key, subject, body, is_custom)
-			VALUES (${t.key}, ${t.subject}, ${t.body}, false)
-			ON CONFLICT (key) DO NOTHING
-		`)
+    await db
+      .insert(mailTemplates)
+      .values({ key: t.key, subject: t.subject, body: t.body, isCustom: false })
+      .onConflictDoNothing({ target: mailTemplates.key })
   }
 
   for (const c of defaultLedgerCategories) {
-    await db.execute(sql`
-			INSERT INTO ledger_categories (direction, name)
-			VALUES (${c.direction}, ${c.name})
-			ON CONFLICT (name) DO NOTHING
-		`)
+    await db
+      .insert(ledgerCategories)
+      .values({ direction: c.direction, name: c.name })
+      .onConflictDoNothing({ target: ledgerCategories.name })
   }
 }

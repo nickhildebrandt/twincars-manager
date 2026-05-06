@@ -296,18 +296,143 @@ more specific phrase clearly helps. Same wording everywhere.
 
 ## 7. UI / styling
 
+The design language is **flat, bordered, low-contrast** — a quiet shell so
+the data does the talking. The rules below are not aesthetic preferences;
+they exist so screens stay visually consistent without anyone having to
+think about it on every PR.
+
+### Library priority
+
 - **DaisyUI first.** Look for an existing component or pattern in DaisyUI
-  before writing markup. The
-  [`daisyUI Blueprint MCP`](https://daisyui.com/blueprint/) is the
-  canonical reference.
-- **Tailwind second.** Use utility classes for layout / spacing / minor
-  tweaks DaisyUI does not cover.
+  before writing markup. Configure the
+  [`daisyUI Blueprint MCP`](https://daisyui.com/blueprint/) server in
+  your editor and use it to confirm the canonical class names, parts and
+  modifiers before adding new markup.
+- **Tailwind second.** Utility classes are for layout (`grid`, `flex`,
+  `gap-*`) and minor spacing tweaks only. Reach for them after you've
+  confirmed DaisyUI doesn't already cover the case.
 - **No custom CSS.** No `<style>` blocks in components, no rules in
-  `app.css` beyond Tailwind/DaisyUI directives. If you think you need a
-  custom rule, you probably need a different DaisyUI / Tailwind combo.
+  `app.css` beyond the Tailwind / DaisyUI directives. If you think you
+  need a custom rule, you probably need a different DaisyUI / Tailwind
+  combo.
 - Single `corporate` theme. No dark-mode toggle.
 - Icons come from `@lucide/svelte` only.
-- Do not add color tokens or spacing scales — use the DaisyUI theme.
+- Do not add colour tokens or spacing scales — use the DaisyUI theme.
+
+### Shell padding rhythm (single source of truth)
+
+The shell uses **one** spacing value for every important gap:
+
+- `p-4` on the main column, `pb-12` so the page never feels cramped at
+  the bottom.
+- `px-4` on the top header — same value, so the header's primary action
+  button lands directly above the rightmost card edge.
+- `gap-4` on every grid that holds top-level cards.
+
+That means top, left, right and inter-card spacing are all the same
+(1rem). When you add a new view or component, default to `gap-4` for
+card grids and don't introduce custom margins between cards — let the
+grid gap do the work.
+
+### The card baseline (single source of truth)
+
+Every block of content in the main column — list tables, search/filter
+bars, dashboard tiles, info panels, detail summary boxes, PDF previews,
+forms — uses **the same baseline**:
+
+```html
+<div class="card border-base-300 bg-base-100 border">
+  <div class="card-body">…</div>
+</div>
+```
+
+No shadow, no extra ring, no custom radius. The DaisyUI `card` class
+already gives the right radius (`rounded-box`) and background. The
+`border border-base-300` adds the only visual separator we need. Inner
+spacing comes from `card-body`, optionally adjusted with `p-0` (for
+tables that should reach the card edge) or `gap-*` (for stacked content).
+
+Variants are deliberately limited:
+
+- **Tables that reach the edge:** wrap the `<table>` directly with
+  `<div class="card-body p-0">`. Don't add a separate inner border around
+  the table — the card already provides one.
+- **Search / filter bars** (the `Toolbar` component) reuse the same
+  baseline. The card class is applied directly so the row layout works
+  without `card-body`.
+- **Empty states** (`EmptyState` component) are **borderless** because
+  they always render inside a wrapping card. Never put a second border
+  around them.
+
+### Tables
+
+- **No zebra striping.** Don't use `table-zebra`. Plain rows on a single
+  background read better when paired with our flat card baseline, and
+  hover then carries a clear, single signal of clickability.
+- **Hover communicates clickability.** Rows that navigate to a detail
+  view get `class="hover:bg-base-200 cursor-pointer"` plus an `onclick`
+  that calls `goto(...)`. Rows that don't navigate get neither.
+- **Total / summary rows** live in `<tfoot>` with their own emphasis
+  (`bg-base-200/30 border-t-2 font-semibold`). Keep them visually
+  distinct from data rows — they're the only "different" row in the
+  table.
+- **Action cells** use `<td onclick={(e) => e.stopPropagation()}>` to
+  prevent the row navigation from swallowing button clicks.
+- **Pagination padding is symmetric.** The shared `Pagination` component
+  uses `p-3 sm:p-4` so the corners (Trefferanzahl on the left, page
+  switcher on the right) sit the same distance from every edge.
+
+### No custom CSS
+
+`src/app.css` is intentionally tiny — only Tailwind + DaisyUI imports
+plus a single `scrollbar-gutter: stable` rule on `html, body` because
+that one _has_ to live on the document root. **Don't add anything else
+there.** No `@apply`-built component classes, no raw rules, no theme
+overrides. If you find yourself reaching for custom CSS, the answer is
+a different DaisyUI variant or a Tailwind utility at the use site.
+
+`<style>` blocks inside `.svelte` components are similarly forbidden.
+Tailwind's arbitrary-value syntax (e.g. `[scrollbar-gutter:stable]`,
+`[grid-template-columns:repeat(4,minmax(0,1fr))]`) covers the rare
+case where you genuinely need a one-off CSS value.
+
+### Forbidden styling patterns
+
+These are visual sources of inconsistency we removed on purpose. Don't
+re-introduce them:
+
+- **No shadows in the main column.** That includes `shadow-sm`,
+  `shadow-md`, `shadow-lg`, `drop-shadow-*` on cards, dashboard tiles,
+  the header bar, etc. The only shadow that's allowed is on the
+  `ToastTray` (it's a floating overlay, not main content).
+- **No dashed / dotted borders** anywhere in the main column —
+  `border-dashed` and `border-dotted` are banned for cards, empty
+  states and image preview placeholders. Solid borders only.
+- **No zebra striping** on tables. See the table rules above — the flat
+  card + hover combination is the contract.
+- **No custom rounding.** Don't reach for `rounded-md` / `rounded-lg`
+  / `rounded-xl` for content blocks — DaisyUI's defaults already handle
+  this. The exception is the PDF iframe inside `PdfViewer`, which uses
+  `rounded-md` to look like a previewed asset rather than a card.
+- **No header-bar shadow.** The top header is separated from the page
+  by the same `border-b border-base-300` rule the sidebar uses on its
+  right edge. Both lines align by design.
+- **No version footer in the main column.** The "v0.0.1 · year" line
+  lives only at the bottom of the **sidebar**. Adding one to the main
+  column duplicates it and breaks the flat layout.
+- **Don't pile Tailwind utilities onto a DaisyUI component.** If you
+  find yourself adding more than three layout/spacing classes to a
+  card / button / badge / alert, you probably picked the wrong DaisyUI
+  variant. Stop and check the Blueprint MCP.
+
+### Why so strict?
+
+The shell, the dashboard and ten different list views were drifting in
+small ways — one card had a soft shadow, another didn't; one empty state
+had a dashed border, another a solid one; the header had a shadow, the
+sidebar a border. That kind of drift compounds quickly and makes the
+product feel unfinished. Locking the baseline keeps every page look-alike
+without anyone having to remember a style guide.
 
 ## 8. Tables and detail navigation
 
@@ -530,6 +655,49 @@ inside pickers is also fixed at 25.
 - Read `initial` exactly once at component setup with
   `untrack(() => ({ ...initial }))`. Avoid the
   `state_referenced_locally` warning instead of suppressing it.
+- **Every `input` / `select` / `textarea` / `file-input` carries `w-full`.**
+  DaisyUI v5 sizes form controls at `width: clamp(3rem, 20rem, 100%)` —
+  preferred 20rem, not 100%. Without `w-full` an input parks at 320 px no
+  matter how wide the grid cell around it is. The grid (`grid-cols-2`,
+  `sm:col-span-2`, …) decides how much horizontal space a field gets;
+  `w-full` makes the control fill that space. There is no app.css escape
+  hatch — the utility goes on the element.
+- **Unsaved-changes guard.** Every form wires `formDirty` so the
+  AppShell can warn before the user navigates away with unsaved
+  edits. Pattern (one line per form, no per-field bookkeeping):
+
+  ```svelte
+  <script lang="ts">
+    import { formDirty } from '$lib/stores/form-dirty.svelte'
+    const markDirty = () => formDirty.set(true)
+    $effect(() => () => formDirty.clear()) // reset on unmount
+  
+    const submit = async (e: Event) => {
+      e.preventDefault()
+      // … validation …
+      formDirty.clear()           // before goto so beforeNavigate is silent
+      await busy.run(() => createXRemote(...))
+      goto(`/x/${id}`)
+    }
+  </script>
+
+  <form
+    onsubmit={submit}
+    oninput={markDirty}
+    onchange={markDirty}
+    class="card border-base-300 bg-base-100 border"
+  >
+    …
+  </form>
+  ```
+
+  `oninput` covers text inputs + textareas, `onchange` covers
+  `<select>`, checkbox, radio — both events bubble from children up
+  to the `<form>` root, so a single pair of root handlers catches
+  the entire form. Calling `formDirty.clear()` before `goto(...)`
+  keeps the post-save navigation silent. The AppShell's
+  `beforeNavigate` + `window.beforeunload` hooks read the store
+  and prompt only when there are real unsaved changes.
 
 ## 12. Validation and error handling
 
@@ -761,7 +929,179 @@ templates are canonical. Reuse the wording when adding new modules.
 - ❌ Silent `catch {}` blocks. Log and toast — or rethrow.
 - ❌ "Roll your own" widgets where DaisyUI already ships an equivalent.
 
-## 16. Adding a new module
+## 16. Price snapshots on documents
+
+Document line items (`document_items`) carry their **own**
+`unit_price_net`, `tax_rate`, `discount_percent` and
+`line_total_*` columns. They are **snapshots**, not foreign-key
+references to a current price.
+
+Why this matters:
+
+- A change to `items.priceNet` must **never** alter the totals on
+  invoices that were already issued. A 2024 invoice has to keep
+  showing the 2024 price even if the item's catalog price has been
+  bumped twice since.
+- The `items_id` FK on `document_items` is for traceability only
+  (link the line back to the catalog item if the user clicks
+  through). Read-paths must never join on it to derive a current
+  price.
+
+How to keep this invariant:
+
+1. **`createDocument` copies values explicitly** from the input into
+   `document_items` columns. Do not write a query that pulls
+   `items.priceNet` at render time.
+2. **`updateItem` only writes to the `items` table.** No cascade to
+   `document_items`. If you ever need a "re-cost open invoices"
+   feature, write a separate, explicit operation with audit logging
+   — never as a side-effect of catalog edits.
+3. **Audit + history**: if a customer ever asks "why did this price
+   change?", the `documents.created_at` plus the `document_items`
+   row provide the historical record. A separate `item_price_history`
+   table is intentionally **not** part of the schema — the document
+   row is the canonical receipt.
+
+If a future feature needs a price-history view (analytics, "show me
+the price evolution of part X"), add a separate
+`item_price_history` table that's append-only and write to it from
+`updateItem`. Don't repurpose `document_items` for that.
+
+### Versionierte Stamm-Werte (Preise, Gehälter, …)
+
+Werte, die zeitabhängig gelten und vergangene Belege/Abrechnungen
+nicht rückwirkend verändern dürfen, leben in einer eigenen
+`*_versions`-Tabelle pro Domäne — **nicht** in einer generischen
+`value_versions`-Tabelle. Aktuell:
+
+- `item_price_versions` — Stamm-Verkaufspreise pro Leistung/Artikel.
+  `items.unit_price_net` gibt es seit Migration 0008 nicht mehr;
+  `getCurrentItemPrice(itemId)` und `getItemPriceAt(itemId, dateIso)`
+  in `item-service.ts` sind die einzigen Lese-Pfade.
+- `employee_salary_versions` — Mitarbeitergehälter (Monats- und
+  Stundenlohn). `employees.monthly_salary`/`hourly_wage` gibt es
+  seit Migration 0008 nicht mehr; `getEffectiveSalary(employeeId,
+dateIso)` in `employee-service.ts` löst die zum Stichtag gültige
+  Version auf.
+
+Schema-Konvention für jede neue Versionstabelle:
+
+```ts
+{
+  id: uuid PK,
+  <entity>_id: uuid NOT NULL FK CASCADE,
+  valid_from: date NOT NULL,
+  <wert-spalten>,
+  created_at: timestamptz NOT NULL DEFAULT now()
+}
+UNIQUE(<entity>_id, valid_from)
+INDEX(<entity>_id)
+```
+
+Service-Helper-Konvention pro Domäne:
+
+- `get<Entity>ValueAt(id, asOf?)` — höchster `valid_from <= asOf`
+- `list<Entity>Versions(id)` — alle Versionen DESC nach `valid_from`
+- `upsert<Entity>Version({ id, validFrom, … })` — gleicher
+  `valid_from` ⇒ Update statt Insert
+- `delete<Entity>Version(id)` — Löscht eine einzelne Version
+
+Änderungen an Stamm-Werten gehen **nur** über die Versionen-Tabelle.
+Vergangene Belege/Abrechnungen halten ihren damals verwendeten Wert
+als Snapshot (z.B. `document_items.unit_price_net`,
+`payroll_entries.net_total`); spätere Versionierungen wirken nur auf
+zukünftige Auflösungen.
+
+## 17. Database migrations
+
+Migrations are **never** applied by the SvelteKit process. The web
+app's only job at boot is to serve HTTP. Schema changes are applied
+once, before the server starts, by a dedicated runner.
+
+### Architecture
+
+```
+┌─────────────────────────┐      ┌──────────────────┐
+│  scripts/migrate.js     │  →   │  node build      │
+│  drizzle-orm/postgres-js│      │  (SvelteKit app) │
+│  /migrator              │      │                  │
+└─────────────────────────┘      └──────────────────┘
+   ↑ exits 0 = continue           runs only after migrate succeeded
+   ↑ exits 1 = container halts
+```
+
+The Docker `CMD` is `node scripts/migrate.js && node build`. If
+migration fails, `&&` short-circuits and the app never accepts a
+request against a half-migrated database. There is exactly one
+runtime container instance, so no migration race is possible.
+
+`drizzle-kit` is a dev-only tool. It is **not** required at runtime
+and is not present in the runtime container — `npm prune --omit=dev`
+in the Dockerfile build stage strips it. The runtime migrator from
+`drizzle-orm/postgres-js/migrator` is the only thing executing SQL
+in production.
+
+### Workflow
+
+1. **Edit `schema.ts`.** Then `npm run db:generate` (interactive —
+   answer the "rename or new?" prompt). Commit the produced
+   `drizzle/<NNNN>_*.sql` and `drizzle/meta/*.json` together.
+
+2. **Apply locally** with `npm run db:migrate` — same script the
+   container runs. No `db:push` in any environment.
+
+3. **Make migrations idempotent.** Drizzle-kit produces
+   non-idempotent SQL by default. After generation, hand-edit to add
+   guards everywhere it's safe:
+
+   ```sql
+   ALTER TABLE foo ADD COLUMN IF NOT EXISTS bar integer DEFAULT 0 NOT NULL;
+   CREATE TABLE IF NOT EXISTS bar (…);
+   CREATE INDEX IF NOT EXISTS bar_idx ON bar (col);
+   DROP TABLE IF EXISTS legacy_x CASCADE;
+   ```
+
+   `ALTER COLUMN … SET DEFAULT` is already idempotent. Constraint
+   additions need a `DO` block:
+
+   ```sql
+   DO $$ BEGIN
+     ALTER TABLE foo ADD CONSTRAINT foo_unique UNIQUE (col);
+   EXCEPTION WHEN duplicate_object THEN NULL;
+   END $$;
+   ```
+
+   Idempotent migrations cost nothing on the happy path and survive
+   every drift scenario without operator intervention.
+
+4. **Snapshots are part of the commit.** `drizzle/meta/*.json` is the
+   schema state drizzle-kit diffs against. Skipping the snapshot bump
+   produces duplicate migrations on the next `db:generate`.
+
+5. **Never edit applied migrations.** Drizzle keys by the journal
+   timestamp; once a migration ships and is in `__drizzle_migrations`,
+   editing the SQL doesn't re-run it. Always follow up with a new
+   migration.
+
+### Backups
+
+Backups are **not** the application's concern. The runner does not
+snapshot the database, the container does not call `pg_dump`, no
+script in this repo wraps a backup. Backups are an operations
+responsibility on the host / Postgres layer:
+
+- Take a snapshot **before** rolling out a new image whose migrations
+  alter or drop existing structure.
+- Verify the snapshot is restorable on a separate instance at least
+  once per release.
+- Retention and storage of backups is policy, not code.
+
+If a migration has the potential to lose data (drop columns, change
+types, rename in a way that doesn't preserve content), call this
+out in the PR / release note so operations can decide how to gate
+the deploy.
+
+## 17. Adding a new module
 
 When you scaffold a new module (e.g. payroll), copy the **customers** and
 **vehicles** modules as templates:

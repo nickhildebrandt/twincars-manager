@@ -13,8 +13,10 @@ import {
 
 describe('documentStatusLabel', () => {
   it('maps every documented status to a German term', () => {
-    expect(documentStatusLabel('draft')).toBe('Entwurf')
-    expect(documentStatusLabel('created')).toBe('Erstellt')
+    // `draft` is an alias for `created` — both render as "Angelegt"
+    // (the "Entwurf" wording was removed in the unified status flow).
+    expect(documentStatusLabel('draft')).toBe('Angelegt')
+    expect(documentStatusLabel('created')).toBe('Angelegt')
     expect(documentStatusLabel('sent')).toBe('Versendet')
     expect(documentStatusLabel('open')).toBe('Offen')
     expect(documentStatusLabel('paid')).toBe('Bezahlt')
@@ -38,12 +40,15 @@ describe('documentStatusLabel', () => {
 })
 
 describe('documentStatusBadge', () => {
-  it('uses success for paid and warning for open', () => {
+  it('reflects the lifecycle: created → sent → paid', () => {
+    expect(documentStatusBadge('created')).toBe('badge-warning')
+    expect(documentStatusBadge('draft')).toBe('badge-warning')
+    expect(documentStatusBadge('sent')).toBe('badge-info')
+    expect(documentStatusBadge('open')).toBe('badge-info')
     expect(documentStatusBadge('paid')).toBe('badge-success')
-    expect(documentStatusBadge('open')).toBe('badge-warning')
     expect(documentStatusBadge('overdue')).toBe('badge-error')
-    expect(documentStatusBadge('converted')).toBe('badge-info')
-    expect(documentStatusBadge('draft')).toBe('badge-ghost')
+    expect(documentStatusBadge('cancelled')).toBe('badge-ghost')
+    expect(documentStatusBadge('converted')).toBe('badge-success')
   })
 })
 
@@ -95,7 +100,12 @@ describe('documentTypeLabel', () => {
     expect(documentTypeLabel('offer')).toBe('Angebot')
     expect(documentTypeLabel('cost_estimate')).toBe('Kostenvoranschlag')
     expect(documentTypeLabel('order_confirmation')).toBe('Auftragsbestätigung')
-    expect(documentTypeLabel('reminder')).toBe('Mahnung')
+    expect(documentTypeLabel('reminder')).toBe('Zahlungserinnerung')
+    expect(documentTypeLabel('reminder_1')).toBe('Zahlungserinnerung')
+    expect(documentTypeLabel('reminder_2')).toBe('1. Mahnung')
+    expect(documentTypeLabel('reminder_3')).toBe('2. Mahnung')
+    expect(documentTypeLabel('payslip')).toBe('Lohnzettel')
+    expect(documentTypeLabel('mailing')).toBe('Serienbrief')
   })
 })
 

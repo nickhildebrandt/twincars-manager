@@ -45,10 +45,13 @@
 >
   {#snippet toolbar()}
     <div
-      class="border-base-300 bg-base-100 flex items-center gap-2 rounded-lg border p-3"
+      class="card border-base-300 bg-base-100 flex flex-row items-center gap-2 border p-3"
     >
       <span class="text-base-content/60 text-sm">Zeitraum:</span>
-      <select class="select select-sm select-bordered" bind:value={period}>
+      <select
+        class="select select-sm select-bordered w-full"
+        bind:value={period}
+      >
         <option value="this_month">Dieser Monat</option>
         <option value="last_month">Letzter Monat</option>
         <option value="this_year">Dieses Jahr</option>
@@ -58,7 +61,7 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+<div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
   <StatCard
     title="Netto-Umsatz"
     value={formatEuro(totals.net)}
@@ -85,7 +88,7 @@
       <EmptyState icon={BookOpen} title="Keine Rechnungen im Zeitraum" />
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Rechnungsnr.</th>
@@ -100,7 +103,7 @@
           <tbody>
             {#each rows as r (r.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/invoices/${r.id}`)}
               >
                 <td class="font-mono text-xs">{r.documentNumber}</td>

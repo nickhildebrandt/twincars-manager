@@ -9,7 +9,16 @@
  * German.
  */
 
-/** Document lifecycle (offer / Kostenvoranschlag / Auftragsbestätigung / invoice). */
+/**
+ * Document lifecycle. Both KV / Angebot and Rechnung share `created`,
+ * `sent`, and `cancelled`. Rechnung adds `paid`. KV adds `converted`.
+ *
+ * Legacy values kept as aliases:
+ *   - `draft`    → renders as "Angelegt" (== `created`).
+ *   - `open`     → "Offen" (used in older queries to mean "not paid"; new
+ *                  code should not write this).
+ *   - `overdue`  → "Überfällig" (kept for historical UI badges).
+ */
 export type DocumentStatus =
   | 'draft'
   | 'created'
@@ -21,8 +30,8 @@ export type DocumentStatus =
   | 'overdue'
 
 const documentStatusMap: Record<DocumentStatus, string> = {
-  draft: 'Entwurf',
-  created: 'Erstellt',
+  draft: 'Angelegt',
+  created: 'Angelegt',
   sent: 'Versendet',
   open: 'Offen',
   paid: 'Bezahlt',
@@ -48,18 +57,17 @@ export const documentStatusBadge = (
       return 'badge-success'
     case 'open':
     case 'sent':
-      return 'badge-warning'
+      return 'badge-info'
     case 'overdue':
       return 'badge-error'
     case 'cancelled':
       return 'badge-ghost'
     case 'converted':
-      return 'badge-info'
-    case 'created':
-      return 'badge-info'
+      return 'badge-success'
     case 'draft':
+    case 'created':
     default:
-      return 'badge-ghost'
+      return 'badge-warning'
   }
 }
 
@@ -191,7 +199,7 @@ export const reminderLevelBadge = (
   }
 }
 
-/** Document type label. */
+/** Document / sent-message type label. */
 export const documentTypeLabel = (type: string | null | undefined): string => {
   switch (type) {
     case 'invoice':
@@ -203,9 +211,17 @@ export const documentTypeLabel = (type: string | null | undefined): string => {
     case 'order_confirmation':
       return 'Auftragsbestätigung'
     case 'reminder':
-      return 'Mahnung'
+    case 'reminder_1':
+      return 'Zahlungserinnerung'
+    case 'reminder_2':
+      return '1. Mahnung'
+    case 'reminder_3':
+      return '2. Mahnung'
     case 'customer_letter':
-      return 'Kundenbrief'
+    case 'mailing':
+      return 'Serienbrief'
+    case 'payslip':
+      return 'Lohnzettel'
     default:
       return type ?? '—'
   }

@@ -13,14 +13,25 @@
   const Icon = $derived(icon)
 </script>
 
-<div class="card bg-base-100 border-base-300 border shadow-sm">
+<div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-4 sm:p-5">
     <div class="flex items-center justify-between gap-3">
-      <div>
+      <!--
+        `min-w-0` lets the value column shrink instead of pushing the
+        icon out; `truncate` then clips long EUR strings (e.g.
+        "1.234.567,89 €") on narrow viewports rather than wrapping or
+        breaking the card. `tabular-nums` keeps digit columns aligned.
+      -->
+      <div class="min-w-0 flex-1">
         <p class="text-base-content/60 text-xs tracking-wide uppercase"
           >{title}</p
         >
-        <p class="mt-1 text-2xl font-bold sm:text-3xl">{value}</p>
+        <p
+          class="mt-1 truncate text-xl font-bold tabular-nums sm:text-2xl lg:text-3xl"
+          title={String(value)}
+        >
+          {value}
+        </p>
         {#if desc}
           <p class="text-base-content/60 mt-1 text-xs">{desc}</p>
         {/if}

@@ -5,22 +5,41 @@ import {
   type Customer,
   type NewCustomer
 } from '$lib/server/db/schema'
-import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  isNotNull,
+  isNull,
+  or,
+  sql
+} from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { renderNumber } from '$lib/utils/numbering'
 
+export type CustomerKindFilter = 'all' | 'private' | 'business'
+
 /**
- * List customers with server-side pagination, search and sorting.
+ * List customers with server-side pagination, search and kind filter.
+ *
+ * - Archived customers are always hidden from the list — there's no UI
+ *   surface for them; archive status is set on the detail page.
+ * - `kind` filter derives from `customers.company`: a non-empty company
+ *   name is a Firmenkunde, a null/empty company is a Privatkunde.
+ *
  * @param params pagination + free-text search query
  * @returns { items, total, page, size, pageCount }
  */
 export async function listCustomers(
-  params: ListParams & { archived?: boolean }
+  params: ListParams & { kind?: CustomerKindFilter }
 ): Promise<ListResult<Customer>> {
-  const { page, size, q, sort, archived } = params
+  const { page, size, q, sort, kind = 'all' } = params
   const offset = (page - 1) * size
 
-  const filters = []
+  const filters = [eq(customers.archived, false)]
   if (q && q.length > 0) {
     const term = `%${q}%`
     filters.push(
@@ -33,13 +52,15 @@ export async function listCustomers(
         ilike(customers.zip, term),
         ilike(customers.phone, term),
         ilike(customers.email, term)
-      )
+      )!
     )
   }
-  if (typeof archived === 'boolean') {
-    filters.push(eq(customers.archived, archived))
+  if (kind === 'business') {
+    filters.push(isNotNull(customers.company))
+  } else if (kind === 'private') {
+    filters.push(isNull(customers.company))
   }
-  const where = filters.length > 0 ? and(...filters) : undefined
+  const where = and(...filters)
 
   const sortableMap: Record<
     string,

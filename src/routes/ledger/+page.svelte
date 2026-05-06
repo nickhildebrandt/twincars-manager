@@ -7,9 +7,13 @@
   import Loader from '$lib/components/ui/Loader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import { goto } from '$app/navigation'
   import {
     Plus,
     Calculator,
+    ChevronLeft,
+    ChevronRight,
+    Pencil,
     Trash2,
     TrendingUp,
     TrendingDown,
@@ -33,12 +37,68 @@
   let q = $state('')
   let direction = $state<'all' | 'income' | 'expense'>('all')
 
+  /**
+   * Monatsfilter — analog zum Kalender. State sind year + month (1..12);
+   * der Server sieht zwei ISO-Strings für `from` und `to`. Wechsel
+   * setzt `pageNum=1` zurück, damit Pagination + Monatsfilter
+   * konsistent bleiben.
+   */
+  const today = new Date()
+  let viewYear = $state(today.getFullYear())
+  let viewMonth = $state(today.getMonth() + 1) // 1..12
+  const monthLabels = [
+    'Januar',
+    'Februar',
+    'März',
+    'April',
+    'Mai',
+    'Juni',
+    'Juli',
+    'August',
+    'September',
+    'Oktober',
+    'November',
+    'Dezember'
+  ]
+  const monthLabel = (m: number) => monthLabels[m - 1] ?? String(m)
+  const fromIso = $derived(
+    `${viewYear}-${String(viewMonth).padStart(2, '0')}-01`
+  )
+  const toIso = $derived.by(() => {
+    const last = new Date(Date.UTC(viewYear, viewMonth, 0)).getUTCDate()
+    return `${viewYear}-${String(viewMonth).padStart(2, '0')}-${String(last).padStart(2, '0')}`
+  })
+  const isCurrentMonth = $derived(
+    viewYear === today.getFullYear() && viewMonth === today.getMonth() + 1
+  )
+  const prevMonth = () => {
+    pageNum = 1
+    if (viewMonth === 1) {
+      viewMonth = 12
+      viewYear -= 1
+    } else viewMonth -= 1
+  }
+  const nextMonth = () => {
+    pageNum = 1
+    if (viewMonth === 12) {
+      viewMonth = 1
+      viewYear += 1
+    } else viewMonth += 1
+  }
+  const goToday = () => {
+    pageNum = 1
+    viewYear = today.getFullYear()
+    viewMonth = today.getMonth() + 1
+  }
+
   const query = $derived(
     listLedgerEntriesRemote({
       page: pageNum,
       size,
       q: q || undefined,
-      direction
+      direction,
+      from: fromIso,
+      to: toIso
     })
   )
 
@@ -80,7 +140,9 @@
             page: pageNum,
             size,
             q: q || undefined,
-            direction
+            direction,
+            from: fromIso,
+            to: toIso
           }).withOverride((current) => ({
             ...current,
             items: current.items.filter((e) => e.id !== id),
@@ -98,7 +160,11 @@
 
 <PageHeader
   title="Buchhaltung"
-  primaryAction={{ label: 'Neue Buchung', href: '/ledger/new', icon: Plus }}
+  primaryAction={{
+    label: 'Neue Buchung',
+    href: `/ledger/new?date=${isCurrentMonth ? new Date().toISOString().slice(0, 10) : fromIso}`,
+    icon: Plus
+  }}
 >
   {#snippet toolbar()}
     <Toolbar
@@ -108,7 +174,7 @@
     >
       {#snippet filters()}
         <select
-          class="select select-sm select-bordered"
+          class="select select-sm select-bordered w-full"
           bind:value={direction}
           onchange={() => (pageNum = 1)}
         >
@@ -121,7 +187,45 @@
   {/snippet}
 </PageHeader>
 
-<div class="mb-4 grid grid-cols-1 gap-3 sm:grid-cols-3">
+<!--
+  Monatsauswahl direkt unter Suche/Toolbar — gleicher Pattern wie der
+  Kalender. Vergangene und zukünftige Monate sind editierbar; die
+  Liste filtert serverseitig nach dem aktuell gewählten Monat.
+-->
+<div class="card border-base-300 bg-base-100 mb-4 border">
+  <div class="card-body flex flex-row items-center gap-2 p-3">
+    <div class="join">
+      <button
+        class="btn btn-sm join-item"
+        onclick={prevMonth}
+        aria-label="Voriger Monat"
+      >
+        <ChevronLeft size={14} />
+      </button>
+      <button
+        class="btn btn-sm join-item"
+        onclick={goToday}
+        disabled={isCurrentMonth}
+      >
+        Heute
+      </button>
+      <button
+        class="btn btn-sm join-item"
+        onclick={nextMonth}
+        aria-label="Nächster Monat"
+      >
+        <ChevronRight size={14} />
+      </button>
+    </div>
+    <h2 class="ms-auto text-lg font-semibold">
+      {monthLabel(viewMonth)}
+      {viewYear}
+    </h2>
+  </div>
+</div>
+
+<!-- Statuskarten zeigen die Summen für den aktuell gewählten Monat. -->
+<div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
   <StatCard
     title="Einnahmen (gefiltert)"
     value={formatEuro(incomeSum)}
@@ -145,20 +249,16 @@
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
     {#if items.length === 0}
+      <!-- Kein expliziter Action-Button — der „Neue Buchung"-Knopf
+           lebt im PageHeader und ist immer erreichbar. -->
       <EmptyState
         icon={Calculator}
         title="Noch keine Buchungen"
-        description="Legen Sie Ihre erste Ein- oder Ausgabe an."
-      >
-        {#snippet action()}
-          <a class="btn btn-primary btn-sm gap-2" href="/ledger/new">
-            <Plus size={16} /> Neue Buchung
-          </a>
-        {/snippet}
-      </EmptyState>
+        description="Für den ausgewählten Monat liegen keine Ein- oder Ausgaben vor."
+      />
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Datum</th>
@@ -172,7 +272,10 @@
           </thead>
           <tbody>
             {#each items as e (e.id)}
-              <tr class="hover:bg-base-200/50">
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                onclick={() => goto(`/ledger/${e.id}/edit`)}
+              >
                 <td>{e.entryDate}</td>
                 <td class="font-mono text-xs">{e.entryNumber ?? ''}</td>
                 <td>{e.description}</td>
@@ -198,8 +301,15 @@
                     {paymentStatusLabel(e.paymentStatus)}
                   </span>
                 </td>
-                <td>
+                <td onclick={(ev) => ev.stopPropagation()}>
                   <div class="flex justify-end gap-1">
+                    <a
+                      class="btn btn-ghost btn-sm btn-square"
+                      href={`/ledger/${e.id}/edit`}
+                      aria-label="Bearbeiten"
+                    >
+                      <Pencil size={16} />
+                    </a>
                     <button
                       class="btn btn-ghost btn-sm btn-square text-error"
                       onclick={() => {

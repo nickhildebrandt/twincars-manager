@@ -11,7 +11,7 @@
     try {
       const created = await busy.run(() => createVehicleRemote(values))
       toast.success('Fahrzeug angelegt.')
-      goto(`/vehicles/${created.id}`)
+      goto(`/vehicles/${created.id}`, { replaceState: true })
     } catch (err) {
       handleClientError(err, 'Fahrzeug konnte nicht angelegt werden')
     }
@@ -20,6 +20,10 @@
 
 <PageHeader
   title="Neues Fahrzeug anlegen"
-  subtitle="Stammdaten und Technik erfassen."
+  subtitle={'Kundenfahrzeug — Halter ist Pflicht. Für Verkaufsfahrzeuge ohne Halter siehe „Zu verkaufende Fahrzeuge“.'}
 />
-<VehicleForm onSave={handleSave} onCancel={() => goto('/vehicles')} />
+<VehicleForm
+  mode="customer"
+  onSave={handleSave}
+  onCancel={() => goto('/vehicles')}
+/>

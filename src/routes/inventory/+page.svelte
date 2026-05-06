@@ -44,13 +44,17 @@
 </script>
 
 <PageHeader
-  title="Fahrzeugbestand"
-  primaryAction={{ label: 'Neues Fahrzeug', href: '/vehicles/new', icon: Plus }}
+  title="Zu verkaufende Fahrzeuge"
+  primaryAction={{
+    label: 'Neues Fahrzeug',
+    href: '/inventory/new',
+    icon: Plus
+  }}
 >
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}
-      placeholder="Bestand suchen: Marke, Modell, FIN, Kennzeichen ..."
+      placeholder="Zu verkaufende Fahrzeuge suchen: Marke, Modell, FIN, Kennzeichen ..."
       onQuery={() => (pageNum = 1)}
     />
   {/snippet}
@@ -61,18 +65,18 @@
     {#if items.length === 0}
       <EmptyState
         icon={Warehouse}
-        title="Kein Fahrzeug im Bestand"
-        description="Legen Sie ein Fahrzeug an und aktivieren Sie das Listing als „verfügbar“."
+        title="Keine zu verkaufenden Fahrzeuge"
+        description={'Legen Sie hier ein Fahrzeug an, das verkauft werden soll. Kundenfahrzeuge werden separat unter „Fahrzeuge“ geführt.'}
       >
         {#snippet action()}
-          <a class="btn btn-primary btn-sm gap-2" href="/vehicles/new">
+          <a class="btn btn-primary btn-sm gap-2" href="/inventory/new">
             <Plus size={16} /> Neues Fahrzeug
           </a>
         {/snippet}
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Fahrzeug</th>
@@ -89,7 +93,7 @@
           <tbody>
             {#each items as v (v.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/vehicles/${v.id}`)}
               >
                 <td class="font-medium">

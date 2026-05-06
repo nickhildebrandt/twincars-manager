@@ -153,7 +153,7 @@
         />
       </label>
     </div>
-    <div class="scroll-y min-h-0 flex-1 overflow-y-auto">
+    <div class="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
       {#if loading && items.length === 0}
         <div class="flex h-full items-center justify-center">
           <Loader />

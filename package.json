@@ -17,9 +17,10 @@
     "test:cov": "vitest run --coverage",
     "test:ci": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
+    "db:migrate": "node scripts/migrate.js",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "start": "node build"
   },
   "lint-staged": {
     "*": "prettier --write --ignore-unknown"
@@ -56,6 +57,7 @@
     "@lucide/svelte": "^1.14.0",
     "@sveltejs/adapter-node": "^5.5.4",
     "chart.js": "^4.5.1",
+    "csv-parse": "^6.2.1",
     "date-fns": "^4.1.0",
     "drizzle-orm": "^0.45.2",
     "file-type": "^22.0.1",

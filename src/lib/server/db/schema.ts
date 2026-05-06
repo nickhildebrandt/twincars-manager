@@ -11,6 +11,7 @@ import {
   jsonb,
   index,
   uniqueIndex,
+  primaryKey,
   customType
 } from 'drizzle-orm/pg-core'
 
@@ -23,9 +24,6 @@ import {
 const bytea = customType<{ data: Buffer; default: false }>({
   dataType: () => 'bytea'
 })
-import { sql } from 'drizzle-orm'
-
-const nowDefault = sql`now()`
 
 /* ────────────────────────────────────────────────────────────────────── */
 /* App-weite Einstellungen                                                */
@@ -102,12 +100,19 @@ export const companySettings = pgTable('company_settings', {
   })
     .notNull()
     .default('9.62'),
+  /**
+   * Tag im Monat, ab dem die monatlichen Lohnabrechnungen automatisch
+   * angelegt werden (1..28). Vor diesem Tag erzeugt das Auto-Payroll
+   * keinen Eintrag für den laufenden Monat — der wird am Stichtag
+   * angelegt und kann dann versendet/ausgezahlt werden.
+   */
+  payrollGenerationDay: integer('payroll_generation_day').notNull().default(25),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault),
+    .defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const smtpSettings = pgTable('smtp_settings', {
@@ -123,7 +128,7 @@ export const smtpSettings = pgTable('smtp_settings', {
   verified: boolean('verified').notNull().default(false),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const numberRanges = pgTable('number_ranges', {
@@ -143,7 +148,7 @@ export const mailTemplates = pgTable(
     isCustom: boolean('is_custom').notNull().default(false),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [uniqueIndex('mail_templates_key_idx').on(t.key)]
 )
@@ -182,10 +187,10 @@ export const customers = pgTable(
     archived: boolean('archived').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault),
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     uniqueIndex('customers_customer_number_idx').on(t.customerNumber),
@@ -209,7 +214,14 @@ export const vehicles = pgTable(
     legacyVehicleId: varchar('legacy_vehicle_id', { length: 50 }),
     make: varchar('make', { length: 100 }),
     model: varchar('model', { length: 150 }),
-    licensePlate: varchar('license_plate', { length: 20 }),
+    /**
+     * Kennzeichen wandert mit Migration 0009 in
+     * `vehicle_license_plate_versions`. Die jeweils gültige Version
+     * holt `getEffectiveLicensePlate(vehicleId, dateIso)` aus dem
+     * Vehicle-Service; Belege referenzieren weiter das Fahrzeug, nicht
+     * das Kennzeichen, deshalb verändern Kennzeichenwechsel die
+     * historischen Daten nicht.
+     */
     vin: varchar('vin', { length: 25 }),
     firstRegistration: date('first_registration'),
     mileageKm: integer('mileage_km'),
@@ -228,16 +240,45 @@ export const vehicles = pgTable(
     archived: boolean('archived').notNull().default(false),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault),
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     index('vehicles_customer_id_idx').on(t.customerId),
-    index('vehicles_license_plate_idx').on(t.licensePlate),
     index('vehicles_vin_idx').on(t.vin),
     index('vehicles_next_hu_idx').on(t.nextHu)
+  ]
+)
+
+/**
+ * Versionierte Kennzeichenhistorie. Gleiche Konvention wie
+ * `item_price_versions` und `employee_salary_versions`: höchster
+ * `valid_from <= today` ist das aktuell gültige Kennzeichen.
+ * Belegpositionen referenzieren das Fahrzeug, nicht das Kennzeichen
+ * — vergangene Rechnungen bleiben unverändert.
+ */
+export const vehicleLicensePlateVersions = pgTable(
+  'vehicle_license_plate_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vehicleId: uuid('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    validFrom: date('valid_from').notNull(),
+    licensePlate: varchar('license_plate', { length: 20 }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex('vehicle_license_plate_versions_veh_from_idx').on(
+      t.vehicleId,
+      t.validFrom
+    ),
+    index('vehicle_license_plate_versions_vehicle_idx').on(t.vehicleId),
+    index('vehicle_license_plate_versions_plate_idx').on(t.licensePlate)
   ]
 )
 
@@ -259,7 +300,7 @@ export const vehiclePurchases = pgTable('vehicle_purchases', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const vehicleListings = pgTable('vehicle_listings', {
@@ -276,10 +317,10 @@ export const vehicleListings = pgTable('vehicle_listings', {
   internalNotes: text('internal_notes'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault),
+    .defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const vehiclePhotos = pgTable('vehicle_photos', {
@@ -293,7 +334,7 @@ export const vehiclePhotos = pgTable('vehicle_photos', {
   sortOrder: integer('sort_order').notNull().default(0),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const vehicleSales = pgTable('vehicle_sales', {
@@ -314,7 +355,7 @@ export const vehicleSales = pgTable('vehicle_sales', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -330,9 +371,14 @@ export const items = pgTable(
     description: text('description').notNull(),
     kind: varchar('kind', { length: 20 }).notNull().default('article'),
     unit: varchar('unit', { length: 20 }),
-    unitPriceNet: numeric('unit_price_net', { precision: 12, scale: 2 })
-      .notNull()
-      .default('0'),
+    /**
+     * `items.unit_price_net` wurde mit Migration 0008 in
+     * `item_price_versions` ausgelagert — siehe `getCurrentItemPrice`
+     * im Item-Service. Eine neue Version wird angelegt, sobald der
+     * Preis sich ändert; alte Belege bleiben über die in
+     * `document_items.unit_price_net` mitgeschriebene Snapshot
+     * unverändert.
+     */
     purchasePriceNet: numeric('purchase_price_net', {
       precision: 12,
       scale: 2
@@ -344,14 +390,45 @@ export const items = pgTable(
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault),
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     uniqueIndex('items_article_number_idx').on(t.articleNumber),
     index('items_kind_idx').on(t.kind)
+  ]
+)
+
+/**
+ * Versionierte Preishistorie pro Leistung/Artikel. Gleiches Schema wie
+ * `employee_salary_versions`: eine Zeile je `valid_from`, jüngste mit
+ * `valid_from <= heute` ist der aktuelle Verkaufspreis. Belegpositionen
+ * speichern den damals verwendeten Preis weiterhin in
+ * `document_items.unit_price_net`, sodass alte Rechnungen unverändert
+ * bleiben — die Versionstabelle ist die Quelle für den aktuellen
+ * Stamm-Preis und die Preisverlauf-Anzeige.
+ */
+export const itemPriceVersions = pgTable(
+  'item_price_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    itemId: uuid('item_id')
+      .notNull()
+      .references(() => items.id, { onDelete: 'cascade' }),
+    validFrom: date('valid_from').notNull(),
+    unitPriceNet: numeric('unit_price_net', {
+      precision: 12,
+      scale: 2
+    }).notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex('item_price_versions_item_from_idx').on(t.itemId, t.validFrom),
+    index('item_price_versions_item_idx').on(t.itemId)
   ]
 )
 
@@ -378,10 +455,10 @@ export const suppliers = pgTable('suppliers', {
   archived: boolean('archived').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault),
+    .defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -395,7 +472,7 @@ export const documents = pgTable(
     documentNumber: varchar('document_number', { length: 50 }).notNull(),
     legacyDocumentNumber: varchar('legacy_document_number', { length: 50 }),
     type: varchar('type', { length: 30 }).notNull(),
-    status: varchar('status', { length: 30 }).notNull().default('draft'),
+    status: varchar('status', { length: 30 }).notNull().default('created'),
     customerId: uuid('customer_id').references(() => customers.id, {
       onDelete: 'set null'
     }),
@@ -439,10 +516,10 @@ export const documents = pgTable(
     reminderLevel: integer('reminder_level').notNull().default(0),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault),
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     uniqueIndex('documents_document_number_idx').on(t.documentNumber),
@@ -495,7 +572,7 @@ export const documentPayments = pgTable('document_payments', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 /**
@@ -527,7 +604,7 @@ export const documentPdfs = pgTable(
     data: bytea('data').notNull(),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [uniqueIndex('document_pdfs_document_id_idx').on(t.documentId)]
 )
@@ -564,16 +641,64 @@ export const reminders = pgTable(
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault),
+      .defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     uniqueIndex('reminders_invoice_level_idx').on(t.invoiceId, t.level),
     index('reminders_invoice_id_idx').on(t.invoiceId),
     index('reminders_status_idx').on(t.status)
   ]
+)
+
+/**
+ * Generated Lohnzettel-PDF for a payroll entry. Same caching contract
+ * as {@link documentPdfs}: hashed inputs invalidate when an entry,
+ * employee profile or settings change.
+ */
+export const payslipPdfs = pgTable(
+  'payslip_pdfs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    entryId: uuid('entry_id').notNull(),
+    inputHash: varchar('input_hash', { length: 64 }).notNull(),
+    filename: varchar('filename', { length: 200 }).notNull(),
+    mime: varchar('mime', { length: 50 }).notNull().default('application/pdf'),
+    size: integer('size').notNull(),
+    data: bytea('data').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [uniqueIndex('payslip_pdfs_entry_id_idx').on(t.entryId)]
+)
+
+/**
+ * Generated PDF for a reminder. Mirrors {@link documentPdfs} but keyed
+ * to a reminder row. We keep the two caches separate because reminders
+ * are not in the `documents` table — they have their own number range
+ * and lifecycle, and a polymorphic foreign key would be uglier than
+ * two parallel tables.
+ */
+export const reminderPdfs = pgTable(
+  'reminder_pdfs',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    reminderId: uuid('reminder_id')
+      .notNull()
+      .references(() => reminders.id, { onDelete: 'cascade' }),
+    inputHash: varchar('input_hash', { length: 64 }).notNull(),
+    filename: varchar('filename', { length: 200 }).notNull(),
+    mime: varchar('mime', { length: 50 }).notNull().default('application/pdf'),
+    size: integer('size').notNull(),
+    data: bytea('data').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [uniqueIndex('reminder_pdfs_reminder_id_idx').on(t.reminderId)]
 )
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -603,8 +728,13 @@ export const employees = pgTable('employees', {
   department: varchar('department', { length: 100 }),
   employmentType: varchar('employment_type', { length: 30 }),
   weeklyHours: numeric('weekly_hours', { precision: 5, scale: 2 }),
-  monthlySalary: numeric('monthly_salary', { precision: 12, scale: 2 }),
-  hourlyWage: numeric('hourly_wage', { precision: 8, scale: 2 }),
+  /**
+   * Gehälter wandern mit Migration 0008 in `employee_salary_versions`.
+   * Die jeweils gültige Version je Stichtag holt
+   * `getEffectiveSalary(employeeId, dateIso)` aus dem Employee-Service;
+   * vergangene Lohnabrechnungen bleiben über den im
+   * `payroll_entries` mitgespeicherten Brutto-Snapshot unverändert.
+   */
   vacationDaysPerYear: integer('vacation_days_per_year'),
   taxId: varchar('tax_id', { length: 30 }),
   taxClass: varchar('tax_class', { length: 5 }),
@@ -617,62 +747,122 @@ export const employees = pgTable('employees', {
   archived: boolean('archived').notNull().default(false),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault),
+    .defaultNow(),
   updatedAt: timestamp('updated_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
-export const employeeAbsences = pgTable('employee_absences', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  employeeId: uuid('employee_id')
-    .notNull()
-    .references(() => employees.id, { onDelete: 'cascade' }),
-  type: varchar('type', { length: 20 }).notNull(),
-  dateFrom: date('date_from').notNull(),
-  dateTo: date('date_to').notNull(),
-  halfDay: boolean('half_day').notNull().default(false),
-  notes: text('notes'),
-  status: varchar('status', { length: 20 }).notNull().default('approved'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .default(nowDefault)
-})
+/**
+ * Versionierte Gehaltshistorie pro Mitarbeiter — eine Zeile je
+ * Gültigkeits-Beginn. Per `valid_from` greift die Version ab dem Tag
+ * inklusive; die jeweils aktive Version ist die mit dem höchsten
+ * `valid_from <= today`. Vergangene Lohnabrechnungen lesen den damals
+ * gültigen Wert über `getEffectiveSalary(employeeId, periodStart)`.
+ */
+export const employeeSalaryVersions = pgTable(
+  'employee_salary_versions',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    employeeId: uuid('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    validFrom: date('valid_from').notNull(),
+    monthlySalary: numeric('monthly_salary', { precision: 12, scale: 2 }),
+    hourlyWage: numeric('hourly_wage', { precision: 8, scale: 2 }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex('employee_salary_versions_emp_from_idx').on(
+      t.employeeId,
+      t.validFrom
+    ),
+    index('employee_salary_versions_employee_idx').on(t.employeeId)
+  ]
+)
+
+export const employeeAbsences = pgTable(
+  'employee_absences',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    employeeId: uuid('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' }),
+    /** `vacation` (Urlaub), `sick` (Krankheit), `other` (Sonstiges). */
+    type: varchar('type', { length: 20 }).notNull(),
+    dateFrom: date('date_from').notNull(),
+    dateTo: date('date_to').notNull(),
+    halfDay: boolean('half_day').notNull().default(false),
+    notes: text('notes'),
+    /** `planned` (geplant), `approved` (genehmigt), `cancelled` (abgesagt). */
+    status: varchar('status', { length: 20 }).notNull().default('approved'),
+    /** Optionaler Anhang (z. B. AU-Bescheinigung) — base64 Data-URL. */
+    attachmentMime: varchar('attachment_mime', { length: 50 }),
+    attachmentName: varchar('attachment_name', { length: 200 }),
+    attachmentData: text('attachment_data'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    index('employee_absences_employee_id_idx').on(t.employeeId),
+    index('employee_absences_date_from_idx').on(t.dateFrom)
+  ]
+)
 
 /* ────────────────────────────────────────────────────────────────────── */
 /* Termine / Kalender                                                     */
 /* ────────────────────────────────────────────────────────────────────── */
 
-export const appointments = pgTable('appointments', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  title: varchar('title', { length: 200 }).notNull(),
-  customerId: uuid('customer_id').references(() => customers.id, {
-    onDelete: 'set null'
-  }),
-  vehicleId: uuid('vehicle_id').references(() => vehicles.id, {
-    onDelete: 'set null'
-  }),
-  employeeId: uuid('employee_id').references(() => employees.id, {
-    onDelete: 'set null'
-  }),
-  startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
-  endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
-  notes: text('notes'),
-  status: varchar('status', { length: 20 }).notNull().default('scheduled'),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .default(nowDefault)
-})
-
-export const businessClosures = pgTable('business_closures', {
-  id: uuid('id').primaryKey().defaultRandom(),
-  dateFrom: date('date_from').notNull(),
-  dateTo: date('date_to').notNull(),
-  reason: varchar('reason', { length: 200 }),
-  createdAt: timestamp('created_at', { withTimezone: true })
-    .notNull()
-    .default(nowDefault)
-})
+/**
+ * Single calendar entry table — discriminated by `kind`:
+ *
+ * - `appointment`: workshop/customer appointment with a title, time
+ *   range, optional links to customer/vehicle/employee, status
+ *   (`scheduled` | `completed` | `cancelled`) and free-text notes.
+ *   `allDay` is opt-in via the form toggle.
+ * - `closure`: workshop closure (Betriebsschließung). `allDay` is
+ *   forced true; `status` and the three FK columns must be null.
+ *   Title carries the human-readable reason (e.g. "Betriebsurlaub").
+ *
+ * Validation of the discriminator's invariants lives in the remote
+ * inputSchema, not at the DB level — Postgres just enforces NOT NULLs
+ * and FKs.
+ */
+export const calendarEntries = pgTable(
+  'calendar_entries',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    kind: varchar('kind', { length: 20 }).notNull(),
+    title: varchar('title', { length: 200 }).notNull(),
+    startsAt: timestamp('starts_at', { withTimezone: true }).notNull(),
+    endsAt: timestamp('ends_at', { withTimezone: true }).notNull(),
+    allDay: boolean('all_day').notNull().default(false),
+    status: varchar('status', { length: 20 }),
+    customerId: uuid('customer_id').references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    vehicleId: uuid('vehicle_id').references(() => vehicles.id, {
+      onDelete: 'set null'
+    }),
+    employeeId: uuid('employee_id').references(() => employees.id, {
+      onDelete: 'set null'
+    }),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    index('calendar_entries_kind_idx').on(t.kind),
+    index('calendar_entries_starts_at_idx').on(t.startsAt)
+  ]
+)
 
 export const publicHolidays = pgTable('public_holidays', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -728,7 +918,7 @@ export const ledgerEntries = pgTable(
     recurringTemplateId: uuid('recurring_template_id'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
-      .default(nowDefault)
+      .defaultNow()
   },
   (t) => [
     index('ledger_entries_entry_date_idx').on(t.entryDate),
@@ -763,7 +953,7 @@ export const recurringEntries = pgTable('recurring_entries', {
   notes: text('notes'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -777,7 +967,7 @@ export const payrollPeriods = pgTable('payroll_periods', {
   status: varchar('status', { length: 20 }).notNull().default('open'),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow()
 })
 
 export const payrollEntries = pgTable('payroll_entries', {
@@ -788,10 +978,38 @@ export const payrollEntries = pgTable('payroll_entries', {
   employeeId: uuid('employee_id')
     .notNull()
     .references(() => employees.id, { onDelete: 'restrict' }),
+  /** Soll-Arbeitstage in der Periode (z. B. 22 für einen Monat). */
+  workingDays: integer('working_days'),
+  /** Bezahlte Urlaubstage in der Periode. */
+  vacationDaysUsed: numeric('vacation_days_used', { precision: 5, scale: 1 })
+    .notNull()
+    .default('0'),
+  /** Krankheitstage in der Periode. */
+  sickDays: numeric('sick_days', { precision: 5, scale: 1 })
+    .notNull()
+    .default('0'),
   grossTotal: numeric('gross_total', { precision: 12, scale: 2 })
     .notNull()
     .default('0'),
   deductionsTotal: numeric('deductions_total', { precision: 12, scale: 2 })
+    .notNull()
+    .default('0'),
+  /** Summe der reinen Steuerabzüge — separater Block auf dem Lohnzettel. */
+  taxTotal: numeric('tax_total', { precision: 12, scale: 2 })
+    .notNull()
+    .default('0'),
+  /** Summe der SV-Beiträge des Arbeitnehmers. */
+  socialEmployeeTotal: numeric('social_employee_total', {
+    precision: 12,
+    scale: 2
+  })
+    .notNull()
+    .default('0'),
+  /** Summe der SV-Beiträge des Arbeitgebers (informativ auf dem Lohnzettel). */
+  socialEmployerTotal: numeric('social_employer_total', {
+    precision: 12,
+    scale: 2
+  })
     .notNull()
     .default('0'),
   netTotal: numeric('net_total', { precision: 12, scale: 2 })
@@ -800,11 +1018,135 @@ export const payrollEntries = pgTable('payroll_entries', {
   payoutAmount: numeric('payout_amount', { precision: 12, scale: 2 })
     .notNull()
     .default('0'),
+  /** Geplantes / tatsächliches Auszahlungsdatum (Überweisung). */
+  payoutDate: date('payout_date'),
+  payoutMethod: varchar('payout_method', { length: 30 })
+    .notNull()
+    .default('Überweisung'),
+  /** `open` (Entwurf), `approved` (freigegeben, immutable), `cancelled`. */
+  status: varchar('status', { length: 20 }).notNull().default('open'),
+  notes: text('notes'),
   approvedAt: timestamp('approved_at', { withTimezone: true }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault)
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
 })
+
+/**
+ * Lohnarten je Abrechnungseintrag (Grundlohn, Stundenlohn, Überstunden,
+ * Zuschläge, Boni, Sachbezug etc.). Pro Eintrag mehrere Zeilen mit
+ * Menge × Satz = Betrag.
+ */
+export const payrollLineItems = pgTable('payroll_line_items', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryId: uuid('entry_id')
+    .notNull()
+    .references(() => payrollEntries.id, { onDelete: 'cascade' }),
+  positionNumber: integer('position_number').notNull().default(1),
+  /**
+   * Lohnart-Schlüssel — z. B. `base` (Grundlohn), `hourly`, `overtime`,
+   * `bonus`, `bonus_night`, `bonus_holiday`, `commission`, `benefit_in_kind`,
+   * `other`. Frei erweiterbar; das Label wird unten getrennt geführt.
+   */
+  kind: varchar('kind', { length: 30 }).notNull().default('base'),
+  /** Frei wählbares Anzeige-Label (z. B. „Grundlohn April 2026"). */
+  label: varchar('label', { length: 200 }).notNull(),
+  /** Stunden / Stück — optional (Pauschalen lassen das Feld leer). */
+  quantity: numeric('quantity', { precision: 10, scale: 3 }),
+  /** Einheit: `Std`, `Tag`, `pauschal`, `€` etc. */
+  unit: varchar('unit', { length: 20 }),
+  /** Stundensatz / Stücksatz — optional. */
+  rate: numeric('rate', { precision: 12, scale: 2 }),
+  /** Effektiver Brutto-Betrag dieser Lohnart. */
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  notes: text('notes')
+})
+
+/**
+ * Abzüge je Eintrag — Lohnsteuer, Soli, Kirchensteuer, KV/PV/RV/AV
+ * (jeweils Arbeitnehmer-Anteil), geldwerte Vorteile etc. Mit
+ * `isEmployer = true` markierte Zeilen sind reine Arbeitgeber-Anteile,
+ * werden auf dem Lohnzettel separat ausgewiesen und zählen NICHT in den
+ * Netto-Block.
+ */
+export const payrollDeductions = pgTable('payroll_deductions', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  entryId: uuid('entry_id')
+    .notNull()
+    .references(() => payrollEntries.id, { onDelete: 'cascade' }),
+  positionNumber: integer('position_number').notNull().default(1),
+  /**
+   * `tax_income` (Lohnsteuer), `tax_solidarity`, `tax_church`, `health`
+   * (KV-AN), `care` (PV-AN), `pension` (RV-AN), `unemployment` (AV-AN),
+   * `benefit_in_kind`, `other`. Spiegelbild auf AG-Seite via `isEmployer`.
+   */
+  kind: varchar('kind', { length: 30 }).notNull(),
+  label: varchar('label', { length: 200 }).notNull(),
+  amount: numeric('amount', { precision: 12, scale: 2 }).notNull().default('0'),
+  /** True = Arbeitgeber-Anteil (informativ); false = Arbeitnehmer-Abzug. */
+  isEmployer: boolean('is_employer').notNull().default(false),
+  notes: text('notes')
+})
+
+/**
+ * Sonderzahlungen — separat erfasste Bonus-/Prämien-/sonstige
+ * Zahlungen, die zusätzlich zum regulären Lohn ausgezahlt werden.
+ * Wird beim Auto-Generieren von `payroll_entries` als zusätzliche
+ * line item eingefügt (für `kind = 'one_time'` einmalig im
+ * angegebenen Monat, für `kind = 'recurring'` jeden Monat innerhalb
+ * `[start_month, end_month]`).
+ *
+ * Mitarbeiter-Zuordnung: ist `target_all = true`, gilt die Zahlung
+ * für alle aktiven Mitarbeiter; sonst entscheidet die
+ * `special_payment_employees`-Junction-Tabelle.
+ */
+export const specialPayments = pgTable(
+  'special_payments',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    label: varchar('label', { length: 200 }).notNull(),
+    /** `one_time` (einmalig im Start-Monat) oder `recurring` (monatlich). */
+    kind: varchar('kind', { length: 20 }).notNull().default('one_time'),
+    amount: numeric('amount', { precision: 12, scale: 2 }).notNull(),
+    /** Erstes Monat der Anwendbarkeit (YYYY-MM-01). */
+    startMonth: date('start_month').notNull(),
+    /** Letztes Monat (inklusive). NULL = unbefristet (für recurring). */
+    endMonth: date('end_month'),
+    /** True = gilt für alle aktiven Mitarbeiter. */
+    targetAll: boolean('target_all').notNull().default(false),
+    notes: text('notes'),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [index('special_payments_start_month_idx').on(t.startMonth)]
+)
+
+/**
+ * Junction: welche Mitarbeiter erhalten welche Sonderzahlung. Nur
+ * relevant, wenn `special_payments.target_all = false`.
+ */
+export const specialPaymentEmployees = pgTable(
+  'special_payment_employees',
+  {
+    paymentId: uuid('payment_id')
+      .notNull()
+      .references(() => specialPayments.id, { onDelete: 'cascade' }),
+    employeeId: uuid('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' })
+  },
+  (t) => [
+    primaryKey({ columns: [t.paymentId, t.employeeId] }),
+    index('special_payment_employees_employee_idx').on(t.employeeId)
+  ]
+)
 
 /* ────────────────────────────────────────────────────────────────────── */
 /* Versand-Historie                                                       */
@@ -825,9 +1167,7 @@ export const sentMessages = pgTable(
     attachmentMeta: jsonb('attachment_meta')
       .$type<{ name: string; size: number }[]>()
       .default([]),
-    sentAt: timestamp('sent_at', { withTimezone: true })
-      .notNull()
-      .default(nowDefault),
+    sentAt: timestamp('sent_at', { withTimezone: true }).notNull().defaultNow(),
     status: varchar('status', { length: 20 }).notNull().default('sent'),
     errorMessage: text('error_message'),
     smtpMessageId: varchar('smtp_message_id', { length: 200 })
@@ -846,7 +1186,7 @@ export const accessImportJobs = pgTable('access_import_jobs', {
   id: uuid('id').primaryKey().defaultRandom(),
   startedAt: timestamp('started_at', { withTimezone: true })
     .notNull()
-    .default(nowDefault),
+    .defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),
   status: varchar('status', { length: 20 }).notNull().default('running'),
   tablesProcessed: integer('tables_processed').notNull().default(0),
@@ -860,6 +1200,13 @@ export const accessImportJobs = pgTable('access_import_jobs', {
 export type Customer = typeof customers.$inferSelect
 export type NewCustomer = typeof customers.$inferInsert
 export type Vehicle = typeof vehicles.$inferSelect
+export type VehiclePhoto = typeof vehiclePhotos.$inferSelect
+export type NewVehiclePhoto = typeof vehiclePhotos.$inferInsert
+export type CalendarEntry = typeof calendarEntries.$inferSelect
+export type NewCalendarEntry = typeof calendarEntries.$inferInsert
+export type CalendarEntryKind = 'appointment' | 'closure'
+export type PublicHoliday = typeof publicHolidays.$inferSelect
+export type NewPublicHoliday = typeof publicHolidays.$inferInsert
 export type NewVehicle = typeof vehicles.$inferInsert
 export type Document = typeof documents.$inferSelect
 export type DocumentItem = typeof documentItems.$inferSelect
@@ -867,6 +1214,27 @@ export type DocumentPdf = typeof documentPdfs.$inferSelect
 export type NewDocumentPdf = typeof documentPdfs.$inferInsert
 export type Reminder = typeof reminders.$inferSelect
 export type NewReminder = typeof reminders.$inferInsert
+export type ReminderPdf = typeof reminderPdfs.$inferSelect
+export type NewReminderPdf = typeof reminderPdfs.$inferInsert
 export type Employee = typeof employees.$inferSelect
+export type EmployeeSalaryVersion = typeof employeeSalaryVersions.$inferSelect
+export type ItemPriceVersion = typeof itemPriceVersions.$inferSelect
+export type VehicleLicensePlateVersion =
+  typeof vehicleLicensePlateVersions.$inferSelect
+export type EmployeeAbsence = typeof employeeAbsences.$inferSelect
+export type NewEmployeeAbsence = typeof employeeAbsences.$inferInsert
+export type PayrollPeriod = typeof payrollPeriods.$inferSelect
+export type NewPayrollPeriod = typeof payrollPeriods.$inferInsert
+export type PayrollEntry = typeof payrollEntries.$inferSelect
+export type NewPayrollEntry = typeof payrollEntries.$inferInsert
+export type PayrollLineItem = typeof payrollLineItems.$inferSelect
+export type NewPayrollLineItem = typeof payrollLineItems.$inferInsert
+export type PayrollDeduction = typeof payrollDeductions.$inferSelect
+export type NewPayrollDeduction = typeof payrollDeductions.$inferInsert
+export type PayslipPdf = typeof payslipPdfs.$inferSelect
+export type NewPayslipPdf = typeof payslipPdfs.$inferInsert
 export type LedgerEntry = typeof ledgerEntries.$inferSelect
 export type CompanySettings = typeof companySettings.$inferSelect
+export type SpecialPayment = typeof specialPayments.$inferSelect
+export type NewSpecialPayment = typeof specialPayments.$inferInsert
+export type SpecialPaymentEmployee = typeof specialPaymentEmployees.$inferSelect

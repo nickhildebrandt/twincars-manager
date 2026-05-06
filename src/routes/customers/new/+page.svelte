@@ -11,7 +11,7 @@
     try {
       const created = await busy.run(() => createCustomerRemote(values))
       toast.success('Kunde angelegt.')
-      goto(`/customers/${created.id}`)
+      goto(`/customers/${created.id}`, { replaceState: true })
     } catch (err) {
       handleClientError(err, 'Kunde konnte nicht angelegt werden')
     }

@@ -13,18 +13,34 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   vehicles,
+  vehicleLicensePlateVersions,
   vehicleListings,
   vehicleSales,
   employees,
   items,
   suppliers
 } from '$lib/server/db/schema'
-import { and, asc, count, eq, ilike, isNull, or } from 'drizzle-orm'
+import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
+import { and, asc, count, eq, ilike, inArray, isNull, or } from 'drizzle-orm'
+import { getCurrentItemPrice } from '$lib/server/services/item-service'
 
 const pickerSchema = object({
   q: optional(pipe(string(), trim(), maxLength(200))),
   page: number(),
   size: picklist([10, 25, 50, 100])
+})
+
+/**
+ * Items-Picker erlaubt zusätzlich einen Filter nach Artikel-Kategorie:
+ * `services` = nur Leistungen (`kind='service'`),
+ * `articles` = Artikel/Material/Durchlaufposten,
+ * `all` (Default) = alles, was nicht ausgemustert ist.
+ */
+const itemsPickerSchema = object({
+  q: optional(pipe(string(), trim(), maxLength(200))),
+  page: number(),
+  size: picklist([10, 25, 50, 100]),
+  category: optional(picklist(['all', 'services', 'articles']))
 })
 
 const buildResult = <T>(
@@ -102,27 +118,36 @@ export const pickVehiclesRemote = query(
     const filters = [eq(vehicles.archived, false)]
     if (q) {
       const term = `%${q}%`
+      const plateMatches = await db
+        .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+        .from(vehicleLicensePlateVersions)
+        .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+      const plateMatchIds = plateMatches.map((r) => r.vehicleId)
+      const baseSearch = or(
+        ilike(vehicles.vin, term),
+        ilike(vehicles.make, term),
+        ilike(vehicles.model, term)
+      )!
       filters.push(
-        or(
-          ilike(vehicles.licensePlate, term),
-          ilike(vehicles.vin, term),
-          ilike(vehicles.make, term),
-          ilike(vehicles.model, term)
-        )!
+        plateMatchIds.length > 0
+          ? or(baseSearch, inArray(vehicles.id, plateMatchIds))!
+          : baseSearch
       )
     }
     const where = and(...filters)
+    const lp = latestPlateSubquery()
     const [rows, totalRow] = await Promise.all([
       db
         .select({
           id: vehicles.id,
-          plate: vehicles.licensePlate,
+          plate: lp.licensePlate,
           make: vehicles.make,
           model: vehicles.model
         })
         .from(vehicles)
+        .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
         .where(where)
-        .orderBy(asc(vehicles.licensePlate))
+        .orderBy(asc(lp.licensePlate))
         .limit(size)
         .offset(offset),
       db.select({ value: count() }).from(vehicles).where(where)
@@ -188,8 +213,8 @@ export const pickEmployeesRemote = query(
  * @module pickers
  */
 export const pickItemsRemote = query(
-  pickerSchema,
-  async ({ q, page, size }) => {
+  itemsPickerSchema,
+  async ({ q, page, size, category }) => {
     const offset = (page - 1) * size
     const filters = [eq(items.discontinued, false)]
     if (q) {
@@ -197,6 +222,11 @@ export const pickItemsRemote = query(
       filters.push(
         or(ilike(items.articleNumber, term), ilike(items.description, term))!
       )
+    }
+    if (category === 'services') {
+      filters.push(eq(items.kind, 'service'))
+    } else if (category === 'articles') {
+      filters.push(inArray(items.kind, ['article', 'material', 'pass_through']))
     }
     const where = and(...filters)
     const [rows, totalRow] = await Promise.all([
@@ -207,7 +237,6 @@ export const pickItemsRemote = query(
           description: items.description,
           kind: items.kind,
           unit: items.unit,
-          unitPriceNet: items.unitPriceNet,
           stockOnHand: items.stockOnHand
         })
         .from(items)
@@ -217,16 +246,21 @@ export const pickItemsRemote = query(
         .offset(offset),
       db.select({ value: count() }).from(items).where(where)
     ])
-    const out = rows.map((r) => ({
-      id: r.id,
-      label: `${r.articleNumber} — ${r.description}`,
-      articleNumber: r.articleNumber,
-      description: r.description,
-      kind: r.kind,
-      unit: r.unit ?? 'Stk',
-      unitPriceNet: Number(r.unitPriceNet ?? 0),
-      stockOnHand: r.stockOnHand
-    }))
+    // Aktuellen Preis pro Item aus `item_price_versions` ziehen.
+    const out = await Promise.all(
+      rows.map(async (r) => ({
+        id: r.id,
+        label: `${r.articleNumber} — ${r.description}`,
+        articleNumber: r.articleNumber,
+        description: r.description,
+        kind: r.kind,
+        unit: r.unit ?? 'Stk',
+        unitPriceNet: Number(
+          (await getCurrentItemPrice(r.id))?.unitPriceNet ?? 0
+        ),
+        stockOnHand: r.stockOnHand
+      }))
+    )
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
 )
@@ -249,21 +283,29 @@ export const pickInventoryVehiclesRemote = query(
     ]
     if (q) {
       const term = `%${q}%`
+      const plateMatches = await db
+        .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+        .from(vehicleLicensePlateVersions)
+        .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+      const plateMatchIds = plateMatches.map((r) => r.vehicleId)
+      const baseSearch = or(
+        ilike(vehicles.vin, term),
+        ilike(vehicles.make, term),
+        ilike(vehicles.model, term)
+      )!
       filters.push(
-        or(
-          ilike(vehicles.licensePlate, term),
-          ilike(vehicles.vin, term),
-          ilike(vehicles.make, term),
-          ilike(vehicles.model, term)
-        )!
+        plateMatchIds.length > 0
+          ? or(baseSearch, inArray(vehicles.id, plateMatchIds))!
+          : baseSearch
       )
     }
     const where = and(...filters)
+    const lp = latestPlateSubquery()
     const [rows, totalRow] = await Promise.all([
       db
         .select({
           id: vehicles.id,
-          plate: vehicles.licensePlate,
+          plate: lp.licensePlate,
           vin: vehicles.vin,
           make: vehicles.make,
           model: vehicles.model,
@@ -274,6 +316,7 @@ export const pickInventoryVehiclesRemote = query(
         .from(vehicles)
         .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
         .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+        .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
         .where(where)
         .orderBy(asc(vehicles.make), asc(vehicles.model))
         .limit(size)

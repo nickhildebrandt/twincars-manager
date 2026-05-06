@@ -15,6 +15,7 @@ import {
   createItem,
   deleteItem,
   getItem,
+  listItemPriceHistory,
   listItems,
   nextArticleNumber,
   updateItem
@@ -63,6 +64,25 @@ export const getItemRemote = query(object({ id: idSchema }), async ({ id }) => {
   if (!e) error(404, 'Artikel nicht gefunden.')
   return e
 })
+
+const priceHistorySchema = object({
+  id: idSchema,
+  page: number(),
+  size: picklist([10, 25, 50, 100])
+})
+
+/**
+ * Paginated price history of an item across all documents it appears in.
+ *
+ * @group integration
+ * @module items
+ */
+export const getItemPriceHistoryRemote = query(
+  priceHistorySchema,
+  async ({ id, page, size }) => {
+    return listItemPriceHistory(id, page, size)
+  }
+)
 
 const toRow = (
   v: typeof itemInputSchema.entries extends never

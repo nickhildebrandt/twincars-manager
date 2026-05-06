@@ -2,14 +2,16 @@ import { db } from '$lib/server/db/client'
 import {
   documents,
   documentItems,
+  documentPayments,
   customers,
   vehicles,
   numberRanges,
   type Document
 } from '$lib/server/db/schema'
-import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, ne, or, sum } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { renderNumber } from '$lib/utils/numbering'
+import { latestPlateSubquery } from './vehicle-service'
 
 type NewDocument = typeof documents.$inferInsert
 type DocumentItem = typeof documentItems.$inferSelect
@@ -21,14 +23,20 @@ export type DocumentWithCustomer = Document & {
   totalPaid: number
 }
 
-const totalPaidExpr =
-  sql<string>`coalesce((SELECT SUM(amount) FROM document_payments WHERE document_payments.document_id = ${documents.id}), 0)`.as(
-    'total_paid'
-  )
-
-const customerLabelExpr = sql<
-  string | null
->`COALESCE(${customers.company}, ${customers.lastName})`.as('customer_name')
+/**
+ * Aggregate Drizzle-Subquery für Teilzahlungen pro Beleg — wird per
+ * `leftJoin` an Listing-Queries angedockt und liefert die Summe aller
+ * Zahlungen je `documentId`.
+ */
+const buildPaymentsTotalSubquery = () =>
+  db
+    .select({
+      documentId: documentPayments.documentId,
+      total: sum(documentPayments.amount).as('total_paid')
+    })
+    .from(documentPayments)
+    .groupBy(documentPayments.documentId)
+    .as('payments_total')
 
 /**
  * List documents (any type) with pagination + search.
@@ -55,6 +63,8 @@ export async function listDocuments(
   if (status && status !== 'all') filters.push(eq(documents.status, status))
   const where = filters.length > 0 ? and(...filters) : undefined
 
+  const lp = latestPlateSubquery()
+  const pt = buildPaymentsTotalSubquery()
   const [items, totalRow] = await Promise.all([
     db
       .select({
@@ -79,13 +89,16 @@ export async function listDocuments(
         notes: documents.notes,
         createdAt: documents.createdAt,
         updatedAt: documents.updatedAt,
-        customerName: customerLabelExpr,
-        vehiclePlate: vehicles.licensePlate,
-        totalPaid: totalPaidExpr
+        customerCompany: customers.company,
+        customerLastName: customers.lastName,
+        vehiclePlate: lp.licensePlate,
+        totalPaid: pt.total
       })
       .from(documents)
       .leftJoin(customers, eq(documents.customerId, customers.id))
       .leftJoin(vehicles, eq(documents.vehicleId, vehicles.id))
+      .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+      .leftJoin(pt, eq(pt.documentId, documents.id))
       .where(where)
       .orderBy(desc(documents.issueDate), desc(documents.createdAt))
       .limit(size)
@@ -94,11 +107,17 @@ export async function listDocuments(
   ])
 
   const total = Number(totalRow[0]?.value ?? 0)
+  const enriched: DocumentWithCustomer[] = items.map((row) => {
+    const { customerCompany, customerLastName, ...rest } = row
+    return {
+      ...(rest as unknown as Document),
+      customerName: customerCompany ?? customerLastName ?? null,
+      vehiclePlate: rest.vehiclePlate ?? null,
+      totalPaid: Number(rest.totalPaid ?? 0)
+    }
+  })
   return {
-    items: items.map((row) => ({
-      ...row,
-      totalPaid: Number(row.totalPaid)
-    })) as DocumentWithCustomer[],
+    items: enriched,
     total,
     page,
     size,
@@ -224,7 +243,7 @@ export async function createDocument(
   const newDoc: NewDocument = {
     documentNumber: docNumber,
     type: input.type,
-    status: 'draft',
+    status: 'created',
     customerId: input.customerId ?? null,
     vehicleId: input.vehicleId ?? null,
     issueDate: input.issueDate,
@@ -246,6 +265,18 @@ export async function createDocument(
     await db
       .insert(documentItems)
       .values(itemsToInsert.map((it) => ({ ...it, documentId: created.id })))
+  }
+  // PDF direkt persistieren — der View-Pfad liest später nur aus dem
+  // Cache, niemals on-demand. Lazy-Import vermeidet Zirkel zwischen
+  // document-service ↔ pdf-service.
+  try {
+    const { renderAndPersistDocumentPdf } = await import('./pdf-service')
+    await renderAndPersistDocumentPdf(created.id)
+  } catch (err) {
+    console.error(
+      '[document-service] PDF-Render bei Anlage fehlgeschlagen',
+      err
+    )
   }
   return created
 }
@@ -342,12 +373,18 @@ export async function convertOfferToInvoice(
  * Sums for the current month — used by the dashboard / sales-ledger view.
  */
 export async function invoiceMonthlyStats() {
-  const [row] = await db
-    .select({
-      open: sql<string>`coalesce(sum(case when ${documents.status} != 'paid' then ${documents.grossTotal} else 0 end), 0)`,
-      paid: sql<string>`coalesce(sum(case when ${documents.status} = 'paid' then ${documents.grossTotal} else 0 end), 0)`
-    })
-    .from(documents)
-    .where(eq(documents.type, 'invoice'))
-  return { open: Number(row?.open ?? 0), paid: Number(row?.paid ?? 0) }
+  const [openRow, paidRow] = await Promise.all([
+    db
+      .select({ value: sum(documents.grossTotal) })
+      .from(documents)
+      .where(and(eq(documents.type, 'invoice'), ne(documents.status, 'paid'))),
+    db
+      .select({ value: sum(documents.grossTotal) })
+      .from(documents)
+      .where(and(eq(documents.type, 'invoice'), eq(documents.status, 'paid')))
+  ])
+  return {
+    open: Number(openRow[0]?.value ?? 0),
+    paid: Number(paidRow[0]?.value ?? 0)
+  }
 }

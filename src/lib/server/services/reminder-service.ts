@@ -14,7 +14,7 @@
  *   settings; the caller can override them at creation time.
  */
 
-import { and, asc, eq, isNull, lt, sql } from 'drizzle-orm'
+import { and, asc, eq, isNull, lt, notInArray } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
   customers,
@@ -158,7 +158,7 @@ export const createReminderForInvoice = async (
 }
 
 export const listOpenReminders = async () => {
-  return db
+  const rows = await db
     .select({
       id: reminders.id,
       documentNumber: reminders.documentNumber,
@@ -170,9 +170,8 @@ export const listOpenReminders = async () => {
       fee: reminders.fee,
       interest: reminders.interest,
       status: reminders.status,
-      customerName: sql<
-        string | null
-      >`COALESCE(${customers.company}, ${customers.lastName})`,
+      customerCompany: customers.company,
+      customerLastName: customers.lastName,
       grossTotal: documents.grossTotal
     })
     .from(reminders)
@@ -180,6 +179,10 @@ export const listOpenReminders = async () => {
     .leftJoin(customers, eq(customers.id, documents.customerId))
     .where(and(eq(reminders.status, 'open')))
     .orderBy(asc(reminders.dueDate))
+  return rows.map(({ customerCompany, customerLastName, ...rest }) => ({
+    ...rest,
+    customerName: customerCompany ?? customerLastName ?? null
+  }))
 }
 
 /**
@@ -200,7 +203,13 @@ export const findInvoicesNeedingReminder = async () => {
     .where(
       and(
         eq(documents.type, 'invoice'),
-        sql`${documents.status} NOT IN ('paid', 'cancelled', 'draft', 'converted')`,
+        notInArray(documents.status, [
+          'paid',
+          'cancelled',
+          'draft',
+          'created',
+          'converted'
+        ]),
         lt(documents.dueDate, today),
         lt(documents.reminderLevel, 4)
       )
@@ -212,3 +221,34 @@ export type ReminderListRow = Awaited<
   ReturnType<typeof listOpenReminders>
 >[number]
 export type ReminderRow = Reminder
+
+/** Get a single reminder joined with its invoice + customer for detail views. */
+export const getReminderById = async (id: string) => {
+  const [row] = await db
+    .select({
+      reminder: reminders,
+      invoiceNumber: documents.documentNumber,
+      invoiceGross: documents.grossTotal,
+      invoiceDueDate: documents.dueDate,
+      customerCompany: customers.company,
+      customerLastName: customers.lastName,
+      customerCity: customers.city
+    })
+    .from(reminders)
+    .innerJoin(documents, eq(documents.id, reminders.invoiceId))
+    .leftJoin(customers, eq(customers.id, documents.customerId))
+    .where(eq(reminders.id, id))
+    .limit(1)
+  if (!row) return null
+  const { customerCompany, customerLastName, ...rest } = row
+  return { ...rest, customerName: customerCompany ?? customerLastName ?? null }
+}
+
+/** All reminders for a given invoice, oldest first. */
+export const listRemindersForInvoice = async (invoiceId: string) => {
+  return db
+    .select()
+    .from(reminders)
+    .where(eq(reminders.invoiceId, invoiceId))
+    .orderBy(asc(reminders.level))
+}

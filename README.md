@@ -94,15 +94,22 @@ NODE_ENV=development
 ## Datenbank-Setup und Migrationen
 
 ```bash
-npm run db:generate     # Drizzle-Migrations aus dem Schema erzeugen
-npm run db:migrate      # Migrationen auf der Ziel-DB anwenden
-npm run db:push         # Schema direkt pushen (Dev only)
+npm run db:generate     # Drizzle-Migrations aus dem Schema erzeugen (drizzle-kit, dev only)
+npm run db:migrate      # Migrationen anwenden (drizzle-orm Runtime-Migrator, dev + prod)
+npm run db:push         # Schema direkt pushen (drizzle-kit, dev only — niemals in Production)
 npm run db:studio       # Drizzle Studio öffnen
 ```
 
-Beim Start des SvelteKit-Servers werden ausstehende Migrationen automatisch durch den Server-Hook
-`src/hooks.server.ts → runMigrations()` angewendet, anschließend werden Default-Datensätze
-(Mailvorlagen, Nummernkreise, Buchhaltungs-Kategorien usw.) per `seedDefaults()` nachgezogen — idempotent.
+`db:migrate` ruft `node scripts/migrate.js` auf und ist die einzige
+Stelle, an der SQL-Migrationen angewendet werden — lokal genauso wie
+im Container (siehe `Dockerfile` `CMD`). Die SvelteKit-App selbst
+führt **keine** Migrationen aus; sie startet nur, wenn der vorgelagerte
+Migrations-Schritt erfolgreich war.
+
+Default-Datensätze (Mailvorlagen, Nummernkreise, Buchhaltungs-Kategorien)
+werden idempotent beim ersten HTTP-Request via `seedDefaults()` aus
+`src/hooks.server.ts` gesetzt. Das ist Inhalt, keine Schema-Änderung
+und damit keine Migrations-Aufgabe.
 
 ## Start im Dev-Modus
 
@@ -115,8 +122,12 @@ npm run dev          # Vite-Dev-Server auf http://localhost:5173
 ```bash
 npm run build        # Build erzeugt einen Node-Server in /build
 npm run preview      # Lokal anschauen
-node build           # Server starten (PORT=3000 default)
+npm run db:migrate   # Migrationen anwenden (idempotent)
+npm start            # Server starten (PORT=3000 default)
 ```
+
+Im Container ist die Reihenfolge **migrate → start** ein einzelner
+`CMD`. Schlägt die Migration fehl, startet die App nicht.
 
 ## Deployment mit adapter-node
 
@@ -127,6 +138,79 @@ Der erzeugte Output unter `/build` ist ein klassischer Node-HTTP-Server (`@svelt
   (z. B. Caddy oder Nginx).
 - Empfohlen: PM2 oder systemd zum Halten des Prozesses; `process.on('uncaughtException')` und
   `'unhandledRejection'` werden geloggt, der Prozess wird ggf. neu gestartet.
+
+### Docker
+
+Ein produktionsfähiger `Dockerfile` liegt im Repo-Root.
+
+#### Aufbau des Images
+
+Multi-stage Build auf Basis von `node:lts-alpine`:
+
+| Stage     | Zweck                            | Was passiert                                                                                                                                                                                                           |
+| --------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`   | Vollständige Toolchain, einmalig | `npm ci` mit dev + prod Deps · `npm run build` (Vite + adapter-node erzeugen `build/`) · `npm prune --omit=dev` strippt drizzle-kit / vite / vitest / svelte-check / prettier / typescript / @types / testing-library  |
+| `runtime` | Schlankes Final-Image            | Übernimmt aus `build` ausschließlich: `build/`, `node_modules/` (production-only), `package.json`, `scripts/`, `drizzle/`. **Kein** Sourcecode (`src/`), **kein** drizzle-kit, **keine** Tests, **keine** Build-Tools. |
+
+Caching-Reihenfolge: `package.json`/`package-lock.json` werden zuerst
+kopiert, dann `npm ci` — so überleben App-Code-Änderungen die
+npm-install-Layer. Nur wenn sich die Dependency-Lockdatei ändert,
+läuft `npm ci` neu.
+
+Ergebnis: Ein Image, das ausschließlich enthält, was zur Laufzeit
+gebraucht wird — den kompilierten SvelteKit-Server, den
+Migration-Runner, die generierten SQL-Migrationen und die
+Production-Dependencies.
+
+#### Startup-Sequenz
+
+`CMD` ist eine einzelne Shell-Zeile:
+
+```dockerfile
+CMD ["sh", "-c", "node scripts/migrate.js && node build"]
+```
+
+1. `node scripts/migrate.js` wendet ausstehende SQL-Migrationen mit
+   `drizzle-orm/postgres-js/migrator` an. Bei Fehler exit-code 1.
+2. `&&` bricht ab, wenn die Migration scheitert — der App-Server
+   startet dann gar nicht erst gegen eine halb-migrierte Datenbank.
+3. `node build` startet den SvelteKit/adapter-node-Server (PORT=3000
+   default).
+
+`drizzle-kit` ist im Runtime-Image **nicht enthalten**. Migrationen
+werden ausschließlich mit `drizzle-orm/postgres-js/migrator`
+angewendet — derselbe Code, den `npm run db:migrate` lokal ausführt.
+
+#### Build und Run
+
+```bash
+docker build -t twincars-manager .
+docker run --rm -p 3000:3000 \
+  -e DATABASE_URL=postgres://admin:secret@db:5432/twincars-manager \
+  -e APP_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  twincars-manager
+```
+
+`.dockerignore` schließt `node_modules/`, `.svelte-kit/`, `build/`,
+`.env*`, `tmp/`, `coverage/` und Markdown-Dokumentation aus dem
+Build-Kontext aus — damit ein lokaler Dev-Build den Image-Build nicht
+verlangsamt oder Secrets aus `.env` einschmuggelt. (`.env.example`
+bleibt erlaubt.)
+
+### Backups
+
+Backups sind **nicht Teil der App** und nicht Teil des Containers.
+Die Operations-Schicht (Host bzw. Postgres-Setup) ist verantwortlich:
+
+- **Vor jedem Deployment** mit neuen Migrationen einen `pg_dump`
+  ziehen (oder Volume-Snapshot).
+- Snapshot in einer Staging-Umgebung mindestens einmal pro Release
+  zurückspielen, um Restore-Pfade zu prüfen.
+- Aufbewahrungs-/Rotationspolitik ist Ops-Sache, nicht Code-Sache.
+
+Wenn eine Migration potenziell datenverlustig ist (Spalte droppen,
+Typänderung, Rename ohne Inhaltsmigration), in der Release-Note
+ausweisen, sodass Ops vor dem Deploy entscheiden kann.
 
 ## PWA-Hinweise
 
@@ -192,57 +276,55 @@ src/
 
 Vollständiges Schema in `src/lib/server/db/schema.ts`. Auswahl der wichtigsten Tabellen:
 
-| Tabelle                                                      | Zweck                                                       |
-| ------------------------------------------------------------ | ----------------------------------------------------------- |
-| `company_settings`                                           | Firmen-Stammdaten + Setup-Status + Logo                     |
-| `smtp_settings`                                              | SMTP-Konfiguration (Passwort verschlüsselt)                 |
-| `mail_templates`                                             | Editierbare Vorlagen für alle Mail-Anlässe                  |
-| `number_ranges`                                              | Format und nächster Wert je Nummernkreis                    |
-| `customers`                                                  | Kunden inkl. Bank, Anschrift, Notizen, Archiv-Flag          |
-| `vehicles`                                                   | Eine Tabelle für Kunden- und Bestandsfahrzeuge              |
-| `vehicle_purchases / _listings / _photos / _sales`           | Bestand, Verkaufsschild-Daten, Foto-Galerie, Verkäufe       |
-| `documents` + `document_items`                               | Gemeinsames Dokumentenmodell (Rechnung, Angebot, Mahnung …) |
-| `document_payments`                                          | Zahlungseingänge je Dokument                                |
-| `items` / `suppliers`                                        | Artikel/Leistungen, Lieferantenstamm                        |
-| `appointments` / `business_closures` / `public_holidays`     | Kalender                                                    |
-| `employees` / `employee_absences`                            | Mitarbeiter mit Abwesenheiten (Urlaub, Krank)               |
-| `payroll_periods` / `payroll_entries`                        | Lohnperioden und Lohnabrechnungen                           |
-| `ledger_categories` / `ledger_entries` / `recurring_entries` | Buchhaltung mit wiederkehrenden Vorlagen                    |
-| `sent_messages`                                              | Versand-Historie für E-Mails                                |
-| `access_import_jobs`                                         | Lauf-Protokoll des MDB-Imports                              |
+| Tabelle                                                      | Zweck                                                                                   |
+| ------------------------------------------------------------ | --------------------------------------------------------------------------------------- |
+| `company_settings`                                           | Firmen-Stammdaten + Setup-Status + Logo                                                 |
+| `smtp_settings`                                              | SMTP-Konfiguration (Passwort verschlüsselt)                                             |
+| `mail_templates`                                             | Editierbare Vorlagen für alle Mail-Anlässe                                              |
+| `number_ranges`                                              | Format und nächster Wert je Nummernkreis                                                |
+| `customers`                                                  | Kunden inkl. Bank, Anschrift, Notizen, Archiv-Flag                                      |
+| `vehicles`                                                   | Eine Tabelle für Kunden- und Bestandsfahrzeuge (`customer_id` nullable; NULL = Bestand) |
+| `vehicle_purchases / _listings / _photos / _sales`           | Bestand, Verkaufsschild-Daten, Foto-Galerie, Verkäufe                                   |
+| `documents` + `document_items`                               | Gemeinsames Dokumentenmodell (Rechnung, Angebot, Mahnung …)                             |
+| `document_payments`                                          | Zahlungseingänge je Dokument                                                            |
+| `items` / `suppliers`                                        | Artikel/Leistungen, Lieferantenstamm                                                    |
+| `calendar_entries` / `public_holidays`                       | Diskriminierter Kalender (Termine + Betriebsschließungen) + Feiertage                   |
+| `employees` / `employee_absences`                            | Mitarbeiter mit Abwesenheiten (Urlaub, Krank)                                           |
+| `payroll_periods` / `payroll_entries`                        | Lohnperioden und Lohnabrechnungen                                                       |
+| `ledger_categories` / `ledger_entries` / `recurring_entries` | Buchhaltung mit wiederkehrenden Vorlagen                                                |
+| `sent_messages`                                              | Versand-Historie für E-Mails                                                            |
+| `access_import_jobs`                                         | Lauf-Protokoll des MDB-Imports                                                          |
 
 ## Module
 
 Die UI ist über die linke **DaisyUI-Sidebar** in folgende Bereiche gegliedert:
 
-| Bereich               | Module                                                           | Status                                          |
-| --------------------- | ---------------------------------------------------------------- | ----------------------------------------------- |
-| Übersicht             | Dashboard, Kalender                                              | Dashboard live, Kalender Stub                   |
-| Kunden & Fahrzeuge    | Kunden, Fahrzeuge, Fahrzeugbestand, Termine                      | Kunden + Fahrzeuge live, Bestand + Termine Stub |
-| Aufträge & Rechnungen | Angebote/KV, Rechnungen, Offene/Mahnungen, Rechnungsausgangsbuch | Stubs                                           |
-| Stammdaten            | Leistungen/Material/Artikel, Lieferanten                         | Stubs                                           |
-| Personal              | Mitarbeiter, Lohn und Gehalt                                     | Stubs                                           |
-| Finanzen              | Buchhaltung, Controlling                                         | Stubs                                           |
-| Kommunikation         | Serienbriefe, Gesendet                                           | Stubs                                           |
-| System                | Einstellungen, Import (Kfz-Kaufmann)                             | Stubs                                           |
+| Bereich               | Module                                                                                                      | Status                                                                             |
+| --------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
+| Übersicht             | Start (Dashboard mit anstehenden Terminen), Kalender                                                        | beide live                                                                         |
+| Kunden & Fahrzeuge    | Kunden, Fahrzeuge, Fahrzeugbestand                                                                          | alle drei live (strikte Trennung Kunde/Stock)                                      |
+| Aufträge & Rechnungen | Angebote/KV, Rechnungen, Offene/Mahnungen, Rechnungsausgangsbuch                                            | KV/Rechnung mit Versand + Statusflüssen live; Mahnungs-CTA live; Sales-Ledger Stub |
+| Stammdaten            | Leistungen/Material/Artikel, Lieferanten                                                                    | beide live                                                                         |
+| Personal              | Mitarbeiter (mit paginierten Lohnabrechnungen + Jahres-Selektor), Lohn/Gehalt (auto-generiert zum Stichtag) | live                                                                               |
+| Finanzen              | Buchhaltung, Controlling                                                                                    | Buchhaltung live, Controlling Stub                                                 |
+| Kommunikation         | Serienbriefe, Gesendet                                                                                      | Gesendet live, Serienbriefe Stub                                                   |
+| System                | Einstellungen, Import (Kfz-Kaufmann)                                                                        | Settings live (4 Tabs), Import Stub                                                |
 
-**Kunden** und **Fahrzeuge** sind end-to-end implementiert (Liste mit serverseitiger Pagination,
-Suche, Filter, sortierte Tabelle, Detailansicht, Form für Neu/Bearbeiten, Lösch-Bestätigung,
-Toast-Feedback). Sie dienen als verbindliche Vorlage für die übrigen Module.
+Forms folgen dem Pattern aus `CONTRIBUTING.md` §11 (Validierung, w-full,
+unsaved-changes-Guard via `formDirty`-Store). Die Stub-Module zeigen einen
+einheitlichen "In Vorbereitung"-Block mit konkreter Feature-Liste.
 
-Die Stub-Module zeigen einen einheitlichen "In Vorbereitung"-Block mit konkreter Feature-Liste,
-sodass beim Ausbau klar ist, was zu liefern ist.
+### Start (Dashboard)
 
-### Dashboard
-
-KPI-Kacheln (Kunden, Fahrzeuge, offene Rechnungen, Mahnungen, Umsatz aktueller Monat, Termine heute),
-eine Karte mit Schnell-Aktionen und ein Hinweisbereich. Die Werte werden in einer Folgeiteration aus
-den jeweiligen Repositories befüllt.
+KPI-Kacheln (Kunden, Fahrzeuge, Umsatz/Ausgaben/Saldo dieser Monat, offene Rechnungen,
+Mahnungen, Termine heute), Karte mit Schnell-Aktionen, und eine "Anstehende Termine"-Karte
+mit den nächsten 10 fälligen HU-Terminen + Werkstatt-Terminen, sortiert nach Datum.
 
 ### Kunden
 
-- Liste mit Pagination (10/25/50/100), Volltextsuche über Name/Kundennr./Ort/Telefon/E-Mail,
-  Filter aktiv/archiviert/alle.
+- Liste mit serverseitiger Pagination (fix 25 pro Seite), Volltextsuche über
+  Name/Kundennr./Ort/Telefon/E-Mail, Filter Privatkunden/Firmenkunden/Alle.
+  Archivierte Kunden sind aus der Liste ausgeschlossen.
 - Detailansicht mit Anschrift, Kontakt, Notizen.
 - Form für Neu und Bearbeiten mit Inline-Validierung (mind. Firma oder Nachname, gültige E-Mail).
 - Lösch-Bestätigung über `ConfirmDialog`, anschließend Toast-Erfolg.
@@ -346,8 +428,9 @@ Bestätigung verlangt. Jeder Versand wird in `sent_messages` protokolliert.
 
 Jede Liste lädt **serverseitig** über eine Remote Function mit `{ items, total, page, size, pageCount }`.
 
-- Wiederverwendbare `Pagination`-Komponente mit Seitenzahlen `1, 2, 3, …`, Sprungbuttons,
-  Seitengrößenauswahl 10/25/50/100.
+- Wiederverwendbare `Pagination`-Komponente mit Seitenzahlen `1, 2, 3, …` und
+  Sprungbuttons. Seitengröße ist projektweit fix auf **25** Einträge —
+  kein Selector. Wer mehr braucht, sucht/filtert.
 - `Toolbar` mit prominenter Suchzeile (Lucide-Icon, Debounce 250 ms) und Filter-Slot.
 - `clampPagination()` und `paginationButtons()` als Hilfen unter `src/lib/utils/pagination.ts`.
 - Listen-Queries setzen ein Längen-Limit auf jedem Suchbegriff (max. 200 Zeichen).
@@ -368,7 +451,12 @@ Erfolgs- und Fehlermeldungen (`src/lib/stores/toast.svelte.ts`).
 
 ## Backup / Export
 
-`pg_dump` für Voll-Backups; ein Backup-/Restore-Modul wird in einer Folgeiteration ergänzt.
+Backups liegen außerhalb der Anwendung — siehe Abschnitt
+[Deployment mit adapter-node → Backups](#deployment-mit-adapter-node).
+Die App selbst, der Migration-Runner und das Container-Image führen
+**keine** Backup-Logik aus. Snapshots gehören in die Ops-Schicht
+(Host-Volume, Postgres-Backup-Tooling, Cloud-Provider) und müssen
+**vor** jedem Deployment mit neuen Migrationen gezogen werden.
 
 ## Testing
 

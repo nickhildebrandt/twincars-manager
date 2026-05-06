@@ -17,7 +17,7 @@
   import { toast } from '$lib/stores/toast.svelte'
 
   let step = $state(1)
-  const totalSteps = 6
+  const totalSteps = 7
 
   const steps = [
     { n: 1, title: 'Willkommen' },
@@ -25,7 +25,8 @@
     { n: 3, title: 'Steuer & Bank' },
     { n: 4, title: 'Logo & Anrede' },
     { n: 5, title: 'E-Mail (SMTP)' },
-    { n: 6, title: 'Abschluss' }
+    { n: 6, title: 'Lohn & Mahnwesen' },
+    { n: 7, title: 'Abschluss' }
   ]
 
   let companyName = $state('')
@@ -56,6 +57,15 @@
   let smtpPassword = $state('')
   let fromAddress = $state('')
   let fromName = $state('')
+
+  // Schritt 6 — Lohn & Mahnwesen
+  let payrollGenerationDay = $state(25)
+  let reminderDays1 = $state(3)
+  let reminderDays2 = $state(10)
+  let reminderDays3 = $state(20)
+  let reminderDays4 = $state(30)
+  let reminderInterestRate = $state(9.62)
+
   let mdbChoice = $state<'now' | 'later' | 'fresh'>('later')
 
   let busy = $state(false)
@@ -103,6 +113,29 @@
       if (!fromAddress.trim()) return 'Bitte Absender-Adresse eingeben.'
       if (!fromName.trim()) return 'Bitte Absender-Name eingeben.'
     }
+    if (n === 6) {
+      if (
+        !Number.isInteger(payrollGenerationDay) ||
+        payrollGenerationDay < 1 ||
+        payrollGenerationDay > 28
+      )
+        return 'Stichtag der Lohnabrechnung muss zwischen 1 und 28 liegen.'
+      if (
+        reminderDays1 < 0 ||
+        reminderDays2 < 0 ||
+        reminderDays3 < 0 ||
+        reminderDays4 < 0
+      )
+        return 'Mahnstufen-Tage dürfen nicht negativ sein.'
+      if (
+        !(
+          reminderDays1 < reminderDays2 &&
+          reminderDays2 < reminderDays3 &&
+          reminderDays3 < reminderDays4
+        )
+      )
+        return 'Mahnstufen müssen aufsteigend sein (1 < 2 < 3 < 4).'
+    }
     return null
   }
 
@@ -139,7 +172,13 @@
         bic: bic.trim() || undefined,
         salutationStyle: salutation,
         logoMime: logoMime || undefined,
-        logoData: logoData || undefined
+        logoData: logoData || undefined,
+        payrollGenerationDay,
+        reminderDays1,
+        reminderDays2,
+        reminderDays3,
+        reminderDays4,
+        reminderInterestRate
       })
 
       await saveSmtp({
@@ -215,49 +254,52 @@
             <h2 class="card-title">Firmendaten</h2>
           </div>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Firmenname *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="200"
                 bind:value={companyName}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Inhaber</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="200"
                 bind:value={owner}
               />
             </label>
-            <label class="form-control sm:col-span-2">
+            <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">Straße + Hausnummer *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="200"
                 bind:value={street}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">PLZ *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="10"
                 bind:value={zip}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Ort *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="150"
                 bind:value={city}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Bundesland *</span>
-              <select class="select select-bordered" bind:value={bundesland}>
+              <select
+                class="select select-bordered w-full"
+                bind:value={bundesland}
+              >
                 <option>Baden-Württemberg</option>
                 <option>Bayern</option>
                 <option>Berlin</option>
@@ -276,35 +318,35 @@
                 <option>Thüringen</option>
               </select>
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Telefon *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="30"
                 bind:value={phone}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Mobil</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="30"
                 bind:value={mobile}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">E-Mail *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 type="email"
                 maxlength="254"
                 bind:value={email}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Website</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="2048"
                 bind:value={website}
               />
@@ -316,42 +358,42 @@
             <h2 class="card-title">Steuer und Bank</h2>
           </div>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">USt-IdNr.</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="30"
                 bind:value={vatId}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Steuernummer *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="30"
                 bind:value={taxNumber}
               />
             </label>
-            <label class="form-control sm:col-span-2">
+            <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">Bankname *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="100"
                 bind:value={bankName}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">IBAN *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="34"
                 bind:value={iban}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">BIC *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="11"
                 bind:value={bic}
               />
@@ -368,7 +410,7 @@
           </p>
           <div class="flex flex-col gap-4 sm:flex-row">
             <div class="flex-1">
-              <label class="form-control">
+              <label class="flex w-full flex-col gap-1">
                 <span class="label-text">Logo (PNG/JPG/SVG, max. 5 MB) *</span>
                 <input
                   class="file-input file-input-bordered w-full"
@@ -410,7 +452,7 @@
                 </div>
               {:else}
                 <div
-                  class="border-base-300 bg-base-200 text-base-content/40 flex h-40 items-center justify-center rounded border border-dashed text-sm"
+                  class="border-base-300 bg-base-200 text-base-content/40 flex h-40 items-center justify-center rounded border text-sm"
                 >
                   Vorschau
                 </div>
@@ -427,61 +469,64 @@
             können.
           </p>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <label class="form-control sm:col-span-2">
+            <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">Absenderadresse *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 type="email"
                 maxlength="254"
                 bind:value={fromAddress}
               />
             </label>
-            <label class="form-control sm:col-span-2">
+            <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">Absendername *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="200"
                 bind:value={fromName}
               />
             </label>
-            <label class="form-control sm:col-span-2">
+            <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">SMTP-Server (Host) *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="255"
                 bind:value={smtpHost}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Port *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 type="number"
                 min="1"
                 max="65535"
                 bind:value={smtpPort}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Verschlüsselung *</span>
-              <select class="select select-bordered" bind:value={smtpSecure}>
+              <select
+                class="select select-bordered w-full"
+                bind:value={smtpSecure}
+              >
                 <option value="STARTTLS">STARTTLS</option>
                 <option value="TLS">TLS</option>
                 <option value="none">Keine</option>
               </select>
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Benutzername *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 maxlength="200"
                 bind:value={smtpUser}
               />
             </label>
-            <label class="form-control">
+            <label class="flex w-full flex-col gap-1">
               <span class="label-text">Passwort *</span>
               <input
-                class="input input-bordered"
+                class="input input-bordered w-full"
                 type="password"
                 maxlength="200"
                 bind:value={smtpPassword}
@@ -493,6 +538,82 @@
             Einstellungen → E-Mail/SMTP auslösen.
           </p>
         {:else if step === 6}
+          <h2 class="card-title">Lohn & Mahnwesen</h2>
+          <p class="text-base-content/70 text-sm">
+            Diese Defaults greifen für alle künftigen Lohnabrechnungen und
+            Mahnungen. Sie lassen sich später in den Einstellungen anpassen.
+          </p>
+          <fieldset class="fieldset">
+            <legend class="fieldset-legend">Lohnabrechnung</legend>
+            <label class="flex w-full max-w-xs flex-col gap-1">
+              <span class="label-text"> Stichtag (Tag im Monat, 1–28) * </span>
+              <input
+                class="input input-bordered w-full"
+                type="number"
+                min="1"
+                max="28"
+                bind:value={payrollGenerationDay}
+              />
+              <span class="text-base-content/50 text-xs">
+                Ab diesem Tag werden Lohnabrechnungen für den laufenden Monat
+                automatisch angelegt.
+              </span>
+            </label>
+          </fieldset>
+          <fieldset class="fieldset mt-2">
+            <legend class="fieldset-legend"
+              >Mahnstufen — Tage nach Fälligkeit</legend
+            >
+            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
+              <label class="flex flex-col gap-1">
+                <span class="label-text">Zahlungserinnerung *</span>
+                <input
+                  class="input input-bordered w-full"
+                  type="number"
+                  min="0"
+                  bind:value={reminderDays1}
+                />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="label-text">1. Mahnung *</span>
+                <input
+                  class="input input-bordered w-full"
+                  type="number"
+                  min="0"
+                  bind:value={reminderDays2}
+                />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="label-text">2. Mahnung *</span>
+                <input
+                  class="input input-bordered w-full"
+                  type="number"
+                  min="0"
+                  bind:value={reminderDays3}
+                />
+              </label>
+              <label class="flex flex-col gap-1">
+                <span class="label-text">Letzte Mahnung *</span>
+                <input
+                  class="input input-bordered w-full"
+                  type="number"
+                  min="0"
+                  bind:value={reminderDays4}
+                />
+              </label>
+            </div>
+            <label class="mt-3 flex max-w-xs flex-col gap-1">
+              <span class="label-text">Verzugszinsen p.a. (%)</span>
+              <input
+                class="input input-bordered w-full"
+                type="number"
+                step="0.01"
+                min="0"
+                bind:value={reminderInterestRate}
+              />
+            </label>
+          </fieldset>
+        {:else if step === 7}
           <div class="flex items-center gap-2">
             <Check size={22} class="text-primary" />
             <h2 class="card-title">Abschluss</h2>

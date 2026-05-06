@@ -27,8 +27,14 @@
   }
 </script>
 
+<!--
+  Search / filter bar shares the flat card baseline used everywhere else
+  (`card border border-base-300 bg-base-100`). We bypass `card-body` to
+  keep the row layout — the `card` class on its own gives us the same
+  background, border colour and `rounded-box` radius.
+-->
 <div
-  class="border-base-300 bg-base-100 flex flex-col gap-3 rounded-lg border p-3 sm:flex-row sm:flex-wrap sm:items-center"
+  class="card border-base-300 bg-base-100 flex flex-col gap-3 border p-3 sm:flex-row sm:flex-wrap sm:items-center"
 >
   <!-- Search input grows to fill available space -->
   <label

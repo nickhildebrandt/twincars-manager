@@ -28,6 +28,10 @@ import {
   listCustomers,
   updateCustomer
 } from '$lib/server/services/customer-service'
+import { db } from '$lib/server/db/client'
+import { documents, vehicles } from '$lib/server/db/schema'
+import { and, desc, eq } from 'drizzle-orm'
+import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
 
 /**
  * Validation schema shared by `createCustomerRemote` and
@@ -66,35 +70,30 @@ const listSchema = object({
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
   sort: optional(pipe(string(), trim(), maxLength(30))),
-  archived: optional(picklist(['active', 'archived', 'all']))
+  kind: optional(picklist(['all', 'private', 'business']))
 })
 
 /**
- * Paginated, searchable, archive-filterable customer list.
+ * Paginated, searchable customer list with a Privat/Firma filter.
  *
  * @remarks
- * The `archived` filter accepts the human-readable values `'active' |
- * 'archived' | 'all'` and is mapped to a boolean (or omitted) before being
- * passed to the service layer.
+ * The `kind` filter accepts `'all' | 'private' | 'business'` and is
+ * derived from `customers.company` at the service layer (a non-null
+ * company is a Firmenkunde, otherwise Privatkunde). Archived customers
+ * are always excluded.
  *
  * @group integration
  * @module customers
  */
-export const listCustomersRemote = query(listSchema, async (params) => {
-  const archivedFilter =
-    params.archived === 'archived'
-      ? true
-      : params.archived === 'active'
-        ? false
-        : undefined
-  return listCustomers({
+export const listCustomersRemote = query(listSchema, async (params) =>
+  listCustomers({
     page: params.page,
     size: params.size,
     q: params.q,
     sort: params.sort,
-    archived: archivedFilter
+    kind: params.kind ?? 'all'
   })
-})
+)
 
 /**
  * Load a single customer by id. Throws `404` if the customer does not exist.
@@ -108,6 +107,52 @@ export const getCustomerRemote = query(
     const row = await getCustomer(id)
     if (!row) error(404, 'Kunde nicht gefunden.')
     return row
+  }
+)
+
+/**
+ * Vehicles + invoices for a customer detail view. Both queries are tiny
+ * for typical workshop volumes and run in parallel on the server, so the
+ * detail page stays a single round-trip.
+ *
+ * @group integration
+ * @module customers
+ */
+export const getCustomerRelatedRemote = query(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    const lp = latestPlateSubquery()
+    const [vehicleRows, invoiceRows] = await Promise.all([
+      db
+        .select({
+          id: vehicles.id,
+          make: vehicles.make,
+          model: vehicles.model,
+          licensePlate: lp.licensePlate,
+          firstRegistration: vehicles.firstRegistration,
+          mileageKm: vehicles.mileageKm,
+          nextHu: vehicles.nextHu,
+          archived: vehicles.archived
+        })
+        .from(vehicles)
+        .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+        .where(eq(vehicles.customerId, id))
+        .orderBy(desc(vehicles.createdAt)),
+      db
+        .select({
+          id: documents.id,
+          documentNumber: documents.documentNumber,
+          type: documents.type,
+          status: documents.status,
+          issueDate: documents.issueDate,
+          dueDate: documents.dueDate,
+          grossTotal: documents.grossTotal
+        })
+        .from(documents)
+        .where(and(eq(documents.customerId, id), eq(documents.type, 'invoice')))
+        .orderBy(desc(documents.issueDate))
+    ])
+    return { vehicles: vehicleRows, invoices: invoiceRows }
   }
 )
 

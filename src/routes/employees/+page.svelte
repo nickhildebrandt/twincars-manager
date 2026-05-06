@@ -107,7 +107,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Personalnr.</th>
@@ -121,7 +121,7 @@
           <tbody>
             {#each items as e (e.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/employees/${e.id}`)}
               >
                 <td class="font-mono text-xs">{e.personnelNumber}</td>

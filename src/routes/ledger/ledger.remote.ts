@@ -16,7 +16,8 @@ import {
   deleteLedgerEntry,
   getLedgerEntry,
   listLedgerCategories,
-  listLedgerEntries
+  listLedgerEntries,
+  updateLedgerEntry
 } from '$lib/server/services/ledger-service'
 
 const entryInputSchema = object({
@@ -124,5 +125,40 @@ export const deleteLedgerEntryRemote = command(
   async ({ id }) => {
     await deleteLedgerEntry(id)
     await requested(listLedgerEntriesRemote, 4).refreshAll()
+  }
+)
+
+/**
+ * Update an existing ledger entry. Re-derives net + tax from
+ * `amountGross` and `taxRate` so the totals on stat-cards stay
+ * consistent.
+ *
+ * @group integration
+ * @module ledger
+ */
+export const updateLedgerEntryRemote = command(
+  object({ id: idSchema, values: entryInputSchema }),
+  async ({ id, values }) => {
+    const taxRate = values.taxRate ?? 19
+    const gross = Number(values.amountGross)
+    const net = Math.round((gross / (1 + taxRate / 100)) * 100) / 100
+    const tax = Math.round((gross - net) * 100) / 100
+    const data = await updateLedgerEntry(id, {
+      direction: values.direction,
+      entryDate: values.entryDate,
+      amountGross: String(gross),
+      amountNet: String(net),
+      taxAmount: String(tax),
+      taxRate: String(taxRate),
+      categoryId: values.categoryId ?? null,
+      description: values.description,
+      paymentMethod: values.paymentMethod ?? null,
+      paymentStatus: values.paymentStatus ?? 'paid'
+    })
+    await Promise.all([
+      getLedgerEntryRemote({ id }).refresh(),
+      requested(listLedgerEntriesRemote, 4).refreshAll()
+    ])
+    return data
   }
 )

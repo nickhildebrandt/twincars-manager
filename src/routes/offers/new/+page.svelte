@@ -6,8 +6,9 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
   import { formatEuro } from '$lib/utils/money'
-  import { Plus, Trash2, Package, Car, Pencil } from '@lucide/svelte'
+  import { Plus, Trash2 } from '@lucide/svelte'
   import {
     pickCustomersRemote,
     pickVehiclesRemote,
@@ -15,7 +16,7 @@
     pickInventoryVehiclesRemote
   } from '../../pickers.remote'
 
-  type PositionSource = 'free' | 'item' | 'vehicle'
+  type PositionSource = 'free' | 'article' | 'service' | 'vehicle'
   type Position = {
     description: string
     quantity: number | string
@@ -24,7 +25,8 @@
     discountPercent: number | string
     taxRate: number | string
     source: PositionSource
-    sourceRef?: string
+    sourceRef: string
+    sourceLabel: string
     kind: string
     articleNumber?: string
   }
@@ -54,17 +56,14 @@
     discountPercent: 0,
     taxRate: 19,
     source: 'free',
+    sourceRef: '',
+    sourceLabel: '',
     kind: 'article'
   })
 
   let positions = $state<Position[]>([blankPosition()])
 
   let errorMsg = $state<string | null>(null)
-
-  let itemPickerValue = $state('')
-  let itemPickerLabel = $state('')
-  let vehicleSourceValue = $state('')
-  let vehicleSourceLabel = $state('')
 
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
     pickCustomersRemote({
@@ -76,10 +75,17 @@
       ...params,
       size: params.size as 10 | 25 | 50 | 100
     }).run()
-  const searchItems = (params: { q: string; page: number; size: number }) =>
+  const searchArticles = (params: { q: string; page: number; size: number }) =>
     pickItemsRemote({
       ...params,
-      size: params.size as 10 | 25 | 50 | 100
+      size: params.size as 10 | 25 | 50 | 100,
+      category: 'articles'
+    }).run()
+  const searchServices = (params: { q: string; page: number; size: number }) =>
+    pickItemsRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100,
+      category: 'services'
     }).run()
   const searchInventoryVehicles = (params: {
     q: string
@@ -111,45 +117,49 @@
     positions = [...positions, blankPosition()]
   }
 
-  const addItemPosition = (item: {
-    id: string
-    label: string
-    articleNumber: string
-    description: string
-    kind: string
-    unit: string
-    unitPriceNet: number
-  }) => {
-    positions = [
-      ...positions,
-      {
-        description: item.description,
-        quantity: 1,
-        unit: item.unit,
-        unitPriceNet: item.unitPriceNet,
-        discountPercent: 0,
-        taxRate: 19,
-        source: 'item',
-        sourceRef: item.id,
-        kind: item.kind,
-        articleNumber: item.articleNumber
-      }
-    ]
-    itemPickerValue = ''
-    itemPickerLabel = ''
+  const fillItemRow = (
+    idx: number,
+    item: {
+      id: string
+      label: string
+      articleNumber: string
+      description: string
+      kind: string
+      unit: string
+      unitPriceNet: number
+    }
+  ) => {
+    const next = [...positions]
+    const source: PositionSource =
+      item.kind === 'service' ? 'service' : 'article'
+    next[idx] = {
+      ...next[idx],
+      description: item.description,
+      unit: item.unit || next[idx].unit,
+      unitPriceNet: item.unitPriceNet,
+      source,
+      sourceRef: item.id,
+      sourceLabel: item.label,
+      kind: item.kind,
+      articleNumber: item.articleNumber
+    }
+    positions = next
   }
 
-  const addVehiclePosition = (v: {
-    id: string
-    label: string
-    plate: string | null
-    vin: string | null
-    make: string | null
-    model: string | null
-    firstRegistration: string | null
-    salesPriceGross: number
-    differentialTax: boolean
-  }) => {
+  const fillVehicleRow = (
+    idx: number,
+    v: {
+      id: string
+      label: string
+      plate: string | null
+      vin: string | null
+      make: string | null
+      model: string | null
+      firstRegistration: string | null
+      salesPriceGross: number
+      differentialTax: boolean
+    }
+  ) => {
     const lines = [
       [v.make, v.model].filter(Boolean).join(' '),
       v.plate ? `Kennz.: ${v.plate}` : '',
@@ -161,74 +171,138 @@
     const priceNet = v.differentialTax
       ? v.salesPriceGross
       : Math.round((v.salesPriceGross / 1.19) * 100) / 100
-    positions = [
-      ...positions,
-      {
-        description,
-        quantity: 1,
-        unit: 'Stk',
-        unitPriceNet: priceNet,
-        discountPercent: 0,
-        taxRate,
-        source: 'vehicle',
-        sourceRef: v.id,
-        kind: 'vehicle'
-      }
-    ]
-    vehicleSourceValue = ''
-    vehicleSourceLabel = ''
+    const next = [...positions]
+    next[idx] = {
+      ...next[idx],
+      description,
+      unit: 'Stk',
+      unitPriceNet: priceNet,
+      taxRate,
+      source: 'vehicle',
+      sourceRef: v.id,
+      sourceLabel:
+        [v.make, v.model].filter(Boolean).join(' ') || (v.plate ?? ''),
+      kind: 'vehicle'
+    }
+    positions = next
+  }
+
+  const onSourceChange = (idx: number, next: PositionSource) => {
+    const arr = [...positions]
+    arr[idx] = {
+      ...arr[idx],
+      source: next,
+      sourceRef: '',
+      sourceLabel: '',
+      articleNumber: undefined,
+      kind:
+        next === 'vehicle'
+          ? 'vehicle'
+          : next === 'service'
+            ? 'service'
+            : 'article'
+    }
+    if (next !== 'free') {
+      arr[idx].description = ''
+      arr[idx].unitPriceNet = 0
+    }
+    positions = arr
   }
 
   const removePosition = (idx: number) => {
     positions = positions.filter((_, i) => i !== idx)
   }
 
-  const sourceBadge = (s: PositionSource) =>
-    s === 'item'
-      ? { class: 'badge-info', label: 'Artikel' }
-      : s === 'vehicle'
-        ? { class: 'badge-warning', label: 'Fahrzeug' }
-        : { class: 'badge-ghost', label: 'Frei' }
+  /* — 0-€-Warnmodal: gleicher Pattern wie in /invoices/new — */
+  let zeroOpen = $state(false)
+  let zeroRows = $state<{ description: string; reason: string }[]>([])
+  let pendingItems = $state<Array<ReturnType<typeof cleanPosition>>>([])
+
+  function cleanPosition(p: Position) {
+    return {
+      description: p.description.trim(),
+      quantity: Number(p.quantity) || 0,
+      unit: p.unit,
+      unitPriceNet: Number(p.unitPriceNet) || 0,
+      discountPercent: Number(p.discountPercent) || 0,
+      taxRate: Number(p.taxRate) || 19,
+      kind: p.kind,
+      articleNumber: p.articleNumber || undefined
+    }
+  }
+
+  const persistOffer = async (
+    cleaned: Array<ReturnType<typeof cleanPosition>>
+  ) => {
+    const created = await busy.run(() =>
+      createOfferRemote({
+        type,
+        customerId: customerId || undefined,
+        vehicleId: vehicleId || undefined,
+        issueDate,
+        dueDate,
+        header: header.trim() || undefined,
+        footer: footer.trim() || undefined,
+        notes: notes.trim() || undefined,
+        items: cleaned
+      })
+    )
+    toast.success(`Dokument ${created.documentNumber} erstellt.`)
+    goto(`/offers/${created.id}`, { replaceState: true })
+  }
 
   const submit = async (e: Event) => {
     e.preventDefault()
     errorMsg = null
     const cleaned = positions
-      .map((p) => ({
-        description: p.description.trim(),
-        quantity: Number(p.quantity) || 0,
-        unit: p.unit,
-        unitPriceNet: Number(p.unitPriceNet) || 0,
-        discountPercent: Number(p.discountPercent) || 0,
-        taxRate: Number(p.taxRate) || 19,
-        kind: p.kind,
-        articleNumber: p.articleNumber || undefined
-      }))
+      .map((p) => cleanPosition(p))
       .filter((p) => p.description !== '')
     if (cleaned.length === 0) {
       errorMsg = 'Bitte mindestens eine Position eingeben.'
       return
     }
+    const zero = cleaned
+      .map((p) => {
+        if (p.unitPriceNet === 0)
+          return { description: p.description, reason: 'Einzelpreis 0 €' }
+        if (p.discountPercent >= 100)
+          return { description: p.description, reason: 'Rabatt 100 %' }
+        const lineNet =
+          p.quantity * p.unitPriceNet * (1 - p.discountPercent / 100)
+        if (Math.abs(lineNet) < 0.005)
+          return { description: p.description, reason: 'Endpreis 0 €' }
+        return null
+      })
+      .filter((x): x is { description: string; reason: string } => x !== null)
+    if (zero.length > 0) {
+      zeroRows = zero
+      pendingItems = cleaned
+      zeroOpen = true
+      return
+    }
     try {
-      const created = await busy.run(() =>
-        createOfferRemote({
-          type,
-          customerId: customerId || undefined,
-          vehicleId: vehicleId || undefined,
-          issueDate,
-          dueDate,
-          header: header.trim() || undefined,
-          footer: footer.trim() || undefined,
-          notes: notes.trim() || undefined,
-          items: cleaned
-        })
-      )
-      toast.success(`Dokument ${created.documentNumber} erstellt.`)
-      goto(`/offers/${created.id}`)
+      await persistOffer(cleaned)
     } catch (err) {
       handleClientError(err)
     }
   }
+
+  const confirmZero = async () => {
+    zeroOpen = false
+    try {
+      await persistOffer(pendingItems)
+    } catch (err) {
+      handleClientError(err)
+    }
+  }
+  const cancelZero = () => {
+    zeroOpen = false
+    pendingItems = []
+    zeroRows = []
+  }
+
+  const markDirty = () => formDirty.set(true)
+  $effect(() => () => formDirty.clear())
 </script>
 
 <PageHeader
@@ -236,7 +310,12 @@
   subtitle="Angebot, Kostenvoranschlag oder Auftragsbestätigung."
 />
 
-<form onsubmit={submit} class="space-y-4">
+<form
+  onsubmit={submit}
+  oninput={markDirty}
+  onchange={markDirty}
+  class="space-y-4"
+>
   {#if errorMsg}<div class="alert alert-error"><span>{errorMsg}</span></div
     >{/if}
 
@@ -245,15 +324,15 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Empfänger und Konditionen</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Typ *</span>
-            <select class="select select-bordered" bind:value={type}>
+            <select class="select select-bordered w-full" bind:value={type}>
               <option value="cost_estimate">Kostenvoranschlag</option>
               <option value="offer">Angebot</option>
               <option value="order_confirmation">Auftragsbestätigung</option>
             </select>
           </label>
-          <div class="form-control sm:col-span-2">
+          <div class="flex w-full flex-col gap-1 sm:col-span-2">
             <span class="label-text">Kunde</span>
             <SearchablePicker
               bind:value={customerId}
@@ -264,7 +343,7 @@
               onSelect={() => {}}
             />
           </div>
-          <div class="form-control sm:col-span-2">
+          <div class="flex w-full flex-col gap-1 sm:col-span-2">
             <span class="label-text">Fahrzeug</span>
             <SearchablePicker
               bind:value={vehicleId}
@@ -275,19 +354,19 @@
               onSelect={() => {}}
             />
           </div>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Datum *</span>
             <input
-              class="input input-bordered"
+              class="input input-bordered w-full"
               type="date"
               required
               bind:value={issueDate}
             />
           </label>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Gültig bis</span>
             <input
-              class="input input-bordered"
+              class="input input-bordered w-full"
               type="date"
               bind:value={dueDate}
             />
@@ -301,51 +380,21 @@
     <div class="card-body gap-3">
       <div class="flex flex-wrap items-center justify-between gap-2">
         <h3 class="card-title text-base">Positionen</h3>
-        <div class="flex flex-wrap gap-2">
-          <button
-            type="button"
-            class="btn btn-sm gap-2"
-            onclick={addPosition}
-            data-testid="add-free-position"
-          >
-            <Pencil size={14} /> Freie Position
-          </button>
-          <div class="form-control">
-            <SearchablePicker
-              bind:value={itemPickerValue}
-              bind:valueLabel={itemPickerLabel}
-              placeholder="+ Artikel/Leistung"
-              dialogTitle="Artikel auswählen"
-              search={searchItems}
-              onSelect={(it) => {
-                if (it)
-                  addItemPosition(it as Parameters<typeof addItemPosition>[0])
-              }}
-            />
-          </div>
-          <div class="form-control">
-            <SearchablePicker
-              bind:value={vehicleSourceValue}
-              bind:valueLabel={vehicleSourceLabel}
-              placeholder="+ Fahrzeug aus Bestand"
-              dialogTitle="Fahrzeug aus Bestand auswählen"
-              search={searchInventoryVehicles}
-              onSelect={(it) => {
-                if (it)
-                  addVehiclePosition(
-                    it as Parameters<typeof addVehiclePosition>[0]
-                  )
-              }}
-            />
-          </div>
-        </div>
+        <button
+          type="button"
+          class="btn btn-sm gap-2"
+          onclick={addPosition}
+          data-testid="add-position"
+        >
+          <Plus size={14} /> Position hinzufügen
+        </button>
       </div>
       <div class="overflow-x-auto">
         <table class="table-sm table">
           <thead>
             <tr>
               <th>#</th>
-              <th class="w-24">Quelle</th>
+              <th class="w-32">Quelle</th>
               <th>Beschreibung</th>
               <th class="w-20 text-right">Menge</th>
               <th class="w-20">Einheit</th>
@@ -357,21 +406,25 @@
           </thead>
           <tbody>
             {#each positions as p, idx (idx)}
-              {@const b = sourceBadge(p.source)}
               <tr>
                 <td class="text-base-content/60">{idx + 1}</td>
                 <td>
-                  <span class="badge badge-sm {b.class} gap-1">
-                    {#if p.source === 'item'}
-                      <Package size={10} />
-                    {:else if p.source === 'vehicle'}
-                      <Car size={10} />
-                    {:else}
-                      <Pencil size={10} />
-                    {/if}
-                    {b.label}
-                  </span>
-                  {#if p.source === 'item' && p.articleNumber}
+                  <select
+                    class="select select-bordered select-sm w-full"
+                    value={p.source}
+                    onchange={(e) =>
+                      onSourceChange(
+                        idx,
+                        (e.target as HTMLSelectElement).value as PositionSource
+                      )}
+                    aria-label="Quelle"
+                  >
+                    <option value="free">Frei</option>
+                    <option value="article">Artikel</option>
+                    <option value="service">Leistung</option>
+                    <option value="vehicle">Fahrzeug</option>
+                  </select>
+                  {#if p.source !== 'free' && p.articleNumber}
                     <div
                       class="text-base-content/60 mt-0.5 font-mono text-[10px]"
                     >
@@ -380,12 +433,65 @@
                   {/if}
                 </td>
                 <td>
-                  <input
-                    class="input input-bordered input-sm w-full"
-                    maxlength="500"
-                    bind:value={p.description}
-                    placeholder="Beschreibung"
-                  />
+                  {#if p.source === 'free'}
+                    <input
+                      class="input input-bordered input-sm w-full"
+                      maxlength="500"
+                      bind:value={p.description}
+                      placeholder="Beschreibung"
+                    />
+                  {:else if p.sourceRef}
+                    <input
+                      class="input input-bordered input-sm w-full"
+                      maxlength="500"
+                      bind:value={p.description}
+                    />
+                  {:else if p.source === 'article'}
+                    <SearchablePicker
+                      bind:value={p.sourceRef}
+                      bind:valueLabel={p.sourceLabel}
+                      placeholder="— Artikel auswählen —"
+                      dialogTitle="Artikel auswählen"
+                      search={searchArticles}
+                      onSelect={(it) => {
+                        if (it)
+                          fillItemRow(
+                            idx,
+                            it as Parameters<typeof fillItemRow>[1]
+                          )
+                      }}
+                    />
+                  {:else if p.source === 'service'}
+                    <SearchablePicker
+                      bind:value={p.sourceRef}
+                      bind:valueLabel={p.sourceLabel}
+                      placeholder="— Leistung auswählen —"
+                      dialogTitle="Leistung auswählen"
+                      search={searchServices}
+                      onSelect={(it) => {
+                        if (it)
+                          fillItemRow(
+                            idx,
+                            it as Parameters<typeof fillItemRow>[1]
+                          )
+                      }}
+                    />
+                  {:else}
+                    <SearchablePicker
+                      bind:value={p.sourceRef}
+                      bind:valueLabel={p.sourceLabel}
+                      placeholder="— Fahrzeug aus Bestand —"
+                      dialogTitle="Fahrzeug auswählen"
+                      search={searchInventoryVehicles}
+                      onSelect={(it) => {
+                        if (it)
+                          fillVehicleRow(
+                            idx,
+                            it as Parameters<typeof fillVehicleRow>[1]
+                          )
+                      }}
+                    />
+                  {/if}
                 </td>
                 <td
                   ><input
@@ -470,18 +576,18 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Texte</legend>
         <div class="grid grid-cols-1 gap-3">
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Endtext</span>
             <textarea
-              class="textarea textarea-bordered min-h-20"
+              class="textarea textarea-bordered min-h-20 w-full"
               maxlength="10000"
               bind:value={footer}
             ></textarea>
           </label>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Interne Notiz</span>
             <textarea
-              class="textarea textarea-bordered min-h-20"
+              class="textarea textarea-bordered min-h-20 w-full"
               maxlength="2000"
               bind:value={notes}
             ></textarea>
@@ -506,3 +612,51 @@
     </button>
   </div>
 </form>
+
+{#if zeroOpen}
+  <div class="modal modal-open" role="dialog" aria-modal="true">
+    <div class="modal-box">
+      <h3 class="text-lg font-bold">Position mit Endpreis 0 €</h3>
+      <p class="text-base-content/70 mt-2 text-sm">
+        {zeroRows.length === 1
+          ? 'Eine Position'
+          : `${zeroRows.length} Positionen`} hat einen Netto-Endpreis von 0 €. Soll
+        das Dokument trotzdem so gespeichert werden?
+      </p>
+      <ul class="border-base-300 mt-3 divide-y rounded border text-sm">
+        {#each zeroRows as r, i (i)}
+          <li class="flex items-center justify-between gap-3 p-2">
+            <span class="truncate">{r.description}</span>
+            <span class="text-base-content/60 text-xs whitespace-nowrap">
+              {r.reason}
+            </span>
+          </li>
+        {/each}
+      </ul>
+      <div class="modal-action">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          onclick={cancelZero}
+          disabled={busy.active}
+        >
+          Zurück zur Eingabe
+        </button>
+        <button
+          type="button"
+          class="btn btn-warning"
+          onclick={confirmZero}
+          disabled={busy.active}
+        >
+          Trotzdem speichern
+        </button>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="modal-backdrop"
+      onclick={cancelZero}
+      aria-label="Schließen">close</button
+    >
+  </div>
+{/if}

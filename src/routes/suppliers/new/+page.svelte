@@ -11,7 +11,7 @@
     try {
       const created = await busy.run(() => createSupplierRemote(values))
       toast.success('Lieferant angelegt.')
-      goto(`/suppliers/${created.id}`)
+      goto(`/suppliers/${created.id}`, { replaceState: true })
     } catch (err) {
       handleClientError(err)
     }

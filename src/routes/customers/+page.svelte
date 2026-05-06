@@ -16,7 +16,7 @@
   let pageNum = $state(1)
   const size = 25
   let q = $state('')
-  let archivedFilter = $state<'active' | 'archived' | 'all'>('active')
+  let kindFilter = $state<'all' | 'private' | 'business'>('all')
 
   /**
    * Anchored remote query, reactive to filter/page state. The first
@@ -30,7 +30,7 @@
       page: pageNum,
       size,
       q: q || undefined,
-      archived: archivedFilter
+      kind: kindFilter
     })
   )
 
@@ -80,7 +80,7 @@
             page: pageNum,
             size,
             q: q || undefined,
-            archived: archivedFilter
+            kind: kindFilter
           }).withOverride((current) => ({
             ...current,
             items: current.items.filter((c) => c.id !== id),
@@ -113,13 +113,13 @@
     >
       {#snippet filters()}
         <select
-          class="select select-sm select-bordered"
-          bind:value={archivedFilter}
+          class="select select-sm select-bordered w-full"
+          bind:value={kindFilter}
           onchange={() => (pageNum = 1)}
         >
-          <option value="active">Aktiv</option>
-          <option value="archived">Archiviert</option>
           <option value="all">Alle</option>
+          <option value="private">Privatkunden</option>
+          <option value="business">Firmenkunden</option>
         </select>
       {/snippet}
     </Toolbar>
@@ -142,7 +142,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Kundennr.</th>
@@ -156,7 +156,7 @@
           <tbody>
             {#each items as c (c.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/customers/${c.id}`)}
               >
                 <td class="font-mono text-xs">{c.customerNumber}</td>

@@ -24,7 +24,7 @@
 </script>
 
 <div
-  class="border-base-300 flex flex-col items-center justify-between gap-3 border-t px-4 py-3 sm:flex-row sm:px-6"
+  class="border-base-300 flex flex-col items-center justify-between gap-3 border-t p-3 sm:flex-row sm:p-4"
   role="navigation"
   aria-label="Seitennavigation"
 >

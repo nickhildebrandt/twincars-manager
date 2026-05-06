@@ -1,6 +1,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   type Employee = Record<string, string | number | boolean | null | undefined>
 
@@ -87,6 +88,49 @@
   }
   const n = (v: number | string) => (v === '' ? undefined : Number(v))
 
+  /**
+   * Lohn-Autocalc: Wir rechnen mit dem Standard-Faktor 4,33 zwischen
+   * Wochenstunden und Monat (52 Wochen / 12 Monate). Wenn der User
+   * Wochenstunden + Stundenlohn pflegt, leiten wir das Monatsgehalt
+   * ab; pflegt er Wochenstunden + Monatsgehalt, fällt der Stundenlohn
+   * ab. Der jeweils zuletzt manuell editierte Wert wird nicht
+   * überschrieben — dafür merkt sich `lastEdited` was der User gerade
+   * angefasst hat.
+   */
+  const WEEKS_PER_MONTH = 4.33
+  let lastEdited = $state<'monthly' | 'hourly' | null>(null)
+  const round2 = (v: number) => Math.round(v * 100) / 100
+
+  const recalcFromHourly = () => {
+    lastEdited = 'hourly'
+    const w = Number(weeklyHours)
+    const h = Number(hourlyWage)
+    if (Number.isFinite(w) && Number.isFinite(h) && w > 0 && h > 0) {
+      monthlySalary = round2(w * WEEKS_PER_MONTH * h)
+    }
+  }
+  const recalcFromMonthly = () => {
+    lastEdited = 'monthly'
+    const w = Number(weeklyHours)
+    const m = Number(monthlySalary)
+    if (Number.isFinite(w) && Number.isFinite(m) && w > 0 && m > 0) {
+      hourlyWage = round2(m / (w * WEEKS_PER_MONTH))
+    }
+  }
+  const recalcFromHours = () => {
+    const w = Number(weeklyHours)
+    if (!Number.isFinite(w) || w <= 0) return
+    if (lastEdited === 'hourly') {
+      const h = Number(hourlyWage)
+      if (Number.isFinite(h) && h > 0)
+        monthlySalary = round2(w * WEEKS_PER_MONTH * h)
+    } else if (lastEdited === 'monthly') {
+      const m = Number(monthlySalary)
+      if (Number.isFinite(m) && m > 0)
+        hourlyWage = round2(m / (w * WEEKS_PER_MONTH))
+    }
+  }
+
   const submit = async (e: Event) => {
     e.preventDefault()
     errorMsg = null
@@ -94,6 +138,7 @@
       errorMsg = 'Bitte Vor- und Nachnamen eingeben.'
       return
     }
+    formDirty.clear()
     await onSave({
       firstName: firstName.trim(),
       lastName: lastName.trim(),
@@ -124,9 +169,17 @@
       bankName: u(bankName)
     })
   }
+
+  const markDirty = () => formDirty.set(true)
+  $effect(() => () => formDirty.clear())
 </script>
 
-<form onsubmit={submit} class="card border-base-300 bg-base-100 border">
+<form
+  onsubmit={submit}
+  oninput={markDirty}
+  onchange={markDirty}
+  class="card border-base-300 bg-base-100 border"
+>
   <div class="card-body gap-4">
     {#if errorMsg}<div class="alert alert-error"><span>{errorMsg}</span></div
       >{/if}
@@ -134,43 +187,43 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Person</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Personalnr. (auto)</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             placeholder="auto"
             bind:value={personnelNumber}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Anrede</span>
-          <select class="select select-bordered" bind:value={salutation}>
+          <select class="select select-bordered w-full" bind:value={salutation}>
             <option value="">—</option>
             <option>Herr</option>
             <option>Frau</option>
           </select>
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Geburtstag</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="date"
             bind:value={birthday}
           />
         </label>
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Vorname *</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={firstName}
           />
         </label>
-        <label class="form-control sm:col-span-2">
+        <label class="flex w-full flex-col gap-1 sm:col-span-2">
           <span class="label-text">Nachname *</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={lastName}
           />
@@ -181,46 +234,46 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Anschrift & Kontakt</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control sm:col-span-3">
+        <label class="flex w-full flex-col gap-1 sm:col-span-3">
           <span class="label-text">Straße + Hausnummer</span>
           <input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="200"
             bind:value={street}
           />
         </label>
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">PLZ</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="10"
             bind:value={zip}
           /></label
         >
-        <label class="form-control sm:col-span-2"
+        <label class="flex w-full flex-col gap-1 sm:col-span-2"
           ><span class="label-text">Ort</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="150"
             bind:value={city}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Private E-Mail</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="email"
             maxlength="254"
             bind:value={privateEmail}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Telefon</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             bind:value={privatePhone}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Mobil</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             bind:value={mobile}
           /></label
@@ -231,30 +284,33 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Beschäftigung</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Eintrittsdatum</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="date"
             bind:value={hireDate}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Position</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="150"
             bind:value={position}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Abteilung</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={department}
           /></label
         >
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Beschäftigungsart</span>
-          <select class="select select-bordered" bind:value={employmentType}>
+          <select
+            class="select select-bordered w-full"
+            bind:value={employmentType}
+          >
             <option value="">—</option>
             <option>Vollzeit</option>
             <option>Teilzeit</option>
@@ -263,41 +319,44 @@
             <option>Auszubildender</option>
           </select>
         </label>
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Wochenstunden</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             max="60"
             step="0.5"
             bind:value={weeklyHours}
+            oninput={recalcFromHours}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Urlaubstage / Jahr</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             max="60"
             bind:value={vacationDaysPerYear}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Monatsgehalt (€)</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             step="0.01"
             bind:value={monthlySalary}
+            oninput={recalcFromMonthly}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Stundenlohn (€)</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             type="number"
             min="0"
             step="0.01"
             bind:value={hourlyWage}
+            oninput={recalcFromHourly}
           /></label
         >
       </div>
@@ -306,32 +365,32 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Steuer & Sozialversicherung</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">Steuer-ID</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             bind:value={taxId}
           /></label
         >
-        <label class="form-control">
+        <label class="flex w-full flex-col gap-1">
           <span class="label-text">Steuerklasse</span>
-          <select class="select select-bordered" bind:value={taxClass}>
+          <select class="select select-bordered w-full" bind:value={taxClass}>
             <option value="">—</option>
             <option>1</option><option>2</option><option>3</option><option
               >4</option
             ><option>5</option><option>6</option>
           </select>
         </label>
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">SV-Nummer</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="30"
             bind:value={socialInsuranceNumber}
           /></label
         >
-        <label class="form-control sm:col-span-3"
+        <label class="flex w-full flex-col gap-1 sm:col-span-3"
           ><span class="label-text">Krankenkasse</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={healthInsurance}
           /></label
@@ -342,30 +401,30 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Bankverbindung</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="form-control sm:col-span-3"
+        <label class="flex w-full flex-col gap-1 sm:col-span-3"
           ><span class="label-text">Kontoinhaber</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="200"
             bind:value={bankAccountHolder}
           /></label
         >
-        <label class="form-control sm:col-span-2"
+        <label class="flex w-full flex-col gap-1 sm:col-span-2"
           ><span class="label-text">IBAN</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="34"
             bind:value={bankIban}
           /></label
         >
-        <label class="form-control"
+        <label class="flex w-full flex-col gap-1"
           ><span class="label-text">BIC</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="11"
             bind:value={bankBic}
           /></label
         >
-        <label class="form-control sm:col-span-3"
+        <label class="flex w-full flex-col gap-1 sm:col-span-3"
           ><span class="label-text">Bankname</span><input
-            class="input input-bordered"
+            class="input input-bordered w-full"
             maxlength="100"
             bind:value={bankName}
           /></label

@@ -13,7 +13,9 @@ import {
 import { db } from '$lib/server/db/client'
 import { vehicles, vehicleListings, vehicleSales } from '$lib/server/db/schema'
 import { idSchema } from '$lib/server/db/validation'
-import { and, asc, count, eq, ilike, isNull, or } from 'drizzle-orm'
+import { and, asc, count, eq, ilike, inArray, isNull, or } from 'drizzle-orm'
+import { vehicleLicensePlateVersions } from '$lib/server/db/schema'
+import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
 
 const listSchema = object({
   page: number(),
@@ -21,9 +23,9 @@ const listSchema = object({
   q: optional(pipe(string(), trim(), maxLength(200)))
 })
 
-const inventorySelect = {
+const buildInventorySelect = (lp: ReturnType<typeof latestPlateSubquery>) => ({
   id: vehicles.id,
-  plate: vehicles.licensePlate,
+  plate: lp.licensePlate,
   vin: vehicles.vin,
   make: vehicles.make,
   model: vehicles.model,
@@ -35,10 +37,13 @@ const inventorySelect = {
   salesPriceGross: vehicleListings.salesPriceGross,
   differentialTax: vehicleListings.differentialTax,
   location: vehicleListings.location
-}
+})
 
 /**
- * List vehicles currently in stock (have a listing, not yet sold).
+ * List vehicles in stock — anything with no customer link and not yet
+ * sold. The listing row is optional: a freshly created stock vehicle
+ * shows up immediately (with empty price / location) and gets enriched
+ * later when the user adds a listing.
  *
  * @group integration
  * @module inventory
@@ -49,28 +54,39 @@ export const listInventoryRemote = query(listSchema, async (params) => {
 
   const filters = [
     eq(vehicles.archived, false),
-    eq(vehicleListings.status, 'available'),
+    isNull(vehicles.customerId),
     isNull(vehicleSales.id)
   ]
   if (q) {
     const term = `%${q}%`
+    // Suchtreffer im aktuellen Kennzeichen einsammeln und per
+    // `inArray` auf Vehicle-Ids filtern — ohne handgeschriebenes SQL.
+    const plateMatches = await db
+      .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+      .from(vehicleLicensePlateVersions)
+      .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+    const plateMatchIds = plateMatches.map((r) => r.vehicleId)
+    const baseSearch = or(
+      ilike(vehicles.vin, term),
+      ilike(vehicles.make, term),
+      ilike(vehicles.model, term)
+    )!
     filters.push(
-      or(
-        ilike(vehicles.licensePlate, term),
-        ilike(vehicles.vin, term),
-        ilike(vehicles.make, term),
-        ilike(vehicles.model, term)
-      )!
+      plateMatchIds.length > 0
+        ? or(baseSearch, inArray(vehicles.id, plateMatchIds))!
+        : baseSearch
     )
   }
   const where = and(...filters)
 
+  const lp = latestPlateSubquery()
   const [rows, totalRow] = await Promise.all([
     db
-      .select(inventorySelect)
+      .select(buildInventorySelect(lp))
       .from(vehicles)
-      .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+      .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
       .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+      .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
       .where(where)
       .orderBy(asc(vehicles.make), asc(vehicles.model))
       .limit(size)
@@ -78,7 +94,7 @@ export const listInventoryRemote = query(listSchema, async (params) => {
     db
       .select({ value: count() })
       .from(vehicles)
-      .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+      .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
       .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
       .where(where)
   ])
@@ -107,10 +123,17 @@ export const listInventoryRemote = query(listSchema, async (params) => {
 export const getInventoryVehicleRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    // LEFT JOIN auf `vehicleListings`, weil ein neu angelegtes
+    // Verkaufsfahrzeug noch keinen Listing-Eintrag hat (Preis,
+    // Standort etc.). Ohne LEFT JOIN würde der Verkaufen-Button
+    // einen 404 werfen, sobald die Rechnungs-Vorausfüllung den
+    // Fahrzeug-Datensatz braucht.
+    const lp = latestPlateSubquery()
     const rows = await db
-      .select(inventorySelect)
+      .select(buildInventorySelect(lp))
       .from(vehicles)
-      .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+      .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+      .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
       .where(eq(vehicles.id, id))
       .limit(1)
     const row = rows[0]

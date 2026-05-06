@@ -101,7 +101,7 @@
     >
       {#snippet filters()}
         <select
-          class="select select-sm select-bordered"
+          class="select select-sm select-bordered w-full"
           bind:value={subtype}
           onchange={() => (pageNum = 1)}
         >
@@ -131,7 +131,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Nummer</th>
@@ -145,7 +145,7 @@
           <tbody>
             {#each items as o (o.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/offers/${o.id}`)}
               >
                 <td class="font-mono text-xs">{o.documentNumber}</td>

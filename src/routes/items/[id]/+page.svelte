@@ -2,7 +2,8 @@
   import { untrack } from 'svelte'
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import { getItemRemote } from '../items.remote'
+  import Pagination from '$lib/components/ui/Pagination.svelte'
+  import { getItemPriceHistoryRemote, getItemRemote } from '../items.remote'
   import { Pencil } from '@lucide/svelte'
   import { formatEuro } from '$lib/utils/money'
 
@@ -10,6 +11,29 @@
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
   const i = await getItemRemote({ id })
+
+  let pageNum = $state(1)
+  const size = 25
+
+  const historyQ = $derived(
+    getItemPriceHistoryRemote({ id, page: pageNum, size })
+  )
+  const initialHistory = await untrack(() => historyQ)
+  let lastResult = $state<typeof initialHistory>(initialHistory)
+  $effect(() => {
+    if (historyQ.current) lastResult = historyQ.current
+  })
+  const history = $derived(historyQ.current ?? lastResult)
+
+  const fmtDate = (d: string | Date | null | undefined) => {
+    if (!d) return ''
+    const dt = typeof d === 'string' ? new Date(d) : d
+    return dt.toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  }
 </script>
 
 <PageHeader
@@ -70,4 +94,56 @@
       </div>
     </div>
   {/if}
+
+  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card-body p-0">
+      <div class="p-4 pb-2">
+        <h3 class="card-title text-base">Preisverlauf</h3>
+        <p class="text-base-content/60 text-sm">
+          Versionierte Stammpreise — Belegpositionen behalten ihren damals
+          verwendeten Preis unabhängig davon.
+        </p>
+      </div>
+      {#if history.items.length > 0}
+        <div class="overflow-x-auto">
+          <table class="table-sm table">
+            <thead>
+              <tr>
+                <th>Gültig ab</th>
+                <th class="text-right">Einzelpreis netto</th>
+                <th>Erfasst</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each history.items as row (row.id)}
+                <tr>
+                  <td>{fmtDate(row.validFrom)}</td>
+                  <td class="text-right font-mono"
+                    >{formatEuro(Number(row.unitPriceNet))}</td
+                  >
+                  <td class="text-base-content/60"
+                    >{fmtDate(
+                      typeof row.createdAt === 'string'
+                        ? row.createdAt
+                        : row.createdAt.toISOString()
+                    )}</td
+                  >
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          page={history.page}
+          pageCount={history.pageCount}
+          total={history.total}
+          onPage={(p) => (pageNum = p)}
+        />
+      {:else}
+        <p class="text-base-content/60 px-4 pb-4 text-sm">
+          Noch keine Preisversionen erfasst.
+        </p>
+      {/if}
+    </div>
+  </div>
 </div>

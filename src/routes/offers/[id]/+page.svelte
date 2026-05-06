@@ -1,11 +1,20 @@
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import { ArrowRight, FileText } from '@lucide/svelte'
-  import { getOfferRemote } from '../offers.remote'
+  import { ArrowRight, FileText, Send, XCircle } from '@lucide/svelte'
+  import {
+    cancelOfferRemote,
+    getOfferRemote,
+    sendOfferRemote
+  } from '../offers.remote'
   import PdfViewer from '$lib/components/ui/PdfViewer.svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { formatEuro } from '$lib/utils/money'
+  import { busy } from '$lib/stores/busy.svelte'
+  import { toast } from '$lib/stores/toast.svelte'
+  import { handleClientError } from '$lib/utils/client-error'
   import {
     documentStatusBadge,
     documentStatusLabel,
@@ -20,18 +29,61 @@
   const isConverted = $derived(
     data.doc.status === 'converted' || !!data.doc.convertedToInvoiceId
   )
+  const isCancelled = $derived(data.doc.status === 'cancelled')
+  const isCreated = $derived(
+    data.doc.status === 'created' || data.doc.status === 'draft'
+  )
+  const isSent = $derived(data.doc.status === 'sent')
+
+  /**
+   * Header CTA chooses the next step in the documented lifecycle:
+   *   created → versenden
+   *   sent    → in Rechnung umwandeln
+   *   converted/cancelled → no CTA
+   */
+  let sendOpen = $state(false)
+  let cancelOpen = $state(false)
+
+  const sendOffer = async () => {
+    try {
+      await busy.run(() => sendOfferRemote({ id }))
+      toast.success('Versendet.')
+    } catch (err) {
+      handleClientError(err)
+    }
+  }
+
+  const cancelOffer = async () => {
+    try {
+      await busy.run(() => cancelOfferRemote({ id }))
+      toast.success('Kostenvoranschlag storniert.')
+    } catch (err) {
+      handleClientError(err)
+    }
+  }
+
+  const headerAction = $derived.by(() => {
+    if (isConverted || isCancelled) return undefined
+    if (isCreated)
+      return {
+        label: 'Versenden',
+        onClick: () => (sendOpen = true),
+        icon: Send
+      }
+    if (isSent)
+      return {
+        label: 'In Rechnung umwandeln',
+        href: `/offers/${id}/convert`,
+        icon: ArrowRight
+      }
+    return undefined
+  })
 </script>
 
 <PageHeader
   title={`${documentTypeLabel(data.doc.type)} ${data.doc.documentNumber}`}
   back="/offers"
-  primaryAction={isConverted
-    ? undefined
-    : {
-        label: 'In Rechnung umwandeln',
-        href: `/offers/${id}/convert`,
-        icon: ArrowRight
-      }}
+  primaryAction={headerAction}
 />
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
@@ -56,34 +108,54 @@
 
   <div class="card border-base-300 bg-base-100 border lg:col-span-2">
     <div class="card-body p-0">
-      <table class="table-zebra table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Beschreibung</th>
-            <th class="text-right">Menge</th>
-            <th class="text-right">Einzelpreis</th>
-            <th class="text-right">MwSt</th>
-            <th class="text-right">Brutto</th>
-          </tr>
-        </thead>
-        <tbody>
-          {#each data.items as it (it.id)}
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
             <tr>
-              <td>{it.positionNumber}</td>
-              <td>{it.description}</td>
-              <td class="text-right">{Number(it.quantity)} {it.unit ?? ''}</td>
-              <td class="text-right font-mono"
-                >{formatEuro(Number(it.unitPriceNet))}</td
-              >
-              <td class="text-right">{Number(it.taxRate)} %</td>
-              <td class="text-right font-mono"
-                >{formatEuro(Number(it.lineTotalGross))}</td
-              >
+              <th>#</th>
+              <th>Beschreibung</th>
+              <th class="text-right">Menge</th>
+              <th class="text-right">Einzelpreis</th>
+              <th class="text-right">MwSt</th>
+              <th class="text-right">Brutto</th>
             </tr>
-          {/each}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {#each data.items as it (it.id)}
+              <tr
+                class={it.articleNumber
+                  ? 'hover:bg-base-200 cursor-pointer'
+                  : ''}
+                onclick={it.articleNumber
+                  ? () =>
+                      goto(`/items?q=${encodeURIComponent(it.articleNumber!)}`)
+                  : undefined}
+              >
+                <td>{it.positionNumber}</td>
+                <td>
+                  <div>{it.description}</div>
+                  {#if it.articleNumber}
+                    <div class="text-base-content/50 font-mono text-xs">
+                      {it.articleNumber}
+                    </div>
+                  {/if}
+                </td>
+                <td class="text-right">
+                  {Number(it.quantity)}
+                  {it.unit ?? ''}
+                </td>
+                <td class="text-right font-mono">
+                  {formatEuro(Number(it.unitPriceNet))}
+                </td>
+                <td class="text-right">{Number(it.taxRate)} %</td>
+                <td class="text-right font-mono">
+                  {formatEuro(Number(it.lineTotalGross))}
+                </td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -118,6 +190,19 @@
           >{formatEuro(Number(data.doc.grossTotal))}</dd
         >
       </dl>
+      {#if isSent}
+        <div class="card-actions mt-2 justify-end">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm text-error gap-1"
+            onclick={() => (cancelOpen = true)}
+            disabled={busy.active}
+          >
+            <XCircle size={14} />
+            Stornieren
+          </button>
+        </div>
+      {/if}
     </div>
   </div>
 
@@ -134,3 +219,23 @@
     <PdfViewer documentId={data.doc.id} />
   </div>
 </div>
+
+<ConfirmDialog
+  bind:open={sendOpen}
+  title="Per E-Mail senden?"
+  message="Das Dokument wird mit der hinterlegten SMTP-Konfiguration an den Kunden geschickt."
+  confirmLabel="Jetzt senden"
+  variant="primary"
+  onConfirm={sendOffer}
+  onClose={() => {}}
+/>
+
+<ConfirmDialog
+  bind:open={cancelOpen}
+  title="Kostenvoranschlag stornieren?"
+  message="Der Kostenvoranschlag bleibt zur Historie erhalten, ist aber als storniert gekennzeichnet."
+  confirmLabel="Stornieren"
+  variant="danger"
+  onConfirm={cancelOffer}
+  onClose={() => {}}
+/>

@@ -157,34 +157,37 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Konditionen der neuen Rechnung</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Rechnungsdatum *</span>
             <input
-              class="input input-bordered"
+              class="input input-bordered w-full"
               type="date"
               required
               bind:value={issueDate}
             />
           </label>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Leistungsdatum</span>
             <input
-              class="input input-bordered"
+              class="input input-bordered w-full"
               type="date"
               bind:value={serviceDate}
             />
           </label>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Fälligkeit</span>
             <input
-              class="input input-bordered"
+              class="input input-bordered w-full"
               type="date"
               bind:value={dueDate}
             />
           </label>
-          <label class="form-control sm:col-span-3">
+          <label class="flex w-full flex-col gap-1 sm:col-span-3">
             <span class="label-text">Zahlungsart</span>
-            <select class="select select-bordered" bind:value={paymentMethod}>
+            <select
+              class="select select-bordered w-full"
+              bind:value={paymentMethod}
+            >
               <option>Überweisung</option>
               <option>Bar</option>
               <option>Lastschrift</option>
@@ -327,18 +330,18 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Texte</legend>
         <div class="grid grid-cols-1 gap-3">
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Werbe-/Endtext</span>
             <textarea
-              class="textarea textarea-bordered min-h-20"
+              class="textarea textarea-bordered min-h-20 w-full"
               maxlength="10000"
               bind:value={footer}
             ></textarea>
           </label>
-          <label class="form-control">
+          <label class="flex w-full flex-col gap-1">
             <span class="label-text">Interne Notiz</span>
             <textarea
-              class="textarea textarea-bordered min-h-20"
+              class="textarea textarea-bordered min-h-20 w-full"
               maxlength="2000"
               bind:value={notes}
             ></textarea>

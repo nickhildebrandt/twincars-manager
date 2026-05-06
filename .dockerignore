@@ -1,0 +1,16 @@
+.git
+.gitignore
+.husky
+.svelte-kit
+.vscode
+.env
+.env.*
+!.env.example
+node_modules
+build
+coverage
+tmp
+*.log
+README.md
+CONTRIBUTING.md
+docs

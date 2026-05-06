@@ -4,7 +4,18 @@ import {
   ledgerCategories,
   type LedgerEntry
 } from '$lib/server/db/schema'
-import { and, asc, count, desc, eq, ilike, or, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  gte,
+  ilike,
+  lte,
+  or,
+  sum
+} from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 
 type NewLedgerEntry = typeof ledgerEntries.$inferInsert
@@ -48,11 +59,18 @@ export async function listLedgerEntries(
   }
   if (direction && direction !== 'all')
     filters.push(eq(ledgerEntries.direction, direction))
-  if (from) filters.push(sql`${ledgerEntries.entryDate} >= ${from}`)
-  if (to) filters.push(sql`${ledgerEntries.entryDate} <= ${to}`)
+  if (from) filters.push(gte(ledgerEntries.entryDate, from))
+  if (to) filters.push(lte(ledgerEntries.entryDate, to))
   const where = filters.length > 0 ? and(...filters) : undefined
 
-  const [items, totalRow, sumsRow] = await Promise.all([
+  const incomeWhere = where
+    ? and(where, eq(ledgerEntries.direction, 'income'))
+    : eq(ledgerEntries.direction, 'income')
+  const expenseWhere = where
+    ? and(where, eq(ledgerEntries.direction, 'expense'))
+    : eq(ledgerEntries.direction, 'expense')
+
+  const [items, totalRow, incomeRow, expenseRow] = await Promise.all([
     db
       .select()
       .from(ledgerEntries)
@@ -62,12 +80,13 @@ export async function listLedgerEntries(
       .offset(offset),
     db.select({ value: count() }).from(ledgerEntries).where(where),
     db
-      .select({
-        income: sql<string>`coalesce(sum(case when ${ledgerEntries.direction} = 'income' then ${ledgerEntries.amountGross} else 0 end), 0)`,
-        expense: sql<string>`coalesce(sum(case when ${ledgerEntries.direction} = 'expense' then ${ledgerEntries.amountGross} else 0 end), 0)`
-      })
+      .select({ value: sum(ledgerEntries.amountGross) })
       .from(ledgerEntries)
-      .where(where)
+      .where(incomeWhere),
+    db
+      .select({ value: sum(ledgerEntries.amountGross) })
+      .from(ledgerEntries)
+      .where(expenseWhere)
   ])
 
   const total = Number(totalRow[0]?.value ?? 0)
@@ -80,8 +99,8 @@ export async function listLedgerEntries(
     page,
     size,
     pageCount: Math.max(1, Math.ceil(total / size)),
-    incomeSum: Number(sumsRow[0]?.income ?? 0),
-    expenseSum: Number(sumsRow[0]?.expense ?? 0)
+    incomeSum: Number(incomeRow[0]?.value ?? 0),
+    expenseSum: Number(expenseRow[0]?.value ?? 0)
   }
   return result
 }
@@ -104,4 +123,16 @@ export async function getLedgerEntry(id: string): Promise<LedgerEntry | null> {
     .where(eq(ledgerEntries.id, id))
     .limit(1)
   return row ?? null
+}
+
+export async function updateLedgerEntry(
+  id: string,
+  values: Partial<NewLedgerEntry>
+): Promise<LedgerEntry> {
+  const [row] = await db
+    .update(ledgerEntries)
+    .set(values)
+    .where(eq(ledgerEntries.id, id))
+    .returning()
+  return row
 }

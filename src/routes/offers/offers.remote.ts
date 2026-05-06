@@ -22,11 +22,24 @@ import {
   convertOfferToInvoice,
   deleteDocument,
   getDocument,
-  listDocuments
+  listDocuments,
+  setDocumentStatus
 } from '$lib/server/services/document-service'
-import { sql, inArray } from 'drizzle-orm'
+import {
+  and,
+  count as drizzleCount,
+  desc,
+  eq,
+  ilike,
+  inArray
+} from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
-import { documents } from '$lib/server/db/schema'
+import { customers, documents, vehicles } from '$lib/server/db/schema'
+import {
+  sendDocumentEmail,
+  type DocumentMailKind
+} from '$lib/server/services/mail-service'
+import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
 
 const itemSchema = object({
   description: pipe(string(), trim(), maxLength(500)),
@@ -94,18 +107,18 @@ export const listOffersRemote = query(listSchema, async (params) => {
   const ids = ['offer', 'cost_estimate', 'order_confirmation'] as const
   const filters = [inArray(documents.type, ids as unknown as string[])]
   if (params.q) {
-    filters.push(sql`${documents.documentNumber} ilike ${'%' + params.q + '%'}`)
+    filters.push(ilike(documents.documentNumber, `%${params.q}%`))
   }
-  const where = sql`${filters[0]}${params.q ? sql` AND ${filters[1]}` : sql``}`
+  const where = and(...filters)
   const items = await db
     .select()
     .from(documents)
     .where(where)
-    .orderBy(sql`${documents.issueDate} DESC, ${documents.createdAt} DESC`)
+    .orderBy(desc(documents.issueDate), desc(documents.createdAt))
     .limit(params.size)
     .offset(offset)
   const [{ value }] = await db
-    .select({ value: sql<string>`count(*)` })
+    .select({ value: drizzleCount() })
     .from(documents)
     .where(where)
   const total = Number(value)
@@ -194,5 +207,142 @@ export const convertOfferToInvoiceRemote = command(
       if (e instanceof Error) error(400, e.message)
       throw e
     }
+  }
+)
+
+/**
+ * Cancel a Kostenvoranschlag / Angebot. Allowed only when the offer
+ * is `sent` and not yet converted; otherwise the call is rejected.
+ * The offer stays in history with status `cancelled` so the user can
+ * see at a glance which estimates went stale.
+ *
+ * @group integration
+ * @module offers
+ */
+export const cancelOfferRemote = command(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    const existing = await getDocument(id)
+    if (
+      !existing ||
+      !['offer', 'cost_estimate', 'order_confirmation'].includes(
+        existing.doc.type
+      )
+    ) {
+      error(404, 'Dokument nicht gefunden.')
+    }
+    if (
+      existing.doc.status === 'converted' ||
+      existing.doc.convertedToInvoiceId
+    ) {
+      error(
+        400,
+        'Bereits in eine Rechnung überführte Kostenvoranschläge können nicht storniert werden.'
+      )
+    }
+    if (existing.doc.status === 'cancelled') {
+      return existing.doc
+    }
+    await setDocumentStatus(id, 'cancelled')
+    await Promise.all([
+      getOfferRemote({ id }).refresh(),
+      requested(listOffersRemote, 4).refreshAll()
+    ])
+  }
+)
+
+/**
+ * Mark a KV/Angebot/AB as sent (status flip only). Used as a
+ * fallback when SMTP is not configured. The real-world send goes
+ * through `sendOfferRemote`.
+ *
+ * @group integration
+ * @module offers
+ */
+export const markOfferSentRemote = command(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    await setDocumentStatus(id, 'sent')
+    await Promise.all([
+      getOfferRemote({ id }).refresh(),
+      requested(listOffersRemote, 4).refreshAll()
+    ])
+  }
+)
+
+/**
+ * Actually send a Kostenvoranschlag / Angebot / Auftragsbestätigung
+ * by e-mail. Mirrors `sendInvoiceRemote`: pulls customer, picks the
+ * matching template (`offer` / `cost_estimate` / `order_confirmation`),
+ * sends, records, and flips status to `sent`.
+ *
+ * @group integration
+ * @module offers
+ */
+export const sendOfferRemote = command(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    const result = await getDocument(id)
+    if (
+      !result ||
+      !['offer', 'cost_estimate', 'order_confirmation'].includes(
+        result.doc.type
+      )
+    )
+      error(404, 'Dokument nicht gefunden.')
+
+    const doc = result.doc
+    if (!doc.customerId)
+      error(400, 'Dieses Dokument ist keinem Kunden zugeordnet.')
+    const [cust] = await db
+      .select({
+        firstName: customers.firstName,
+        lastName: customers.lastName,
+        company: customers.company,
+        salutation: customers.salutation,
+        email: customers.email
+      })
+      .from(customers)
+      .where(eq(customers.id, doc.customerId))
+      .limit(1)
+    if (!cust || !cust.email)
+      error(400, 'Der Kunde hat keine hinterlegte E-Mail-Adresse.')
+
+    const [veh] = doc.vehicleId
+      ? await (() => {
+          const lp = latestPlateSubquery()
+          return db
+            .select({
+              licensePlate: lp.licensePlate,
+              make: vehicles.make,
+              model: vehicles.model
+            })
+            .from(vehicles)
+            .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+            .where(eq(vehicles.id, doc.vehicleId!))
+            .limit(1)
+        })()
+      : [undefined]
+
+    const send = await sendDocumentEmail({
+      documentId: doc.id,
+      documentType: doc.type as DocumentMailKind,
+      to: {
+        email: cust.email,
+        name:
+          cust.company ||
+          `${cust.firstName ?? ''} ${cust.lastName ?? ''}`.trim()
+      },
+      context: { document: doc, customer: cust, vehicle: veh }
+    })
+    if (!send.ok)
+      error(400, `E-Mail konnte nicht versendet werden: ${send.error}`)
+
+    await setDocumentStatus(id, 'sent')
+    await Promise.all([
+      getOfferRemote({ id }).refresh(),
+      requested(listOffersRemote, 4).refreshAll()
+    ])
+    return { messageId: send.messageId }
   }
 )

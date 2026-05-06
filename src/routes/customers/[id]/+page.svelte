@@ -1,19 +1,29 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { page } from '$app/state'
+  import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import { getCustomerRemote } from '../customers.remote'
+  import {
+    getCustomerRemote,
+    getCustomerRelatedRemote
+  } from '../customers.remote'
   import { Pencil } from '@lucide/svelte'
+  import {
+    documentStatusBadge,
+    documentStatusLabel
+  } from '$lib/utils/status-labels'
+  import { formatEuro } from '$lib/utils/money'
+
+  const id = untrack(() => page.params.id!)
 
   /**
-   * Top-level await on the remote query — SSR carries the customer record
-   * on first byte and the dehydrated cache is reused on hydration. The id
-   * is read once at component setup; SvelteKit re-creates this component
-   * when navigating to a different /customers/[id], so untrack is safe.
+   * SSR-friendly parallel load. The customer record + related vehicles
+   * and invoices ship in one server round-trip.
    */
-  const customer = await getCustomerRemote({
-    id: untrack(() => page.params.id!)
-  })
+  const [customer, related] = await Promise.all([
+    getCustomerRemote({ id }),
+    getCustomerRelatedRemote({ id })
+  ])
 
   const labelOf = () =>
     customer.company ||
@@ -78,4 +88,112 @@
       </div>
     </div>
   {/if}
+
+  <!-- Fahrzeuge des Kunden -->
+  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card-body p-0">
+      <div class="border-base-300 border-b px-4 py-3">
+        <h3 class="text-base font-semibold">Fahrzeuge</h3>
+        <p class="text-base-content/60 text-sm">
+          {related.vehicles.length} verknüpfte
+          {related.vehicles.length === 1 ? 'Fahrzeug' : 'Fahrzeuge'}.
+        </p>
+      </div>
+      {#if related.vehicles.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Keine Fahrzeuge auf diesen Kunden zugeordnet.
+        </div>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Kennzeichen</th>
+                <th>Fahrzeug</th>
+                <th>Erstzulassung</th>
+                <th class="text-right">km-Stand</th>
+                <th>HU bis</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each related.vehicles as v (v.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/vehicles/${v.id}`)}
+                >
+                  <td class="font-mono text-xs font-medium"
+                    >{v.licensePlate ?? '—'}</td
+                  >
+                  <td>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
+                  <td>{v.firstRegistration ?? '—'}</td>
+                  <td class="text-right font-mono"
+                    >{v.mileageKm != null
+                      ? v.mileageKm.toLocaleString('de-DE') + ' km'
+                      : '—'}</td
+                  >
+                  <td>{v.nextHu ?? '—'}</td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </div>
+  </div>
+
+  <!-- Rechnungen des Kunden -->
+  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card-body p-0">
+      <div class="border-base-300 border-b px-4 py-3">
+        <h3 class="text-base font-semibold">Rechnungen</h3>
+        <p class="text-base-content/60 text-sm">
+          {related.invoices.length} verknüpfte
+          {related.invoices.length === 1 ? 'Rechnung' : 'Rechnungen'}.
+        </p>
+      </div>
+      {#if related.invoices.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Bisher keine Rechnungen für diesen Kunden.
+        </div>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Rechnungsnr.</th>
+                <th>Datum</th>
+                <th>Fällig</th>
+                <th class="text-right">Brutto</th>
+                <th>Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each related.invoices as inv (inv.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/invoices/${inv.id}`)}
+                >
+                  <td class="font-mono text-xs font-medium"
+                    >{inv.documentNumber}</td
+                  >
+                  <td>{inv.issueDate}</td>
+                  <td>{inv.dueDate ?? '—'}</td>
+                  <td class="text-right font-mono"
+                    >{formatEuro(Number(inv.grossTotal))}</td
+                  >
+                  <td>
+                    <span
+                      class="badge badge-sm {documentStatusBadge(inv.status)}"
+                    >
+                      {documentStatusLabel(inv.status)}
+                    </span>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
+    </div>
+  </div>
 </div>

@@ -21,7 +21,7 @@
       page: pageNum,
       size,
       q: q || undefined,
-      archived: 'active'
+      kind: 'customer'
     })
   )
 
@@ -57,7 +57,7 @@
             page: pageNum,
             size,
             q: q || undefined,
-            archived: 'active'
+            kind: 'customer'
           }).withOverride((current) => ({
             ...current,
             items: current.items.filter((v) => v.id !== id),
@@ -101,7 +101,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Kennzeichen</th>
@@ -115,7 +115,7 @@
           <tbody>
             {#each items as v (v.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/vehicles/${v.id}`)}
               >
                 <td class="font-mono">{v.licensePlate ?? ''}</td>

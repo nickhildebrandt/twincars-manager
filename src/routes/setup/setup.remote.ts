@@ -2,6 +2,7 @@ import { command, query } from '$app/server'
 import { error } from '@sveltejs/kit'
 import { eq } from 'drizzle-orm'
 import {
+  number,
   object,
   optional,
   picklist,
@@ -46,7 +47,19 @@ const companyDataSchema = object({
   bic: optional(bicSchema),
   salutationStyle: picklist(['Sie', 'Du']),
   logoMime: optional(pipe(string(), maxLength(50))),
-  logoData: optional(pipe(string(), maxLength(7_000_000)))
+  logoData: optional(pipe(string(), maxLength(7_000_000))),
+  /** Pflichtbereich „Lohnabrechnung" — Tag im Monat (1..28). */
+  payrollGenerationDay: optional(number()),
+  /**
+   * Pflichtbereich „Mahnwesen" — Tage bis zur jeweiligen Mahnstufe.
+   * Defaults aus dem Schema werden beibehalten, wenn der User nichts
+   * anpasst.
+   */
+  reminderDays1: optional(number()),
+  reminderDays2: optional(number()),
+  reminderDays3: optional(number()),
+  reminderDays4: optional(number()),
+  reminderInterestRate: optional(number())
 })
 
 const smtpSchema = object({
@@ -101,6 +114,16 @@ export const saveCompanyData = command(companyDataSchema, async (data) => {
       salutationStyle: data.salutationStyle,
       logoMime: data.logoMime ?? null,
       logoData: data.logoData ?? null,
+      payrollGenerationDay:
+        data.payrollGenerationDay ?? settings.payrollGenerationDay,
+      reminderDays1: data.reminderDays1 ?? settings.reminderDays1,
+      reminderDays2: data.reminderDays2 ?? settings.reminderDays2,
+      reminderDays3: data.reminderDays3 ?? settings.reminderDays3,
+      reminderDays4: data.reminderDays4 ?? settings.reminderDays4,
+      reminderInterestRate:
+        data.reminderInterestRate != null
+          ? String(data.reminderInterestRate)
+          : settings.reminderInterestRate,
       updatedAt: new Date()
     })
     .where(eq(companySettings.id, settings.id))

@@ -90,7 +90,7 @@
     >
       {#snippet filters()}
         <select
-          class="select select-sm select-bordered"
+          class="select select-sm select-bordered w-full"
           bind:value={status}
           onchange={() => (pageNum = 1)}
         >
@@ -121,7 +121,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Rechnungsnr.</th>
@@ -137,7 +137,7 @@
           <tbody>
             {#each items as i (i.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/invoices/${i.id}`)}
               >
                 <td class="font-mono text-xs font-medium">{i.documentNumber}</td

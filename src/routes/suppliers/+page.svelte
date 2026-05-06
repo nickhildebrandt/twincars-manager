@@ -107,7 +107,7 @@
       </EmptyState>
     {:else}
       <div class="overflow-x-auto">
-        <table class="table-zebra table">
+        <table class="table">
           <thead>
             <tr>
               <th>Firma</th>
@@ -121,7 +121,7 @@
           <tbody>
             {#each items as s (s.id)}
               <tr
-                class="hover:bg-base-200/50 cursor-pointer"
+                class="hover:bg-base-200 cursor-pointer"
                 onclick={() => goto(`/suppliers/${s.id}`)}
               >
                 <td class="font-medium">{s.name}</td>

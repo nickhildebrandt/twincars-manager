@@ -14,7 +14,7 @@ import {
   Users2,
   Wallet,
   Calculator,
-  LineChart,
+  Gift,
   Mail,
   Send,
   Settings,
@@ -38,7 +38,7 @@ export const navigation: NavGroup[] = [
   {
     label: 'Übersicht',
     items: [
-      { label: 'Dashboard', href: '/', icon: LayoutDashboard, exact: true },
+      { label: 'Start', href: '/', icon: LayoutDashboard, exact: true },
       { label: 'Kalender', href: '/calendar', icon: CalendarDays }
     ]
   },
@@ -47,8 +47,7 @@ export const navigation: NavGroup[] = [
     items: [
       { label: 'Kunden', href: '/customers', icon: Users },
       { label: 'Fahrzeuge', href: '/vehicles', icon: Car },
-      { label: 'Fahrzeugbestand', href: '/inventory', icon: Warehouse },
-      { label: 'Termine', href: '/appointments', icon: CalendarClock }
+      { label: 'Zu verkaufende Fahrzeuge', href: '/inventory', icon: Warehouse }
     ]
   },
   {
@@ -79,15 +78,13 @@ export const navigation: NavGroup[] = [
     label: 'Personal',
     items: [
       { label: 'Mitarbeiter', href: '/employees', icon: Users2 },
-      { label: 'Lohn und Gehalt', href: '/payroll', icon: Wallet }
+      { label: 'Gehaltsabrechnung', href: '/payroll', icon: Wallet },
+      { label: 'Sonderzahlungen', href: '/special-payments', icon: Gift }
     ]
   },
   {
     label: 'Finanzen',
-    items: [
-      { label: 'Buchhaltung', href: '/ledger', icon: Calculator },
-      { label: 'Controlling', href: '/controlling', icon: LineChart }
-    ]
+    items: [{ label: 'Buchhaltung', href: '/ledger', icon: Calculator }]
   },
   {
     label: 'Kommunikation',

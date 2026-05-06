@@ -6,34 +6,52 @@
    * built-in PDF viewer — works in Chromium / Firefox / Safari without
    * pulling in `pdfjs-dist` for a few hundred KB of bundle.
    *
-   * The component:
-   * - Triggers fetch via {@link getDocumentPdfBytesRemote} on mount.
-   * - Shows the global busy bar via `busy.run` while the fetch is in
-   *   flight, so the AppShell loader is the single signal.
-   * - Falls back to a download link if the browser can't embed PDFs
-   *   inline (e.g. some mobile browsers).
-   * - Cleans up the Blob URL on destroy / when the document changes.
+   * The browser's native PDF viewer ships its own download / refresh /
+   * print toolbar, so we deliberately don't render duplicate buttons in
+   * the card chrome — the cache auto-invalidates whenever the document
+   * inputs change, and any change to the document re-renders the PDF on
+   * the next view.
+   *
+   * Filename trick: blob URLs don't carry a filename, which means the
+   * browser's "download" action falls back to the URL path (e.g. the
+   * blob UUID with no extension). Appending `#filename` to the blob URL
+   * lets Chromium's viewer pick up the proper `*.pdf` name. Other
+   * browsers ignore the fragment, but they fall back to the PDF
+   * metadata `/Title` we set during rendering.
    */
   import { onMount, onDestroy } from 'svelte'
-  import { Download, RefreshCcw } from '@lucide/svelte'
   import {
     getDocumentPdfBytesRemote,
-    regenerateDocumentPdfRemote
+    getPayslipPdfBytesRemote,
+    getReminderPdfBytesRemote
   } from '../../../routes/pdfs.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { busy } from '$lib/stores/busy.svelte'
-  import { toast } from '$lib/stores/toast.svelte'
 
   type Props = {
     documentId: string
+    /**
+     * Which cache to fetch from. `document` is the default and covers
+     * invoices / offers / cost estimates / order confirmations;
+     * `reminder` routes to the dunning cache; `payslip` to the
+     * Lohnzettel cache (keyed by payroll-entry id).
+     */
+    kind?: 'document' | 'reminder' | 'payslip'
     /** Visual height of the embedded viewer. */
     height?: string
   }
 
-  const { documentId, height = '720px' }: Props = $props()
+  const { documentId, kind = 'document', height = '720px' }: Props = $props()
 
-  let blobUrl = $state<string | null>(null)
-  let filename = $state('Dokument.pdf')
+  const fetchBytes = (id: string) =>
+    kind === 'reminder'
+      ? getReminderPdfBytesRemote({ id }).run()
+      : kind === 'payslip'
+        ? getPayslipPdfBytesRemote({ id }).run()
+        : getDocumentPdfBytesRemote({ id }).run()
+
+  let iframeSrc = $state<string | null>(null)
+  let blobUrl: string | null = null
   let loadError = $state<string | null>(null)
 
   const decodeBase64 = (b64: string): Uint8Array => {
@@ -43,36 +61,33 @@
     return buf
   }
 
+  const ensurePdfExtension = (name: string): string =>
+    /\.pdf$/i.test(name) ? name : `${name}.pdf`
+
   const load = async () => {
     loadError = null
     try {
-      const res = await busy.run(() =>
-        getDocumentPdfBytesRemote({ id: documentId }).run()
-      )
-      filename = res.filename
+      const res = await busy.run(() => fetchBytes(documentId))
+      const filename = ensurePdfExtension(res.filename)
       const bytes = decodeBase64(res.base64)
       const blob = new Blob([bytes.buffer as ArrayBuffer], { type: res.mime })
-      // Replace any previous URL.
       if (blobUrl) URL.revokeObjectURL(blobUrl)
       blobUrl = URL.createObjectURL(blob)
+      // The fragment is what Chromium's pdf viewer uses as the suggested
+      // download filename; everything before it stays the actual blob
+      // URL, so the iframe still resolves correctly.
+      iframeSrc = `${blobUrl}#${encodeURIComponent(filename)}`
     } catch (err) {
       loadError = 'PDF konnte nicht geladen werden.'
       handleClientError(err, 'PDF-Vorschau')
     }
   }
 
-  const regenerate = async () => {
-    try {
-      await busy.run(() => regenerateDocumentPdfRemote({ id: documentId }))
-      toast.success('PDF wurde neu erzeugt.')
-      await load()
-    } catch (err) {
-      handleClientError(err, 'PDF-Neuerzeugung')
-    }
-  }
-
   onMount(() => {
-    void load()
+    // Defer past Svelte's effect flush — `onMount` itself runs inside an
+    // effect, and remote `.run()` calls aren't allowed in that context.
+    const t = setTimeout(load, 0)
+    return () => clearTimeout(t)
   })
 
   onDestroy(() => {
@@ -82,37 +97,16 @@
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body gap-3 p-3">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="card-title text-base">PDF-Vorschau</h3>
-      <div class="flex flex-wrap gap-2">
-        <button
-          type="button"
-          class="btn btn-ghost btn-sm gap-1"
-          onclick={regenerate}
-          disabled={busy.active}
-        >
-          <RefreshCcw size={14} /> Neu erzeugen
-        </button>
-        {#if blobUrl}
-          <a
-            class="btn btn-primary btn-sm gap-1"
-            href={blobUrl}
-            download={filename}
-          >
-            <Download size={14} /> Herunterladen
-          </a>
-        {/if}
-      </div>
-    </div>
+    <h3 class="card-title text-base">PDF-Vorschau</h3>
 
     {#if loadError}
       <div class="alert alert-error">
         <span>{loadError}</span>
       </div>
-    {:else if blobUrl}
+    {:else if iframeSrc}
       <iframe
         title="PDF-Vorschau"
-        src={blobUrl}
+        src={iframeSrc}
         class="border-base-300 w-full rounded-md border"
         style="height: {height};"
       ></iframe>

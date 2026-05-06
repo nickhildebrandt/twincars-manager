@@ -3,26 +3,73 @@ import type {
   HandleServerError,
   HandleValidationError
 } from '@sveltejs/kit'
-import { runMigrations } from '$lib/server/db/migrate'
 import { seedDefaults } from '$lib/server/db/seed-defaults'
+import {
+  autoGeneratePayrollEntries,
+  autoSendPayrollEmails
+} from '$lib/server/services/payroll-service'
 
-let initialised = false
-let initPromise: Promise<void> | null = null
+/**
+ * Schema migrations are NOT run here. Production runs `node
+ * scripts/migrate.js` once before the server boots (see
+ * `Dockerfile` CMD) — by the time the SvelteKit handler accepts a
+ * request, the database is already at the target schema.
+ *
+ * What stays at runtime is `seedDefaults()`: an idempotent insert of
+ * default rows (mail templates, ledger categories, number ranges)
+ * that is content, not schema. Running it on the first request keeps
+ * dev `npm run dev` self-contained without forcing a separate seed
+ * step in the dev workflow. In production it's a no-op after the
+ * first hit.
+ */
+let seeded = false
+let seedPromise: Promise<void> | null = null
 
-const ensureInitialised = () => {
-  if (initialised) return Promise.resolve()
-  if (!initPromise) {
-    initPromise = (async () => {
-      await runMigrations()
+const ensureSeeded = () => {
+  if (seeded) return Promise.resolve()
+  if (!seedPromise) {
+    seedPromise = (async () => {
       await seedDefaults()
-      initialised = true
+      seeded = true
     })()
   }
-  return initPromise
+  return seedPromise
+}
+
+/**
+ * In-Process Tages-Scheduler für die Auto-Lohnabrechnung. Beim ersten
+ * Request nach Server-Start wird ein `setInterval` aufgesetzt, der
+ * einmal alle 6 Stunden `autoGeneratePayrollEntries()` und danach
+ * `autoSendPayrollEmails()` ausführt. Beide Funktionen sind
+ * idempotent — die häufige Frequenz schützt nur vor langen Stillen
+ * (z.B. Container-Restart kurz nach dem Stichtag).
+ *
+ * Bei einem Multi-Replica-Deployment würde das mehrfach laufen; das
+ * Setup ist explizit Single-Container (siehe CONTRIBUTING §17), daher
+ * ist die Race weder real noch problematisch.
+ */
+let payrollSchedulerStarted = false
+const sixHoursMs = 6 * 60 * 60 * 1000
+const startPayrollScheduler = () => {
+  if (payrollSchedulerStarted) return
+  payrollSchedulerStarted = true
+  const tick = async () => {
+    try {
+      await autoGeneratePayrollEntries()
+      await autoSendPayrollEmails()
+    } catch (err) {
+      console.error('[payroll-scheduler]', err)
+    }
+  }
+  // Erste Ausführung kurz nach Boot (nicht blockierend), dann
+  // regelmäßig.
+  setTimeout(tick, 30_000).unref?.()
+  setInterval(tick, sixHoursMs).unref?.()
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
-  await ensureInitialised()
+  await ensureSeeded()
+  startPayrollScheduler()
   return resolve(event)
 }
 

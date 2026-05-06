@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import {
@@ -12,27 +13,31 @@
     CalendarClock,
     Database,
     TrendingUp,
-    TrendingDown
+    TrendingDown,
+    Wrench
   } from '@lucide/svelte'
-  import { getDashboardKpis } from './dashboard.remote'
+  import { getDashboardKpis, getUpcomingRemote } from './dashboard.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { formatEuro } from '$lib/utils/money'
 
   const kpisQ = $derived(getDashboardKpis())
   const kpis = $derived(kpisQ.current)
   const loading = $derived(kpisQ.loading)
+  const upcoming = await untrack(() => getUpcomingRemote())
 
   $effect(() => {
     if (kpisQ.error) handleClientError(kpisQ.error)
   })
+
+  const fmtDate = (iso: string) => {
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(iso)
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : iso
+  }
 </script>
 
-<PageHeader
-  title="Dashboard"
-  primaryAction={{ label: 'Neue Rechnung', href: '/invoices/new', icon: Plus }}
-/>
+<PageHeader title="Start" />
 
-<div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-4">
+<div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
   <StatCard
     title="Kunden"
     value={loading ? '…' : (kpis?.customers ?? 0).toLocaleString('de-DE')}
@@ -107,19 +112,47 @@
   </div>
 
   <div class="card border-base-300 bg-base-100 border">
-    <div class="card-body">
-      <h3 class="card-title text-base">Hinweise</h3>
-      <p class="text-base-content/70 text-sm">
-        Fällige HU-Termine, anstehende Mahnungen, Lohnläufe und wiederkehrende
-        Buchungen erscheinen hier, sobald entsprechende Daten erfasst werden.
-      </p>
-      <p class="text-base-content/60 mt-3 text-sm">
-        Über die Sidebar erreichen Sie alle Module der Anwendung. Beginnen Sie
-        typischerweise mit den
-        <a class="link link-primary" href="/customers">Kunden</a>,
-        <a class="link link-primary" href="/vehicles">Fahrzeugen</a> oder dem
-        <a class="link link-primary" href="/import">Import</a> Ihrer alten Daten.
-      </p>
+    <div class="card-body p-0">
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">Anstehende Termine</h3>
+        <a class="text-base-content/60 link text-sm" href="/calendar">
+          Kalender öffnen →
+        </a>
+      </div>
+      {#if upcoming.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Aktuell keine anstehenden HU-Termine oder Werkstatt-Termine.
+        </div>
+      {:else}
+        <ul class="menu menu-sm w-full p-0">
+          {#each upcoming as u (u.kind + (u.kind === 'hu_due' ? u.vehicleId : u.entryId))}
+            <li>
+              <a
+                class="flex items-center justify-between py-2"
+                href={u.kind === 'hu_due'
+                  ? `/vehicles/${u.vehicleId}`
+                  : '/calendar'}
+              >
+                <span class="flex items-center gap-2 truncate">
+                  {#if u.kind === 'hu_due'}
+                    <Wrench size={14} class="text-warning shrink-0" />
+                  {:else}
+                    <CalendarClock size={14} class="text-info shrink-0" />
+                  {/if}
+                  <span class="truncate">{u.title}</span>
+                </span>
+                <span
+                  class="text-base-content/60 ms-2 shrink-0 font-mono text-xs"
+                >
+                  {fmtDate(u.dateIso)}
+                </span>
+              </a>
+            </li>
+          {/each}
+        </ul>
+      {/if}
     </div>
   </div>
 </section>

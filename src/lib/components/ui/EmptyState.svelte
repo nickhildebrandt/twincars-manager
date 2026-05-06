@@ -13,8 +13,14 @@
   const Icon = $derived(icon ?? Inbox)
 </script>
 
+<!--
+  EmptyState is borderless on purpose — list pages already wrap it in a
+  card (so the outer border is rendered once), and standalone uses sit
+  on the page background where a plain centered block fits the flat
+  design language better than a stacked second border.
+-->
 <div
-  class="border-base-300 bg-base-100 flex flex-col items-center justify-center gap-3 rounded-lg border border-dashed px-6 py-12 text-center"
+  class="flex flex-col items-center justify-center gap-3 px-6 py-12 text-center"
 >
   <div class="bg-base-200 text-base-content/50 rounded-full p-4">
     <Icon size={28} />

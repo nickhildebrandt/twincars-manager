@@ -10,7 +10,7 @@ import {
 } from 'valibot'
 import { db } from '$lib/server/db/client'
 import { documents, customers } from '$lib/server/db/schema'
-import { and, asc, eq, gte, lte, sql } from 'drizzle-orm'
+import { and, asc, eq, gte, lte } from 'drizzle-orm'
 
 const filterSchema = object({
   from: optional(pipe(string(), trim(), maxLength(10))),
@@ -58,7 +58,7 @@ export const getSalesLedgerRemote = query(filterSchema, async (params) => {
   if (from) conds.push(gte(documents.issueDate, from))
   if (to) conds.push(lte(documents.issueDate, to))
 
-  const rows = await db
+  const rawRows = await db
     .select({
       id: documents.id,
       documentNumber: documents.documentNumber,
@@ -67,16 +67,19 @@ export const getSalesLedgerRemote = query(filterSchema, async (params) => {
       netTotal: documents.netTotal,
       taxTotal: documents.taxTotal,
       status: documents.status,
-      customerName: sql<
-        string | null
-      >`COALESCE(${customers.company}, ${customers.lastName})`.as(
-        'customer_name'
-      )
+      customerCompany: customers.company,
+      customerLastName: customers.lastName
     })
     .from(documents)
     .leftJoin(customers, eq(documents.customerId, customers.id))
     .where(and(...conds))
     .orderBy(asc(documents.issueDate))
+  const rows = rawRows.map(
+    ({ customerCompany, customerLastName, ...rest }) => ({
+      ...rest,
+      customerName: customerCompany ?? customerLastName ?? null
+    })
+  )
 
   const totals = rows.reduce(
     (acc, r) => {

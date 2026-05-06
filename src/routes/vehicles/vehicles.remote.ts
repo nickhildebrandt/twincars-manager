@@ -22,6 +22,15 @@ import {
   listVehicles,
   updateVehicle
 } from '$lib/server/services/vehicle-service'
+import {
+  addVehiclePhoto,
+  deleteVehiclePhoto,
+  listVehiclePhotos,
+  setMainVehiclePhoto
+} from '$lib/server/services/vehicle-photo-service'
+import { db } from '$lib/server/db/client'
+import { customers, documents, vehicles } from '$lib/server/db/schema'
+import { and, count as sqlCount, desc, eq } from 'drizzle-orm'
 
 /**
  * Validation schema shared by `createVehicleRemote` and
@@ -56,36 +65,34 @@ const vehicleInputSchema = object({
 
 /**
  * Schema for the paginated vehicle list query.
+ *
+ * `kind` defaults to `'customer'` so `/vehicles` only ever shows
+ * customer-owned cars; stock vehicles live in `/inventory` and are
+ * fetched via `listInventoryRemote`. Pickers that span both kinds
+ * pass `kind: 'all'`.
  */
 const listSchema = object({
   page: number(),
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
-  archived: optional(picklist(['active', 'archived', 'all'])),
-  stockOnly: optional(picklist(['true', 'false']))
+  kind: optional(picklist(['customer', 'stock', 'all']))
 })
 
 /**
- * Paginated, searchable vehicle list.
+ * Paginated, searchable customer-vehicle list. Stock vehicles
+ * (customer_id IS NULL) are filtered out by default.
  *
  * @group integration
  * @module vehicles
  */
-export const listVehiclesRemote = query(listSchema, async (params) => {
-  const archivedFilter =
-    params.archived === 'archived'
-      ? true
-      : params.archived === 'active'
-        ? false
-        : undefined
-  return listVehicles({
+export const listVehiclesRemote = query(listSchema, async (params) =>
+  listVehicles({
     page: params.page,
     size: params.size,
     q: params.q,
-    archived: archivedFilter,
-    stockOnly: params.stockOnly === 'true'
+    kind: params.kind ?? 'customer'
   })
-})
+)
 
 /**
  * Load a single vehicle by id. Throws `404` if not found.
@@ -109,6 +116,74 @@ export const getVehicleRemote = query(
  * @module vehicles
  */
 export const countVehiclesRemote = query(async () => countVehicles())
+
+/**
+ * Vehicle detail enrichment — owner + paginated invoices in one
+ * round-trip, mirroring `getCustomerRelatedRemote` on the customers
+ * side. Pagination is fixed at 25 (project rule); only the page
+ * number is reactive.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const getVehicleRelatedRemote = query(
+  object({ id: idSchema, invoicesPage: number() }),
+  async ({ id, invoicesPage }) => {
+    const size = 25
+    const offset = Math.max(0, (invoicesPage - 1) * size)
+    const where = and(
+      eq(documents.vehicleId, id),
+      eq(documents.type, 'invoice')
+    )
+
+    const [vehicleRows, invoiceRows, totalRows] = await Promise.all([
+      // Inner join via the vehicle table so we only get the owner row.
+      // A NULL customer_id (stock vehicle) returns no rows -> customer = null.
+      db
+        .select({
+          customerId: customers.id,
+          customerNumber: customers.customerNumber,
+          firstName: customers.firstName,
+          lastName: customers.lastName,
+          company: customers.company,
+          phone: customers.phone,
+          email: customers.email
+        })
+        .from(customers)
+        .innerJoin(vehicles, eq(customers.id, vehicles.customerId))
+        .where(eq(vehicles.id, id))
+        .limit(1),
+      db
+        .select({
+          id: documents.id,
+          documentNumber: documents.documentNumber,
+          status: documents.status,
+          issueDate: documents.issueDate,
+          dueDate: documents.dueDate,
+          grossTotal: documents.grossTotal
+        })
+        .from(documents)
+        .where(where)
+        .orderBy(desc(documents.issueDate))
+        .limit(size)
+        .offset(offset),
+      db.select({ value: sqlCount() }).from(documents).where(where)
+    ])
+
+    const customer = vehicleRows[0] ?? null
+    const total = Number(totalRows[0]?.value ?? 0)
+    return {
+      customer,
+      invoices: {
+        items: invoiceRows,
+        total,
+        page: invoicesPage,
+        size,
+        pageCount: Math.max(1, Math.ceil(total / size))
+      }
+    }
+  }
+)
 
 /**
  * Refresh the dashboard count plus every list instance the client requested
@@ -174,5 +249,71 @@ export const deleteVehicleRemote = command(
   async ({ id }) => {
     await deleteVehicle(id)
     await refreshListsAndCount()
+  }
+)
+
+/* ─── Photos ──────────────────────────────────────────────────────── */
+
+/**
+ * List all photos attached to a vehicle, ordered by sort order then
+ * creation date. Cover image (`isMain: true`) is included in the rows.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const listVehiclePhotosRemote = query(
+  object({ vehicleId: idSchema }),
+  async ({ vehicleId }) => listVehiclePhotos(vehicleId)
+)
+
+/**
+ * Append a photo as a base64 data URL. The first photo on a vehicle
+ * gets promoted to cover automatically — the service handles that.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const addVehiclePhotoRemote = command(
+  object({
+    vehicleId: idSchema,
+    mime: pipe(string(), trim(), maxLength(50)),
+    // 20 MB binary → ~28 MB base64 data URL (4/3 overhead + `data:…`
+    // prefix). Cap raised to 28 MB to allow proper 20 MB photos.
+    dataUrl: pipe(string(), maxLength(28_000_000))
+  }),
+  async (input) => {
+    const row = await addVehiclePhoto(input)
+    await listVehiclePhotosRemote({ vehicleId: input.vehicleId }).refresh()
+    return row
+  }
+)
+
+/**
+ * Remove a photo. If the cover gets removed, the next photo is
+ * promoted automatically so the vehicle never ends up cover-less.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const deleteVehiclePhotoRemote = command(
+  object({ id: idSchema, vehicleId: idSchema }),
+  async ({ id, vehicleId }) => {
+    await deleteVehiclePhoto(id)
+    await listVehiclePhotosRemote({ vehicleId }).refresh()
+  }
+)
+
+/**
+ * Promote a photo to cover (`isMain: true`) — clears the flag on all
+ * other photos of the same vehicle in the same transaction.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const setMainVehiclePhotoRemote = command(
+  object({ id: idSchema, vehicleId: idSchema }),
+  async ({ id, vehicleId }) => {
+    await setMainVehiclePhoto(id)
+    await listVehiclePhotosRemote({ vehicleId }).refresh()
   }
 )
