@@ -7,7 +7,7 @@
 ## Goals
 
 1. `https://tc.ts13.de/` serves the marketing website.
-2. `https://tc.ts13.de/manager` serves the manager admin app (login → setup wizard → app).
+2. `https://tc.ts13.de:5443/` serves the manager admin app (login → setup wizard → app).
 3. `https://tc.ts13.de:5000/` hosts a private container registry (port-based, no extra DNS); `podman push` from a developer machine triggers automatic redeploy on the server within ~2 minutes.
 4. Postgres data persists across deploys and is backed up daily to the existing Hetzner Storagebox.
 5. Both projects ship a `Dockerfile` so any developer with Docker or Podman can build the image locally and push it.
@@ -31,27 +31,29 @@ A single Podman pod named `twincars` contains five containers. The pod's infra c
                        ┌─────────────────────────────────────────────┐
                        │            Podman pod: twincars             │
                        │                                             │
-  Internet ──:443────▶ │  caddy:2-alpine  ──┬──▶ localhost:3000 ─────┼──▶ manager (sveltekit)
-  Internet ──:80─────▶ │                    ├──▶ localhost:3001 ─────┼──▶ website (sveltekit)
-  Internet ──:5000───▶ │                    └──▶ localhost:5001 ─────┼──▶ registry:2
-                       │                                             │
+  Internet ──:80─────▶ │  caddy:2-alpine  ──┬──▶ localhost:3001 ─────┼──▶ website  (sveltekit, root :443)
+  Internet ──:443────▶ │                    ├──▶ localhost:3000 ─────┼──▶ manager  (sveltekit, on :5443)
+  Internet ──:5443───▶ │                    └──▶ localhost:5001 ─────┼──▶ registry (registry:2, on :5000)
+  Internet ──:5000───▶ │                                             │
                        │                         localhost:5432 ◀────┼── postgres:18-alpine
                        └─────────────────────────────────────────────┘
 ```
 
-Note the registry runs internally on `:5001` (set via `REGISTRY_HTTP_ADDR=:5001`), not the conventional `:5000`. This frees `:5000` on the pod loopback for Caddy to publish externally, giving developers the standard-looking `tc.ts13.de:5000` push URL. The non-default internal port is invisible to users — only Caddy talks to the registry directly.
+Caddy publishes four host ports (`:80`, `:443`, `:5000`, `:5443`) and serves the same `tc.ts13.de` Let's Encrypt certificate on all of them. Each port maps to a single backend by host:port matching in the Caddyfile.
+
+The registry container runs internally on `:5001` (set via `REGISTRY_HTTP_ADDR=:5001`), not the conventional `:5000`. This frees `:5000` on the pod loopback for Caddy to publish externally, giving developers the standard-looking `tc.ts13.de:5000` push URL. The non-default internal port is invisible to users — only Caddy talks to the registry directly.
 
 All inter-container traffic happens over the shared pod loopback (`127.0.0.1`). Caddy is the only inbound surface.
 
 ### Component roles
 
-| Container  | Image                                     | Listens on                              | Persistent volume                                                  |
-| ---------- | ----------------------------------------- | --------------------------------------- | ------------------------------------------------------------------ |
-| `postgres` | `docker.io/library/postgres:18-alpine`    | `:5432`                                 | `/srv/twincars/data/postgres`                                      |
-| `manager`  | `tc.ts13.de:5000/twincars-manager:latest` | `:3000`                                 | —                                                                  |
-| `website`  | `tc.ts13.de:5000/twincars-website:latest` | `:3001`                                 | —                                                                  |
-| `registry` | `docker.io/library/registry:2`            | `:5001` (internal)                      | `/srv/twincars/data/registry`                                      |
-| `caddy`    | `docker.io/library/caddy:2-alpine`        | `:80`, `:443`, `:5000` (host-published) | `/srv/twincars/data/caddy-data`, `/srv/twincars/data/caddy-config` |
+| Container  | Image                                     | Listens on                                       | Persistent volume                                                  |
+| ---------- | ----------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------ |
+| `postgres` | `docker.io/library/postgres:18-alpine`    | `:5432`                                          | `/srv/twincars/data/postgres`                                      |
+| `manager`  | `tc.ts13.de:5000/twincars-manager:latest` | `:3000`                                          | —                                                                  |
+| `website`  | `tc.ts13.de:5000/twincars-website:latest` | `:3001`                                          | —                                                                  |
+| `registry` | `docker.io/library/registry:2`            | `:5001` (internal)                               | `/srv/twincars/data/registry`                                      |
+| `caddy`    | `docker.io/library/caddy:2-alpine`        | `:80`, `:443`, `:5000`, `:5443` (host-published) | `/srv/twincars/data/caddy-data`, `/srv/twincars/data/caddy-config` |
 
 Postgres pinned to major `18` (latest as of 2026-05). Minor versions update automatically via image-pull-on-restart. Major-version upgrades require a manual data migration and are out of scope.
 
@@ -59,7 +61,7 @@ Postgres pinned to major `18` (latest as of 2026-05). Minor versions update auto
 
 All lifecycle managed via systemd Quadlet (Podman 4.4+). Files live under `/etc/containers/systemd/`:
 
-- `twincars.pod` — declares the pod with `PublishPort=80:80`, `PublishPort=443:443`, and `PublishPort=5000:5000` (registry).
+- `twincars.pod` — declares the pod with `PublishPort=80:80`, `PublishPort=443:443`, `PublishPort=5000:5000` (registry), `PublishPort=5443:5443` (manager).
 - `postgres.container` — sets env from `EnvironmentFile=/etc/twincars/env/postgres.env`, bind-mounts data, `Pod=twincars.pod`, `HealthCmd=pg_isready`.
 - `manager.container` — env from `/etc/twincars/env/manager.env`, depends on postgres, labels `io.containers.autoupdate=registry`.
 - `website.container` — env from `/etc/twincars/env/website.env` (PORT=3001), label `io.containers.autoupdate=registry`.
@@ -87,17 +89,19 @@ Generated systemd units land in `/run/systemd/generator/` after `systemctl daemo
   }
 }
 
+# Marketing website — public root
 tc.ts13.de {
   encode zstd gzip
   import security_headers
+  reverse_proxy localhost:3001
+}
 
-  @manager path /manager /manager/*
-  handle @manager {
-    reverse_proxy localhost:3000
-  }
-  handle {
-    reverse_proxy localhost:3001
-  }
+# Manager admin app on the same hostname, different port. Same cert,
+# zero code changes to the SvelteKit app (no base path, no rewrite).
+tc.ts13.de:5443 {
+  encode zstd gzip
+  import security_headers
+  reverse_proxy localhost:3000
 }
 
 # Registry on the same hostname, different port. Caddy uses the same
@@ -125,22 +129,9 @@ Caddy's defaults already give TLS 1.3 + ECDHE + AEAD ciphers, OCSP stapling, ALP
 
 ### `twincars-manager`
 
-1. **`svelte.config.js`** — add `paths: { base: '/manager' }`:
+**No code changes.** The manager serves at `https://tc.ts13.de:5443/` — root-relative paths (`goto('/customers')`, `<a href="/customers">`) just work, no base-path migration needed. The existing `Dockerfile` already serves on `:3000` which Caddy proxies to.
 
-   ```js
-   kit: {
-     adapter: adapter(),
-     paths: { base: '/manager' },
-     experimental: { remoteFunctions: true },
-     alias: { /* unchanged */ }
-   }
-   ```
-
-   SvelteKit prepends `/manager` to all client-side navigation, asset paths, and `goto` targets automatically. The CLAUDE.md rule "only `goto()` / `<a href>` for navigation" is already followed throughout the codebase, so no per-file changes are expected. Verified by spec-author by scanning for hard-coded absolute paths during plan-writing.
-
-2. **`Dockerfile`** — no change needed (the existing one already runs `npm run build` and serves `node build` on `:3000`). The base-path is baked into the build at image-build time.
-
-3. **`.env.example`** — add a comment block documenting which env vars Production sets versus dev. No new vars.
+The only documentation touch is **`.env.example`** — add a comment block listing which env vars Production sets versus dev (no new vars).
 
 ### `twincars-website`
 
@@ -268,7 +259,7 @@ gunzip -c <backup.sql.gz> | podman exec -i postgres psql -U twincars -d twincars
 
 ## Security
 
-- **Firewall:** `ufw default deny incoming` + allow 22/tcp, 80/tcp, 443/tcp, 5000/tcp only. Port 5000 is the registry (TLS-terminated by Caddy, basic-auth required).
+- **Firewall:** `ufw default deny incoming` + allow 22/tcp, 80/tcp, 443/tcp, 5000/tcp, 5443/tcp only. Port 5000 is the registry (TLS, basic-auth via Caddy); port 5443 is the manager admin app (TLS via Caddy, auth via better-auth login).
 - **sshd:** PasswordAuthentication=no, PermitRootLogin=prohibit-password (key already deployed). `fail2ban` with `[sshd]` jail enabled.
 - **TLS:** Caddy default = TLS 1.3, ECDHE+(AES-GCM|ChaCha20-Poly1305). HTTP/3 (QUIC) enabled. HSTS 2-year + preload. (User submits both hostnames to hstspreload.org separately if desired — out of scope here.)
 - **Secrets generation** (run once during provisioning, output captured to operator):
@@ -300,7 +291,7 @@ gunzip -c <backup.sql.gz> | podman exec -i postgres psql -U twincars -d twincars
 
 - `systemctl status twincars-pod.service` — active, all containers up
 - `curl -fsSI https://tc.ts13.de` → `200`, valid LE cert, HSTS header present
-- `curl -fsSI https://tc.ts13.de/manager` → `200`, body contains the German setup-wizard or login text
+- `curl -fsSI https://tc.ts13.de:5443/` → `200`, body contains the German setup-wizard or login text
 - `curl -u deploy:<pw> -fsSI https://tc.ts13.de:5000/v2/` → `200`
 - `curl -fsSI https://tc.ts13.de:5000/v2/` (without credentials) → `401`
 - `podman push tc.ts13.de:5000/hello-world:test` from local dev → push completes
@@ -310,20 +301,20 @@ gunzip -c <backup.sql.gz> | podman exec -i postgres psql -U twincars -d twincars
 ### Playwright MCP
 
 - Navigate to `https://tc.ts13.de` — website hero renders, no console errors, padlock green.
-- Navigate to `https://tc.ts13.de/manager` — manager loads, setup wizard appears (or login if setup already done), all assets resolve under `/manager/`, no 404s in network tab.
-- Navigate to `https://tc.ts13.de/manager/api/auth/get-session` — returns valid JSON (auth endpoint reachable).
+- Navigate to `https://tc.ts13.de:5443/` — manager loads, setup wizard appears (or login if setup already done), all assets resolve, no 404s in network tab.
+- Navigate to `https://tc.ts13.de:5443/api/auth/get-session` — returns valid JSON (auth endpoint reachable).
 - Lighthouse / dev-tools quick check on website: a11y and SEO pass with no critical violations.
 
 ## Risks & mitigations
 
-| Risk                                                 | Mitigation                                                                                                                                                  |
-| ---------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `paths.base = '/manager'` breaks something subtle    | Pre-deploy: run the manager locally with the patched config (`npm run dev` opens at `/manager/`) and smoke the main flows.                                  |
-| Migration fails on auto-update; container crashloops | Pre-deploy `pg_dump`. Operator rolls back manually with `podman tag <previous-digest> <image>:latest && systemctl restart manager.service` and restores DB. |
-| Registry push fills `/srv/twincars/data/registry`    | 75 GiB disk, registry blob storage is small (a few hundred MB per image). Documented in operator runbook; monitor `df -h /srv`.                             |
-| Storagebox SSH key compromise                        | Key is scoped to a single storagebox user with no shell. Rotate via Hetzner panel if compromise suspected.                                                  |
-| Caddy fails to renew cert                            | Caddy retries automatically. If acme challenge fails, fall back to `acme_dns` provider — not configured initially; out of scope.                            |
-| Podman auto-update polls too often, hits rate limits | The registry is self-hosted, no rate limit. 2-min interval is fine.                                                                                         |
+| Risk                                                    | Mitigation                                                                                                                                                  |
+| ------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Non-standard port `:5443` blocked by corporate networks | Acceptable for internal admin tool; operator bookmarks URL with port. Future: move to subdomain once DNS allows.                                            |
+| Migration fails on auto-update; container crashloops    | Pre-deploy `pg_dump`. Operator rolls back manually with `podman tag <previous-digest> <image>:latest && systemctl restart manager.service` and restores DB. |
+| Registry push fills `/srv/twincars/data/registry`       | 75 GiB disk, registry blob storage is small (a few hundred MB per image). Documented in operator runbook; monitor `df -h /srv`.                             |
+| Storagebox SSH key compromise                           | Key is scoped to a single storagebox user with no shell. Rotate via Hetzner panel if compromise suspected.                                                  |
+| Caddy fails to renew cert                               | Caddy retries automatically. If acme challenge fails, fall back to `acme_dns` provider — not configured initially; out of scope.                            |
+| Podman auto-update polls too often, hits rate limits    | The registry is self-hosted, no rate limit. 2-min interval is fine.                                                                                         |
 
 ## Out-of-band one-time setup (post-design, pre-implementation)
 
