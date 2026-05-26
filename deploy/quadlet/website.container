@@ -11,7 +11,7 @@ EnvironmentFile=/etc/twincars/env/website.env
 Label=io.containers.autoupdate=registry
 # Registry auth picked up from /root/.config/containers/auth.json automatically.
 Pull=missing
-HealthCmd=wget --quiet --spider http://127.0.0.1:3001/
+HealthCmd=node /app/scripts/healthcheck.cjs
 HealthInterval=15s
 HealthRetries=4
 HealthStartPeriod=60s

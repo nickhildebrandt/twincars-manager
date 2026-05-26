@@ -5,16 +5,13 @@
 # devDependencies for the runtime image. drizzle-kit stays here only
 # because it's a devDependency used by `db:generate` during dev — it
 # is NOT shipped to the runtime image.
-FROM node:22-alpine AS build
+FROM node:lts-slim AS build
 WORKDIR /app
 
 # Cache deps before copying the rest so changes to source don't bust
-# the npm-install layer. `--legacy-peer-deps` matches npm 10's looser
-# resolver — required because @sveltejs/vite-plugin-svelte 7 declares a
-# peer of vite@^8 while we still ship vite@^6 (drizzle-kit transitively
-# pulls it). Once the plugin or vite upgrades line up, this can drop.
+# the npm-install layer.
 COPY package.json package-lock.json ./
-RUN npm ci --legacy-peer-deps
+RUN npm ci
 
 COPY . .
 RUN npm run build && npm prune --omit=dev
@@ -24,19 +21,19 @@ RUN npm run build && npm prune --omit=dev
 # generated SQL migrations, and the pruned production node_modules.
 # `drizzle-kit` is gone; the runtime migrator from `drizzle-orm` is
 # the only thing applying SQL in production.
-FROM node:22-alpine AS runtime
+FROM node:lts-slim AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 
-# `mdbtools` wird vom Import-Service (`/import`) für `mdb-export`
-# aufgerufen. Ohne dieses Paket schlägt der Migrations-Import aus
-# KFZ-Kaufmann fehl. Klein genug, dass es das Image nicht aufbläht.
-RUN apk add --no-cache mdbtools
+# `mdbtools` is called by the import service (`/import`) for
+# `mdb-export`. Without it, the Kfz-Kaufmann migration import fails.
+RUN apt-get update \
+  && apt-get install -y --no-install-recommends mdbtools \
+  && rm -rf /var/lib/apt/lists/*
 
-# adapter-node Body-Limit hochsetzen, damit der KFZ-Kaufmann-Import
-# (.mdb als base64, ~25 MB) nicht am 512-KB-Default abprallt. Alle
-# anderen Endpunkte arbeiten mit kleinen JSON-Payloads, die hierdurch
-# nicht beeinflusst werden.
+# adapter-node body limit set high so the KFZ-Kaufmann import (.mdb as
+# base64, ~25 MB) doesn't bounce off the 512-KB default. All other
+# endpoints take small JSON payloads — unaffected.
 ENV BODY_SIZE_LIMIT=64M
 
 COPY --from=build /app/build ./build
