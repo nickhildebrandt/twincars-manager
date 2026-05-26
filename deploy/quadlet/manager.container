@@ -1,0 +1,28 @@
+[Unit]
+Description=TwinCars manager (SvelteKit)
+Requires=twincars-pod.service postgres.service
+After=twincars-pod.service postgres.service
+
+[Container]
+Image=tc.ts13.de:5000/twincars-manager:latest
+Pod=twincars.pod
+ContainerName=manager
+EnvironmentFile=/etc/twincars/env/manager.env
+Label=io.containers.autoupdate=registry
+AuthFile=/root/.config/containers/auth.json
+# Pull policy: pull missing on first start; auto-update handles re-pulls.
+Pull=missing
+HealthCmd=wget --quiet --spider http://127.0.0.1:3000/
+HealthInterval=15s
+HealthRetries=4
+HealthStartPeriod=60s
+
+[Service]
+Restart=always
+RestartSec=10
+# First start may fail until the image is pushed to the registry — that's OK,
+# Restart=always will keep retrying.
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

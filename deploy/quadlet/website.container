@@ -1,0 +1,25 @@
+[Unit]
+Description=TwinCars marketing website (SvelteKit)
+Requires=twincars-pod.service
+After=twincars-pod.service
+
+[Container]
+Image=tc.ts13.de:5000/twincars-website:latest
+Pod=twincars.pod
+ContainerName=website
+EnvironmentFile=/etc/twincars/env/website.env
+Label=io.containers.autoupdate=registry
+AuthFile=/root/.config/containers/auth.json
+Pull=missing
+HealthCmd=wget --quiet --spider http://127.0.0.1:3001/
+HealthInterval=15s
+HealthRetries=4
+HealthStartPeriod=60s
+
+[Service]
+Restart=always
+RestartSec=10
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

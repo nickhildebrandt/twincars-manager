@@ -1,0 +1,19 @@
+# Quadlet generates twincars-pod.service from this file.
+# All container units that set `Pod=twincars.pod` join this pod and share
+# its network namespace; therefore all inter-container traffic is over the
+# pod's shared loopback (127.0.0.1).
+
+[Unit]
+Description=TwinCars production pod
+Wants=network-online.target
+After=network-online.target
+
+[Pod]
+PodName=twincars
+PublishPort=80:80
+PublishPort=443:443
+PublishPort=5000:5000
+PublishPort=5443:5443
+
+[Install]
+WantedBy=multi-user.target default.target

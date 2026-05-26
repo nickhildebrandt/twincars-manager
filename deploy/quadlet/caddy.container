@@ -1,0 +1,24 @@
+[Unit]
+Description=Caddy reverse proxy + auto-SSL
+Requires=twincars-pod.service registry.service
+After=twincars-pod.service registry.service postgres.service
+
+[Container]
+Image=docker.io/library/caddy:2-alpine
+Pod=twincars.pod
+ContainerName=caddy
+Volume=/etc/twincars/caddy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
+Volume=/srv/twincars/data/caddy-data:/data:Z
+Volume=/srv/twincars/data/caddy-config:/config:Z
+HealthCmd=wget --quiet --spider http://127.0.0.1/
+HealthInterval=30s
+HealthRetries=4
+HealthStartPeriod=60s
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target

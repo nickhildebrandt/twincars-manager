@@ -1,0 +1,22 @@
+[Unit]
+Description=Container registry (Docker registry:2) for TwinCars
+Requires=twincars-pod.service
+After=twincars-pod.service
+
+[Container]
+Image=docker.io/library/registry:2
+Pod=twincars.pod
+ContainerName=registry
+EnvironmentFile=/etc/twincars/env/registry.env
+Volume=/srv/twincars/data/registry:/var/lib/registry:Z
+HealthCmd=wget --quiet --spider http://127.0.0.1:5001/v2/
+HealthInterval=30s
+HealthRetries=4
+HealthStartPeriod=15s
+
+[Service]
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target default.target

@@ -1,0 +1,24 @@
+[Unit]
+Description=PostgreSQL 18 for TwinCars
+Requires=twincars-pod.service
+After=twincars-pod.service
+
+[Container]
+Image=docker.io/library/postgres:18-alpine
+Pod=twincars.pod
+ContainerName=postgres
+EnvironmentFile=/etc/twincars/env/postgres.env
+Volume=/srv/twincars/data/postgres:/var/lib/postgresql/data:Z
+HealthCmd=pg_isready -U twincars -d twincars
+HealthInterval=10s
+HealthRetries=5
+HealthStartPeriod=30s
+# No PublishPort — only reachable on the pod's shared loopback.
+
+[Service]
+Restart=always
+RestartSec=5
+TimeoutStartSec=300
+
+[Install]
+WantedBy=multi-user.target default.target
