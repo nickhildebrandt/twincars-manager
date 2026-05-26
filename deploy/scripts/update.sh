@@ -13,13 +13,14 @@ export PATH
 
 log() { printf '[%s] update: %s\n' "$(date -Is)" "$*"; }
 
-# --dry-run --format='{{.Updated}}' prints one line per labeled container,
-# value "true" if the registry manifest differs from the local one.
+# --dry-run --format='{{.Updated}}' prints one line per labeled container.
+# Podman 5.x emits "pending" when the registry manifest differs from local;
+# older versions emit "true". Match either so the predeploy hook fires.
 # Podman ≥ 4.4 supports this. We tolerate transient registry errors (the
 # next timer tick will retry).
 updates_output=$(podman auto-update --dry-run --format '{{.Updated}}' 2>&1 || true)
 
-if echo "$updates_output" | grep -qx 'true'; then
+if echo "$updates_output" | grep -qxE 'true|pending'; then
   log "manifest difference detected, taking pre-deploy DB snapshot"
   /usr/local/bin/twincars-backup-db.sh predeploy
   log "running podman auto-update"

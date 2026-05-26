@@ -9,7 +9,7 @@ Pod=twincars.pod
 ContainerName=website
 EnvironmentFile=/etc/twincars/env/website.env
 Label=io.containers.autoupdate=registry
-AuthFile=/root/.config/containers/auth.json
+# Registry auth picked up from /root/.config/containers/auth.json automatically.
 Pull=missing
 HealthCmd=wget --quiet --spider http://127.0.0.1:3001/
 HealthInterval=15s

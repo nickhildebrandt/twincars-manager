@@ -5,13 +5,16 @@
 # devDependencies for the runtime image. drizzle-kit stays here only
 # because it's a devDependency used by `db:generate` during dev — it
 # is NOT shipped to the runtime image.
-FROM node:lts-alpine AS build
+FROM node:22-alpine AS build
 WORKDIR /app
 
 # Cache deps before copying the rest so changes to source don't bust
-# the npm-install layer.
+# the npm-install layer. `--legacy-peer-deps` matches npm 10's looser
+# resolver — required because @sveltejs/vite-plugin-svelte 7 declares a
+# peer of vite@^8 while we still ship vite@^6 (drizzle-kit transitively
+# pulls it). Once the plugin or vite upgrades line up, this can drop.
 COPY package.json package-lock.json ./
-RUN npm ci
+RUN npm ci --legacy-peer-deps
 
 COPY . .
 RUN npm run build && npm prune --omit=dev
@@ -21,7 +24,7 @@ RUN npm run build && npm prune --omit=dev
 # generated SQL migrations, and the pruned production node_modules.
 # `drizzle-kit` is gone; the runtime migrator from `drizzle-orm` is
 # the only thing applying SQL in production.
-FROM node:lts-alpine AS runtime
+FROM node:22-alpine AS runtime
 WORKDIR /app
 ENV NODE_ENV=production
 

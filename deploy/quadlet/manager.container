@@ -9,7 +9,9 @@ Pod=twincars.pod
 ContainerName=manager
 EnvironmentFile=/etc/twincars/env/manager.env
 Label=io.containers.autoupdate=registry
-AuthFile=/root/.config/containers/auth.json
+# Registry auth lives at /root/.config/containers/auth.json (Podman's default
+# root path) — Podman picks it up automatically for pulls, no explicit key
+# needed in this Quadlet (Quadlet AuthFile= landed after Podman 5.4).
 # Pull policy: pull missing on first start; auto-update handles re-pulls.
 Pull=missing
 HealthCmd=wget --quiet --spider http://127.0.0.1:3000/

@@ -10,7 +10,10 @@ ContainerName=caddy
 Volume=/etc/twincars/caddy/Caddyfile:/etc/caddy/Caddyfile:ro,Z
 Volume=/srv/twincars/data/caddy-data:/data:Z
 Volume=/srv/twincars/data/caddy-config:/config:Z
-HealthCmd=wget --quiet --spider http://127.0.0.1/
+# SNI must match a configured site, so the probe uses the public hostname.
+# Inside the container this resolves to the host's public IP and loops back
+# through Caddy — confirms end-to-end reachability of the proxy.
+HealthCmd=wget --quiet --spider https://tc.ts13.de/
 HealthInterval=30s
 HealthRetries=4
 HealthStartPeriod=60s
