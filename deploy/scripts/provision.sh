@@ -33,7 +33,7 @@ log "Install system packages"
 export DEBIAN_FRONTEND=noninteractive
 apt-get update -qq
 apt-get install -y -qq \
-  podman uidmap slirp4netns fuse-overlayfs \
+  podman catatonit uidmap slirp4netns fuse-overlayfs \
   ufw fail2ban rsync openssl ca-certificates curl wget jq
 
 # Quadlet support is built into Podman 4.4+. Verify.
@@ -208,9 +208,12 @@ install -m 0644 "${DEPLOY_DIR}/systemd/twincars-update.timer"   /etc/systemd/sys
 log "Reload systemd, start the pod and timers"
 systemctl daemon-reload
 
-# The pod unit pulls in the container units transitively via [Install].
-# Start the pod first, then the timers.
-systemctl enable --now twincars-pod.service
+# Quadlet-generated units (twincars-pod.service, *.container) are transient
+# and cannot be `systemctl enable`d directly — `[Install] WantedBy=` inside
+# the .pod/.container file is honored by the generator on every daemon-reload,
+# so they auto-start at boot. For the first boot, just `start` them.
+systemctl start twincars-pod.service
+# The systemd .timer files ARE static units, so they can be enabled normally.
 systemctl enable --now twincars-backup.timer
 systemctl enable --now twincars-update.timer
 
