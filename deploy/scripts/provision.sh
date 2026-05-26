@@ -48,12 +48,17 @@ log "Configure ufw"
 ufw --force reset >/dev/null
 ufw default deny incoming
 ufw default allow outgoing
+# Containers (Podman bridge) need to forward traffic out to the internet.
+# Default UFW forward policy is DROP which silently breaks container DNS/HTTPS.
+ufw default allow routed
+sed -i 's/^DEFAULT_FORWARD_POLICY=.*/DEFAULT_FORWARD_POLICY="ACCEPT"/' /etc/default/ufw
 ufw allow 22/tcp
 ufw allow 80/tcp
 ufw allow 443/tcp
 ufw allow 5000/tcp comment 'container registry'
 ufw allow 5443/tcp comment 'manager admin'
 ufw --force enable
+ufw reload
 
 log "Enable fail2ban for sshd"
 mkdir -p /etc/fail2ban/jail.d
