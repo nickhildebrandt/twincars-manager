@@ -1,0 +1,65 @@
+# Caddyfile for tc.ts13.de
+# This is a TEMPLATE — provision.sh substitutes {{BCRYPT_HASH}} with the
+# bcrypt-hashed registry deploy-user password and writes the result to
+# /etc/twincars/caddy/Caddyfile (mode 600).
+
+{
+	email admin@ts13.de
+	servers {
+		protocols h1 h2 h3
+	}
+}
+
+(security_headers) {
+	header {
+		Strict-Transport-Security "max-age=63072000; includeSubDomains; preload"
+		X-Content-Type-Options    "nosniff"
+		X-Frame-Options           "SAMEORIGIN"
+		Referrer-Policy           "strict-origin-when-cross-origin"
+		Permissions-Policy        "geolocation=(), microphone=(), camera=()"
+		-Server
+	}
+}
+
+# Marketing website — public root on the standard ports.
+tc.ts13.de {
+	encode zstd gzip
+	import security_headers
+	reverse_proxy localhost:3001
+}
+
+# Manager admin app on the same hostname, different port (same cert).
+tc.ts13.de:5443 {
+	encode zstd gzip
+	import security_headers
+
+	# Large body limit for the legacy .mdb import endpoint.
+	request_body {
+		max_size 64MB
+	}
+
+	reverse_proxy localhost:3000 {
+		# Pass the original scheme so SvelteKit generates https:// URLs.
+		header_up X-Forwarded-Proto https
+	}
+}
+
+# Container registry on the same hostname, port 5000 (registry convention).
+tc.ts13.de:5000 {
+	encode zstd gzip
+	import security_headers
+
+	# 4 GB push limit — accommodates large image layers.
+	request_body {
+		max_size 4GB
+	}
+
+	basic_auth /v2/* {
+		deploy {{BCRYPT_HASH}}
+	}
+
+	reverse_proxy localhost:5001 {
+		header_up X-Forwarded-Proto https
+		header_up Host {host}
+	}
+}
