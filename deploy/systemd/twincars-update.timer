@@ -1,0 +1,12 @@
+[Unit]
+Description=Poll registry every 2 minutes for new image manifests
+Requires=twincars-update.service
+
+[Timer]
+OnBootSec=3min
+OnUnitInactiveSec=2min
+AccuracySec=30s
+Unit=twincars-update.service
+
+[Install]
+WantedBy=timers.target

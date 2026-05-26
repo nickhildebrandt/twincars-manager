@@ -1,0 +1,12 @@
+[Unit]
+Description=Daily PostgreSQL backup at 03:00 local time
+Requires=twincars-backup.service
+
+[Timer]
+OnCalendar=*-*-* 03:00:00
+Persistent=true
+RandomizedDelaySec=10m
+Unit=twincars-backup.service
+
+[Install]
+WantedBy=timers.target

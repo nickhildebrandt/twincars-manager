@@ -1,0 +1,14 @@
+[Unit]
+Description=TwinCars daily PostgreSQL backup
+Requires=postgres.service
+After=postgres.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/twincars-backup-db.sh daily
+# Don't run if a previous run is still going (rsync to storagebox could be slow)
+RemainAfterExit=no
+TimeoutStartSec=30min
+
+[Install]
+WantedBy=multi-user.target

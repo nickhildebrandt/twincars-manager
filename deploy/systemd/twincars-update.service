@@ -1,0 +1,12 @@
+[Unit]
+Description=TwinCars container registry poll + auto-update
+After=network-online.target twincars-pod.service
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/twincars-update.sh
+TimeoutStartSec=20min
+
+[Install]
+WantedBy=multi-user.target
