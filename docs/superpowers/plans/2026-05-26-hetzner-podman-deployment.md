@@ -86,6 +86,9 @@
 
 - Create: `/home/nick/tc/twincars-website/Dockerfile`
 - Create: `/home/nick/tc/twincars-website/.dockerignore`
+- Initialize git: `/home/nick/tc/twincars-website/.git/` (local only, no remote)
+
+The website's `config.ts` and `robots.txt/+server.ts` consume `TC_MANAGER_API_URL`, `TC_MANAGER_API_TOKEN`, and `PUBLIC_SITE_URL` at build time (the first two via `requireEnv` at module load, the third via `$env/static/public` inlining). The Dockerfile passes safe defaults through `ARG`/`ENV` so the build can complete; runtime values come from `website.env`. The project's `.npmrc` (`legacy-peer-deps=true`) must reach the build context — vite-plugin-svelte's peer-range otherwise breaks `npm ci`.
 
 - [ ] **Step 1: Create the Dockerfile**
 
@@ -98,7 +101,17 @@ Write to `/home/nick/tc/twincars-website/Dockerfile`:
 FROM node:lts-alpine AS build
 WORKDIR /app
 
-COPY package.json package-lock.json ./
+# Build-time placeholders. Runtime values are supplied via website.env
+# inside the pod; these defaults exist only so `vite build` and the
+# SvelteKit `analyse` step can complete.
+ARG PUBLIC_SITE_URL=https://tc.ts13.de
+ARG TC_MANAGER_API_URL=http://localhost:3000
+ARG TC_MANAGER_API_TOKEN=placeholder-build-token
+ENV PUBLIC_SITE_URL=$PUBLIC_SITE_URL
+ENV TC_MANAGER_API_URL=$TC_MANAGER_API_URL
+ENV TC_MANAGER_API_TOKEN=$TC_MANAGER_API_TOKEN
+
+COPY package.json package-lock.json .npmrc ./
 RUN npm ci
 
 COPY . .
@@ -122,7 +135,7 @@ CMD ["node", "build"]
 
 - [ ] **Step 2: Create the .dockerignore**
 
-Write to `/home/nick/tc/twincars-website/.dockerignore`:
+Write to `/home/nick/tc/twincars-website/.dockerignore` (note: `.npmrc` is intentionally NOT listed — the build needs it):
 
 ```
 node_modules
@@ -132,7 +145,6 @@ build
 .env.local
 .git
 .gitignore
-.npmrc
 .prettierrc
 .prettierignore
 .vscode
@@ -146,29 +158,49 @@ tests
 README.md
 ```
 
-- [ ] **Step 3: Build the image locally to verify it works**
+- [ ] **Step 3: Initialize git in the website repo**
+
+The website directory has a `.gitignore` but is not yet a git repo:
+
+```bash
+cd /home/nick/tc/twincars-website
+git init -b main
+git add .
+git commit -m "chore: initial commit (existing source baseline)"
+```
+
+This commit covers the pre-existing source. The next commit (Step 6) will add only the Dockerfile + .dockerignore.
+
+- [ ] **Step 4: Build the image locally to verify it works**
 
 Run from `/home/nick/tc/twincars-website/`:
 
 ```bash
 cd /home/nick/tc/twincars-website
 podman build -t twincars-website:test .
+# OR if podman is unavailable on the dev machine:
+docker build --network=host -t twincars-website:test .
 ```
 
-Expected: build succeeds, ends with `Successfully tagged localhost/twincars-website:test`.
+Expected: build succeeds, ends with `Successfully tagged localhost/twincars-website:test` (podman) or `naming to docker.io/library/twincars-website:test done` (docker).
 
-- [ ] **Step 4: Quick container smoke run**
+If you used `docker`, the `--network=host` flag works around this dev machine's broken bridge DNS — it is not needed on the deploy server.
+
+- [ ] **Step 5: Quick container smoke run**
 
 ```bash
 podman run --rm -d --name web-smoke -p 13001:3001 twincars-website:test
+# OR with docker:
+docker run --rm -d --name web-smoke -p 13001:3001 twincars-website:test
+
 sleep 3
 curl -fsSI http://127.0.0.1:13001/ | head -5
-podman stop web-smoke
+podman stop web-smoke    # or: docker stop web-smoke
 ```
 
 Expected: HTTP/1.1 200, valid HTML returned. If the smoke fails, fix the image before continuing.
 
-- [ ] **Step 5: Commit**
+- [ ] **Step 6: Commit the Docker files**
 
 ```bash
 cd /home/nick/tc/twincars-website
@@ -1709,16 +1741,17 @@ cd /home/nick/tc/twincars-manager
 git push origin main
 ```
 
-- [ ] **Step 3: Push the website repo (if it has a remote)**
+- [ ] **Step 3: Push the website repo (skipped — local-only repo)**
+
+The website was initialized as a local-only git repo in Task 1 (no remote configured). Skip pushing. Confirm the local tree is clean:
 
 ```bash
 cd /home/nick/tc/twincars-website
 git status
-# only push if `git remote -v` shows a remote
-git remote -v
-# if a remote exists:
-git push origin main
+git log --oneline -5
 ```
+
+If a remote is configured later (e.g., GitHub/Gitea), push then.
 
 - [ ] **Step 4: Document the deployment in the manager repo CHANGELOG (if one exists)**
 
