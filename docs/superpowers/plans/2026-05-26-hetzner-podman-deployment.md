@@ -1095,11 +1095,20 @@ else
 fi
 
 if [[ ! -f "$WEB_ENV" ]]; then
+  # The website's src/lib/server/config.ts validates TC_MANAGER_API_URL and
+  # TC_MANAGER_API_TOKEN at module load — the container crashes on start if
+  # they are missing. We generate a token now; the operator must paste it
+  # into the manager's public API config when Phase 7 lands. Until then,
+  # the website starts cleanly even though the public API isn't wired up.
+  TC_MANAGER_API_TOKEN=$(openssl rand -hex 32)
   cat > "$WEB_ENV" <<ENV
 NODE_ENV=production
 HOST=0.0.0.0
 PORT=3001
 ORIGIN=https://tc.ts13.de
+PUBLIC_SITE_URL=https://tc.ts13.de
+TC_MANAGER_API_URL=http://localhost:3000
+TC_MANAGER_API_TOKEN=${TC_MANAGER_API_TOKEN}
 ENV
   chmod 600 "$WEB_ENV"
   echo "  generated $WEB_ENV"
@@ -1204,8 +1213,10 @@ cat > "$SECRETS_OUT" <<SUMMARY
    /etc/twincars/registry.deploy.pw registry deploy password
 ═══════════════════════════════════════════════════════════════════
 
-POSTGRES_PASSWORD = $(grep -oP '(?<=POSTGRES_PASSWORD=).*' "$PG_ENV")
-APP_ENCRYPTION_KEY = $(grep -oP '(?<=APP_ENCRYPTION_KEY=).*' "$MGR_ENV")
+POSTGRES_PASSWORD     = $(grep -oP '(?<=POSTGRES_PASSWORD=).*' "$PG_ENV")
+APP_ENCRYPTION_KEY    = $(grep -oP '(?<=APP_ENCRYPTION_KEY=).*' "$MGR_ENV")
+TC_MANAGER_API_TOKEN  = $(grep -oP '(?<=TC_MANAGER_API_TOKEN=).*' "$WEB_ENV")
+  (used by website→manager public API; mirror it into the manager when Phase 7 ships)
 
 Container registry
   URL      : https://tc.ts13.de:5000
