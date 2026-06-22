@@ -17,7 +17,10 @@
   const id = untrack(() => page.params.id!)
 
   const query = getPostRemote({ id })
-  const post = await query
+  // Top-level await for SSR; `post` stays reactive to `query.current` so
+  // the optimistic publish toggle (and any refresh) updates the view.
+  const initial = await query
+  const post = $derived(query.current ?? initial)
 
   const fmt = (d: Date | string | null) =>
     d ? new Date(d).toLocaleString('de-DE') : '—'

@@ -1,0 +1,297 @@
+import { describe, it, expect, beforeEach, vi } from 'vitest'
+
+/**
+ * Tests for the KFZ-Kaufmann → Postgres import.
+ *
+ * 1. The pure transform helpers (`__transforms`) — the legacy-data
+ *    normalisation rules where a silent bug would corrupt records.
+ * 2. A full pipeline run driven through a mocked `mdb-export` boundary,
+ *    asserting the mapping, the read-before-wipe ordering, the skip
+ *    report ("no silent failures", §15) and that a dry run writes
+ *    nothing. This exercises the orchestration end-to-end without a
+ *    real `.mdb` file or `mdbtools`.
+ *
+ * @group integration
+ * @module import-service
+ */
+
+vi.mock('$lib/server/db/client', async () => {
+  const { createTestDb } = await import('$lib/server/db/test-db')
+  const handle = await createTestDb()
+  return { db: handle.db, schema: handle.schema }
+})
+
+// PDF pre-rendering is irrelevant to the mapping assertions and would
+// pull pdf-lib into the test — stub the dynamically-imported renderers.
+vi.mock('./pdf-service', () => ({
+  renderAndPersistDocumentPdf: vi.fn().mockResolvedValue(undefined),
+  renderAndPersistReminderPdf: vi.fn().mockResolvedValue(undefined)
+}))
+
+// Canned `mdb-export` output per table, set per-test. `exec` is mocked
+// to return the matching CSV (or empty for tables not in the fixture).
+let csvByTable: Record<string, string> = {}
+
+vi.mock('node:child_process', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('node:child_process')>()
+  const exec = (
+    cmd: string,
+    _opts: unknown,
+    cb: (err: Error | null, res: { stdout: string; stderr: string }) => void
+  ) => {
+    const callback = typeof _opts === 'function' ? (_opts as typeof cb) : cb
+    const table = Object.keys(csvByTable).find((t) => cmd.includes(`'${t}'`))
+    callback(null, { stdout: table ? csvByTable[table] : '', stderr: '' })
+  }
+  return { ...actual, exec, default: { ...actual, exec } }
+})
+
+import { db } from '$lib/server/db/client'
+import {
+  customers,
+  items,
+  vehicleLicensePlateVersions,
+  vehicles
+} from '$lib/server/db/schema'
+import { __transforms, importMdb } from './import-service'
+
+const {
+  trim,
+  clip,
+  toInt,
+  toFloat,
+  toBool,
+  isValidYmd,
+  isoDate,
+  isoTimestamp,
+  parseLooseDate,
+  splitMakeModel,
+  mapArtToKind,
+  mapInvoiceStatus,
+  mapOfferStatus,
+  mapOfferType,
+  mapStorageSeason
+} = __transforms
+
+describe('import-service · trim / clip', () => {
+  it('trims and nulls empty strings', () => {
+    expect(trim('  x ')).toBe('x')
+    expect(trim('   ')).toBeNull()
+    expect(trim('')).toBeNull()
+    expect(trim(null)).toBeNull()
+    expect(trim(undefined)).toBeNull()
+  })
+
+  it('clips to a max length without touching shorter values', () => {
+    expect(clip('hello', 10)).toBe('hello')
+    expect(clip('hello', 3)).toBe('hel')
+    expect(clip(null, 5)).toBeNull()
+  })
+})
+
+describe('import-service · numeric coercion', () => {
+  it('toInt parses integers, nulls garbage', () => {
+    expect(toInt('42')).toBe(42)
+    expect(toInt(' 7 ')).toBe(7)
+    expect(toInt('abc')).toBeNull()
+    expect(toInt(null)).toBeNull()
+  })
+
+  it('toFloat parses decimals, nulls garbage', () => {
+    expect(toFloat('3.5')).toBe(3.5)
+    expect(toFloat('x')).toBeNull()
+    expect(toFloat(null)).toBeNull()
+  })
+
+  it('toBool only treats 1/true as true', () => {
+    expect(toBool('1')).toBe(true)
+    expect(toBool('true')).toBe(true)
+    expect(toBool('TRUE')).toBe(true)
+    expect(toBool('0')).toBe(false)
+    expect(toBool('')).toBe(false)
+    expect(toBool(null)).toBe(false)
+  })
+})
+
+describe('import-service · date validation + parsing', () => {
+  it('isValidYmd rejects implausible legacy dates', () => {
+    expect(isValidYmd(2009, 6, 15)).toBe(true)
+    expect(isValidYmd(297, 20, 1)).toBe(false)
+    expect(isValidYmd(1899, 1, 1)).toBe(false)
+    expect(isValidYmd(2009, 13, 1)).toBe(false)
+    expect(isValidYmd(2009, 0, 1)).toBe(false)
+    expect(isValidYmd(2009, 6, 32)).toBe(false)
+  })
+
+  it('isoDate keeps the date part of an mdb-export timestamp', () => {
+    expect(isoDate('2009-06-15 13:45:00')).toBe('2009-06-15')
+    expect(isoDate('2009-06-15')).toBe('2009-06-15')
+  })
+
+  it('isoDate rejects malformed / implausible dates', () => {
+    expect(isoDate('0297-20-01')).toBeNull()
+    expect(isoDate('not-a-date')).toBeNull()
+    expect(isoDate(null)).toBeNull()
+  })
+
+  it('isoTimestamp parses to a Date (UTC) or null', () => {
+    const d = isoTimestamp('2009-06-15 13:45:00')
+    expect(d).toBeInstanceOf(Date)
+    expect(d?.toISOString()).toBe('2009-06-15T13:45:00.000Z')
+    expect(isoTimestamp('garbage')).toBeNull()
+    expect(isoTimestamp(null)).toBeNull()
+  })
+
+  it('parseLooseDate handles the messy EZ/HU legacy formats', () => {
+    expect(parseLooseDate('2009-06-15')).toBe('2009-06-15')
+    expect(parseLooseDate('06.2009')).toBe('2009-06-01')
+    expect(parseLooseDate('12.1999')).toBe('1999-12-01')
+    expect(parseLooseDate('04/92')).toBe('1992-04-01')
+    expect(parseLooseDate('04/08')).toBe('2008-04-01')
+    expect(parseLooseDate('30.08.2008')).toBe('2008-08-30')
+  })
+
+  it('parseLooseDate rejects nonsense and out-of-range pieces', () => {
+    expect(parseLooseDate('0600')).toBeNull()
+    expect(parseLooseDate('13.2009')).toBeNull()
+    expect(parseLooseDate('')).toBeNull()
+    expect(parseLooseDate(null)).toBeNull()
+  })
+})
+
+describe('import-service · field mapping', () => {
+  it('splitMakeModel splits on the first space', () => {
+    expect(splitMakeModel('VW Caddy')).toEqual({ make: 'VW', model: 'Caddy' })
+    expect(splitMakeModel('VW Golf IV Generation')).toEqual({
+      make: 'VW',
+      model: 'Golf IV Generation'
+    })
+    expect(splitMakeModel('Smart')).toEqual({ make: 'Smart', model: null })
+    expect(splitMakeModel(null)).toEqual({ make: null, model: null })
+  })
+
+  it('mapArtToKind maps the legacy Art field', () => {
+    expect(mapArtToKind('Leistung')).toBe('service')
+    expect(mapArtToKind('Material')).toBe('material')
+    expect(mapArtToKind('Durchlaufposten')).toBe('pass_through')
+    expect(mapArtToKind('Artikel')).toBe('article')
+    expect(mapArtToKind(null)).toBe('article')
+  })
+
+  it('mapInvoiceStatus: storniert → cancelled, everything else → paid', () => {
+    expect(mapInvoiceStatus({ status: 'Storniert', bezahldatum: null })).toBe(
+      'cancelled'
+    )
+    expect(mapInvoiceStatus({ status: 'Bar', bezahldatum: null })).toBe('paid')
+    expect(
+      mapInvoiceStatus({ status: 'offen', bezahldatum: '2020-01-01' })
+    ).toBe('paid')
+    expect(mapInvoiceStatus({ status: null, bezahldatum: null })).toBe('paid')
+  })
+
+  it('mapOfferStatus: storniert → cancelled else sent', () => {
+    expect(mapOfferStatus('Storniert')).toBe('cancelled')
+    expect(mapOfferStatus('irgendwas')).toBe('sent')
+    expect(mapOfferStatus(null)).toBe('sent')
+  })
+
+  it('mapOfferType maps Formulartyp to a document type', () => {
+    expect(mapOfferType('Kostenvoranschlag')).toBe('cost_estimate')
+    expect(mapOfferType('KV')).toBe('cost_estimate')
+    expect(mapOfferType('Auftragsbestätigung')).toBe('order_confirmation')
+    expect(mapOfferType('Angebot')).toBe('offer')
+    expect(mapOfferType(null)).toBe('offer')
+  })
+
+  it('mapStorageSeason maps the legacy Art to a tire-storage season', () => {
+    expect(mapStorageSeason('Winterreifen')).toBe('winter')
+    expect(mapStorageSeason('Sommerreifen')).toBe('summer')
+    expect(mapStorageSeason('Ganzjahresreifen')).toBe('allseason')
+    expect(mapStorageSeason('Allwetter')).toBe('allseason')
+    expect(mapStorageSeason('unbekannt')).toBeNull()
+    expect(mapStorageSeason(null)).toBeNull()
+  })
+})
+
+describe('import-service · full pipeline (mocked mdb-export)', () => {
+  beforeEach(async () => {
+    csvByTable = {}
+    // The real run wipes before inserting; the dry run does not. Clear
+    // FK-safe so back-to-back tests start from an empty business set.
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(items)
+    await db.delete(customers)
+  })
+
+  /** Two customers (one valid + one without a number), one vehicle with a
+   *  valid holder + one orphaned vehicle, and one service article. */
+  const seedFixtures = () => {
+    csvByTable = {
+      Kunden: [
+        'Kunden-Nr;Firma;Vorname;Nachname',
+        '1001;Müller GmbH;;',
+        '1002;;Erika;Musterfrau',
+        ';;Ohne;Nummer'
+      ].join('\n'),
+      Autos: [
+        'Kunden-Nr;ID_Auto;KFZ-Typ;Kennzeichen;EZ',
+        '1001;A-1;VW Caddy;B-AA 100;06.2009',
+        '9999;A-2;Audi A4;F-OLD 1;'
+      ].join('\n'),
+      Artikel: [
+        'Artikel-Nr;Artikelbeschreibung;Art;Einzelpreis',
+        'ART-1;Ölwechsel;Leistung;49.90'
+      ].join('\n')
+    }
+  }
+
+  it('imports customers/vehicles/items and reports skips', async () => {
+    seedFixtures()
+    const summary = await importMdb(Buffer.from('fake-mdb'))
+
+    expect(summary.customers).toBe(2)
+    expect(summary.vehicles).toBe(1)
+    expect(summary.items).toBe(1)
+
+    // No silent failures: the customer without a number and the vehicle
+    // with an unknown holder are both recorded as skips.
+    expect(summary.skippedTotal).toBe(2)
+    const reasons = summary.skippedDetail.map((s) => s.reason)
+    expect(reasons.some((r) => /ohne Kunden-Nr/i.test(r))).toBe(true)
+    expect(reasons.some((r) => /nicht gefunden/i.test(r))).toBe(true)
+
+    // Rows actually landed in the DB with the mapped fields.
+    const custRows = await db.select().from(customers)
+    expect(custRows).toHaveLength(2)
+
+    const vehRows = await db.select().from(vehicles)
+    expect(vehRows).toHaveLength(1)
+    expect(vehRows[0].make).toBe('VW')
+    expect(vehRows[0].model).toBe('Caddy')
+    expect(vehRows[0].firstRegistration).toBe('2009-06-01')
+
+    const plateRows = await db.select().from(vehicleLicensePlateVersions)
+    expect(plateRows).toHaveLength(1)
+    expect(plateRows[0].licensePlate).toBe('B-AA 100')
+
+    const itemRows = await db.select().from(items)
+    expect(itemRows).toHaveLength(1)
+    expect(itemRows[0].kind).toBe('service')
+  })
+
+  it('dry run computes the same counts but writes nothing', async () => {
+    seedFixtures()
+    const summary = await importMdb(Buffer.from('fake-mdb'), { dryRun: true })
+
+    expect(summary.dryRun).toBe(true)
+    expect(summary.customers).toBe(2)
+    expect(summary.vehicles).toBe(1)
+    expect(summary.items).toBe(1)
+
+    // The destructive run never happened — tables stay empty.
+    expect(await db.select().from(customers)).toHaveLength(0)
+    expect(await db.select().from(vehicles)).toHaveLength(0)
+    expect(await db.select().from(items)).toHaveLength(0)
+  })
+})

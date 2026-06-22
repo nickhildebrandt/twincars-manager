@@ -326,6 +326,31 @@ const mapStorageSeason = (art: string | null): string | null => {
   return null
 }
 
+/**
+ * Pure, side-effect-free transform helpers used by the import pipeline,
+ * grouped and exported for unit testing. These encode the legacy-data
+ * normalisation rules (date parsing, status mapping, make/model split)
+ * where a silent bug would corrupt imported records — so they carry
+ * dedicated coverage. Not intended for use outside this module.
+ */
+export const __transforms = {
+  trim,
+  clip,
+  toInt,
+  toFloat,
+  toBool,
+  isValidYmd,
+  isoDate,
+  isoTimestamp,
+  parseLooseDate,
+  splitMakeModel,
+  mapArtToKind,
+  mapInvoiceStatus,
+  mapOfferStatus,
+  mapOfferType,
+  mapStorageSeason
+}
+
 /* ── Wipe ──────────────────────────────────────────────────────────── */
 
 async function wipeData(): Promise<void> {
