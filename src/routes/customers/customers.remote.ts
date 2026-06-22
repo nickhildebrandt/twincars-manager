@@ -298,6 +298,7 @@ const adHocEmailSchema = object({
     minLength(1, 'Die Nachricht darf nicht leer sein.'),
     maxLength(50_000, 'Die Nachricht darf maximal 50.000 Zeichen lang sein.')
   ),
+  asHtml: optional(boolean()),
   attachments: array(attachmentSchema)
 })
 

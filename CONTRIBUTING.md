@@ -1154,6 +1154,42 @@ types, rename in a way that doesn't preserve content), call this
 out in the PR / release note so operations can decide how to gate
 the deploy.
 
+## 18. Customer communication (mail)
+
+All SMTP sending goes through `src/lib/server/services/mail-service.ts`
+(nodemailer, SMTP-only). Conventions:
+
+- **Plain text is the default.** Every send passes `text`. Document
+  mails render a `{platzhalter}` template (`loadTemplate` →
+  `buildVars` → `render`); ad-hoc and broadcast mails carry the
+  operator's body verbatim.
+- **HTML is opt-in (`asHtml`).** `sendAdHocCustomerEmail` and
+  `sendBroadcastEmail` accept `asHtml?: boolean`. When `true` the body
+  is treated as **operator-authored HTML source**: it is sent as
+  `html` and a plain-text fallback is derived via `htmlToPlainText`
+  (and stored as the `sent_messages.bodyText` audit value — never the
+  HTML source). When absent/false, only `text` is sent. The shared
+  `EmailComposer` exposes this through `allowHtml` + bindable `asHtml`.
+- **Broadcasts respect `wantsBroadcast`.** Recipients come from
+  `listCustomersForBroadcast()` (opt-in + has email). Addresses go in
+  **bcc**, chunked into `BROADCAST_BCC_BATCH` (50) per envelope; a
+  failed batch is recorded per-customer and does not abort the rest.
+  **One `sent_messages` row per recipient** (`documentType='mailing'`),
+  not one aggregate row.
+- **Unsubscribe (Abbestellen).** Every broadcast appends an opt-out
+  footer (`UNSUBSCRIBE_TEXT` / `UNSUBSCRIBE_HTML`) and sets a
+  `List-Unsubscribe: <mailto:…?subject=Abbestellen>` header pointing at
+  the company email (falling back to SMTP reply-to / from). The flow is
+  a **mailto reply** — the operator flips `wantsBroadcast` when a
+  customer answers; the next send filters them out. There is no
+  tokenized web-unsubscribe route. Ad-hoc single-customer mails do
+  **not** get the footer (they are transactional, not bulk advertising).
+- **Test at the nodemailer boundary.** `mail-service.test.ts` mocks
+  `nodemailer.createTransport().sendMail` and asserts on the captured
+  options (`text` / `html` / `headers['List-Unsubscribe']` /
+  `attachments`). Use `scripts/dev-mail-catcher.js` (127.0.0.1:1025,
+  writes `.eml` to `tmp/mail/`) for manual end-to-end checks.
+
 ## 17. Adding a new module
 
 When you scaffold a new module (e.g. payroll), copy the **customers** and

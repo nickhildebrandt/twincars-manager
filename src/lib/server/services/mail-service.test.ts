@@ -638,6 +638,43 @@ describe('mail-service', () => {
       expect(sendMailMock.mock.calls[0][0].attachments).toBeUndefined()
     })
 
+    it('sends HTML with a derived plain-text fallback when asHtml=true', async () => {
+      await seedSmtp()
+      await seedCompany()
+      const customerId = await seedCustomer()
+
+      const res = await sendAdHocCustomerEmail({
+        customerId,
+        subject: 'HTML',
+        body: '<p>Hallo <strong>Max</strong></p>',
+        asHtml: true,
+        attachments: []
+      })
+      expect(res.ok).toBe(true)
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.html).toBe('<p>Hallo <strong>Max</strong></p>')
+      // Fallback strips tags so non-HTML clients still get readable text.
+      expect(call.text).toBe('Hallo Max')
+      // The audit row stores the plain-text variant, not the HTML source.
+      const [recorded] = await db.select().from(sentMessages)
+      expect(recorded.bodyText).toBe('Hallo Max')
+    })
+
+    it('omits html and keeps plain text when asHtml is absent', async () => {
+      await seedSmtp()
+      await seedCompany()
+      const customerId = await seedCustomer()
+      await sendAdHocCustomerEmail({
+        customerId,
+        subject: 'Plain',
+        body: 'Nur Text.',
+        attachments: []
+      })
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.html).toBeUndefined()
+      expect(call.text).toBe('Nur Text.')
+    })
+
     it('uses the company name as recipient when set', async () => {
       await seedSmtp()
       await seedCompany()
@@ -879,6 +916,64 @@ describe('mail-service', () => {
       expect(call.attachments).toHaveLength(1)
       expect(call.attachments[0].filename).toBe('foo.pdf')
       expect(call.attachments[0].content.toString()).toBe('xx')
+    })
+
+    it('appends the Abbestellen footer to the plain-text body', async () => {
+      await seedSmtp()
+      await seedCompany()
+      await seedOptIn('one@example.com')
+      await sendBroadcastEmail({
+        subject: 'Newsletter',
+        body: 'Frühlingsaktion!',
+        attachments: []
+      })
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.text).toContain('Frühlingsaktion!')
+      expect(call.text).toContain('Abbestellen')
+      // No HTML in plain-text mode.
+      expect(call.html).toBeUndefined()
+      // The audit row carries the footer too.
+      const [recorded] = await db.select().from(sentMessages)
+      expect(recorded.bodyText).toContain('Abbestellen')
+    })
+
+    it('sets a List-Unsubscribe mailto header to the company address', async () => {
+      await seedSmtp()
+      await seedCompany({ email: 'kontakt@example.com' })
+      await seedOptIn('one@example.com')
+      await sendBroadcastEmail({ subject: 'N', body: 'B', attachments: [] })
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.headers['List-Unsubscribe']).toBe(
+        '<mailto:kontakt@example.com?subject=Abbestellen>'
+      )
+    })
+
+    it('falls back to the SMTP reply-to for List-Unsubscribe when no company email', async () => {
+      await seedSmtp({ replyTo: 'antwort@example.com' })
+      await seedCompany({ email: '' })
+      await seedOptIn('one@example.com')
+      await sendBroadcastEmail({ subject: 'N', body: 'B', attachments: [] })
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.headers['List-Unsubscribe']).toBe(
+        '<mailto:antwort@example.com?subject=Abbestellen>'
+      )
+    })
+
+    it('sends HTML with footer and a plain-text fallback when asHtml=true', async () => {
+      await seedSmtp()
+      await seedCompany()
+      await seedOptIn('one@example.com')
+      await sendBroadcastEmail({
+        subject: 'N',
+        body: '<p>Angebot</p>',
+        asHtml: true,
+        attachments: []
+      })
+      const call = sendMailMock.mock.calls[0][0]
+      expect(call.html).toContain('<p>Angebot</p>')
+      expect(call.html).toContain('Abbestellen')
+      expect(call.text).toContain('Angebot')
+      expect(call.text).toContain('Abbestellen')
     })
 
     it('refuses when SMTP is unconfigured (transport build throws)', async () => {

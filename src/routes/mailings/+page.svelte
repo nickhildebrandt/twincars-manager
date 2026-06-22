@@ -31,6 +31,7 @@
 
   let subject = $state('')
   let body = $state('')
+  let asHtml = $state(false)
   let attachments = $state<ComposerAttachment[]>([])
 
   let confirmOpen = $state(false)
@@ -46,6 +47,7 @@
         sendBroadcastEmailRemote({
           subject: subject.trim(),
           body,
+          asHtml,
           attachments: attachments.map((a) => ({
             filename: a.filename,
             mime: a.mime,
@@ -62,6 +64,7 @@
       }
       subject = ''
       body = ''
+      asHtml = false
       attachments = []
     } catch (err) {
       handleClientError(err, 'Serienbrief konnte nicht versendet werden')
@@ -118,8 +121,10 @@
         bind:subject
         bind:body
         bind:attachments
+        bind:asHtml
+        allowHtml
         disabled={!canCompose}
-        hint="Empfänger erhalten die Nachricht via BCC — Adressen werden nicht untereinander sichtbar."
+        hint="Empfänger erhalten die Nachricht via BCC — Adressen werden nicht untereinander sichtbar. Eine Abbestellen-Fußzeile wird automatisch angehängt."
       />
       <div class="card-actions justify-end">
         <button

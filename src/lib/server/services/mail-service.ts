@@ -153,6 +153,45 @@ const render = (template: string, vars: Record<string, string>): string =>
     Object.prototype.hasOwnProperty.call(vars, key) ? vars[key] : match
   )
 
+/**
+ * Best-effort plain-text fallback for an HTML body. Turns block-level
+ * tags into newlines, strips the rest, and decodes the handful of
+ * entities we emit. Good enough for the `text` alternative that
+ * accompanies every HTML mail (so non-HTML clients still get readable
+ * content) — not a full HTML renderer.
+ */
+const htmlToPlainText = (html: string): string =>
+  html
+    .replace(/<\s*br\s*\/?>/gi, '\n')
+    .replace(/<\/\s*(p|div|h[1-6]|li|tr)\s*>/gi, '\n')
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/gi, ' ')
+    .replace(/&amp;/gi, '&')
+    .replace(/&lt;/gi, '<')
+    .replace(/&gt;/gi, '>')
+    .replace(/&quot;/gi, '"')
+    .replace(/&#39;/gi, "'")
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+
+/**
+ * Broadcast opt-out footer (Abbestellen). The unsubscribe flow is a
+ * mailto reply — the operator flips `wantsBroadcast` when a customer
+ * answers with "Abbestellen"; the next send already filters them out
+ * via `listCustomersForBroadcast()`. Both a plain-text and an HTML
+ * variant are produced so the footer matches the body's format.
+ */
+const UNSUBSCRIBE_TEXT =
+  '\n\n—\nKeine weiteren Informationen gewünscht? Antworten Sie auf diese ' +
+  'E-Mail mit dem Betreff „Abbestellen".'
+
+const UNSUBSCRIBE_HTML =
+  '<hr style="border:none;border-top:1px solid #ddd;margin:24px 0 12px">' +
+  '<p style="font-family:Arial,Helvetica,sans-serif;font-size:12px;color:#666;margin:0">' +
+  'Keine weiteren Informationen gewünscht? Antworten Sie auf diese E-Mail mit dem ' +
+  'Betreff „Abbestellen".</p>'
+
 const buildTransport = async (): Promise<Transporter> => {
   const [s] = await db.select().from(smtpSettings).limit(1)
   if (!s || !s.host || !s.fromAddress) {
@@ -312,6 +351,9 @@ export type AdHocCustomerEmailInput = {
   customerId: string
   subject: string
   body: string
+  /** When true, `body` is HTML source — sent as `html` with a derived
+   * plain-text fallback. When false/absent, `body` is plain text. */
+  asHtml?: boolean
   attachments: AdHocAttachment[]
 }
 
@@ -351,6 +393,12 @@ export const sendAdHocCustomerEmail = async (
 
   const attachments = input.attachments.map(decodeAttachment)
 
+  // HTML vs. plain text: when `asHtml`, the body is HTML source — send
+  // it as `html` and derive a readable `text` fallback. The audit row
+  // always stores the plain-text version.
+  const htmlBody = input.asHtml ? input.body : undefined
+  const textBody = input.asHtml ? htmlToPlainText(input.body) : input.body
+
   const [smtp] = await db.select().from(smtpSettings).limit(1)
   const fromAddress = smtp?.fromAddress ?? ''
   const fromName = smtp?.fromName ?? ''
@@ -365,7 +413,7 @@ export const sendAdHocCustomerEmail = async (
       recipientEmail: cust.email,
       recipientName: recipientName || null,
       subject: input.subject,
-      bodyText: input.body,
+      bodyText: textBody,
       attachmentMeta: attachments.map((a) => ({
         name: a.filename,
         size: a.content.length
@@ -381,7 +429,8 @@ export const sendAdHocCustomerEmail = async (
       to: recipientName ? `${recipientName} <${cust.email}>` : cust.email,
       replyTo,
       subject: input.subject,
-      text: input.body,
+      text: textBody,
+      html: htmlBody,
       attachments: attachments.length > 0 ? attachments : undefined
     })
     await db
@@ -402,6 +451,9 @@ export const sendAdHocCustomerEmail = async (
 export type BroadcastEmailInput = {
   subject: string
   body: string
+  /** When true, `body` is HTML source — sent as `html` with a derived
+   * plain-text fallback. When false/absent, `body` is plain text. */
+  asHtml?: boolean
   attachments: AdHocAttachment[]
 }
 
@@ -451,6 +503,25 @@ export const sendBroadcastEmail = async (
   const from = fromName ? `${fromName} <${fromAddress}>` : fromAddress
   const replyTo = smtp?.replyTo ?? undefined
 
+  // Append the Abbestellen (opt-out) footer and add a List-Unsubscribe
+  // header pointing at a mailto so compliant clients surface a native
+  // "unsubscribe" affordance. The reply lands at the company address
+  // (falling back to the SMTP reply-to / from) where the operator can
+  // flip `wantsBroadcast`.
+  const [company] = await db.select().from(companySettings).limit(1)
+  const unsubscribeAddress = company?.email || replyTo || fromAddress
+
+  const htmlBody = input.asHtml ? `${input.body}${UNSUBSCRIBE_HTML}` : undefined
+  const textBody = input.asHtml
+    ? `${htmlToPlainText(input.body)}${UNSUBSCRIBE_TEXT}`
+    : `${input.body}${UNSUBSCRIBE_TEXT}`
+
+  const headers: Record<string, string> | undefined = unsubscribeAddress
+    ? {
+        'List-Unsubscribe': `<mailto:${unsubscribeAddress}?subject=Abbestellen>`
+      }
+    : undefined
+
   // Build the transport once and reuse it across batches — the
   // `buildTransport` helper throws a curated German error when SMTP
   // isn't set up, which propagates as-is.
@@ -477,7 +548,7 @@ export const sendBroadcastEmail = async (
           recipientEmail: c.email,
           recipientName: recipientName || null,
           subject: input.subject,
-          bodyText: input.body,
+          bodyText: textBody,
           attachmentMeta: attachments.map((a) => ({
             name: a.filename,
             size: a.content.length
@@ -495,7 +566,9 @@ export const sendBroadcastEmail = async (
         bcc,
         replyTo,
         subject: input.subject,
-        text: input.body,
+        text: textBody,
+        html: htmlBody,
+        headers,
         attachments: attachments.length > 0 ? attachments : undefined
       })
       for (let j = 0; j < batch.length; j++) {

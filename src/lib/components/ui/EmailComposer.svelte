@@ -35,6 +35,10 @@
     disabled?: boolean
     /** Optional helper text rendered below the body. */
     hint?: string
+    /** Show the "Als HTML senden" toggle. */
+    allowHtml?: boolean
+    /** Two-way: whether the body is treated as HTML source. */
+    asHtml?: boolean
   }
 
   let {
@@ -43,7 +47,9 @@
     attachments = $bindable<ComposerAttachment[]>([]),
     maxBytesPerFile = 10 * 1024 * 1024,
     disabled = false,
-    hint
+    hint,
+    allowHtml = false,
+    asHtml = $bindable(false)
   }: Props = $props()
 
   let fileInput = $state<HTMLInputElement | null>(null)
@@ -118,13 +124,35 @@
   </label>
 
   <label class="flex w-full flex-col gap-1">
-    <span class="label-text">Nachricht</span>
+    <span class="label-text">Nachricht{asHtml ? ' (HTML-Quelltext)' : ''}</span>
     <textarea
-      class="textarea textarea-bordered min-h-40 w-full"
+      class="textarea textarea-bordered min-h-40 w-full {asHtml
+        ? 'font-mono text-sm'
+        : ''}"
       maxlength="50000"
       bind:value={body}
       disabled={disabled || busy.active}
     ></textarea>
+    {#if allowHtml}
+      <label class="label cursor-pointer justify-start gap-2 py-1">
+        <input
+          type="checkbox"
+          class="checkbox checkbox-sm checkbox-primary"
+          bind:checked={asHtml}
+          disabled={disabled || busy.active}
+        />
+        <span class="label-text">Als HTML senden</span>
+      </label>
+      <span class="text-base-content/60 text-xs">
+        {#if asHtml}
+          Der Nachrichtentext wird als HTML-Quelltext interpretiert. Eine
+          Nur-Text-Variante wird automatisch für Clients ohne HTML erzeugt.
+        {:else}
+          Reiner Text. Aktivieren Sie „Als HTML senden", um HTML-Quelltext zu
+          verwenden.
+        {/if}
+      </span>
+    {/if}
     {#if hint}
       <span class="text-base-content/60 text-xs">{hint}</span>
     {/if}

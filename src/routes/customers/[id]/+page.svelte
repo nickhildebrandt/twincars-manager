@@ -51,6 +51,7 @@
   let emailOpen = $state(false)
   let emailSubject = $state('')
   let emailBody = $state('')
+  let emailAsHtml = $state(false)
   let emailAttachments = $state<ComposerAttachment[]>([])
 
   const recipientLabel = $derived.by(() => {
@@ -74,6 +75,7 @@
   const openEmailDialog = () => {
     emailSubject = ''
     emailBody = ''
+    emailAsHtml = false
     emailAttachments = []
     emailOpen = true
   }
@@ -89,6 +91,7 @@
           customerId: customer.id,
           subject: emailSubject.trim(),
           body: emailBody,
+          asHtml: emailAsHtml,
           attachments: emailAttachments.map((a) => ({
             filename: a.filename,
             mime: a.mime,
@@ -338,6 +341,8 @@
           bind:subject={emailSubject}
           bind:body={emailBody}
           bind:attachments={emailAttachments}
+          bind:asHtml={emailAsHtml}
+          allowHtml
         />
       {/if}
 

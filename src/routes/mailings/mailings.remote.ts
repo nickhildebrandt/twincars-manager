@@ -1,9 +1,11 @@
 import { command, query } from '$app/server'
 import {
   array,
+  boolean,
   maxLength,
   minLength,
   object,
+  optional,
   pipe,
   string,
   trim
@@ -60,6 +62,7 @@ const broadcastSchema = object({
     minLength(1, 'Die Nachricht darf nicht leer sein.'),
     maxLength(50_000, 'Die Nachricht darf maximal 50.000 Zeichen lang sein.')
   ),
+  asHtml: optional(boolean()),
   attachments: array(attachmentSchema)
 })
 
