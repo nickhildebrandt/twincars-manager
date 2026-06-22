@@ -204,6 +204,13 @@
       "when": 1782131718388,
       "tag": "0028_item_online_bookable",
       "breakpoints": true
+    },
+    {
+      "idx": 29,
+      "version": "7",
+      "when": 1782131718389,
+      "tag": "0029_posts",
+      "breakpoints": true
     }
   ]
 }

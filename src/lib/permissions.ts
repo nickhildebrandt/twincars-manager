@@ -42,7 +42,8 @@ export const MODULE_PERMISSIONS = {
   settings: ['settings'],
   users: ['users'],
   tires: ['tires'],
-  shipping: ['shipping']
+  shipping: ['shipping'],
+  posts: ['posts']
 } as const
 
 export type ModuleKey = keyof typeof MODULE_PERMISSIONS

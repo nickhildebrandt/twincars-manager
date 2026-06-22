@@ -20,6 +20,7 @@ import {
   Gift,
   Mail,
   Send,
+  Newspaper,
   Settings,
   Database,
   Inbox
@@ -203,7 +204,13 @@ export const navigation: NavGroup[] = [
         icon: Mail,
         permission: 'mailings'
       },
-      { label: 'Gesendet', href: '/sent', icon: Send, permission: 'invoices' }
+      { label: 'Gesendet', href: '/sent', icon: Send, permission: 'invoices' },
+      {
+        label: 'Aktuelle Informationen',
+        href: '/posts',
+        icon: Newspaper,
+        permission: 'posts'
+      }
     ]
   },
   {

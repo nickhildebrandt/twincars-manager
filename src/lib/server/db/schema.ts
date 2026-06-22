@@ -1326,6 +1326,46 @@ export const customerInquiries = pgTable(
 )
 
 /* ────────────────────────────────────────────────────────────────────── */
+/* Aktuelle Informationen — news / posts published to the website         */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * News posts ("Aktuelle Informationen") the workshop publishes to its
+ * public website. Only `published = true` rows are exposed through the
+ * token-authenticated public API. The `slug` is a URL-safe, unique
+ * identifier derived from the title so the website can build stable,
+ * SEO-friendly permalinks (`/aktuelles/<slug>`). The optional cover
+ * image is stored inline as `{ mime, data }` (base64) — single-tenant
+ * app, no separate object storage worth the complexity, mirroring the
+ * tire-storage / vehicle photo approach.
+ */
+export const posts = pgTable(
+  'posts',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    title: varchar('title', { length: 200 }).notNull(),
+    slug: varchar('slug', { length: 220 }).notNull(),
+    /** Short teaser shown in list/preview cards on the website. */
+    excerpt: varchar('excerpt', { length: 500 }),
+    body: text('body').notNull(),
+    coverImage: jsonb('cover_image').$type<{ mime: string; data: string }>(),
+    published: boolean('published').notNull().default(false),
+    /** First time the post was published; null while it stays a draft. */
+    publishedAt: timestamp('published_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex('posts_slug_idx').on(t.slug),
+    index('posts_published_idx').on(t.published, t.publishedAt)
+  ]
+)
+
+/* ────────────────────────────────────────────────────────────────────── */
 /* Reifenlager — customer-owned tires kept on the workshop premises       */
 /* ────────────────────────────────────────────────────────────────────── */
 
@@ -1651,3 +1691,5 @@ export type TireSeason = 'Sommer' | 'Winter' | 'Ganzjahres'
 export type TireConstruction = 'R' | 'D'
 export type CustomerInquiry = typeof customerInquiries.$inferSelect
 export type NewCustomerInquiry = typeof customerInquiries.$inferInsert
+export type Post = typeof posts.$inferSelect
+export type NewPost = typeof posts.$inferInsert

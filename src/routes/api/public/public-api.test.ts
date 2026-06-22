@@ -67,6 +67,7 @@ import {
   itemPriceVersions,
   items,
   numberRanges,
+  posts,
   publicHolidays,
   shippingOptions,
   tirePhotos,
@@ -103,6 +104,9 @@ import { handlePublicServiceDetail } from './services/[id]/endpoint'
 import { handleContactInquiry } from './contact/endpoint'
 import { handlePublicOrder } from './orders/endpoint'
 import { handlePublicCompany } from './company/endpoint'
+import { handlePublicPosts } from './posts/endpoint'
+import { handlePublicPostDetail } from './posts/[slug]/endpoint'
+import { createPost } from '$lib/server/services/post-service'
 
 /**
  * Build a SvelteKit-shaped RequestEvent stub good enough for the
@@ -129,6 +133,7 @@ function makeEvent(
 }
 
 async function resetDb() {
+  await db.delete(posts)
   await db.delete(documentItems)
   await db.delete(documents)
   await db.delete(calendarEntries)
@@ -1420,6 +1425,110 @@ describe('public-api endpoints', () => {
       )
       expect(mon.closed).toBe(false)
       expect(mon.opensAt).toBe('08:00')
+    })
+  })
+
+  describe('GET /api/public/posts', () => {
+    it('returns 401 without a Bearer token', async () => {
+      const handler = publicApi(handlePublicPosts)
+      const event = makeEvent(new Request('http://localhost/api/public/posts'))
+      expect((await handler(event)).status).toBe(401)
+    })
+
+    it('lists only published posts (newest first) with a pagination envelope', async () => {
+      await createPost({ title: 'Älterer', body: 'A', published: true })
+      await createPost({ title: 'Neuerer', body: 'B', published: true })
+      await createPost({ title: 'Entwurf', body: 'C', published: false })
+
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPosts)
+      const event = makeEvent(authedGet('/api/public/posts', token))
+      const res = await handler(event)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.total).toBe(2)
+      expect(body.data.page).toBe(1)
+      expect(body.data.pageCount).toBe(1)
+      const titles = body.data.posts.map((p: { title: string }) => p.title)
+      expect(titles).not.toContain('Entwurf')
+      // Newest published first.
+      expect(titles[0]).toBe('Neuerer')
+    })
+
+    it('honours page / pageSize query parameters', async () => {
+      for (let i = 0; i < 3; i++) {
+        await createPost({ title: `Beitrag ${i}`, body: 'x', published: true })
+      }
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPosts)
+      const event = makeEvent(
+        authedGet('/api/public/posts?page=2&pageSize=2', token)
+      )
+      const res = await handler(event)
+      const body = await res.json()
+      expect(body.data.page).toBe(2)
+      expect(body.data.pageSize).toBe(2)
+      expect(body.data.posts).toHaveLength(1)
+    })
+
+    it('rejects a non-positive page with 400', async () => {
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPosts)
+      const event = makeEvent(authedGet('/api/public/posts?page=0', token))
+      const res = await handler(event)
+      expect(res.status).toBe(400)
+    })
+  })
+
+  describe('GET /api/public/posts/:slug', () => {
+    it('returns 401 without a Bearer token', async () => {
+      const handler = publicApi(handlePublicPostDetail)
+      const event = makeEvent(
+        new Request('http://localhost/api/public/posts/x'),
+        { slug: 'x' }
+      )
+      expect((await handler(event)).status).toBe(401)
+    })
+
+    it('returns a published post by slug', async () => {
+      const p = await createPost({
+        title: 'Sichtbarer Beitrag',
+        body: 'Inhalt',
+        published: true
+      })
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPostDetail)
+      const event = makeEvent(authedGet(`/api/public/posts/${p.slug}`, token), {
+        slug: p.slug
+      })
+      const res = await handler(event)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.data.post.title).toBe('Sichtbarer Beitrag')
+      expect(body.data.post.slug).toBe(p.slug)
+    })
+
+    it('returns 404 for a draft slug (drafts are not public)', async () => {
+      const p = await createPost({
+        title: 'Geheimer Entwurf',
+        body: 'x',
+        published: false
+      })
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPostDetail)
+      const event = makeEvent(authedGet(`/api/public/posts/${p.slug}`, token), {
+        slug: p.slug
+      })
+      expect((await handler(event)).status).toBe(404)
+    })
+
+    it('returns 404 for an unknown slug', async () => {
+      const token = await mintTestToken()
+      const handler = publicApi(handlePublicPostDetail)
+      const event = makeEvent(authedGet('/api/public/posts/nope', token), {
+        slug: 'nope'
+      })
+      expect((await handler(event)).status).toBe(404)
     })
   })
 })
