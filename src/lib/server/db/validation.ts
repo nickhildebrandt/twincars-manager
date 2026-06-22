@@ -14,6 +14,7 @@ import {
   transform,
   trim
 } from 'valibot'
+import { PAYMENT_METHODS } from '$lib/payment-methods'
 
 /**
  * Reusable Valibot schemas. Use these in every Remote Function instead of
@@ -132,6 +133,15 @@ export const documentTypeSchema = picklist([
   'reminder',
   'customer_letter'
 ])
+
+/**
+ * Payment method (Zahlungsart). Optional — an empty selection means
+ * "not specified". The allowed labels live in the shared, client-safe
+ * `$lib/payment-methods` so forms and the server share one list.
+ */
+export const paymentMethodSchema = optional(
+  picklist(PAYMENT_METHODS, 'Bitte eine gültige Zahlungsart wählen.')
+)
 
 export const dateStringSchema = pipe(
   string(),

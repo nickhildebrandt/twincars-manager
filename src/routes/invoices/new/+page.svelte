@@ -9,6 +9,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2 } from '@lucide/svelte'
   import {
@@ -45,7 +46,7 @@
   let issueDate = $state(today)
   let dueDate = $state(dueIso)
   let serviceDate = $state(today)
-  let paymentMethod = $state('Überweisung')
+  let paymentMethod = $state<PaymentMethod>('Überweisung')
   let header = $state('')
   let footer = $state('')
   let notes = $state('')
@@ -468,10 +469,9 @@
               class="select select-bordered w-full"
               bind:value={paymentMethod}
             >
-              <option>Überweisung</option>
-              <option>Bar</option>
-              <option>Lastschrift</option>
-              <option>Karte</option>
+              {#each PAYMENT_METHODS as method (method)}
+                <option>{method}</option>
+              {/each}
             </select>
           </label>
         </div>

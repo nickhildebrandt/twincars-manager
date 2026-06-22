@@ -10,7 +10,11 @@ import {
   string,
   trim
 } from 'valibot'
-import { idSchema, moneySchema } from '$lib/server/db/validation'
+import {
+  idSchema,
+  moneySchema,
+  paymentMethodSchema
+} from '$lib/server/db/validation'
 import {
   createLedgerEntry,
   deleteLedgerEntry,
@@ -28,7 +32,7 @@ const entryInputSchema = object({
   taxRate: optional(number()),
   categoryId: optional(idSchema),
   description: pipe(string(), trim(), maxLength(500)),
-  paymentMethod: optional(pipe(string(), trim(), maxLength(30))),
+  paymentMethod: paymentMethodSchema,
   paymentStatus: optional(picklist(['paid', 'open', 'partial']))
 })
 

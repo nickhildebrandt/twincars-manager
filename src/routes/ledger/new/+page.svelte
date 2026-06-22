@@ -10,6 +10,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
 
   const today = new Date().toISOString().slice(0, 10)
 
@@ -30,7 +31,7 @@
   let taxRate = $state<number>(19)
   let categoryId = $state<string>('')
   let description = $state('')
-  let paymentMethod = $state('')
+  let paymentMethod = $state<PaymentMethod | ''>('')
   let paymentStatus = $state<'paid' | 'open' | 'partial'>('paid')
 
   let errorMsg = $state<string | null>(null)
@@ -156,10 +157,9 @@
             bind:value={paymentMethod}
           >
             <option value="">—</option>
-            <option>Überweisung</option>
-            <option>Bar</option>
-            <option>Lastschrift</option>
-            <option>Karte</option>
+            {#each PAYMENT_METHODS as method (method)}
+              <option>{method}</option>
+            {/each}
           </select>
         </label>
         <label class="flex w-full flex-col gap-1 sm:col-span-2">

@@ -7,8 +7,10 @@ import {
   moneySchema,
   nameSchema,
   notesSchema,
+  paymentMethodSchema,
   zipSchema
 } from './validation'
+import { PAYMENT_METHODS } from '$lib/payment-methods'
 
 /**
  * Unit tests for the reusable Valibot schemas.
@@ -102,6 +104,23 @@ describe('validation schemas', () => {
       expect(safeParse(listParamsSchema, { page: 0, size: 25 }).success).toBe(
         false
       )
+    })
+  })
+
+  describe('paymentMethodSchema', () => {
+    it('accepts every method from the shared constant', () => {
+      for (const method of PAYMENT_METHODS) {
+        expect(safeParse(paymentMethodSchema, method).success).toBe(true)
+      }
+    })
+    it('accepts undefined (optional — not specified)', () => {
+      expect(safeParse(paymentMethodSchema, undefined).success).toBe(true)
+    })
+    it('rejects an unknown method', () => {
+      expect(safeParse(paymentMethodSchema, 'Bitcoin').success).toBe(false)
+    })
+    it('rejects an empty string (forms send undefined instead)', () => {
+      expect(safeParse(paymentMethodSchema, '').success).toBe(false)
     })
   })
 })

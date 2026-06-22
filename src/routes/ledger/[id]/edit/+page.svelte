@@ -14,6 +14,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
   import { Trash2 } from '@lucide/svelte'
 
   const id = untrack(() => page.params.id!)
@@ -26,7 +27,7 @@
     taxRate: Number(entry.taxRate),
     categoryId: entry.categoryId ?? '',
     description: entry.description,
-    paymentMethod: entry.paymentMethod ?? '',
+    paymentMethod: (entry.paymentMethod ?? '') as PaymentMethod | '',
     paymentStatus: (entry.paymentStatus ?? 'paid') as
       | 'paid'
       | 'open'
@@ -197,10 +198,9 @@
             bind:value={paymentMethod}
           >
             <option value="">—</option>
-            <option>Überweisung</option>
-            <option>Bar</option>
-            <option>Lastschrift</option>
-            <option>Karte</option>
+            {#each PAYMENT_METHODS as method (method)}
+              <option>{method}</option>
+            {/each}
           </select>
         </label>
         <label class="flex w-full flex-col gap-1 sm:col-span-2">

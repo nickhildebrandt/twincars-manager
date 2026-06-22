@@ -13,6 +13,7 @@
   import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
   import { documentTypeLabel } from '$lib/utils/status-labels'
+  import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
 
   const id = untrack(() => page.params.id!)
 
@@ -51,7 +52,7 @@
   let issueDate = $state(today)
   let serviceDate = $state(today)
   let dueDate = $state(dueIso)
-  let paymentMethod = $state('Überweisung')
+  let paymentMethod = $state<PaymentMethod>('Überweisung')
   let header = $state(offer.doc.header ?? '')
   let footer = $state(offer.doc.footer ?? '')
   let notes = $state(offer.doc.notes ?? '')
@@ -188,10 +189,9 @@
               class="select select-bordered w-full"
               bind:value={paymentMethod}
             >
-              <option>Überweisung</option>
-              <option>Bar</option>
-              <option>Lastschrift</option>
-              <option>Karte</option>
+              {#each PAYMENT_METHODS as method (method)}
+                <option>{method}</option>
+              {/each}
             </select>
           </label>
         </div>

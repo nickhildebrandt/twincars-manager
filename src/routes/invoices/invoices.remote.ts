@@ -15,7 +15,8 @@ import {
   idSchema,
   longTextSchema,
   moneySchema,
-  notesSchema
+  notesSchema,
+  paymentMethodSchema
 } from '$lib/server/db/validation'
 import {
   cancelInvoice,
@@ -49,7 +50,7 @@ const inputSchema = object({
   issueDate: pipe(string(), trim(), maxLength(10)),
   serviceDate: optional(pipe(string(), trim(), maxLength(10))),
   dueDate: optional(pipe(string(), trim(), maxLength(10))),
-  paymentMethod: optional(pipe(string(), trim(), maxLength(30))),
+  paymentMethod: paymentMethodSchema,
   header: optional(longTextSchema),
   footer: optional(longTextSchema),
   notes: optional(notesSchema),
