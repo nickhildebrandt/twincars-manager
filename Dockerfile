@@ -22,7 +22,10 @@ RUN pnpm install --frozen-lockfile
 COPY . .
 # Build, then strip devDependencies (drizzle-kit included — the runtime
 # uses only the drizzle-orm migrator, never drizzle-kit).
-RUN pnpm run build && pnpm prune --prod
+# `--ignore-scripts` on the prune: otherwise pnpm re-runs the root
+# `prepare` script (svelte-kit sync / husky) AFTER the devDeps that
+# provide those binaries have been removed, which fails the build.
+RUN pnpm run build && pnpm prune --prod --ignore-scripts
 
 # ─── Runtime stage ────────────────────────────────────────────────────
 # Minimal image: only the built server, the migration runner, the
