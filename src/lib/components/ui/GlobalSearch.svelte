@@ -1,11 +1,26 @@
 <script lang="ts">
   import { goto } from '$app/navigation'
-  import { Search, X, Users, Car, Package, FileText } from '@lucide/svelte'
+  import {
+    Search,
+    X,
+    Users,
+    Car,
+    Package,
+    FileText,
+    Disc3,
+    Warehouse,
+    Truck
+  } from '@lucide/svelte'
   import { globalSearchRemote } from '../../../routes/search.remote'
-  import type { SearchHit } from '$lib/server/services/search-service'
+  import type {
+    GlobalSearchResult,
+    SearchHit
+  } from '$lib/server/services/search-service'
+
+  type BucketKey = keyof GlobalSearchResult
 
   type Bucket = {
-    key: 'customers' | 'vehicles' | 'items' | 'documents'
+    key: BucketKey
     label: string
     icon: typeof Search
     items: SearchHit[]
@@ -15,14 +30,19 @@
 
   let { open = $bindable(false) }: Props = $props()
 
+  const emptyResults = (): GlobalSearchResult => ({
+    customers: [],
+    vehicles: [],
+    items: [],
+    tires: [],
+    tireStorage: [],
+    suppliers: [],
+    documents: []
+  })
+
   let q = $state('')
   let input = $state<HTMLInputElement | null>(null)
-  let results = $state<{
-    customers: SearchHit[]
-    vehicles: SearchHit[]
-    items: SearchHit[]
-    documents: SearchHit[]
-  }>({ customers: [], vehicles: [], items: [], documents: [] })
+  let results = $state<GlobalSearchResult>(emptyResults())
   let loading = $state(false)
   /**
    * Flat index into the visible result list. Arrow keys move it, Enter
@@ -54,6 +74,24 @@
         items: results.items
       },
       {
+        key: 'tires' as const,
+        label: 'Reifen',
+        icon: Disc3,
+        items: results.tires
+      },
+      {
+        key: 'tireStorage' as const,
+        label: 'Reifeneinlagerungen',
+        icon: Warehouse,
+        items: results.tireStorage
+      },
+      {
+        key: 'suppliers' as const,
+        label: 'Lieferanten',
+        icon: Truck,
+        items: results.suppliers
+      },
+      {
         key: 'documents' as const,
         label: 'Belege',
         icon: FileText,
@@ -74,10 +112,7 @@
    * on `type` because invoices and offers live in different route
    * trees; everything else maps 1:1 to its module's detail page.
    */
-  const routeFor = (
-    bucket: 'customers' | 'vehicles' | 'items' | 'documents',
-    hit: SearchHit
-  ): string => {
+  const routeFor = (bucket: BucketKey, hit: SearchHit): string => {
     switch (bucket) {
       case 'customers':
         return `/customers/${hit.id}`
@@ -85,6 +120,12 @@
         return `/vehicles/${hit.id}`
       case 'items':
         return `/items/${hit.id}`
+      case 'tires':
+        return `/tires/${hit.id}`
+      case 'tireStorage':
+        return `/tire-storage/${hit.id}`
+      case 'suppliers':
+        return `/suppliers/${hit.id}`
       case 'documents': {
         const t = hit.type ?? 'invoice'
         if (t === 'invoice' || t === 'credit_note') {
@@ -98,7 +139,7 @@
 
   const reset = () => {
     q = ''
-    results = { customers: [], vehicles: [], items: [], documents: [] }
+    results = emptyResults()
     activeIndex = 0
     loading = false
   }
@@ -110,7 +151,7 @@
 
   const runSearch = async (term: string) => {
     if (term.trim().length < 2) {
-      results = { customers: [], vehicles: [], items: [], documents: [] }
+      results = emptyResults()
       loading = false
       activeIndex = 0
       return
@@ -132,10 +173,7 @@
     searchTimer = setTimeout(() => void runSearch(term), 250)
   }
 
-  const handleSelect = (
-    bucket: 'customers' | 'vehicles' | 'items' | 'documents',
-    hit: SearchHit
-  ) => {
+  const handleSelect = (bucket: BucketKey, hit: SearchHit) => {
     const target = routeFor(bucket, hit)
     close()
     goto(target)

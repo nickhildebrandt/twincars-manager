@@ -22,6 +22,9 @@ import {
   customers,
   documents,
   items,
+  suppliers,
+  tireStorage,
+  tires,
   vehicleLicensePlateVersions,
   vehicles
 } from '$lib/server/db/schema'
@@ -30,6 +33,9 @@ import { globalSearch } from './search-service'
 async function resetDb() {
   await db.delete(documents)
   await db.delete(items)
+  await db.delete(tireStorage)
+  await db.delete(tires)
+  await db.delete(suppliers)
   await db.delete(vehicleLicensePlateVersions)
   await db.delete(vehicles)
   await db.delete(customers)
@@ -123,6 +129,76 @@ async function seedDocument(values: {
   return row.id
 }
 
+async function seedTire(values: {
+  articleNumber: string
+  brand: string
+  model: string
+  width?: number
+  aspectRatio?: number
+  diameterInch?: number
+  season?: string
+  ean?: string | null
+}): Promise<string> {
+  const [row] = await db
+    .insert(tires)
+    .values({
+      articleNumber: values.articleNumber,
+      brand: values.brand,
+      model: values.model,
+      width: values.width ?? 205,
+      aspectRatio: values.aspectRatio ?? 55,
+      diameterInch: values.diameterInch ?? 16,
+      season: values.season ?? 'Sommer',
+      ean: values.ean ?? null
+    })
+    .returning({ id: tires.id })
+  return row.id
+}
+
+async function seedTireStorage(values: {
+  storageNumber: string
+  customerId: string
+  brand?: string | null
+  size?: string | null
+  season?: string | null
+  storedAt?: string
+  retrievedAt?: string | null
+}): Promise<string> {
+  const [row] = await db
+    .insert(tireStorage)
+    .values({
+      storageNumber: values.storageNumber,
+      customerId: values.customerId,
+      brand: values.brand ?? null,
+      size: values.size ?? null,
+      season: values.season ?? null,
+      storedAt: values.storedAt ?? '2025-04-01',
+      retrievedAt: values.retrievedAt ?? null
+    })
+    .returning({ id: tireStorage.id })
+  return row.id
+}
+
+async function seedSupplier(values: {
+  name: string
+  legacySupplierNumber?: string | null
+  city?: string | null
+  email?: string | null
+  archived?: boolean
+}): Promise<string> {
+  const [row] = await db
+    .insert(suppliers)
+    .values({
+      name: values.name,
+      legacySupplierNumber: values.legacySupplierNumber ?? null,
+      city: values.city ?? null,
+      email: values.email ?? null,
+      archived: values.archived ?? false
+    })
+    .returning({ id: suppliers.id })
+  return row.id
+}
+
 describe('search-service · globalSearch', () => {
   beforeEach(async () => {
     await resetDb()
@@ -135,6 +211,9 @@ describe('search-service · globalSearch', () => {
       customers: [],
       vehicles: [],
       items: [],
+      tires: [],
+      tireStorage: [],
+      suppliers: [],
       documents: []
     })
   })
@@ -145,6 +224,9 @@ describe('search-service · globalSearch', () => {
     expect(res.customers).toEqual([])
     expect(res.vehicles).toEqual([])
     expect(res.items).toEqual([])
+    expect(res.tires).toEqual([])
+    expect(res.tireStorage).toEqual([])
+    expect(res.suppliers).toEqual([])
     expect(res.documents).toEqual([])
   })
 
@@ -293,6 +375,111 @@ describe('search-service · globalSearch', () => {
     expect(res.customers).toEqual([])
     expect(res.vehicles).toEqual([])
     expect(res.items).toEqual([])
+    expect(res.tires).toEqual([])
+    expect(res.tireStorage).toEqual([])
+    expect(res.suppliers).toEqual([])
     expect(res.documents).toEqual([])
+  })
+
+  it('finds tires by article number / brand / model / EAN', async () => {
+    const conti = await seedTire({
+      articleNumber: 'TY-1001',
+      brand: 'Continental',
+      model: 'PremiumContact 6',
+      width: 225,
+      aspectRatio: 45,
+      diameterInch: 17,
+      season: 'Sommer',
+      ean: '4019238012345'
+    })
+    await seedTire({
+      articleNumber: 'TY-2002',
+      brand: 'Michelin',
+      model: 'Alpin 6',
+      season: 'Winter'
+    })
+
+    const byBrand = await globalSearch('Continental')
+    expect(byBrand.tires.map((t) => t.id)).toEqual([conti])
+    expect(byBrand.tires[0].label).toBe('Continental PremiumContact 6')
+    expect(byBrand.tires[0].sublabel).toContain('TY-1001')
+    expect(byBrand.tires[0].sublabel).toContain('225/45 R17')
+    expect(byBrand.tires[0].sublabel).toContain('Sommer')
+
+    const byNumber = await globalSearch('TY-1001')
+    expect(byNumber.tires.map((t) => t.id)).toEqual([conti])
+
+    const byEan = await globalSearch('4019238012345')
+    expect(byEan.tires.map((t) => t.id)).toEqual([conti])
+  })
+
+  it('finds tire storage by number / brand and the customer name', async () => {
+    const cust = await seedCustomer({
+      customerNumber: 'K-300',
+      lastName: 'Lagerkunde'
+    })
+    const storage = await seedTireStorage({
+      storageNumber: 'EL-2025-0007',
+      customerId: cust,
+      brand: 'Goodyear',
+      size: '195/65 R15',
+      season: 'winter'
+    })
+
+    const byNumber = await globalSearch('EL-2025-0007')
+    expect(byNumber.tireStorage.map((s) => s.id)).toEqual([storage])
+    expect(byNumber.tireStorage[0].label).toBe('Einlagerung EL-2025-0007')
+    expect(byNumber.tireStorage[0].sublabel).toContain('Lagerkunde')
+    expect(byNumber.tireStorage[0].sublabel).toContain('Goodyear')
+
+    const byBrand = await globalSearch('Goodyear')
+    expect(byBrand.tireStorage.map((s) => s.id)).toEqual([storage])
+
+    const byCustomer = await globalSearch('Lagerkunde')
+    expect(byCustomer.tireStorage.map((s) => s.id)).toEqual([storage])
+  })
+
+  it('marks retrieved tire storage in the sublabel', async () => {
+    const cust = await seedCustomer({
+      customerNumber: 'K-301',
+      lastName: 'Abholer'
+    })
+    await seedTireStorage({
+      storageNumber: 'EL-2024-0001',
+      customerId: cust,
+      brand: 'Pirelli',
+      retrievedAt: '2025-04-15'
+    })
+    const res = await globalSearch('EL-2024-0001')
+    expect(res.tireStorage[0].sublabel).toContain('ausgelagert')
+  })
+
+  it('finds suppliers by name / number / city / email; excludes archived', async () => {
+    const reifen = await seedSupplier({
+      name: 'Reifen Großhandel GmbH',
+      legacySupplierNumber: 'L-42',
+      city: 'Hamburg',
+      email: 'einkauf@reifen-gh.de'
+    })
+    await seedSupplier({
+      name: 'Alt Lieferant',
+      legacySupplierNumber: 'L-99',
+      archived: true
+    })
+
+    const byName = await globalSearch('Großhandel')
+    expect(byName.suppliers.map((s) => s.id)).toEqual([reifen])
+    expect(byName.suppliers[0].label).toBe('Reifen Großhandel GmbH')
+    expect(byName.suppliers[0].sublabel).toContain('L-42')
+    expect(byName.suppliers[0].sublabel).toContain('Hamburg')
+
+    const byNumber = await globalSearch('L-42')
+    expect(byNumber.suppliers.map((s) => s.id)).toEqual([reifen])
+
+    const byEmail = await globalSearch('einkauf@reifen')
+    expect(byEmail.suppliers.map((s) => s.id)).toEqual([reifen])
+
+    const archivedHit = await globalSearch('Alt Lieferant')
+    expect(archivedHit.suppliers).toEqual([])
   })
 })

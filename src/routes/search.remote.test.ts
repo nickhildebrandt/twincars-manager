@@ -76,6 +76,9 @@ import {
   customers,
   documents,
   items,
+  suppliers,
+  tireStorage,
+  tires,
   vehicleLicensePlateVersions,
   vehicles
 } from '$lib/server/db/schema'
@@ -85,6 +88,9 @@ import { globalSearchRemote } from './search.remote'
 async function resetDb() {
   await db.delete(documents)
   await db.delete(items)
+  await db.delete(tireStorage)
+  await db.delete(tires)
+  await db.delete(suppliers)
   await db.delete(vehicleLicensePlateVersions)
   await db.delete(vehicles)
   await db.delete(customers)
@@ -145,6 +151,28 @@ describe('globalSearchRemote', () => {
         customerId: cust.id,
         issueDate: '2025-01-01'
       })
+    await db
+      .insert(tires)
+      .values({
+        articleNumber: 'ALPHA-TY-1',
+        brand: 'Alpha',
+        model: 'GripMax',
+        width: 205,
+        aspectRatio: 55,
+        diameterInch: 16,
+        season: 'Sommer'
+      })
+    await db
+      .insert(tireStorage)
+      .values({
+        storageNumber: 'ALPHA-EL-1',
+        customerId: cust.id,
+        brand: 'Alpha',
+        storedAt: '2025-04-01'
+      })
+    await db
+      .insert(suppliers)
+      .values({ name: 'Alpha Lieferant', archived: false })
   })
 
   it('rejects anonymous callers with 401', async () => {
@@ -195,7 +223,34 @@ describe('globalSearchRemote', () => {
     expect(res.customers.length).toBeGreaterThan(0)
     expect(res.vehicles.length).toBeGreaterThan(0)
     expect(res.items.length).toBeGreaterThan(0)
+    expect(res.tires.length).toBeGreaterThan(0)
+    expect(res.tireStorage.length).toBeGreaterThan(0)
+    expect(res.suppliers.length).toBeGreaterThan(0)
     expect(res.documents.length).toBeGreaterThan(0)
+  })
+
+  it('tires module populates both the tires and tire-storage buckets', async () => {
+    authAs(['tires'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.tires.length).toBeGreaterThan(0)
+    expect(res.tireStorage.length).toBeGreaterThan(0)
+    expect(res.customers).toEqual([])
+    expect(res.suppliers).toEqual([])
+  })
+
+  it('without the tires module both tire buckets stay empty', async () => {
+    authAs(['customers'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.tires).toEqual([])
+    expect(res.tireStorage).toEqual([])
+  })
+
+  it('suppliers module populates only the suppliers bucket', async () => {
+    authAs(['suppliers'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.suppliers.length).toBeGreaterThan(0)
+    expect(res.tires).toEqual([])
+    expect(res.customers).toEqual([])
   })
 
   it('user with no permissions sees no buckets populated', async () => {
@@ -204,6 +259,9 @@ describe('globalSearchRemote', () => {
     expect(res.customers).toEqual([])
     expect(res.vehicles).toEqual([])
     expect(res.items).toEqual([])
+    expect(res.tires).toEqual([])
+    expect(res.tireStorage).toEqual([])
+    expect(res.suppliers).toEqual([])
     expect(res.documents).toEqual([])
   })
 
@@ -213,6 +271,9 @@ describe('globalSearchRemote', () => {
     expect(res.customers).toEqual([])
     expect(res.vehicles).toEqual([])
     expect(res.items).toEqual([])
+    expect(res.tires).toEqual([])
+    expect(res.tireStorage).toEqual([])
+    expect(res.suppliers).toEqual([])
     expect(res.documents).toEqual([])
   })
 

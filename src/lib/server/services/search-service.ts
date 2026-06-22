@@ -3,6 +3,9 @@ import {
   customers,
   documents,
   items,
+  suppliers,
+  tireStorage,
+  tires,
   vehicleLicensePlateVersions,
   vehicles
 } from '$lib/server/db/schema'
@@ -31,6 +34,9 @@ export type GlobalSearchResult = {
   customers: SearchHit[]
   vehicles: SearchHit[]
   items: SearchHit[]
+  tires: SearchHit[]
+  tireStorage: SearchHit[]
+  suppliers: SearchHit[]
   documents: SearchHit[]
 }
 
@@ -38,6 +44,9 @@ const empty = (): GlobalSearchResult => ({
   customers: [],
   vehicles: [],
   items: [],
+  tires: [],
+  tireStorage: [],
+  suppliers: [],
   documents: []
 })
 
@@ -78,18 +87,30 @@ export async function globalSearch(
   if (trimmed.length < MIN_QUERY) return empty()
   const term = `%${trimmed}%`
 
-  const [customerRows, vehicleRows, itemRows, documentRows] = await Promise.all(
-    [
-      searchCustomers(term, perBucket),
-      searchVehicles(term, perBucket),
-      searchItems(term, perBucket),
-      searchDocuments(term, perBucket)
-    ]
-  )
+  const [
+    customerRows,
+    vehicleRows,
+    itemRows,
+    tireRows,
+    tireStorageRows,
+    supplierRows,
+    documentRows
+  ] = await Promise.all([
+    searchCustomers(term, perBucket),
+    searchVehicles(term, perBucket),
+    searchItems(term, perBucket),
+    searchTires(term, perBucket),
+    searchTireStorage(term, perBucket),
+    searchSuppliers(term, perBucket),
+    searchDocuments(term, perBucket)
+  ])
   return {
     customers: customerRows,
     vehicles: vehicleRows,
     items: itemRows,
+    tires: tireRows,
+    tireStorage: tireStorageRows,
+    suppliers: supplierRows,
     documents: documentRows
   }
 }
@@ -223,6 +244,137 @@ async function searchItems(term: string, limit: number): Promise<SearchHit[]> {
     label: `${r.articleNumber} — ${r.description}`,
     sublabel: r.kind === 'service' ? 'Leistung' : 'Artikel'
   }))
+}
+
+const seasonLabel: Record<string, string> = {
+  Sommer: 'Sommer',
+  Winter: 'Winter',
+  Ganzjahres: 'Ganzjahres',
+  summer: 'Sommer',
+  winter: 'Winter',
+  allseason: 'Ganzjahres'
+}
+
+async function searchTires(term: string, limit: number): Promise<SearchHit[]> {
+  const rows = await db
+    .select({
+      id: tires.id,
+      articleNumber: tires.articleNumber,
+      brand: tires.brand,
+      model: tires.model,
+      width: tires.width,
+      aspectRatio: tires.aspectRatio,
+      diameterInch: tires.diameterInch,
+      season: tires.season,
+      ean: tires.ean
+    })
+    .from(tires)
+    .where(
+      or(
+        ilike(tires.articleNumber, term),
+        ilike(tires.brand, term),
+        ilike(tires.model, term),
+        ilike(tires.ean, term)
+      )!
+    )
+    .orderBy(asc(tires.brand), asc(tires.model))
+    .limit(limit)
+  return rows.map((r) => {
+    const size = `${r.width}/${r.aspectRatio} R${r.diameterInch}`
+    const subParts = [r.articleNumber, size]
+    const season = seasonLabel[r.season] ?? r.season
+    if (season) subParts.push(season)
+    return {
+      id: r.id,
+      label: `${r.brand} ${r.model}`.trim(),
+      sublabel: subParts.join(' · ')
+    }
+  })
+}
+
+async function searchTireStorage(
+  term: string,
+  limit: number
+): Promise<SearchHit[]> {
+  const rows = await db
+    .select({
+      id: tireStorage.id,
+      storageNumber: tireStorage.storageNumber,
+      brand: tireStorage.brand,
+      size: tireStorage.size,
+      season: tireStorage.season,
+      retrievedAt: tireStorage.retrievedAt,
+      customerCompany: customers.company,
+      customerLastName: customers.lastName,
+      customerNumber: customers.customerNumber
+    })
+    .from(tireStorage)
+    .leftJoin(customers, eq(tireStorage.customerId, customers.id))
+    .where(
+      or(
+        ilike(tireStorage.storageNumber, term),
+        ilike(tireStorage.brand, term),
+        ilike(tireStorage.size, term),
+        ilike(customers.company, term),
+        ilike(customers.lastName, term),
+        ilike(customers.customerNumber, term)
+      )!
+    )
+    .orderBy(desc(tireStorage.storedAt))
+    .limit(limit)
+  return rows.map((r) => {
+    const cust =
+      r.customerCompany ?? r.customerLastName ?? r.customerNumber ?? null
+    const subParts: string[] = []
+    if (cust) subParts.push(cust)
+    if (r.brand) subParts.push(r.brand)
+    if (r.size) subParts.push(r.size)
+    if (r.retrievedAt) subParts.push('ausgelagert')
+    return {
+      id: r.id,
+      label: `Einlagerung ${r.storageNumber}`,
+      sublabel: subParts.length > 0 ? subParts.join(' · ') : undefined
+    }
+  })
+}
+
+async function searchSuppliers(
+  term: string,
+  limit: number
+): Promise<SearchHit[]> {
+  const rows = await db
+    .select({
+      id: suppliers.id,
+      number: suppliers.legacySupplierNumber,
+      name: suppliers.name,
+      city: suppliers.city,
+      email: suppliers.email
+    })
+    .from(suppliers)
+    .where(
+      and(
+        eq(suppliers.archived, false),
+        or(
+          ilike(suppliers.name, term),
+          ilike(suppliers.legacySupplierNumber, term),
+          ilike(suppliers.city, term),
+          ilike(suppliers.email, term)
+        )!
+      )
+    )
+    .orderBy(asc(suppliers.name))
+    .limit(limit)
+  return rows.map((r) => {
+    const subParts: string[] = []
+    if (r.number) subParts.push(r.number)
+    if (r.city) subParts.push(r.city)
+    if (r.email) subParts.push(r.email)
+    return {
+      id: r.id,
+      label: r.name,
+      sublabel: subParts.length > 0 ? subParts.join(' · ') : undefined
+    }
+  })
 }
 
 async function searchDocuments(

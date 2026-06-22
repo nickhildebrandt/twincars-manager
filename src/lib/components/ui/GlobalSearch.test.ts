@@ -16,22 +16,28 @@ vi.mock('$app/navigation', () => ({
   goto: (...args: unknown[]) => gotoMock(...args)
 }))
 
-const searchMock =
-  vi.fn<
-    (args: {
-      q: string
-    }) => Promise<{
-      customers: { id: string; label: string; sublabel?: string }[]
-      vehicles: { id: string; label: string; sublabel?: string }[]
-      items: { id: string; label: string; sublabel?: string }[]
-      documents: {
-        id: string
-        label: string
-        sublabel?: string
-        type?: string
-      }[]
-    }>
-  >()
+type Hit = { id: string; label: string; sublabel?: string; type?: string }
+type SearchResult = {
+  customers: Hit[]
+  vehicles: Hit[]
+  items: Hit[]
+  tires: Hit[]
+  tireStorage: Hit[]
+  suppliers: Hit[]
+  documents: Hit[]
+}
+
+const emptyBuckets = (): SearchResult => ({
+  customers: [],
+  vehicles: [],
+  items: [],
+  tires: [],
+  tireStorage: [],
+  suppliers: [],
+  documents: []
+})
+
+const searchMock = vi.fn<(args: { q: string }) => Promise<SearchResult>>()
 
 vi.mock('../../../routes/search.remote', () => ({
   globalSearchRemote: (args: { q: string }) => searchMock(args)
@@ -43,13 +49,12 @@ beforeEach(() => {
   gotoMock.mockReset()
   searchMock.mockReset()
   searchMock.mockResolvedValue({
+    ...emptyBuckets(),
     customers: [
       { id: 'c1', label: 'Alpha GmbH', sublabel: 'K-001' },
       { id: 'c2', label: 'Beta AG', sublabel: 'K-002' }
     ],
-    vehicles: [{ id: 'v1', label: 'VW Golf', sublabel: 'B-AA 100' }],
-    items: [],
-    documents: []
+    vehicles: [{ id: 'v1', label: 'VW Golf', sublabel: 'B-AA 100' }]
   })
 })
 
@@ -134,9 +139,7 @@ describe('GlobalSearch', () => {
 
   it('clicking a document hit navigates by type (invoice → /invoices/[id])', async () => {
     searchMock.mockResolvedValue({
-      customers: [],
-      vehicles: [],
-      items: [],
+      ...emptyBuckets(),
       documents: [
         { id: 'd1', label: 'Rechnung RE-1', sublabel: 'Acme', type: 'invoice' },
         { id: 'd2', label: 'Angebot AN-1', sublabel: 'Acme', type: 'offer' }
@@ -155,9 +158,7 @@ describe('GlobalSearch', () => {
 
   it('clicking an offer hit navigates to /offers/[id]', async () => {
     searchMock.mockResolvedValue({
-      customers: [],
-      vehicles: [],
-      items: [],
+      ...emptyBuckets(),
       documents: [
         { id: 'd2', label: 'Angebot AN-1', sublabel: 'Acme', type: 'offer' }
       ]
@@ -169,6 +170,52 @@ describe('GlobalSearch', () => {
     await screen.findByText('Angebot AN-1')
     await user.click(screen.getByText('Angebot AN-1'))
     expect(gotoMock).toHaveBeenCalledWith('/offers/d2')
+  })
+
+  it('clicking a tire hit navigates to /tires/[id]', async () => {
+    searchMock.mockResolvedValue({
+      ...emptyBuckets(),
+      tires: [
+        { id: 't1', label: 'Continental PremiumContact 6', sublabel: 'TY-1001' }
+      ]
+    })
+    const user = userEvent.setup()
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByTestId('global-search-input')
+    await user.type(input, 'conti')
+    await screen.findByText('Continental PremiumContact 6')
+    await user.click(screen.getByText('Continental PremiumContact 6'))
+    expect(gotoMock).toHaveBeenCalledWith('/tires/t1')
+  })
+
+  it('clicking a tire-storage hit navigates to /tire-storage/[id]', async () => {
+    searchMock.mockResolvedValue({
+      ...emptyBuckets(),
+      tireStorage: [{ id: 's1', label: 'Einlagerung EL-1', sublabel: 'Kunde' }]
+    })
+    const user = userEvent.setup()
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByTestId('global-search-input')
+    await user.type(input, 'EL-1')
+    await screen.findByText('Einlagerung EL-1')
+    await user.click(screen.getByText('Einlagerung EL-1'))
+    expect(gotoMock).toHaveBeenCalledWith('/tire-storage/s1')
+  })
+
+  it('clicking a supplier hit navigates to /suppliers/[id]', async () => {
+    searchMock.mockResolvedValue({
+      ...emptyBuckets(),
+      suppliers: [
+        { id: 'l1', label: 'Reifen Großhandel GmbH', sublabel: 'L-42' }
+      ]
+    })
+    const user = userEvent.setup()
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByTestId('global-search-input')
+    await user.type(input, 'großhandel')
+    await screen.findByText('Reifen Großhandel GmbH')
+    await user.click(screen.getByText('Reifen Großhandel GmbH'))
+    expect(gotoMock).toHaveBeenCalledWith('/suppliers/l1')
   })
 
   it('clicking the backdrop closes the modal', async () => {
@@ -183,12 +230,7 @@ describe('GlobalSearch', () => {
   })
 
   it('shows "Keine Treffer" when the search returns empty buckets', async () => {
-    searchMock.mockResolvedValue({
-      customers: [],
-      vehicles: [],
-      items: [],
-      documents: []
-    })
+    searchMock.mockResolvedValue(emptyBuckets())
     const user = userEvent.setup()
     render(GlobalSearch, { props: { open: true } })
     const input = screen.getByTestId('global-search-input')

@@ -31,10 +31,14 @@ export const globalSearchRemote = query(searchSchema, async ({ q }) => {
   const event = getRequestEvent()
   const perms = event.locals.permissions
   const result = await globalSearch(q)
+  const canTires = hasPermission(perms, 'tires')
   return {
     customers: hasPermission(perms, 'customers') ? result.customers : [],
     vehicles: hasPermission(perms, 'vehicles') ? result.vehicles : [],
     items: hasPermission(perms, 'items') ? result.items : [],
+    tires: canTires ? result.tires : [],
+    tireStorage: canTires ? result.tireStorage : [],
+    suppliers: hasPermission(perms, 'suppliers') ? result.suppliers : [],
     documents:
       hasPermission(perms, 'invoices') || hasPermission(perms, 'offers')
         ? result.documents
