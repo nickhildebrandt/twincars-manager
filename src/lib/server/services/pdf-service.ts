@@ -1835,7 +1835,12 @@ export async function renderVehicleSaleSignPdf(input: {
   differentialTax?: boolean
   salesNotes?: string | null
   qrPayload?: string
-  settings?: { companyName?: string | null; phone?: string | null }
+  settings?: {
+    companyName?: string | null
+    phone?: string | null
+    zip?: string | null
+    city?: string | null
+  }
 }): Promise<Buffer> {
   const vehicle = input.vehicle
   const photoMime = input.coverPhoto?.mime ?? null
@@ -1846,133 +1851,258 @@ export async function renderVehicleSaleSignPdf(input: {
     const m = /^data:[^;]+;base64,(.+)$/.exec(input.coverPhoto.dataUrl)
     if (m) photoBytes = Buffer.from(m[1], 'base64')
   }
-  const priceGross =
-    input.salesPriceGross != null
-      ? input.salesPriceGross.toFixed(2).replace('.', ',')
-      : null
   const highlights = (input.salesNotes ?? '')
     .split(/\r?\n/)
     .map((s) => s.trim())
     .filter(Boolean)
   const companyName = input.settings?.companyName ?? undefined
   const companyPhone = input.settings?.phone ?? undefined
+  const companyCity = [input.settings?.zip, input.settings?.city]
+    .map((s) => (s ?? '').trim())
+    .filter(Boolean)
+    .join(' ')
   const listingUrl = input.qrPayload
+
+  // ── Palette ──────────────────────────────────────────────────────
+  const ink = rgb(0.11, 0.13, 0.18) // near-black slate (header / values)
+  const muted = rgb(0.45, 0.47, 0.51) // labels
+  const hair = rgb(0.85, 0.86, 0.88) // separators
+  const panel = rgb(0.96, 0.965, 0.97) // light fills
+  const accent = rgb(0.74, 0.11, 0.14) // price red
+  const white = rgb(1, 1, 1)
+
   const doc = await PDFDocument.create()
   // A4 landscape: 297 × 210 mm → 841.89 × 595.28 pt
-  const page = doc.addPage([841.89, 595.28])
+  const W = 841.89
+  const H = 595.28
+  const M = 36
+  const page = doc.addPage([W, H])
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
 
-  // Headline
-  page.drawText('ZUM VERKAUF', {
-    x: 32,
-    y: 530,
-    size: 56,
-    font: bold,
-    color: rgb(0, 0, 0)
-  })
-  if (priceGross) {
-    page.drawText(`${priceGross} €`, {
-      x: 32,
-      y: 460,
-      size: 48,
-      font: bold,
-      color: rgb(0.7, 0.1, 0.1)
-    })
+  const textRight = (
+    text: string,
+    xRight: number,
+    y: number,
+    size: number,
+    f: typeof font,
+    color: ReturnType<typeof rgb>
+  ) => {
+    const w = f.widthOfTextAtSize(text, size)
+    page.drawText(text, { x: xRight - w, y, size, font: f, color })
   }
 
-  // Photo (left half) — fall back to a placeholder rectangle.
+  // ── Helpers: legacy-friendly value formatting ────────────────────
+  const nf = new Intl.NumberFormat('de-DE')
+  const monthYear = (iso: string | null | undefined): string | null => {
+    const m = /^(\d{4})-(\d{2})/.exec((iso ?? '').trim())
+    return m ? `${m[2]}/${m[1]}` : iso?.trim() || null
+  }
+
+  // ── Header band ──────────────────────────────────────────────────
+  const bandH = 76
+  page.drawRectangle({
+    x: 0,
+    y: H - bandH,
+    width: W,
+    height: bandH,
+    color: ink
+  })
+  page.drawText('ZUM VERKAUF', {
+    x: M,
+    y: H - 50,
+    size: 34,
+    font: bold,
+    color: white
+  })
+  if (companyName) {
+    textRight(companyName, W - M, H - 34, 14, bold, white)
+    if (companyCity) {
+      textRight(companyCity, W - M, H - 52, 10, font, rgb(0.78, 0.8, 0.84))
+    }
+  }
+
+  // ── Vehicle title (make + model) ─────────────────────────────────
+  const titleY = H - bandH - 34
+  page.drawText(
+    truncate(`${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim(), 46),
+    { x: M, y: titleY, size: 26, font: bold, color: ink }
+  )
+
+  // ── Photo panel (left) ───────────────────────────────────────────
+  const photoX = M
+  const photoW = 430
+  const photoH = 300
+  const photoY = 150
+  page.drawRectangle({
+    x: photoX,
+    y: photoY,
+    width: photoW,
+    height: photoH,
+    color: panel,
+    borderColor: hair,
+    borderWidth: 1
+  })
+  let drewPhoto = false
   if (photoBytes && photoMime) {
     try {
       const img = photoMime.includes('png')
         ? await doc.embedPng(photoBytes)
         : await doc.embedJpg(photoBytes)
-      const w = 380
-      const h = 280
-      page.drawImage(img, { x: 32, y: 130, width: w, height: h })
+      // Contain the image within the panel (preserve aspect ratio).
+      const pad = 6
+      const maxW = photoW - pad * 2
+      const maxH = photoH - pad * 2
+      const scale = Math.min(maxW / img.width, maxH / img.height)
+      const w = img.width * scale
+      const h = img.height * scale
+      page.drawImage(img, {
+        x: photoX + (photoW - w) / 2,
+        y: photoY + (photoH - h) / 2,
+        width: w,
+        height: h
+      })
+      drewPhoto = true
     } catch {
-      // Bad image bytes — skip.
+      // Bad image bytes — fall through to placeholder.
     }
   }
+  if (!drewPhoto) {
+    const ph = 'Foto folgt'
+    const phW = font.widthOfTextAtSize(ph, 16)
+    page.drawText(ph, {
+      x: photoX + (photoW - phW) / 2,
+      y: photoY + photoH / 2 - 8,
+      size: 16,
+      font,
+      color: muted
+    })
+  }
 
-  // Key data column (right)
-  const v = vehicle as Record<string, unknown>
-  const facts: Array<[string, string | null | undefined]> = [
+  // ── Right column: price + facts ──────────────────────────────────
+  const colX = 500
+  const colR = W - M // right edge of the data column
+
+  // Price panel
+  const priceY = 412
+  const priceH = 78
+  page.drawRectangle({
+    x: colX,
+    y: priceY,
+    width: colR - colX,
+    height: priceH,
+    color: input.salesPriceGross != null ? accent : panel
+  })
+  if (input.salesPriceGross != null) {
+    const priceStr = `${nf.format(input.salesPriceGross)} €`
+    page.drawText(priceStr, {
+      x: colX + 18,
+      y: priceY + 30,
+      size: 38,
+      font: bold,
+      color: white
+    })
+    page.drawText(
+      input.differentialTax
+        ? 'Differenzbesteuert gem. §25a UStG'
+        : 'inkl. gesetzl. MwSt.',
+      {
+        x: colX + 18,
+        y: priceY + 12,
+        size: 10,
+        font,
+        color: rgb(1, 0.85, 0.85)
+      }
+    )
+  } else {
+    page.drawText('Preis auf Anfrage', {
+      x: colX + 18,
+      y: priceY + 30,
+      size: 26,
+      font: bold,
+      color: ink
+    })
+  }
+
+  // Facts table
+  const v = vehicle
+  const psFromKw =
+    v.powerKw != null ? ` (${Math.round(v.powerKw * 1.35962)} PS)` : ''
+  const facts: Array<[string, string | null]> = [
+    ['Erstzulassung', monthYear(v.firstRegistration)],
     [
-      'Hersteller / Modell',
-      `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim()
+      'Kilometerstand',
+      v.mileageKm != null ? `${nf.format(v.mileageKm)} km` : null
     ],
-    ['Erstzulassung', (v.firstRegistration as string | null) ?? null],
-    ['Kilometer', v.mileageKm != null ? `${v.mileageKm} km` : null],
-    ['Kraftstoff', (v.fuel as string | null) ?? null],
-    ['Getriebe', (v.transmission as string | null) ?? null],
-    ['Leistung', v.powerKw != null ? `${v.powerKw} kW` : null],
-    ['Farbe', (v.color as string | null) ?? null],
-    ['TÜV bis', (v.nextHu as string | null) ?? null]
+    ['Kraftstoff', v.fuelType?.trim() || null],
+    ['Getriebe', v.gearbox?.trim() || null],
+    ['Leistung', v.powerKw != null ? `${v.powerKw} kW${psFromKw}` : null],
+    [
+      'Hubraum',
+      v.displacementCcm != null ? `${nf.format(v.displacementCcm)} ccm` : null
+    ],
+    ['Karosserie', v.bodyType?.trim() || null],
+    ['Farbe', v.colorCode?.trim() || null],
+    ['HU bis', monthYear(v.nextHu)]
   ]
-  let fy = 400
+  let fy = priceY - 26
+  const rowH = 27
   for (const [label, value] of facts) {
     if (!value) continue
-    page.drawText(`${label}:`, {
-      x: 440,
-      y: fy,
-      size: 12,
-      font,
-      color: rgb(0.4, 0.4, 0.4)
+    if (fy < 150) break
+    page.drawText(label, { x: colX, y: fy, size: 11, font, color: muted })
+    textRight(truncate(value, 34), colR, fy, 13, bold, ink)
+    page.drawLine({
+      start: { x: colX, y: fy - 8 },
+      end: { x: colR, y: fy - 8 },
+      thickness: 0.5,
+      color: hair
     })
-    page.drawText(truncate(String(value), 40), {
-      x: 600,
-      y: fy,
-      size: 14,
-      font: bold,
-      color: rgb(0, 0, 0)
-    })
-    fy -= 22
+    fy -= rowH
   }
 
-  // QR code (bottom-right)
+  // ── Footer band ──────────────────────────────────────────────────
+  const footH = 118
+  page.drawLine({
+    start: { x: 0, y: footH },
+    end: { x: W, y: footH },
+    thickness: 1,
+    color: hair
+  })
+
+  // Highlights (left, bullet list)
+  if (highlights.length > 0) {
+    let hy = footH - 28
+    for (const h of highlights.slice(0, 3)) {
+      page.drawText(`•  ${truncate(h, 52)}`, {
+        x: M,
+        y: hy,
+        size: 12,
+        font,
+        color: ink
+      })
+      hy -= 20
+    }
+  }
+
+  // Contact line (bottom-left)
+  const contact = [companyName, companyPhone, companyCity]
+    .filter(Boolean)
+    .join('     ·     ')
+  if (contact) {
+    page.drawText(contact, { x: M, y: 16, size: 12, font: bold, color: ink })
+  }
+
+  // QR (bottom-right) with label to its LEFT (so nothing overlaps the code)
   if (listingUrl) {
+    const qrSize = 88
     const qr = await renderQrPng(listingUrl, { size: 220 })
     const qrImage = await doc.embedPng(qr)
-    page.drawImage(qrImage, { x: 720, y: 32, width: 96, height: 96 })
-    page.drawText('Online-Inserat', {
-      x: 720,
-      y: 16,
-      size: 9,
-      font,
-      color: rgb(0.4, 0.4, 0.4)
-    })
-  }
-
-  // Contact footer (bottom-left)
-  if (companyName || companyPhone) {
-    page.drawText([companyName, companyPhone].filter(Boolean).join(' · '), {
-      x: 32,
-      y: 60,
-      size: 14,
-      font,
-      color: rgb(0.2, 0.2, 0.2)
-    })
-  }
-
-  // Highlights row
-  if (highlights.length > 0) {
-    let hx = 32
-    let hy = 100
-    for (const h of highlights.slice(0, 4)) {
-      page.drawText(`• ${truncate(h, 36)}`, {
-        x: hx,
-        y: hy,
-        size: 11,
-        font,
-        color: rgb(0.2, 0.2, 0.2)
-      })
-      hx += 180
-      if (hx > 600) {
-        hx = 32
-        hy -= 18
-      }
-    }
+    const qrX = colR - qrSize
+    const qrY = (footH - qrSize) / 2
+    page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize })
+    textRight('Alle Infos online', qrX - 12, footH / 2 + 4, 11, bold, ink)
+    textRight('Jetzt scannen', qrX - 12, footH / 2 - 12, 9, font, muted)
   }
 
   return Buffer.from(await doc.save())
