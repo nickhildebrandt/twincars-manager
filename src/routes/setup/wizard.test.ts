@@ -4,12 +4,13 @@ import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * Component tests for the setup wizard. The flow has nine discrete
- * steps; this file exercises the structural invariants (step count,
- * ordering, verification rendering, edit-jump) and the admin-step
- * round-trip — `createInitialAdmin` is called on step 8's primary
- * action so the verification step always renders with the account
- * already in place.
+ * Component tests for the setup wizard. The flow has eight discrete
+ * steps (the legacy Kfz-Kaufmann import is NOT a setup step — it runs
+ * later from Settings); this file exercises the structural invariants
+ * (step count, ordering, verification rendering, edit-jump) and the
+ * admin-step round-trip — `createInitialAdmin` is called on step 7's
+ * primary action so the verification step always renders with the
+ * account already in place.
  *
  * @group component
  * @module setup-wizard
@@ -151,8 +152,7 @@ const advanceToAdmin = async (user: ReturnType<typeof userEvent.setup>) => {
   await clickPrimary(user) // 4 → 5
   await fillStep5(user)
   await clickPrimary(user) // 5 → 6
-  await clickPrimary(user) // 6 → 7
-  await clickPrimary(user) // 7 → 8
+  await clickPrimary(user) // 6 → 7 (Administrator)
 }
 
 const createAdmin = async (user: ReturnType<typeof userEvent.setup>) => {
@@ -172,25 +172,55 @@ beforeEach(() => {
 })
 
 describe('setup wizard', () => {
-  it('renders the welcome step with the nine-item step indicator in the correct order', async () => {
+  it('renders the welcome step with the eight-item step indicator in the correct order (no import step)', async () => {
     await renderWizard()
-    expect(screen.getByText('Schritt 1 von 9')).toBeInTheDocument()
-    const lgList = document.querySelector('ul.steps.lg\\:flex')
-    expect(lgList).not.toBeNull()
-    const order = Array.from(lgList!.querySelectorAll('li')).map((li) =>
+    expect(screen.getByText('Schritt 1 von 8')).toBeInTheDocument()
+    const stepList = document.querySelector('ul.steps')
+    expect(stepList).not.toBeNull()
+    const order = Array.from(stepList!.querySelectorAll('li')).map((li) =>
       li.textContent?.trim()
     )
+    // Short labels in flow order; "Import" is intentionally absent.
     expect(order).toEqual([
-      'Willkommen',
-      'Firmendaten',
-      'Steuer & Bank',
-      'Logo & Anrede',
-      'E-Mail (SMTP)',
-      'Öffnungszeiten',
-      'Datenimport',
-      'Administrator',
-      'Verifikation'
+      'Start',
+      'Firma',
+      'Bank',
+      'Logo',
+      'SMTP',
+      'Zeiten',
+      'Admin',
+      'Prüfen'
     ])
+    expect(order).not.toContain('Import')
+  })
+
+  it('shows the concrete validation error inline while the primary button is disabled', async () => {
+    const user = userEvent.setup()
+    await renderWizard()
+    await clickPrimary(user) // 1 → 2 (Firmendaten, pristine)
+
+    // The exact reason is shown — not just a greyed-out button.
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent('Bitte Firmenname eingeben.')
+    expect(screen.getByRole('button', { name: /^Weiter/i })).toBeDisabled()
+
+    // It updates live as the user fixes fields (next missing field).
+    await fillByLabel(user, 'Firmenname', 'TwinCars GmbH')
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Bitte Straße eingeben.'
+    )
+  })
+
+  it('flags a space in the admin username with a concrete error (regression)', async () => {
+    const user = userEvent.setup()
+    await renderWizard()
+    await advanceToAdmin(user)
+    await fillByLabel(user, 'Benutzername', 'mein admin')
+    const alert = await screen.findByRole('alert')
+    expect(alert).toHaveTextContent(/keine Leerzeichen/i)
+    expect(
+      screen.getByRole('button', { name: /Konto anlegen/i })
+    ).toBeDisabled()
   })
 
   it('keeps the Administrator step primary action disabled until all four fields are valid, then calls createInitialAdmin', async () => {

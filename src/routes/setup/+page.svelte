@@ -8,12 +8,10 @@
     Banknote,
     Image as ImageIcon,
     Mail,
-    Database,
     Clock,
     UserCog,
     ListChecks,
-    Pencil,
-    ChevronDown
+    Pencil
   } from '@lucide/svelte'
   import {
     saveCompanyData,
@@ -28,12 +26,14 @@
   import { busy } from '$lib/stores/busy.svelte'
 
   let step = $state(1)
-  const totalSteps = 9
+  const totalSteps = 8
 
   /**
    * Step list. Order matches the wizard flow exactly; the indicator and
    * the verification card both iterate this. `short` is shown on the
-   * compact mobile pill so the header doesn't wrap on narrow screens.
+   * compact step pills so long German titles never overlap. The legacy
+   * Kfz-Kaufmann import is deliberately NOT a setup step — it runs later
+   * from Settings, which has the proper progress UI.
    */
   const steps = [
     { n: 1, title: 'Willkommen', short: 'Start' },
@@ -42,9 +42,8 @@
     { n: 4, title: 'Logo & Anrede', short: 'Logo' },
     { n: 5, title: 'E-Mail (SMTP)', short: 'SMTP' },
     { n: 6, title: 'Öffnungszeiten', short: 'Zeiten' },
-    { n: 7, title: 'Datenimport', short: 'Import' },
-    { n: 8, title: 'Administrator', short: 'Admin' },
-    { n: 9, title: 'Verifikation', short: 'Prüfen' }
+    { n: 7, title: 'Administrator', short: 'Admin' },
+    { n: 8, title: 'Verifikation', short: 'Prüfen' }
   ]
 
   let companyName = $state('')
@@ -120,15 +119,7 @@
     }
   }
 
-  let mdbChoice = $state<'now' | 'later' | 'fresh'>('later')
-  const mdbChoiceLabel = (c: typeof mdbChoice): string =>
-    c === 'now'
-      ? 'Jetzt importieren'
-      : c === 'fresh'
-        ? 'Frischstart (keine Übernahme)'
-        : 'Später'
-
-  // Administrator-Konto — created on step 8 so the user who configured
+  // Administrator-Konto — created on step 7 so the user who configured
   // the workshop also gets the very first login. Marked "created" once
   // `createInitialAdmin` succeeded; the verification step relies on
   // this to show a green badge without re-trying the call.
@@ -191,12 +182,12 @@
           return `Schließzeit muss nach Öffnungszeit liegen (${weekdayLabel(r.weekday)}).`
       }
     }
-    if (n === 8) {
+    if (n === 7) {
       const u = adminUsername.trim()
       if (u.length < 3)
         return 'Bitte Benutzernamen (mind. 3 Zeichen) für den Admin angeben.'
       if (!/^[a-zA-Z0-9_.]+$/.test(u))
-        return 'Benutzername darf nur Buchstaben, Ziffern, Punkt und Unterstrich enthalten.'
+        return 'Benutzername darf nur Buchstaben, Ziffern, Punkt und Unterstrich enthalten (keine Leerzeichen).'
       if (!adminName.trim())
         return 'Bitte den Namen des Administrators angeben.'
       if (adminPassword.length < 8)
@@ -212,7 +203,8 @@
    * to enable the primary action. Used to gate "Weiter" / "Setup
    * abschließen". The previous-buttons are not gated.
    */
-  const stepValid = $derived(validateStep(step) === null)
+  const currentError = $derived(validateStep(step))
+  const stepValid = $derived(currentError === null)
 
   /**
    * Persist data that belongs to the step that's being left. Each block
@@ -271,7 +263,7 @@
         await busy.run(() => saveWorkshopHoursForSetup({ rows: hoursRows }))
         return true
       }
-      if (n === 8 && !adminCreated) {
+      if (n === 7 && !adminCreated) {
         await busy.run(() =>
           createInitialAdmin({
             username: adminUsername.trim(),
@@ -313,11 +305,7 @@
       await busy.run(() => completeSetup())
       toast.success('Setup abgeschlossen!')
       await invalidateAll()
-      if (mdbChoice === 'now') {
-        goto('/import')
-      } else {
-        goto('/login')
-      }
+      goto('/login')
     } catch (e) {
       handleClientError(e, 'Setup konnte nicht abgeschlossen werden')
     }
@@ -346,49 +334,36 @@
     </div>
 
     <!--
-      Responsive step indicator. Three tiers:
-        <md  → compact "Schritt X von Y · Title" + thin progress bar
-        md   → DaisyUI horizontal steps with short labels
-        lg+  → DaisyUI horizontal steps with the full labels
+      Responsive step indicator. The current step + title line shows on
+      every size; below it a thin progress bar (< md) or a horizontally
+      scrollable pill row with SHORT labels (md+). Short labels +
+      overflow-x-auto guarantee the steps never overlap, regardless of
+      viewport width or step-title length.
     -->
     <div class="mb-6">
-      <div class="md:hidden">
-        <div class="mb-2 flex items-center justify-between text-sm">
-          <span class="text-base-content/70">
-            Schritt {step} von {totalSteps}
-          </span>
-          <span class="font-medium">{steps[step - 1].title}</span>
-        </div>
-        <progress
-          class="progress progress-primary w-full"
-          value={step}
-          max={totalSteps}
-        ></progress>
-        <details class="mt-2">
-          <summary
-            class="text-base-content/60 hover:text-base-content inline-flex cursor-pointer items-center gap-1 text-xs"
-          >
-            <ChevronDown size={14} /> Alle Schritte
-          </summary>
-          <ol
-            class="text-base-content/80 mt-2 list-decimal space-y-1 pl-6 text-sm"
-          >
-            {#each steps as s (s.n)}
-              <li class:font-semibold={step === s.n}>{s.title}</li>
-            {/each}
-          </ol>
-        </details>
+      <div class="mb-2 flex items-center justify-between gap-2 text-sm">
+        <span class="text-base-content/70 whitespace-nowrap">
+          Schritt {step} von {totalSteps}
+        </span>
+        <span class="truncate font-medium">{steps[step - 1].title}</span>
       </div>
-      <ul class="steps hidden w-full md:flex lg:hidden">
-        {#each steps as s (s.n)}
-          <li class="step" class:step-primary={step >= s.n}>{s.short}</li>
-        {/each}
-      </ul>
-      <ul class="steps hidden w-full lg:flex">
-        {#each steps as s (s.n)}
-          <li class="step" class:step-primary={step >= s.n}>{s.title}</li>
-        {/each}
-      </ul>
+      <progress
+        class="progress progress-primary w-full md:hidden"
+        value={step}
+        max={totalSteps}
+      ></progress>
+      <div class="hidden overflow-x-auto pb-1 md:block">
+        <ul class="steps w-full">
+          {#each steps as s (s.n)}
+            <li
+              class="step px-2 whitespace-nowrap"
+              class:step-primary={step >= s.n}
+            >
+              {s.short}
+            </li>
+          {/each}
+        </ul>
+      </div>
     </div>
 
     <div class="card border-base-300 bg-base-100 border">
@@ -771,52 +746,6 @@
           </div>
         {:else if step === 7}
           <div class="flex items-center gap-2">
-            <Database size={22} class="text-primary" />
-            <h2 class="card-title">Datenimport aus Kfz-Kaufmann</h2>
-          </div>
-          <p class="text-base-content/70 text-sm">
-            Möchten Sie alte Daten aus Kfz-Kaufmann (.mdb) übernehmen? Der
-            Import lässt sich später jederzeit unter „Import" aufrufen.
-          </p>
-          <fieldset class="fieldset">
-            <label class="label cursor-pointer justify-start gap-3">
-              <input
-                type="radio"
-                class="radio radio-primary"
-                value="now"
-                bind:group={mdbChoice}
-              />
-              <span>
-                <strong>Jetzt importieren</strong> — direkt zur Importseite weiter,
-                sobald das Setup abgeschlossen ist
-              </span>
-            </label>
-            <label class="label cursor-pointer justify-start gap-3">
-              <input
-                type="radio"
-                class="radio radio-primary"
-                value="later"
-                bind:group={mdbChoice}
-              />
-              <span>
-                <strong>Später</strong> — kann jederzeit unter „Import" durchgeführt
-                werden
-              </span>
-            </label>
-            <label class="label cursor-pointer justify-start gap-3">
-              <input
-                type="radio"
-                class="radio radio-primary"
-                value="fresh"
-                bind:group={mdbChoice}
-              />
-              <span>
-                <strong>Frischstart</strong> — keine alten Daten übernehmen
-              </span>
-            </label>
-          </fieldset>
-        {:else if step === 8}
-          <div class="flex items-center gap-2">
             <UserCog size={22} class="text-primary" />
             <h2 class="card-title">Administrator-Konto</h2>
           </div>
@@ -890,7 +819,7 @@
               Benutzername wird beim Anmelden klein geschrieben behandelt.
             </p>
           {/if}
-        {:else if step === 9}
+        {:else if step === 8}
           <div class="flex items-center gap-2">
             <ListChecks size={22} class="text-primary" />
             <h2 class="card-title">Verifikation &amp; Abschluss</h2>
@@ -1112,34 +1041,13 @@
               <div class="card-body">
                 <div class="flex items-start justify-between gap-2">
                   <div class="flex items-center gap-2">
-                    <Database size={18} class="text-primary" />
-                    <h3 class="font-semibold">MDB-Import</h3>
-                  </div>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-xs"
-                    onclick={() => jumpTo(7)}
-                  >
-                    <Pencil size={14} /> Bearbeiten
-                  </button>
-                </div>
-                <p class="text-base-content/80 mt-1 text-sm">
-                  {mdbChoiceLabel(mdbChoice)}
-                </p>
-              </div>
-            </div>
-
-            <div class="card border-base-300 bg-base-100 border">
-              <div class="card-body">
-                <div class="flex items-start justify-between gap-2">
-                  <div class="flex items-center gap-2">
                     <UserCog size={18} class="text-primary" />
                     <h3 class="font-semibold">Administrator</h3>
                   </div>
                   <button
                     type="button"
                     class="btn btn-ghost btn-xs"
-                    onclick={() => jumpTo(8)}
+                    onclick={() => jumpTo(7)}
                     disabled={adminCreated}
                   >
                     <Pencil size={14} /> Bearbeiten
@@ -1170,7 +1078,19 @@
           </div>
         {/if}
 
-        <div class="card-actions mt-6 justify-between">
+        <!--
+          Inline validation feedback: whenever the step is incomplete /
+          invalid the primary button is disabled AND the exact reason is
+          shown here, live, so the user never faces a greyed-out button
+          without knowing why (e.g. a space in the admin username).
+        -->
+        {#if currentError && !busy.active}
+          <div class="alert alert-error mt-4 py-2 text-sm" role="alert">
+            <span>{currentError}</span>
+          </div>
+        {/if}
+
+        <div class="card-actions mt-4 justify-between">
           <button
             class="btn btn-ghost"
             onclick={prev}
@@ -1187,7 +1107,7 @@
               {#if busy.active}
                 <span class="loading loading-spinner loading-sm"></span>
               {/if}
-              {#if step === 8 && !adminCreated}
+              {#if step === 7 && !adminCreated}
                 Konto anlegen
               {:else}
                 Weiter
@@ -1203,11 +1123,7 @@
               {#if busy.active}
                 <span class="loading loading-spinner loading-sm"></span>
               {/if}
-              {#if mdbChoice === 'now'}
-                <Database size={16} /> Setup abschließen &amp; importieren
-              {:else}
-                <Check size={16} /> Setup abschließen
-              {/if}
+              <Check size={16} /> Setup abschließen
             </button>
           {/if}
         </div>
