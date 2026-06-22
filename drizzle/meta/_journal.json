@@ -197,6 +197,13 @@
       "when": 1782102526227,
       "tag": "0027_user_active_flag",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1782131718388,
+      "tag": "0028_item_online_bookable",
+      "breakpoints": true
     }
   ]
 }

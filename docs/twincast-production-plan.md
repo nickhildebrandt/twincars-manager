@@ -68,7 +68,7 @@ current as work lands.
 - [ ] **P2.2 Verkaufsschild** modernization.
 - [ ] **P2.3 Kundenkommunikation** polish (HTML option, unsubscribe footer for broadcasts).
 - [ ] **P2.4 Global search** expansion (tires, tire-storage, suppliers, inventory) + pagination.
-- [ ] **P2.5 Termin-API** restrict online booking to tire-change only; clear messaging for other appointment types.
+- [x] **P2.5 Termin-API** restrict online booking to tire-change only — ✅ DONE. New admin-configurable `items.onlineBookable` flag (migration `0028`, ItemForm checkbox shown for services, items remote input + public-services projection). Public `POST /appointments` now **requires** a serviceId referencing an `onlineBookable` service (rejects no-service + non-bookable bookings with "arrange other appointments by phone"); `free-slots` rejects non-bookable services too. Reworked the booking tests to seed a bookable "Reifenwechsel" service + added a "rejects non-bookable service" test. Gates: check 0/0, 1090 tests, build OK. (Migration applied to dev DB + validated on pg-mem.)
 - [ ] **P2.6 Posts / „Aktuelle Informationen"** module + paginated public API + secure media upload.
 - [ ] **P2.7 Payment methods** centralize Bar/Überweisung into a shared constant/enum.
 

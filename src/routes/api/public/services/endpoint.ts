@@ -21,6 +21,8 @@ export type PublicService = {
   description: string
   unit: string | null
   currentPriceNet: number | null
+  /** Whether this service can be booked online (others: by phone only). */
+  onlineBookable: boolean
   attributes: Record<string, unknown>
 }
 
@@ -34,6 +36,7 @@ export async function handlePublicServices(
     description: r.description,
     unit: r.unit ?? null,
     currentPriceNet: r.unitPriceNet == null ? null : Number(r.unitPriceNet),
+    onlineBookable: r.onlineBookable,
     attributes: {}
   }))
   return ok({ services })

@@ -38,6 +38,7 @@ export async function handlePublicServiceDetail(
     description: row.description,
     unit: row.unit ?? null,
     currentPriceNet: row.unitPriceNet == null ? null : Number(row.unitPriceNet),
+    onlineBookable: row.onlineBookable,
     attributes: {}
   }
   return ok({ service })

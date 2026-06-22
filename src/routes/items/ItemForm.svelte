@@ -14,6 +14,7 @@
     unitPriceNet?: number
     purchasePriceNet?: number
     stockOnHand?: number
+    onlineBookable?: boolean
     notes?: string
   }
 </script>
@@ -37,6 +38,7 @@
     unitPriceNet?: string | number | null
     purchasePriceNet?: string | number | null
     stockOnHand?: number | null
+    onlineBookable?: boolean | null
     notes?: string | null
   }
 
@@ -63,6 +65,7 @@
     Number(init.purchasePriceNet ?? '') || ''
   )
   let stockOnHand = $state<number | string>((init.stockOnHand as number) ?? 0)
+  let onlineBookable = $state(Boolean(init.onlineBookable))
   let notes = $state(init.notes ?? '')
 
   let errorMsg = $state<string | null>(null)
@@ -104,6 +107,7 @@
       unitPriceNet: n(unitPriceNet),
       purchasePriceNet: n(purchasePriceNet),
       stockOnHand: n(stockOnHand),
+      onlineBookable: kind === 'service' ? onlineBookable : false,
       notes: u(notes)
     })
   }
@@ -164,6 +168,22 @@
             onblur={() => fv.markTouched('description')}
           />
         </FormField>
+        {#if kind === 'service'}
+          <label class="label cursor-pointer justify-start gap-3 sm:col-span-3">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary"
+              bind:checked={onlineBookable}
+            />
+            <span class="flex flex-col">
+              <span>Online buchbar (z. B. Reifenwechsel)</span>
+              <span class="text-base-content/60 text-xs">
+                Nur online buchbare Leistungen können über die Website als
+                Termin gebucht werden; alle anderen Termine telefonisch.
+              </span>
+            </span>
+          </label>
+        {/if}
       </div>
     </fieldset>
 

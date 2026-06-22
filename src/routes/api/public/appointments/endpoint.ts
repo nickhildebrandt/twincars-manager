@@ -108,22 +108,33 @@ export async function handleBookAppointment(
     throw err
   }
 
-  // Resolve service + finalise duration.
+  // Only online-bookable services (TwinCast: tire change) can be booked
+  // through the public API. A serviceId is therefore mandatory and must
+  // reference an `onlineBookable` service; every other appointment type is
+  // arranged by phone.
   let title = 'Online-Termin'
   let durationMinutes = input.durationMinutes
-  if (input.serviceId) {
-    const service = await getItem(input.serviceId)
-    if (!service || service.kind !== 'service') {
-      fail(404, 'Service not found.')
-    }
-    title = service.description
-    // Migration 0022 dropped the JSONB `attributes` column from
-    // `items`. The caller must now supply `durationMinutes` directly
-    // on the request body; we keep the service lookup so a bogus id
-    // still fails fast with 404.
+  if (!input.serviceId) {
+    fail(
+      400,
+      'Only online-bookable services (tire change) can be booked online; please arrange other appointments by phone.'
+    )
   }
+  const service = await getItem(input.serviceId)
+  if (!service || service.kind !== 'service') {
+    fail(404, 'Service not found.')
+  }
+  if (!service.onlineBookable) {
+    fail(
+      400,
+      'This service is not available for online booking; please arrange it by phone.'
+    )
+  }
+  title = service.description
+  // Migration 0022 dropped the JSONB `attributes` column from `items`, so
+  // the caller supplies `durationMinutes` directly on the request body.
   if (!durationMinutes) {
-    fail(400, 'durationMinutes is required when serviceId is not provided.')
+    fail(400, 'durationMinutes is required.')
   }
 
   // Must be in the future.

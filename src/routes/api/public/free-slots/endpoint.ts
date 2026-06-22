@@ -47,17 +47,24 @@ export async function handlePublicFreeSlots(
   const to = parseIsoDate(url.searchParams.get('to'), 'to')
   let durationMinutes = parseDuration(url.searchParams.get('durationMinutes'))
 
+  // Free slots are only offered for online-bookable services (TwinCast:
+  // tire change), matching the booking endpoint. A non-bookable / unknown
+  // service is rejected so the website can't show slots for something it
+  // can't actually book.
   const serviceId = url.searchParams.get('service')
   if (serviceId) {
     const service = await getItem(serviceId)
     if (!service || service.kind !== 'service') {
       fail(404, 'Service not found.')
     }
-    // Migration 0022 dropped the JSONB `attributes` column from
-    // `items`. Services no longer carry a `durationMinutes` override
-    // — the caller must provide it via the `durationMinutes` query
-    // parameter instead. Existence of the service is still validated
-    // above so a bogus id fails fast.
+    if (!service.onlineBookable) {
+      fail(
+        400,
+        'This service is not available for online booking; please arrange it by phone.'
+      )
+    }
+    // Migration 0022 dropped the JSONB `attributes` column; the caller
+    // supplies `durationMinutes` via the query parameter.
   }
 
   let slots

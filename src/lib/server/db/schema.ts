@@ -409,6 +409,13 @@ export const items = pgTable(
       scale: 2
     }),
     stockOnHand: integer('stock_on_hand').notNull().default(0),
+    /**
+     * Whether this service can be booked online (public appointment API).
+     * Only `kind = 'service'` rows flagged here are bookable through the
+     * website — TwinCast uses this for tire-change appointments; all other
+     * appointment types must be arranged by phone.
+     */
+    onlineBookable: boolean('online_bookable').notNull().default(false),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()

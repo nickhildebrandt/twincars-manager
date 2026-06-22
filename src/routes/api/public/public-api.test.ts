@@ -155,6 +155,20 @@ async function seedCustomerNumberRange() {
     .values({ kind: 'customer', formatTemplate: 'KU-{NNNNN}', nextValue: 1 })
 }
 
+/** Seed an online-bookable tire-change service and return its id. */
+async function seedBookableService(): Promise<string> {
+  const [svc] = await db
+    .insert(items)
+    .values({
+      articleNumber: 'SVC-REIFEN',
+      description: 'Reifenwechsel',
+      kind: 'service',
+      onlineBookable: true
+    })
+    .returning({ id: items.id })
+  return svc.id
+}
+
 async function seedHoursMonFri() {
   await db.insert(workshopHours).values([
     { weekday: 0, opensAt: '08:00', closesAt: '17:00', closed: true },
@@ -489,9 +503,10 @@ describe('public-api endpoints', () => {
         body: JSON.stringify(body)
       })
 
-    it('books an appointment, creating a customer when none exists', async () => {
+    it('books an appointment for an online-bookable service, creating a customer when none exists', async () => {
       await seedHoursMonFri()
       await seedCustomerNumberRange()
+      const serviceId = await seedBookableService()
       sendAppointmentConfirmationMock.mockClear()
       const token = await mintTestToken()
       // Pick a Monday in the future, 09:00.
@@ -503,6 +518,7 @@ describe('public-api endpoints', () => {
       const handler = publicApi(handleBookAppointment)
       const event = makeEvent(
         authedPost(token, {
+          serviceId,
           customerEmail: 'kunde@example.com',
           customerName: 'Max Mustermann',
           customerPhone: '+49 30 1234567',
@@ -523,10 +539,10 @@ describe('public-api endpoints', () => {
       expect(createdCustomers[0].email).toBe('kunde@example.com')
       expect(createdCustomers[0].wantsBroadcast).toBe(false)
       expect(createdCustomers[0].kind).toBe('regular')
-      // Appointment created with confirmation token in notes.
+      // Appointment created with the service title + confirmation token.
       const createdAppts = await db.select().from(calendarEntries)
       expect(createdAppts).toHaveLength(1)
-      expect(createdAppts[0].title).toBe('Online-Termin')
+      expect(createdAppts[0].title).toBe('Reifenwechsel')
       expect(createdAppts[0].notes).toContain('confirmation:')
 
       // Confirmation mail was triggered with the right payload.
@@ -538,13 +554,48 @@ describe('public-api endpoints', () => {
       expect(mailArg.customerName).toBe('Max Mustermann')
       expect(mailArg.durationMinutes).toBe(60)
       expect(mailArg.confirmationToken).toBe(body.data.confirmationToken)
-      expect(mailArg.serviceTitle).toBeNull()
+      expect(mailArg.serviceTitle).toBe('Reifenwechsel')
       expect(mailArg.startsAt).toBeInstanceOf(Date)
+    })
+
+    it('rejects booking a service that is not online-bookable', async () => {
+      await seedHoursMonFri()
+      await seedCustomerNumberRange()
+      const [svc] = await db
+        .insert(items)
+        .values({
+          articleNumber: 'SVC-INSP',
+          description: 'Inspektion',
+          kind: 'service',
+          onlineBookable: false
+        })
+        .returning({ id: items.id })
+      const token = await mintTestToken()
+      const start = new Date()
+      start.setDate(start.getDate() + 7)
+      while (start.getDay() !== 1) start.setDate(start.getDate() + 1)
+      start.setHours(9, 0, 0, 0)
+      const handler = publicApi(handleBookAppointment)
+      const res = await handler(
+        makeEvent(
+          authedPost(token, {
+            serviceId: svc.id,
+            customerEmail: 'x@example.com',
+            customerName: 'X',
+            startsAt: start.toISOString(),
+            durationMinutes: 60
+          })
+        )
+      )
+      expect(res.status).toBe(400)
+      // Nothing was booked.
+      expect(await db.select().from(calendarEntries)).toHaveLength(0)
     })
 
     it('returns 409 when the slot is already taken', async () => {
       await seedHoursMonFri()
       await seedCustomerNumberRange()
+      const serviceId = await seedBookableService()
       const token = await mintTestToken()
       const start = new Date()
       start.setDate(start.getDate() + 7)
@@ -566,6 +617,7 @@ describe('public-api endpoints', () => {
       const handler = publicApi(handleBookAppointment)
       const event = makeEvent(
         authedPost(token, {
+          serviceId,
           customerEmail: 'two@example.com',
           customerName: 'Zwei Person',
           startsAt: start.toISOString(),
@@ -581,12 +633,14 @@ describe('public-api endpoints', () => {
     it('refuses past starts', async () => {
       await seedHoursMonFri()
       await seedCustomerNumberRange()
+      const serviceId = await seedBookableService()
       const token = await mintTestToken()
       const past = new Date(Date.now() - 24 * 60 * 60 * 1000)
       past.setHours(9, 0, 0, 0)
       const handler = publicApi(handleBookAppointment)
       const event = makeEvent(
         authedPost(token, {
+          serviceId,
           customerEmail: 'past@example.com',
           customerName: 'Past',
           startsAt: past.toISOString(),
@@ -600,6 +654,7 @@ describe('public-api endpoints', () => {
     it('reuses an existing customer by email instead of creating a new one', async () => {
       await seedHoursMonFri()
       await seedCustomerNumberRange()
+      const serviceId = await seedBookableService()
       const token = await mintTestToken()
       const [existing] = await db
         .insert(customers)
@@ -621,6 +676,7 @@ describe('public-api endpoints', () => {
       const handler = publicApi(handleBookAppointment)
       const event = makeEvent(
         authedPost(token, {
+          serviceId,
           customerEmail: 'existing@example.com',
           customerName: 'Existing User',
           startsAt: start.toISOString(),
@@ -635,7 +691,7 @@ describe('public-api endpoints', () => {
       expect(appts[0].customerId).toBe(existing.id)
     })
 
-    it('rejects when neither serviceId nor durationMinutes is provided', async () => {
+    it('rejects a booking without a serviceId (only bookable services allowed)', async () => {
       await seedHoursMonFri()
       await seedCustomerNumberRange()
       const token = await mintTestToken()

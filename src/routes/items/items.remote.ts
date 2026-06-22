@@ -1,6 +1,7 @@
 import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
+  boolean,
   maxLength,
   number,
   object,
@@ -36,6 +37,8 @@ const itemInputSchema = object({
   unitPriceNet: optional(number()),
   purchasePriceNet: optional(number()),
   stockOnHand: optional(number()),
+  /** Only meaningful for `kind = 'service'`: bookable via the public API. */
+  onlineBookable: optional(boolean()),
   notes: optional(notesSchema)
 })
 
