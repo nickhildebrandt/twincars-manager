@@ -13,10 +13,17 @@
     listVehiclePhotosRemote,
     setMainVehiclePhotoRemote
   } from '../vehicles.remote'
-  import { Pencil, Receipt, ShoppingCart, User } from '@lucide/svelte'
+  import { getVehicleSaleSignPdfRemote } from '../sale-sign.remote'
+  import { Pencil, Printer, Receipt, ShoppingCart, User } from '@lucide/svelte'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
+  import {
+    documentStatusLabel,
+    documentStatusBadge
+  } from '$lib/utils/status-labels'
+  import { openPdfInNewTab } from '$lib/utils/pdf-download'
 
   const id = untrack(() => page.params.id!)
   let invoicesPage = $state(1)
@@ -112,6 +119,22 @@
       throw err
     }
   }
+
+  /**
+   * Render and open the A4-landscape sale sign in a new tab. Available
+   * for any vehicle — stock cars get the price + highlights, customer
+   * cars still get a clean sign that the workshop can use ad-hoc.
+   */
+  const printSaleSign = async () => {
+    try {
+      const res = await busy.run(() =>
+        getVehicleSaleSignPdfRemote({ id }).run()
+      )
+      openPdfInNewTab(res)
+    } catch (err) {
+      handleClientError(err, 'Verkaufsschild konnte nicht erzeugt werden')
+    }
+  }
 </script>
 
 <PageHeader
@@ -121,49 +144,73 @@
 />
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
+    <div
+      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div class="min-w-0">
+        <h3 class="card-title text-base">Verkaufsschild</h3>
+        <p class="text-base-content/60 text-sm">
+          A4-Querformat zum Aushängen am Fahrzeug — mit QR-Code zur
+          Online-Ansicht.
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline gap-2 sm:w-auto"
+        disabled={busy.active}
+        onclick={printSaleSign}
+      >
+        <Printer size={16} />
+        Verkaufsschild drucken
+      </button>
+    </div>
+  </div>
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Stammdaten</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Marke</dt>
-        <dd class="col-span-2">{v.make ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.make ?? '—'}</dd>
         <dt class="text-base-content/60">Modell</dt>
-        <dd class="col-span-2">{v.model ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.model ?? '—'}</dd>
         <dt class="text-base-content/60">Kennzeichen</dt>
-        <dd class="col-span-2 font-mono">{v.licensePlate ?? '—'}</dd>
+        <dd class="font-mono break-all sm:col-span-2"
+          >{v.licensePlate ?? '—'}</dd
+        >
         <dt class="text-base-content/60">FIN</dt>
-        <dd class="col-span-2 font-mono">{v.vin ?? '—'}</dd>
+        <dd class="font-mono break-all sm:col-span-2">{v.vin ?? '—'}</dd>
         <dt class="text-base-content/60">Erstzulassung</dt>
-        <dd class="col-span-2">{v.firstRegistration ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.firstRegistration ?? '—'}</dd>
         <dt class="text-base-content/60">km-Stand</dt>
-        <dd class="col-span-2">
+        <dd class="sm:col-span-2">
           {v.mileageKm ? v.mileageKm.toLocaleString('de-DE') + ' km' : '—'}
         </dd>
         <dt class="text-base-content/60">Nächste HU</dt>
-        <dd class="col-span-2">{v.nextHu ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.nextHu ?? '—'}</dd>
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Technik</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">HSN/TSN</dt>
-        <dd class="col-span-2"
+        <dd class="break-all sm:col-span-2"
           >{[v.hsn, v.tsn].filter(Boolean).join(' / ') || '—'}</dd
         >
         <dt class="text-base-content/60">Hubraum</dt>
-        <dd class="col-span-2"
+        <dd class="sm:col-span-2"
           >{v.displacementCcm ? `${v.displacementCcm} ccm` : '—'}</dd
         >
         <dt class="text-base-content/60">kW</dt>
-        <dd class="col-span-2">{v.powerKw ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.powerKw ?? '—'}</dd>
         <dt class="text-base-content/60">Kraftstoff</dt>
-        <dd class="col-span-2">{v.fuelType ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.fuelType ?? '—'}</dd>
         <dt class="text-base-content/60">Getriebe</dt>
-        <dd class="col-span-2">{v.gearbox ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.gearbox ?? '—'}</dd>
         <dt class="text-base-content/60">Aufbau</dt>
-        <dd class="col-span-2">{v.bodyType ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.bodyType ?? '—'}</dd>
       </dl>
     </div>
   </div>
@@ -181,9 +228,9 @@
     (customer_id IS NULL) get no owner row from the related query.
   -->
   {#if customer}
-    <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
       <div class="card-body">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="card-title text-base">
             <User size={18} class="text-base-content/60" />
             Kunde
@@ -195,15 +242,17 @@
             Zum Kunden
           </a>
         </div>
-        <dl class="grid grid-cols-3 gap-y-1 text-sm">
+        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Kundennr.</dt>
-          <dd class="col-span-2 font-mono">{customer.customerNumber}</dd>
+          <dd class="font-mono break-all sm:col-span-2"
+            >{customer.customerNumber}</dd
+          >
           <dt class="text-base-content/60">Name</dt>
-          <dd class="col-span-2">{customerLabel(customer)}</dd>
+          <dd class="break-words sm:col-span-2">{customerLabel(customer)}</dd>
           <dt class="text-base-content/60">Telefon</dt>
-          <dd class="col-span-2">{customer.phone ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.phone ?? '—'}</dd>
           <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="col-span-2">{customer.email ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.email ?? '—'}</dd>
         </dl>
       </div>
     </div>
@@ -248,8 +297,10 @@
                 >
                   <td class="font-mono">{inv.documentNumber}</td>
                   <td>
-                    <span class="badge badge-ghost badge-sm">
-                      {inv.status}
+                    <span
+                      class="badge badge-sm {documentStatusBadge(inv.status)}"
+                    >
+                      {documentStatusLabel(inv.status)}
                     </span>
                   </td>
                   <td>{fmtDate(inv.issueDate)}</td>

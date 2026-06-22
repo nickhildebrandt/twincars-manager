@@ -1,14 +1,28 @@
 <script lang="ts">
   import { goto, beforeNavigate, afterNavigate } from '$app/navigation'
   import { page } from '$app/stores'
-  import { navigation } from './navigation'
-  import { Menu as MenuIcon, Wrench, ArrowLeft, Plus } from '@lucide/svelte'
+  import { navigation, filterNavigationByPermissions } from './navigation'
+  import {
+    Menu as MenuIcon,
+    ArrowLeft,
+    Plus,
+    LogOut,
+    User as UserIcon,
+    Search as SearchIcon
+  } from '@lucide/svelte'
   import type { Snippet } from 'svelte'
   import { pageHeader } from '$lib/stores/page-title.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
   import Loader from '$lib/components/ui/Loader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import GlobalSearch from '$lib/components/ui/GlobalSearch.svelte'
+  import { authClient } from '$lib/client/auth-client'
+  import { handleClientError } from '$lib/utils/client-error'
+  import { startIdleLogout } from '$lib/stores/idle-logout.svelte'
+
+  /** Auto-logout after 1 hour of inactivity (per project spec). */
+  const IDLE_LOGOUT_MS = 60 * 60 * 1000
 
   /**
    * Globale Unsaved-Changes-Sperre. Forms melden ungespeicherte
@@ -59,8 +73,64 @@
     return () => window.removeEventListener('beforeunload', handler)
   })
 
-  type Props = { children?: Snippet; companyName?: string }
-  const { children, companyName = 'TwinCarsManager' }: Props = $props()
+  type CurrentUser = {
+    id: string
+    username: string | null
+    name: string
+    permissions: string[]
+  } | null
+
+  type Props = {
+    children?: Snippet
+    companyName?: string
+    currentUser?: CurrentUser
+  }
+  const {
+    children,
+    companyName = 'TwinCarsManager',
+    currentUser = null
+  }: Props = $props()
+
+  const permissionSet = $derived(new Set(currentUser?.permissions ?? []))
+  const visibleNavigation = $derived(
+    filterNavigationByPermissions(navigation, permissionSet)
+  )
+
+  async function handleLogout() {
+    try {
+      await busy.run(async () => {
+        await authClient.signOut()
+        await goto('/login', { invalidateAll: true, replaceState: true })
+      })
+    } catch (err) {
+      handleClientError(err, 'Abmeldung fehlgeschlagen.')
+    }
+  }
+
+  /**
+   * Idle-logout: signs the user out automatically after 1h of no
+   * mousemove / keydown / click / scroll / touch. Only armed while a
+   * user is signed in (the public /login and /setup pages never see
+   * this component instance because the root layout branches there).
+   */
+  $effect(() => {
+    if (!currentUser) return
+    return startIdleLogout({
+      timeoutMs: IDLE_LOGOUT_MS,
+      onLogout: async () => {
+        try {
+          await authClient.signOut()
+        } catch {
+          // Network outage: still surface the login screen so the
+          // workstation isn't left with privileged UI on screen.
+        }
+        await goto('/login?reason=idle', {
+          invalidateAll: true,
+          replaceState: true
+        })
+      }
+    })
+  })
 
   const isActive = (href: string, exact = false) => {
     const pathname = $page.url.pathname
@@ -69,6 +139,10 @@
   }
 
   const routeTitle = $derived.by(() => {
+    // Title resolution uses the full navigation map (not the
+    // permission-filtered one) so a deep link to a route the user
+    // can still load — but no longer sees in the sidebar — still
+    // gets a meaningful header title.
     const all = navigation.flatMap((g) => g.items)
     const exactMatch = all.find((i) => i.exact && i.href === $page.url.pathname)
     if (exactMatch) return exactMatch.label
@@ -131,6 +205,35 @@
   // Shared height for the header bar AND the sidebar logo block, so both
   // align perfectly along the same horizontal divider line.
   const TOP_BAR_HEIGHT = 'h-[68px]'
+
+  /**
+   * Global search modal — bound to `searchOpen`. The trigger in the
+   * navbar opens it; Cmd/Ctrl+K opens it from anywhere; Esc inside
+   * the modal closes it.
+   */
+  let searchOpen = $state(false)
+
+  /**
+   * On a Mac we display ⌘K, on every other platform Strg+K. The
+   * detection runs once on the client; SSR shows the Mac glyph
+   * (harmless — it's hidden on small screens anyway).
+   */
+  const isMac = $derived.by(() => {
+    if (typeof navigator === 'undefined') return false
+    return /mac|iphone|ipad|ipod/i.test(navigator.platform)
+  })
+
+  $effect(() => {
+    if (typeof window === 'undefined') return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'k' && (e.metaKey || e.ctrlKey)) {
+        e.preventDefault()
+        searchOpen = true
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  })
 </script>
 
 <div class="drawer lg:drawer-open">
@@ -167,7 +270,24 @@
           </button>
         {/if}
       </div>
-      <div class="navbar-center">
+      <div class="navbar-center hidden w-full max-w-md md:flex">
+        <button
+          type="button"
+          class="input input-bordered input-sm text-base-content/60 flex h-9 w-full items-center justify-between gap-2"
+          aria-label="Globale Suche öffnen"
+          onclick={() => (searchOpen = true)}
+          data-testid="global-search-trigger"
+        >
+          <span class="flex items-center gap-2">
+            <SearchIcon size={14} class="opacity-60" />
+            <span>Suchen…</span>
+          </span>
+          <kbd class="kbd kbd-xs" aria-hidden="true">
+            {isMac ? '⌘K' : 'Strg+K'}
+          </kbd>
+        </button>
+      </div>
+      <div class="navbar-center md:hidden">
         <h1
           class="truncate px-1 text-base font-semibold sm:text-lg"
           data-testid="page-title"
@@ -176,6 +296,20 @@
         </h1>
       </div>
       <div class="navbar-end gap-2">
+        <!--
+          Phone-only search trigger: the centered "Suchen…" input is hidden
+          on <md so the page title can use the available space. A bare
+          icon button keeps the global search accessible without crowding
+          the navbar.
+        -->
+        <button
+          type="button"
+          class="btn btn-ghost btn-square btn-sm md:hidden"
+          aria-label="Globale Suche öffnen"
+          onclick={() => (searchOpen = true)}
+        >
+          <SearchIcon size={18} />
+        </button>
         {#if primary}
           {@const Icon = primary.icon ?? Plus}
           {#if primary.href}
@@ -185,7 +319,7 @@
               data-testid="header-primary-action"
             >
               <Icon size={16} />
-              <span>{primary.label}</span>
+              <span class="hidden sm:inline">{primary.label}</span>
             </a>
           {:else}
             <button
@@ -195,7 +329,7 @@
               data-testid="header-primary-action"
             >
               <Icon size={16} />
-              <span>{primary.label}</span>
+              <span class="hidden sm:inline">{primary.label}</span>
             </button>
           {/if}
         {/if}
@@ -241,7 +375,7 @@
       end of a list.
     -->
     <main
-      class="relative flex-1 overflow-y-auto p-4 pb-12 [scrollbar-gutter:stable]"
+      class="relative flex-1 [scrollbar-gutter:stable] overflow-y-auto p-4 pb-12"
       aria-busy={busy.slow}
       inert={busy.slow}
     >
@@ -265,17 +399,22 @@
       <div
         class="{TOP_BAR_HEIGHT} border-base-300 flex items-center gap-3 border-b px-4"
       >
-        <div class="bg-primary/10 text-primary rounded-lg p-2">
-          <Wrench size={22} />
-        </div>
+        <img
+          src="/icon.png"
+          width="38"
+          height="38"
+          alt=""
+          aria-hidden="true"
+          class="rounded-lg"
+        />
         <div class="flex flex-col leading-tight">
           <span class="text-base-content font-bold">{companyName}</span>
           <span class="text-base-content/60 text-xs">Werkstatt-Manager</span>
         </div>
       </div>
 
-      <nav class="flex-1 overflow-y-auto px-2 py-3 [scrollbar-gutter:stable]">
-        {#each navigation as group (group.label)}
+      <nav class="flex-1 [scrollbar-gutter:stable] overflow-y-auto px-2 py-3">
+        {#each visibleNavigation as group (group.label)}
           <div class="mb-3">
             <div
               class="text-base-content/50 px-3 pb-1 text-[11px] font-semibold tracking-wider uppercase"
@@ -301,14 +440,60 @@
         {/each}
       </nav>
 
-      <div
-        class="border-base-300 text-base-content/50 border-t px-4 py-2 text-[11px]"
-      >
-        v0.0.1 · {new Date().getFullYear()}
-      </div>
+      {#if currentUser}
+        <div class="border-base-300 border-t p-2">
+          <div class="dropdown dropdown-top dropdown-end w-full">
+            <button
+              type="button"
+              class="hover:bg-base-200 flex w-full items-center gap-3 rounded-md px-2 py-2 text-left"
+              aria-label="Benutzermenü"
+              aria-haspopup="menu"
+              data-testid="user-menu"
+            >
+              <div
+                class="bg-primary/15 text-primary flex h-9 w-9 shrink-0 items-center justify-center rounded-full"
+              >
+                <UserIcon size={18} />
+              </div>
+              <div class="flex min-w-0 flex-col leading-tight">
+                <span class="text-base-content truncate text-sm font-medium">
+                  {currentUser.name}
+                </span>
+                <span class="text-base-content/60 truncate text-xs">
+                  {currentUser.username ?? 'Angemeldet'}
+                </span>
+              </div>
+            </button>
+            <ul
+              role="menu"
+              class="dropdown-content menu bg-base-100 border-base-300 z-50 mb-2 w-60 rounded-md border p-2 shadow-md"
+            >
+              <li class="menu-title">
+                <span class="text-base-content/60 text-xs">
+                  Angemeldet als {currentUser.username ?? currentUser.name}
+                </span>
+              </li>
+              <li>
+                <a href="/settings/account">
+                  <UserIcon size={16} />
+                  <span>Profil</span>
+                </a>
+              </li>
+              <li>
+                <button type="button" onclick={handleLogout}>
+                  <LogOut size={16} />
+                  <span>Abmelden</span>
+                </button>
+              </li>
+            </ul>
+          </div>
+        </div>
+      {/if}
     </div>
   </aside>
 </div>
+
+<GlobalSearch bind:open={searchOpen} />
 
 <ConfirmDialog
   bind:open={unsavedOpen}

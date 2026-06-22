@@ -27,6 +27,7 @@ import {
   listSuppliers,
   updateSupplier
 } from '$lib/server/services/supplier-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const supplierInputSchema = object({
   name: pipe(string(), trim(), maxLength(200)),
@@ -60,6 +61,7 @@ const listSchema = object({
  * @module suppliers
  */
 export const listSuppliersRemote = query(listSchema, async (params) => {
+  requirePermission('suppliers')
   const archivedFilter =
     params.archived === 'archived'
       ? true
@@ -78,6 +80,7 @@ export const listSuppliersRemote = query(listSchema, async (params) => {
 export const getSupplierRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('suppliers')
     const row = await getSupplier(id)
     if (!row) error(404, 'Lieferant nicht gefunden.')
     return row
@@ -96,6 +99,7 @@ export const getSupplierRemote = query(
 export const createSupplierRemote = command(
   supplierInputSchema,
   async (values) => {
+    requirePermission('suppliers')
     const data = await createSupplier(values)
     await requested(listSuppliersRemote, 4).refreshAll()
     return data
@@ -111,6 +115,7 @@ export const createSupplierRemote = command(
 export const updateSupplierRemote = command(
   object({ id: idSchema, values: supplierInputSchema }),
   async ({ id, values }) => {
+    requirePermission('suppliers')
     const data = await updateSupplier(id, values)
     await Promise.all([
       getSupplierRemote({ id }).refresh(),
@@ -129,6 +134,7 @@ export const updateSupplierRemote = command(
 export const deleteSupplierRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('suppliers')
     await deleteSupplier(id)
     await requested(listSuppliersRemote, 4).refreshAll()
   }

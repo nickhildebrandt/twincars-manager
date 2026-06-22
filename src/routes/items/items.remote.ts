@@ -20,7 +20,14 @@ import {
   nextArticleNumber,
   updateItem
 } from '$lib/server/services/item-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
+/**
+ * Item input shape. Since Migration 0022 the `items` table is the
+ * Werkstattleistungen / Material catalogue only — no tires, no JSONB
+ * attributes, no online-shop fields. Tires live in their own module
+ * (`/tires`).
+ */
 const itemInputSchema = object({
   articleNumber: optional(pipe(string(), trim(), maxLength(50))),
   description: pipe(string(), trim(), maxLength(500)),
@@ -29,9 +36,6 @@ const itemInputSchema = object({
   unitPriceNet: optional(number()),
   purchasePriceNet: optional(number()),
   stockOnHand: optional(number()),
-  stockMin: optional(number()),
-  stockMax: optional(number()),
-  discontinued: optional(picklist(['true', 'false'])),
   notes: optional(notesSchema)
 })
 
@@ -49,6 +53,7 @@ const listSchema = object({
  * @module items
  */
 export const listItemsRemote = query(listSchema, async (params) => {
+  requirePermission('items')
   const kind = params.kind && params.kind !== 'all' ? params.kind : undefined
   return listItems({ ...params, kind })
 })
@@ -60,6 +65,7 @@ export const listItemsRemote = query(listSchema, async (params) => {
  * @module items
  */
 export const getItemRemote = query(object({ id: idSchema }), async ({ id }) => {
+  requirePermission('items')
   const e = await getItem(id)
   if (!e) error(404, 'Artikel nicht gefunden.')
   return e
@@ -80,6 +86,7 @@ const priceHistorySchema = object({
 export const getItemPriceHistoryRemote = query(
   priceHistorySchema,
   async ({ id, page, size }) => {
+    requirePermission('items')
     return listItemPriceHistory(id, page, size)
   }
 )
@@ -94,8 +101,6 @@ const toRow = (
     out.unitPriceNet = String(out.unitPriceNet)
   if (typeof out.purchasePriceNet === 'number')
     out.purchasePriceNet = String(out.purchasePriceNet)
-  if (out.discontinued === 'true') out.discontinued = true
-  if (out.discontinued === 'false') out.discontinued = false
   return out
 }
 
@@ -110,6 +115,7 @@ const toRow = (
  * @module items
  */
 export const createItemRemote = command(itemInputSchema, async (values) => {
+  requirePermission('items')
   const articleNumber = values.articleNumber || (await nextArticleNumber())
   const data = await createItem({
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -129,6 +135,7 @@ export const createItemRemote = command(itemInputSchema, async (values) => {
 export const updateItemRemote = command(
   object({ id: idSchema, values: itemInputSchema }),
   async ({ id, values }) => {
+    requirePermission('items')
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const data = await updateItem(id, toRow(values as any) as any)
     await Promise.all([
@@ -148,6 +155,7 @@ export const updateItemRemote = command(
 export const deleteItemRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('items')
     await deleteItem(id)
     await requested(listItemsRemote, 4).refreshAll()
   }

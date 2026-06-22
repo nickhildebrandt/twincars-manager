@@ -4,6 +4,7 @@
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
   import { pickCustomersRemote } from '../pickers.remote'
 
   /**
@@ -20,12 +21,6 @@
   type Mode = 'customer' | 'stock' | 'edit'
 
   type Props = {
-    /**
-     * `Vehicle` ohne `licensePlate` — die zuletzt gültige Plate wird
-     * separat als String mitgereicht, weil sie aus
-     * `vehicle_license_plate_versions` stammt und nicht mehr Teil der
-     * `vehicles`-Tabelle ist.
-     */
     initial?: Partial<Vehicle> & { licensePlate?: string | null }
     mode?: Mode
     onSave: (values: VehicleFormValues) => Promise<void> | void
@@ -54,12 +49,6 @@
 
   const { initial = {}, mode = 'edit', onSave, onCancel }: Props = $props()
 
-  /**
-   * Read `initial` exactly once at component setup. `untrack` is the
-   * documented Svelte 5 way to opt out of reactivity here — we deliberately
-   * want the form to seed from the initial prop value, then become editable
-   * state owned by this component.
-   */
   const init = untrack(() => ({ ...initial }))
 
   let customerId = $state(init.customerId ?? '')
@@ -82,6 +71,22 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /**
+   * Client-side validity gate for the Submit button. Mirrors the
+   * business rules enforced in `submit`:
+   *
+   *   - at least one of licensePlate / vin / make / model must be set
+   *   - in `customer` mode, a customer must be picked
+   */
+  const valid = $derived.by(() => {
+    const hasIdentifier = Boolean(
+      licensePlate.trim() || vin.trim() || make.trim() || model.trim()
+    )
+    if (!hasIdentifier) return false
+    if (mode === 'customer' && !customerId) return false
+    return true
+  })
+
   const trimOrUndef = (v: string) => {
     const t = v.trim()
     return t === '' ? undefined : t
@@ -98,9 +103,6 @@
       errorMsg = 'Bitte einen Kunden auswählen.'
       return
     }
-    // Stock-Vehicle: customerId hart auf undefined zwingen, egal was
-    // im State ist (das kann passieren wenn dieselbe Form woanders
-    // wiederverwendet wird).
     const resolvedCustomerId =
       mode === 'stock' ? undefined : customerId || undefined
     formDirty.clear()
@@ -152,7 +154,7 @@
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
           <div class="flex w-full flex-col gap-1 sm:col-span-2">
             <span class="label-text">
-              Kunde {mode === 'customer' ? '*' : ''}
+              Kunde{mode === 'customer' ? ' *' : ''}
             </span>
             <SearchablePicker
               bind:value={customerId}
@@ -170,48 +172,42 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Stammdaten</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Marke</span>
+        <FormField label="Marke">
           <input
             class="input input-bordered w-full"
             maxlength="100"
             bind:value={make}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Modell</span>
+        </FormField>
+        <FormField label="Modell">
           <input
             class="input input-bordered w-full"
             maxlength="150"
             bind:value={model}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Kennzeichen</span>
+        </FormField>
+        <FormField label="Kennzeichen">
           <input
             class="input input-bordered w-full"
             maxlength="20"
             bind:value={licensePlate}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">FIN</span>
+        </FormField>
+        <FormField label="FIN">
           <input
             class="input input-bordered w-full"
             maxlength="25"
             bind:value={vin}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Erstzulassung</span>
+        </FormField>
+        <FormField label="Erstzulassung">
           <input
             class="input input-bordered w-full"
             type="date"
             bind:value={firstRegistration}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Kilometerstand</span>
+        </FormField>
+        <FormField label="Kilometerstand">
           <input
             class="input input-bordered w-full"
             type="number"
@@ -220,39 +216,35 @@
             step="1"
             bind:value={mileageKm}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Nächste HU</span>
+        </FormField>
+        <FormField label="Nächste HU">
           <input
             class="input input-bordered w-full"
             type="date"
             bind:value={nextHu}
           />
-        </label>
+        </FormField>
       </div>
     </fieldset>
 
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Technik</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">HSN</span>
+        <FormField label="HSN">
           <input
             class="input input-bordered w-full"
             maxlength="10"
             bind:value={hsn}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">TSN</span>
+        </FormField>
+        <FormField label="TSN">
           <input
             class="input input-bordered w-full"
             maxlength="10"
             bind:value={tsn}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Hubraum (ccm)</span>
+        </FormField>
+        <FormField label="Hubraum (ccm)">
           <input
             class="input input-bordered w-full"
             type="number"
@@ -261,9 +253,8 @@
             step="1"
             bind:value={displacementCcm}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">kW</span>
+        </FormField>
+        <FormField label="kW">
           <input
             class="input input-bordered w-full"
             type="number"
@@ -272,9 +263,8 @@
             step="1"
             bind:value={powerKw}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Kraftstoff</span>
+        </FormField>
+        <FormField label="Kraftstoff">
           <select class="select select-bordered w-full" bind:value={fuelType}>
             <option value="">—</option>
             <option>Benzin</option>
@@ -283,23 +273,21 @@
             <option>Hybrid</option>
             <option>LPG</option>
           </select>
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Getriebe</span>
+        </FormField>
+        <FormField label="Getriebe">
           <select class="select select-bordered w-full" bind:value={gearbox}>
             <option value="">—</option>
             <option>Schaltgetriebe</option>
             <option>Automatik</option>
           </select>
-        </label>
-        <label class="flex w-full flex-col gap-1 sm:col-span-3">
-          <span class="label-text">Aufbau</span>
+        </FormField>
+        <FormField label="Aufbau" colSpan="sm:col-span-3">
           <input
             class="input input-bordered w-full"
             maxlength="50"
             bind:value={bodyType}
           />
-        </label>
+        </FormField>
       </div>
     </fieldset>
 
@@ -321,7 +309,11 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        disabled={busy.active || !valid}
+      >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

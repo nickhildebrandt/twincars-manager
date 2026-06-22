@@ -39,8 +39,8 @@ import {
   updateAbsence
 } from '$lib/server/services/absence-service'
 import { db } from '$lib/server/db/client'
-import { payrollEntries, payrollPeriods } from '$lib/server/db/schema'
 import { and, asc, count as sqlCount, desc, eq, gte, lte } from 'drizzle-orm'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const employeeInputSchema = object({
   personnelNumber: optional(pipe(string(), trim(), maxLength(30))),
@@ -91,6 +91,7 @@ const listSchema = object({
  * @module employees
  */
 export const listEmployeesRemote = query(listSchema, async (params) => {
+  requirePermission('employees')
   const archivedFilter =
     params.archived === 'archived'
       ? true
@@ -109,6 +110,7 @@ export const listEmployeesRemote = query(listSchema, async (params) => {
 export const getEmployeeRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('employees')
     const e = await getEmployee(id)
     if (!e) error(404, 'Mitarbeiter nicht gefunden.')
     return e
@@ -127,6 +129,7 @@ export const getEmployeeRemote = query(
 export const createEmployeeRemote = command(
   employeeInputSchema,
   async (values) => {
+    requirePermission('employees')
     const personnelNumber =
       values.personnelNumber || (await nextPersonnelNumber())
     // Stamm-Spalten ohne Gehalt — die Werte landen in
@@ -156,6 +159,7 @@ export const createEmployeeRemote = command(
 export const updateEmployeeRemote = command(
   object({ id: idSchema, values: employeeInputSchema }),
   async ({ id, values }) => {
+    requirePermission('employees')
     // Gehaltswerte abspalten und nur dann eine neue Version anlegen,
     // wenn sich gegenüber der aktuell gültigen Version etwas ändert.
     const { monthlySalary, hourlyWage, ...rest } = values
@@ -194,6 +198,7 @@ export const updateEmployeeRemote = command(
 export const deleteEmployeeRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('employees')
     await deleteEmployee(id)
     await requested(listEmployeesRemote, 4).refreshAll()
   }
@@ -211,7 +216,10 @@ export const deleteEmployeeRemote = command(
  */
 export const listEmployeeSalaryVersionsRemote = query(
   object({ employeeId: idSchema }),
-  async ({ employeeId }) => listSalaryVersions(employeeId)
+  async ({ employeeId }) => {
+    requirePermission('employees')
+    return listSalaryVersions(employeeId)
+  }
 )
 
 const salaryVersionSchema = object({
@@ -223,8 +231,7 @@ const salaryVersionSchema = object({
 
 /**
  * Legt eine neue Gehaltsversion an oder aktualisiert die Version mit
- * dem gleichen `valid_from`. Vergangene Lohnabrechnungen bleiben
- * unverändert, weil der Bruttobetrag dort als Snapshot gespeichert ist.
+ * dem gleichen `valid_from`.
  *
  * @group integration
  * @module employees
@@ -232,6 +239,7 @@ const salaryVersionSchema = object({
 export const upsertEmployeeSalaryVersionRemote = command(
   salaryVersionSchema,
   async (data) => {
+    requirePermission('employees')
     const row = await upsertSalaryVersion({
       employeeId: data.employeeId,
       validFrom: data.validFrom,
@@ -250,10 +258,7 @@ export const upsertEmployeeSalaryVersionRemote = command(
 )
 
 /**
- * Löscht eine Gehaltsversion. Achtung: vergangene Lohnabrechnungen
- * bleiben unverändert (Brutto-Snapshot in `payroll_entries`), aber
- * automatisch erzeugte Folge-Abrechnungen werden eine andere Version
- * heranziehen.
+ * Löscht eine Gehaltsversion.
  *
  * @group integration
  * @module employees
@@ -261,6 +266,7 @@ export const upsertEmployeeSalaryVersionRemote = command(
 export const deleteEmployeeSalaryVersionRemote = command(
   object({ id: idSchema, employeeId: idSchema }),
   async ({ id, employeeId }) => {
+    requirePermission('employees')
     await deleteSalaryVersion(id)
     await Promise.all([
       listEmployeeSalaryVersionsRemote({ employeeId }).refresh(),
@@ -302,64 +308,12 @@ const absenceInputSchema = object({
 export const listAbsencesRemote = query(
   object({ employeeId: idSchema, year: optional(number()) }),
   async ({ employeeId, year }) => {
+    requirePermission('employees')
     const [absences, balance] = await Promise.all([
       listAbsencesForEmployee(employeeId, { year: year ?? null }),
       remainingVacationDays(employeeId)
     ])
     return { absences, balance }
-  }
-)
-
-/**
- * Paginated payroll history for one employee. Joins to
- * `payroll_periods` so the table can show year/month inline.
- *
- * @group integration
- * @module employees
- */
-export const listEmployeePayrollRemote = query(
-  object({ employeeId: idSchema, page: number() }),
-  async ({ employeeId, page }) => {
-    const size = 25
-    const offset = Math.max(0, (page - 1) * size)
-    const where = eq(payrollEntries.employeeId, employeeId)
-
-    const [rows, totalRow] = await Promise.all([
-      db
-        .select({
-          id: payrollEntries.id,
-          periodId: payrollEntries.periodId,
-          year: payrollPeriods.year,
-          month: payrollPeriods.month,
-          status: payrollEntries.status,
-          netTotal: payrollEntries.netTotal,
-          grossTotal: payrollEntries.grossTotal,
-          payoutDate: payrollEntries.payoutDate,
-          createdAt: payrollEntries.createdAt
-        })
-        .from(payrollEntries)
-        .innerJoin(
-          payrollPeriods,
-          eq(payrollPeriods.id, payrollEntries.periodId)
-        )
-        .where(where)
-        .orderBy(desc(payrollPeriods.year), desc(payrollPeriods.month))
-        .limit(size)
-        .offset(offset),
-      db.select({ value: sqlCount() }).from(payrollEntries).where(where)
-    ])
-    const total = Number(totalRow[0]?.value ?? 0)
-    return {
-      items: rows.map((r) => ({
-        ...r,
-        netTotal: Number(r.netTotal ?? 0),
-        grossTotal: Number(r.grossTotal ?? 0)
-      })),
-      total,
-      page,
-      size,
-      pageCount: Math.max(1, Math.ceil(total / size))
-    }
   }
 )
 
@@ -370,6 +324,7 @@ export const listEmployeePayrollRemote = query(
  * @module employees
  */
 export const createAbsenceRemote = command(absenceInputSchema, async (data) => {
+  requirePermission('employees')
   if (data.type === 'sick') {
     const currentYear = new Date().getFullYear()
     const fromY = Number(data.dateFrom.slice(0, 4))
@@ -428,7 +383,10 @@ export const getAbsenceConflictsRemote = query(
     dateTo: pipe(string(), trim(), maxLength(10)),
     excludeId: optional(idSchema)
   }),
-  async (params) => findVacationSickConflicts(params)
+  async (params) => {
+    requirePermission('employees')
+    return findVacationSickConflicts(params)
+  }
 )
 
 /**
@@ -450,6 +408,7 @@ export const updateAbsenceRemote = command(
     })
   }),
   async ({ id, values }) => {
+    requirePermission('employees')
     // Folgejahr-Krankmeldung auch beim Update verhindern (z.B. wenn der
     // Typ auf 'sick' geändert oder die Daten verschoben werden).
     if (values.type === 'sick' || values.dateFrom || values.dateTo) {
@@ -483,6 +442,7 @@ export const updateAbsenceRemote = command(
 export const deleteAbsenceRemote = command(
   object({ id: idSchema, employeeId: idSchema }),
   async ({ id, employeeId }) => {
+    requirePermission('employees')
     await deleteAbsence(id)
     await listAbsencesRemote({ employeeId }).refresh()
   }

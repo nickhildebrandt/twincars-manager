@@ -8,10 +8,12 @@
     Receipt,
     FileWarning,
     BellPlus,
-    FileText
+    FileText,
+    RefreshCw
   } from '@lucide/svelte'
   import {
-    createReminderRemote,
+    autoSendDuePaymentRemindersRemote,
+    createPaymentReminderRemote,
     listOpenInvoicesRemote,
     listRemindersRemote
   } from './reminders.remote'
@@ -19,10 +21,6 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formatEuro } from '$lib/utils/money'
-  import {
-    reminderLevelBadge,
-    reminderLevelLabel
-  } from '$lib/utils/status-labels'
 
   /**
    * Top-level await primes SSR + hydration; we then mirror the data into a
@@ -43,33 +41,65 @@
     return { open, overdue: overdue.length, overdueSum }
   })
 
-  const nextReminderLabel = (lvl: number): string => {
-    const next = lvl + 1
-    if (next > 4) return 'Alle Stufen erreicht'
-    return reminderLevelLabel(next)
+  const refresh = async () => {
+    ;[items, reminders] = await Promise.all([
+      listOpenInvoicesRemote().run(),
+      listRemindersRemote().run()
+    ])
   }
 
-  const createNextReminder = async (invoiceId: string, level: number) => {
-    if (level >= 4) return
-    const nextLevel = (level + 1) as 1 | 2 | 3 | 4
+  const sendReminder = async (invoiceId: string) => {
     try {
       await busy.run(async () => {
-        await createReminderRemote({ invoiceId, level: nextLevel })
-        ;[items, reminders] = await Promise.all([
-          listOpenInvoicesRemote().run(),
-          listRemindersRemote().run()
-        ])
+        await createPaymentReminderRemote({ invoiceId })
+        await refresh()
       })
-      toast.success('Mahnung erzeugt.')
+      toast.success('Zahlungserinnerung versendet.')
     } catch (err) {
-      handleClientError(err, 'Mahnung konnte nicht erzeugt werden')
+      handleClientError(err, 'Zahlungserinnerung konnte nicht versendet werden')
     }
+  }
+
+  /**
+   * Operator-triggered batch: scans for invoices whose configured
+   * interval has elapsed (first or recurring) and sends each one. Same
+   * code path as the auto-scheduler will use later.
+   */
+  const runAutoBatch = async () => {
+    try {
+      const result = await busy.run(async () => {
+        const r = await autoSendDuePaymentRemindersRemote()
+        await refresh()
+        return r
+      })
+      if (result.created === 0 && result.failed === 0) {
+        toast.success('Keine fälligen Zahlungserinnerungen.')
+      } else {
+        toast.success(
+          `${result.created} Zahlungserinnerung(en) versendet` +
+            (result.failed > 0 ? ` · ${result.failed} fehlgeschlagen` : '')
+        )
+      }
+    } catch (err) {
+      handleClientError(err, 'Batch-Versand fehlgeschlagen')
+    }
+  }
+
+  const fmt = (s: string | null | undefined) => {
+    if (!s) return '—'
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
 </script>
 
 <PageHeader
-  title="Offene Rechnungen & Mahnungen"
-  subtitle="OP-Liste mit automatisch berechneten Verzugstagen und Mahnstufen."
+  title="Offene Rechnungen & Zahlungserinnerungen"
+  subtitle="OP-Liste mit automatisch berechneten Verzugstagen — eine einzige freundliche Erinnerung wird wiederholt versendet."
+  primaryAction={{
+    label: 'Fällige jetzt versenden',
+    onClick: runAutoBatch,
+    icon: RefreshCw
+  }}
 />
 
 <div class="mb-4 grid grid-cols-1 gap-4 sm:grid-cols-3">
@@ -113,7 +143,8 @@
               <th class="text-right">Brutto</th>
               <th class="text-right">Offen</th>
               <th>Verzug</th>
-              <th>Mahnstufe</th>
+              <th class="text-right">Erinnerungen</th>
+              <th>Zuletzt am</th>
               <th class="text-right">Aktion</th>
             </tr>
           </thead>
@@ -125,8 +156,8 @@
               >
                 <td class="font-mono text-xs font-medium">{i.documentNumber}</td
                 >
-                <td>{i.issueDate}</td>
-                <td>{i.dueDate ?? '—'}</td>
+                <td>{fmt(i.issueDate)}</td>
+                <td>{fmt(i.dueDate)}</td>
                 <td>{i.customerName ?? ''}</td>
                 <td class="text-right font-mono">{formatEuro(i.grossTotal)}</td>
                 <td class="text-right font-mono font-semibold"
@@ -139,23 +170,28 @@
                     <span class="text-base-content/40">—</span>
                   {/if}
                 </td>
-                <td>
-                  <span
-                    class="badge badge-sm {reminderLevelBadge(i.reminderLevel)}"
-                  >
-                    {reminderLevelLabel(i.reminderLevel)}
-                  </span>
+                <td class="text-right">
+                  {#if i.reminderCount === 0}
+                    <span class="text-base-content/40">—</span>
+                  {:else}
+                    <span class="badge badge-sm badge-info">
+                      {i.reminderCount}×
+                    </span>
+                  {/if}
                 </td>
+                <td>{fmt(i.lastReminderDate)}</td>
                 <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end">
                     <button
                       type="button"
                       class="btn btn-sm btn-primary gap-1"
-                      disabled={i.reminderLevel >= 4 || busy.active}
-                      onclick={() => createNextReminder(i.id, i.reminderLevel)}
+                      disabled={busy.active}
+                      onclick={() => sendReminder(i.id)}
                     >
                       <BellPlus size={14} />
-                      {nextReminderLabel(i.reminderLevel)}
+                      {i.reminderCount === 0
+                        ? 'Zahlungserinnerung'
+                        : 'Erneut senden'}
                     </button>
                   </div>
                 </td>
@@ -172,9 +208,9 @@
   <div class="card border-base-300 bg-base-100 mt-4 border">
     <div class="card-body p-0">
       <div class="border-base-300 border-b px-4 py-3">
-        <h3 class="text-base font-semibold">Offene Mahnungen</h3>
+        <h3 class="text-base font-semibold">Versendete Zahlungserinnerungen</h3>
         <p class="text-base-content/60 text-sm">
-          Bereits erzeugte Mahnungen mit PDF-Vorschau.
+          Vollständige Historie aller bisher versendeten Zahlungserinnerungen.
         </p>
       </div>
       <div class="overflow-x-auto">
@@ -183,11 +219,9 @@
             <tr>
               <th>Nr.</th>
               <th>Datum</th>
-              <th>Stufe</th>
+              <th>Nr. der Erinnerung</th>
               <th>Rechnung</th>
               <th>Kunde</th>
-              <th class="text-right">Gebühr</th>
-              <th class="text-right">Zinsen</th>
               <th>Zahlbar bis</th>
               <th class="text-right">Aktion</th>
             </tr>
@@ -200,17 +234,15 @@
               >
                 <td class="font-mono text-xs font-medium">{r.documentNumber}</td
                 >
-                <td>{r.issueDate}</td>
+                <td>{fmt(r.issueDate)}</td>
                 <td>
-                  <span class="badge badge-sm {reminderLevelBadge(r.level)}">
-                    {reminderLevelLabel(r.level)}
+                  <span class="badge badge-sm badge-info">
+                    {r.level}. Erinnerung
                   </span>
                 </td>
                 <td class="font-mono text-xs">{r.invoiceNumber}</td>
                 <td>{r.customerName ?? ''}</td>
-                <td class="text-right font-mono">{formatEuro(r.fee)}</td>
-                <td class="text-right font-mono">{formatEuro(r.interest)}</td>
-                <td>{r.dueDate}</td>
+                <td>{fmt(r.dueDate)}</td>
                 <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end">
                     <a

@@ -19,6 +19,7 @@ import {
   listLedgerEntries,
   updateLedgerEntry
 } from '$lib/server/services/ledger-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const entryInputSchema = object({
   direction: picklist(['income', 'expense']),
@@ -47,6 +48,7 @@ const listSchema = object({
  * @module ledger
  */
 export const listLedgerEntriesRemote = query(listSchema, async (params) => {
+  requirePermission('ledger')
   return listLedgerEntries({
     page: params.page,
     size: params.size,
@@ -65,7 +67,10 @@ export const listLedgerEntriesRemote = query(listSchema, async (params) => {
  */
 export const listCategoriesRemote = query(
   object({ direction: optional(picklist(['income', 'expense'])) }),
-  async ({ direction }) => listLedgerCategories(direction)
+  async ({ direction }) => {
+    requirePermission('ledger')
+    return listLedgerCategories(direction)
+  }
 )
 
 /**
@@ -77,6 +82,7 @@ export const listCategoriesRemote = query(
 export const getLedgerEntryRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('ledger')
     const e = await getLedgerEntry(id)
     if (!e) error(404, 'Buchung nicht gefunden.')
     return e
@@ -92,6 +98,7 @@ export const getLedgerEntryRemote = query(
 export const createLedgerEntryRemote = command(
   entryInputSchema,
   async (values) => {
+    requirePermission('ledger')
     const taxRate = values.taxRate ?? 19
     const gross = Number(values.amountGross)
     const net = Math.round((gross / (1 + taxRate / 100)) * 100) / 100
@@ -123,6 +130,7 @@ export const createLedgerEntryRemote = command(
 export const deleteLedgerEntryRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('ledger')
     await deleteLedgerEntry(id)
     await requested(listLedgerEntriesRemote, 4).refreshAll()
   }
@@ -139,6 +147,7 @@ export const deleteLedgerEntryRemote = command(
 export const updateLedgerEntryRemote = command(
   object({ id: idSchema, values: entryInputSchema }),
   async ({ id, values }) => {
+    requirePermission('ledger')
     const taxRate = values.taxRate ?? 19
     const gross = Number(values.amountGross)
     const net = Math.round((gross / (1 + taxRate / 100)) * 100) / 100

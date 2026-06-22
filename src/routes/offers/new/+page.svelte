@@ -65,6 +65,12 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /** Submit button validity gate. */
+  const valid = $derived(
+    Boolean(customerId) &&
+      positions.some((p) => (p.description ?? '').trim().length > 0)
+  )
+
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
     pickCustomersRemote({
       ...params,
@@ -604,7 +610,11 @@
       onclick={() => goto('/offers')}
       disabled={busy.active}>Abbrechen</button
     >
-    <button type="submit" class="btn btn-primary" disabled={busy.active}>
+    <button
+      type="submit"
+      class="btn btn-primary"
+      disabled={busy.active || !valid}
+    >
       {#if busy.active}
         <span class="loading loading-spinner loading-sm"></span>
       {/if}

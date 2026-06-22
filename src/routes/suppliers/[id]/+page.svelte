@@ -22,54 +22,55 @@
 />
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Anschrift</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Straße</dt><dd class="col-span-2"
-          >{s.street ?? '—'}</dd
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Straße</dt><dd
+          class="break-words sm:col-span-2">{s.street ?? '—'}</dd
         >
-        <dt class="text-base-content/60">PLZ / Ort</dt><dd class="col-span-2"
+        <dt class="text-base-content/60">PLZ / Ort</dt><dd
+          class="break-words sm:col-span-2"
           >{[s.zip, s.city].filter(Boolean).join(' ') || '—'}</dd
         >
-        <dt class="text-base-content/60">Land</dt><dd class="col-span-2"
-          >{s.country ?? '—'}</dd
+        <dt class="text-base-content/60">Land</dt><dd
+          class="break-words sm:col-span-2">{s.country ?? '—'}</dd
         >
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Kontakt</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Telefon</dt><dd class="col-span-2"
-          >{s.phone ?? '—'}</dd
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Telefon</dt><dd
+          class="break-all sm:col-span-2">{s.phone ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Fax</dt><dd class="col-span-2"
-          >{s.fax ?? '—'}</dd
+        <dt class="text-base-content/60">Fax</dt><dd
+          class="break-all sm:col-span-2">{s.fax ?? '—'}</dd
         >
-        <dt class="text-base-content/60">E-Mail</dt><dd class="col-span-2"
-          >{s.email ?? '—'}</dd
+        <dt class="text-base-content/60">E-Mail</dt><dd
+          class="break-all sm:col-span-2">{s.email ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Website</dt><dd class="col-span-2"
-          >{s.website ?? '—'}</dd
+        <dt class="text-base-content/60">Website</dt><dd
+          class="break-all sm:col-span-2">{s.website ?? '—'}</dd
         >
       </dl>
     </div>
   </div>
   {#if s.iban || s.bic || s.bankName}
-    <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
       <div class="card-body">
         <h3 class="card-title text-base">Bankdaten</h3>
-        <dl class="grid grid-cols-3 gap-y-1 text-sm">
-          <dt class="text-base-content/60">Bank</dt><dd class="col-span-2"
-            >{s.bankName ?? '—'}</dd
+        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+          <dt class="text-base-content/60">Bank</dt><dd
+            class="break-words sm:col-span-2">{s.bankName ?? '—'}</dd
           >
           <dt class="text-base-content/60">IBAN</dt><dd
-            class="col-span-2 font-mono">{s.iban ?? '—'}</dd
+            class="font-mono break-all sm:col-span-2">{s.iban ?? '—'}</dd
           >
           <dt class="text-base-content/60">BIC</dt><dd
-            class="col-span-2 font-mono">{s.bic ?? '—'}</dd
+            class="font-mono break-all sm:col-span-2">{s.bic ?? '—'}</dd
           >
         </dl>
       </div>

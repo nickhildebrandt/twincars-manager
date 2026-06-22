@@ -18,6 +18,7 @@ import {
   notesSchema
 } from '$lib/server/db/validation'
 import {
+  cancelInvoice,
   createDocument,
   deleteDocument,
   getDocument,
@@ -27,8 +28,9 @@ import {
 import { sendDocumentEmail } from '$lib/server/services/mail-service'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
 import { db } from '$lib/server/db/client'
-import { customers, vehicles } from '$lib/server/db/schema'
+import { customers, documents, vehicles } from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const itemSchema = object({
   description: pipe(string(), trim(), maxLength(500)),
@@ -68,6 +70,7 @@ const listSchema = object({
  * @module invoices
  */
 export const listInvoicesRemote = query(listSchema, async (params) => {
+  requirePermission('invoices')
   return listDocuments({ ...params, type: 'invoice' })
 })
 
@@ -80,6 +83,7 @@ export const listInvoicesRemote = query(listSchema, async (params) => {
 export const getInvoiceRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('invoices')
     const result = await getDocument(id)
     if (!result || result.doc.type !== 'invoice')
       error(404, 'Rechnung nicht gefunden.')
@@ -122,7 +126,37 @@ export const getInvoiceRemote = query(
         })()
       : [null]
 
-    return { ...result, customer: cust ?? null, vehicle: veh ?? null }
+    // Storno-Verkettung auflösen: Banner auf der Original-Rechnung
+    // braucht die Storno-Belegnummer, Banner auf dem Storno die
+    // Original-Belegnummer. Ein einziger Lookup pro Richtung.
+    const [stornoDoc] = result.doc.cancelledByDocumentId
+      ? await db
+          .select({
+            id: documents.id,
+            documentNumber: documents.documentNumber
+          })
+          .from(documents)
+          .where(eq(documents.id, result.doc.cancelledByDocumentId))
+          .limit(1)
+      : [null]
+    const [originalDoc] = result.doc.cancelsDocumentId
+      ? await db
+          .select({
+            id: documents.id,
+            documentNumber: documents.documentNumber
+          })
+          .from(documents)
+          .where(eq(documents.id, result.doc.cancelsDocumentId))
+          .limit(1)
+      : [null]
+
+    return {
+      ...result,
+      customer: cust ?? null,
+      vehicle: veh ?? null,
+      stornoDoc: stornoDoc ?? null,
+      originalDoc: originalDoc ?? null
+    }
   }
 )
 
@@ -137,6 +171,7 @@ export const getInvoiceRemote = query(
  * @module invoices
  */
 export const createInvoiceRemote = command(inputSchema, async (values) => {
+  requirePermission('invoices')
   if (values.items.length === 0)
     error(400, 'Bitte mindestens eine Position eingeben.')
   const created = await createDocument({ type: 'invoice', ...values })
@@ -149,11 +184,12 @@ export const createInvoiceRemote = command(inputSchema, async (values) => {
  *
  * Valid transitions:
  *   created → sent → paid
- *                 ↘ cancelled (on stornieren — rare; usually
- *                              a Mahnung path is preferred)
+ *                 ↘ cancelled (on stornieren — rare; usually a
+ *                              Zahlungserinnerung path is preferred)
  *
- * Mahn-Stufen werden separat über `documents.reminderLevel` und das
- * Mahnungs-Modul nachverfolgt — sie ändern den Status hier nicht.
+ * Zahlungserinnerungen werden separat über `documents.reminderLevel`
+ * und das Zahlungserinnerungs-Modul nachverfolgt — sie ändern den
+ * Status hier nicht.
  *
  * @group integration
  * @module invoices
@@ -164,6 +200,7 @@ export const setInvoiceStatusRemote = command(
     status: picklist(['created', 'sent', 'paid', 'cancelled'])
   }),
   async ({ id, status }) => {
+    requirePermission('invoices')
     await setDocumentStatus(id, status)
     if (status === 'paid') {
       await transferStockVehicleOnPayment(id)
@@ -222,6 +259,7 @@ async function transferStockVehicleOnPayment(invoiceId: string): Promise<void> {
 export const markInvoiceSentRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('invoices')
     await setDocumentStatus(id, 'sent')
     await Promise.all([
       getInvoiceRemote({ id }).refresh(),
@@ -244,6 +282,7 @@ export const markInvoiceSentRemote = command(
 export const sendInvoiceRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('invoices')
     const result = await getDocument(id)
     if (!result || result.doc.type !== 'invoice')
       error(404, 'Rechnung nicht gefunden.')
@@ -307,13 +346,51 @@ export const sendInvoiceRemote = command(
 /**
  * Delete an invoice.
  *
+ * GoBD: ausgestellte Rechnungen können nicht gelöscht werden — der
+ * Service wirft in dem Fall 409 mit der kuratierten Meldung, die der
+ * Aufrufer per `handleClientError` als Toast anzeigt.
+ *
  * @group integration
  * @module invoices
  */
 export const deleteInvoiceRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('invoices')
     await deleteDocument(id)
     await requested(listInvoicesRemote, 4).refreshAll()
+  }
+)
+
+/**
+ * Storno-Rechnung anlegen (GoBD § 14 UStG, §§ 145 ff. AO).
+ *
+ * Erzeugt einen neuen `documents`-Row mit `status='storno'`, negiert
+ * alle Beträge des Originals und verkettet beide Belege über
+ * `cancelsDocumentId` ↔ `cancelledByDocumentId`. Das Original behält
+ * seine Nummer, wird auf `status='cancelled'` gesetzt und trägt
+ * `cancelledAt`/`cancellationReason`.
+ *
+ * @group integration
+ * @module invoices
+ */
+export const cancelInvoiceRemote = command(
+  object({
+    id: idSchema,
+    reason: pipe(
+      string('Bitte einen Stornogrund angeben.'),
+      trim(),
+      maxLength(500, 'Der Stornogrund darf maximal 500 Zeichen lang sein.')
+    )
+  }),
+  async ({ id, reason }) => {
+    requirePermission('invoices')
+    if (reason.length === 0) error(400, 'Bitte einen Stornogrund angeben.')
+    const result = await cancelInvoice(id, reason)
+    await Promise.all([
+      getInvoiceRemote({ id }).refresh(),
+      requested(listInvoicesRemote, 4).refreshAll()
+    ])
+    return result
   }
 )

@@ -31,6 +31,7 @@ import {
 import { db } from '$lib/server/db/client'
 import { customers, documents, vehicles } from '$lib/server/db/schema'
 import { and, count as sqlCount, desc, eq } from 'drizzle-orm'
+import { requirePermission } from '$lib/server/auth-guards'
 
 /**
  * Validation schema shared by `createVehicleRemote` and
@@ -85,14 +86,15 @@ const listSchema = object({
  * @group integration
  * @module vehicles
  */
-export const listVehiclesRemote = query(listSchema, async (params) =>
-  listVehicles({
+export const listVehiclesRemote = query(listSchema, async (params) => {
+  requirePermission('vehicles')
+  return listVehicles({
     page: params.page,
     size: params.size,
     q: params.q,
     kind: params.kind ?? 'customer'
   })
-)
+})
 
 /**
  * Load a single vehicle by id. Throws `404` if not found.
@@ -103,6 +105,7 @@ export const listVehiclesRemote = query(listSchema, async (params) =>
 export const getVehicleRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('vehicles')
     const v = await getVehicle(id)
     if (!v) error(404, 'Fahrzeug nicht gefunden.')
     return v
@@ -115,7 +118,10 @@ export const getVehicleRemote = query(
  * @group integration
  * @module vehicles
  */
-export const countVehiclesRemote = query(async () => countVehicles())
+export const countVehiclesRemote = query(async () => {
+  requirePermission('vehicles')
+  return countVehicles()
+})
 
 /**
  * Vehicle detail enrichment — owner + paginated invoices in one
@@ -129,6 +135,7 @@ export const countVehiclesRemote = query(async () => countVehicles())
 export const getVehicleRelatedRemote = query(
   object({ id: idSchema, invoicesPage: number() }),
   async ({ id, invoicesPage }) => {
+    requirePermission('vehicles')
     const size = 25
     const offset = Math.max(0, (invoicesPage - 1) * size)
     const where = and(
@@ -209,6 +216,7 @@ const refreshListsAndCount = async (): Promise<void> => {
 export const createVehicleRemote = command(
   vehicleInputSchema,
   async (input) => {
+    requirePermission('vehicles')
     const data = await createVehicle({
       ...input,
       firstRegistration: input.firstRegistration ?? null,
@@ -229,6 +237,7 @@ export const createVehicleRemote = command(
 export const updateVehicleRemote = command(
   object({ id: idSchema, values: vehicleInputSchema }),
   async ({ id, values }) => {
+    requirePermission('vehicles')
     const data = await updateVehicle(id, values as never)
     await Promise.all([
       getVehicleRemote({ id }).refresh(),
@@ -247,6 +256,7 @@ export const updateVehicleRemote = command(
 export const deleteVehicleRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('vehicles')
     await deleteVehicle(id)
     await refreshListsAndCount()
   }
@@ -263,7 +273,10 @@ export const deleteVehicleRemote = command(
  */
 export const listVehiclePhotosRemote = query(
   object({ vehicleId: idSchema }),
-  async ({ vehicleId }) => listVehiclePhotos(vehicleId)
+  async ({ vehicleId }) => {
+    requirePermission('vehicles')
+    return listVehiclePhotos(vehicleId)
+  }
 )
 
 /**
@@ -282,6 +295,7 @@ export const addVehiclePhotoRemote = command(
     dataUrl: pipe(string(), maxLength(28_000_000))
   }),
   async (input) => {
+    requirePermission('vehicles')
     const row = await addVehiclePhoto(input)
     await listVehiclePhotosRemote({ vehicleId: input.vehicleId }).refresh()
     return row
@@ -298,6 +312,7 @@ export const addVehiclePhotoRemote = command(
 export const deleteVehiclePhotoRemote = command(
   object({ id: idSchema, vehicleId: idSchema }),
   async ({ id, vehicleId }) => {
+    requirePermission('vehicles')
     await deleteVehiclePhoto(id)
     await listVehiclePhotosRemote({ vehicleId }).refresh()
   }
@@ -313,6 +328,7 @@ export const deleteVehiclePhotoRemote = command(
 export const setMainVehiclePhotoRemote = command(
   object({ id: idSchema, vehicleId: idSchema }),
   async ({ id, vehicleId }) => {
+    requirePermission('vehicles')
     await setMainVehiclePhoto(id)
     await listVehiclePhotosRemote({ vehicleId }).refresh()
   }

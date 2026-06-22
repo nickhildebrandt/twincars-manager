@@ -20,15 +20,19 @@ import {
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { renderNumber } from '$lib/utils/numbering'
 
-export type CustomerKindFilter = 'all' | 'private' | 'business'
+export type CustomerKindFilter = 'all' | 'private' | 'business' | 'ebay'
 
 /**
  * List customers with server-side pagination, search and kind filter.
  *
  * - Archived customers are always hidden from the list — there's no UI
  *   surface for them; archive status is set on the detail page.
- * - `kind` filter derives from `customers.company`: a non-empty company
- *   name is a Firmenkunde, a null/empty company is a Privatkunde.
+ * - `kind` filter:
+ *   - `'ebay'` returns rows where `customers.kind = 'ebay'`.
+ *   - `'all'`, `'private'`, `'business'` always restrict to non-ebay
+ *     rows (`customers.kind = 'regular'`). `private` / `business` then
+ *     further narrow by the legacy `customers.company` column (a
+ *     non-null company is a Firmenkunde, otherwise Privatkunde).
  *
  * @param params pagination + free-text search query
  * @returns { items, total, page, size, pageCount }
@@ -51,14 +55,20 @@ export async function listCustomers(
         ilike(customers.city, term),
         ilike(customers.zip, term),
         ilike(customers.phone, term),
-        ilike(customers.email, term)
+        ilike(customers.email, term),
+        ilike(customers.ebayHandle, term)
       )!
     )
   }
-  if (kind === 'business') {
-    filters.push(isNotNull(customers.company))
-  } else if (kind === 'private') {
-    filters.push(isNull(customers.company))
+  if (kind === 'ebay') {
+    filters.push(eq(customers.kind, 'ebay'))
+  } else {
+    filters.push(eq(customers.kind, 'regular'))
+    if (kind === 'business') {
+      filters.push(isNotNull(customers.company))
+    } else if (kind === 'private') {
+      filters.push(isNull(customers.company))
+    }
   }
   const where = and(...filters)
 
@@ -173,6 +183,22 @@ export async function countCustomers(): Promise<number> {
     .from(customers)
     .where(eq(customers.archived, false))
   return Number(row?.value ?? 0)
+}
+
+/**
+ * Returns every non-archived customer who opted into broadcast / newsletter
+ * mailings. Used by the upcoming broadcast feature to assemble recipient
+ * lists; intentionally unpaginated so the caller can build a single mail
+ * job. Volume is bounded by the small-business size of this app.
+ */
+export async function listCustomersForBroadcast(): Promise<Customer[]> {
+  return db
+    .select()
+    .from(customers)
+    .where(
+      and(eq(customers.archived, false), eq(customers.wantsBroadcast, true))
+    )
+    .orderBy(asc(customers.lastName), asc(customers.firstName))
 }
 
 // Re-exports for tests

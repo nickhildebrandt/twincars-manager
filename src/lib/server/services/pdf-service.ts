@@ -44,7 +44,9 @@
 import { createHash } from 'node:crypto'
 import {
   PDFDocument,
+  PageSizes,
   StandardFonts,
+  degrees,
   rgb,
   type PDFFont,
   type PDFPage
@@ -56,12 +58,6 @@ import {
   documentItems,
   documentPdfs,
   documents,
-  payrollDeductions,
-  payrollEntries,
-  payrollLineItems,
-  payrollPeriods,
-  payslipPdfs,
-  employees,
   reminderPdfs,
   reminders,
   vehicles,
@@ -70,17 +66,15 @@ import {
   type Document,
   type DocumentItem,
   type DocumentPdf,
-  type Employee,
-  type PayrollDeduction,
-  type PayrollEntry,
-  type PayrollLineItem,
-  type PayrollPeriod,
   type Reminder,
   type ReminderPdf,
-  type Vehicle
+  type TireStorage,
+  type Vehicle,
+  type VehiclePhoto
 } from '$lib/server/db/schema'
 import { getSettings } from './settings-service'
 import { getEffectiveLicensePlate } from './vehicle-service'
+import { renderQrPng } from './qr-service'
 
 /* ------------------------------------------------------------------ */
 /* Types                                                              */
@@ -103,8 +97,6 @@ export type DocumentRenderInput = {
 /* ------------------------------------------------------------------ */
 /* Helpers                                                            */
 /* ------------------------------------------------------------------ */
-
-const round2 = (v: number): number => Math.round(v * 100) / 100
 
 const formatEur = (v: number | string): string => {
   const n = typeof v === 'string' ? Number(v) : v
@@ -248,7 +240,7 @@ const documentTypeLabelDe = (type: string): string => {
     case 'order_confirmation':
       return 'Auftragsbestätigung'
     case 'reminder':
-      return 'Mahnung'
+      return 'Zahlungserinnerung'
     default:
       return type
   }
@@ -379,12 +371,18 @@ export const renderDocumentPdf = async (
   input: DocumentRenderInput
 ): Promise<Uint8Array> => {
   const pdf = await PDFDocument.create()
+  // GoBD-Storno (§ 14 UStG): eine Storno-Rechnung ist immer noch
+  // `type='invoice'`, der Discriminator hängt am Status. Wir schalten
+  // hier den sichtbaren Titel um — "STORNORECHNUNG" plus den Hinweis
+  // auf die negierte Original-Belegnummer (falls im Input enthalten).
+  const isStorno = input.doc.type === 'invoice' && input.doc.status === 'storno'
+  const titleLabel = isStorno
+    ? 'STORNORECHNUNG'
+    : documentTypeLabelDe(input.doc.type)
   // PDF metadata — feeds into `Document Properties` in the viewer and is
   // a fallback source for the suggested download filename in browsers
   // that ignore URL fragments.
-  pdf.setTitle(
-    `${documentTypeLabelDe(input.doc.type)} ${input.doc.documentNumber}`
-  )
+  pdf.setTitle(`${titleLabel} ${input.doc.documentNumber}`)
   pdf.setProducer('TwinCarsManager')
   if (input.settings.companyName) pdf.setAuthor(input.settings.companyName)
   pdf.setCreationDate(new Date())
@@ -426,7 +424,7 @@ export const renderDocumentPdf = async (
   const cust = input.customer
   const veh = input.vehicle
   const docType = input.doc.type
-  const title = documentTypeLabelDe(docType)
+  const title = titleLabel
 
   /* ── Layout helper closures bind to the current page ────────────── */
 
@@ -667,6 +665,23 @@ export const renderDocumentPdf = async (
       align: 'right'
     })
     ty -= 22
+    // GoBD-Storno: unter dem Titel den Bezug auf die Original-Rechnung
+    // ausweisen, damit der Steuerberater/Prüfer den Zusammenhang ohne
+    // zusätzlichen Klick sieht. Wir extrahieren die Originalnummer aus
+    // dem `notes`-Feld, das `cancelInvoice` mit "Stornorechnung zu
+    // <Nr>" befüllt.
+    if (isStorno) {
+      const match = /Stornorechnung zu (\S+)/.exec(input.doc.notes ?? '')
+      const reference = match ? match[1] : null
+      if (reference) {
+        s.text(`zu Rechnung ${reference}`, rightX, ty, {
+          size: 10,
+          font: fontBoldItalic,
+          align: 'right'
+        })
+        ty -= 14
+      }
+    }
     // Page n von N is drawn in the final patch pass once we know N.
     pageNoLineYs.push(ty)
     ty -= 12
@@ -972,7 +987,13 @@ export const renderDocumentPdf = async (
 /* Cache layer (DB)                                                   */
 /* ------------------------------------------------------------------ */
 
-const loadRenderInput = async (
+/**
+ * Load the canonical render input for a document. Same loader the PDF
+ * cache uses — exported so the XRechnung XML generator can reuse the
+ * exact same shape (doc + items + customer + vehicle + settings) without
+ * duplicating any of the joins.
+ */
+export const loadDocumentRenderInput = async (
   documentId: string
 ): Promise<DocumentRenderInput | null> => {
   const [doc] = await db
@@ -1039,7 +1060,7 @@ export const loadCachedDocumentPdf = async (
 export const renderAndPersistDocumentPdf = async (
   documentId: string
 ): Promise<DocumentPdf> => {
-  const input = await loadRenderInput(documentId)
+  const input = await loadDocumentRenderInput(documentId)
   if (!input) {
     throw new Error('Dokument nicht gefunden.')
   }
@@ -1106,61 +1127,23 @@ export const getDocumentPdfMeta = async (
 /* Reminders                                                              */
 /* ────────────────────────────────────────────────────────────────────── */
 
-const reminderTitleDe = (level: number): string => {
-  switch (level) {
-    case 1:
-      return 'Zahlungserinnerung'
-    case 2:
-      return '1. Mahnung'
-    case 3:
-      return '2. Mahnung'
-    case 4:
-      return 'Letzte Mahnung'
-    default:
-      return 'Mahnung'
-  }
-}
+const reminderTitleDe = (_level: number): string => 'Zahlungserinnerung'
 
 /**
- * Standard German legal text per dunning stage. Tone escalates with the
- * level. Wording is deliberately conservative — it nudges without making
- * threats that the company isn't ready to follow through on. Customise
- * via the company-settings free-text fields when business needs change.
+ * Standard friendly German body for every Zahlungserinnerung. There
+ * is no escalation — the same conservative wording is used regardless
+ * of how many reminders have already been sent for the invoice. The
+ * `level` parameter is accepted for future template hooks but
+ * deliberately not consumed.
  */
-const reminderBodyDe = (level: number, invoiceNumber: string): string => {
-  switch (level) {
-    case 1:
-      return [
-        `vermutlich haben Sie es übersehen — die Rechnung ${invoiceNumber} ist`,
-        `inzwischen fällig. Bitte begleichen Sie den offenen Betrag bis zum unten`,
-        `genannten Datum. Sollten Sie die Zahlung bereits angewiesen haben,`,
-        `betrachten Sie dieses Schreiben bitte als gegenstandslos.`
-      ].join(' ')
-    case 2:
-      return [
-        `trotz unserer Zahlungserinnerung haben wir bislang keinen Zahlungseingang`,
-        `auf die Rechnung ${invoiceNumber} feststellen können. Wir bitten Sie,`,
-        `den ausstehenden Betrag — zuzüglich der unten ausgewiesenen Mahngebühr`,
-        `und Verzugszinsen — bis zum genannten Zahlungstermin zu begleichen.`
-      ].join(' ')
-    case 3:
-      return [
-        `auch nach unserer ersten Mahnung steht der Rechnungsbetrag aus.`,
-        `Bitte überweisen Sie den Gesamtbetrag bis zum genannten Datum, um`,
-        `weitere Schritte zu vermeiden. Mahngebühr und Verzugszinsen sind`,
-        `gemäß § 286 BGB in der Aufstellung enthalten.`
-      ].join(' ')
-    case 4:
-      return [
-        `dies ist unsere letzte Mahnung zur Rechnung ${invoiceNumber}. Sollte`,
-        `der Gesamtbetrag bis zum unten genannten Datum nicht eingegangen sein,`,
-        `werden wir die Forderung ohne weitere Vorwarnung an unseren`,
-        `Rechtsbeistand übergeben. Verzugszinsen und Gebühren laufen weiter auf.`
-      ].join(' ')
-    default:
-      return ''
-  }
-}
+const reminderBodyDe = (_level: number, invoiceNumber: string): string =>
+  [
+    `wir möchten Sie freundlich daran erinnern, dass die Rechnung`,
+    `${invoiceNumber} inzwischen fällig ist. Bitte begleichen Sie`,
+    `den offenen Betrag bis zum unten genannten Datum. Sollten Sie`,
+    `die Zahlung bereits angewiesen haben, betrachten Sie dieses`,
+    `Schreiben bitte als gegenstandslos.`
+  ].join(' ')
 
 export type ReminderRenderInput = {
   reminder: Reminder
@@ -1180,8 +1163,6 @@ export const computeReminderInputHash = (
       level: input.reminder.level,
       issueDate: input.reminder.issueDate,
       dueDate: input.reminder.dueDate,
-      fee: input.reminder.fee,
-      interest: input.reminder.interest,
       notes: input.reminder.notes,
       updatedAt: input.reminder.updatedAt
     },
@@ -1247,11 +1228,12 @@ export const computeReminderInputHash = (
 }
 
 /**
- * Render an A4 PDF for the given reminder. Visually shares the modern
- * Twincars layout with {@link renderDocumentPdf}: same logo + company
- * header, return-to-sender mini line, customer block, vehicle info,
- * right-aligned title, and standardized closing — only the body
- * (per-stage dunning text + Forderungsaufstellung) is reminder-specific.
+ * Render an A4 PDF for the given Zahlungserinnerung. Visually shares
+ * the modern Twincars layout with {@link renderDocumentPdf}: same
+ * logo + company header, return-to-sender mini line, customer block,
+ * vehicle info, right-aligned title, and standardized closing — only
+ * the body (friendly reminder text + Forderungsaufstellung) is
+ * reminder-specific. No Mahngebühr, no Verzugszinsen.
  */
 export const renderReminderPdf = async (
   input: ReminderRenderInput
@@ -1487,7 +1469,7 @@ export const renderReminderPdf = async (
     align: 'right'
   })
   ty -= 12
-  text(`Mahnungsnummer: ${r.documentNumber}`, rightX, ty, {
+  text(`Erinnerungs-Nr.: ${r.documentNumber}`, rightX, ty, {
     size: 10,
     font: fontBold,
     align: 'right'
@@ -1550,18 +1532,6 @@ export const renderReminderPdf = async (
     formatEur(inv.grossTotal),
     { italic: true, size: 9 }
   )
-  if (Number(r.fee) > 0) {
-    settlementRow('Mahngebühr', formatEur(r.fee), { italic: true, size: 9 })
-  }
-  if (Number(r.interest) > 0) {
-    settlementRow('Verzugszinsen', formatEur(r.interest), {
-      italic: true,
-      size: 9
-    })
-  }
-  const total = round2(
-    Number(inv.grossTotal) + Number(r.fee) + Number(r.interest)
-  )
   page.drawLine({
     start: { x: ml, y: y + 4 },
     end: { x: PAGE_W - mr, y: y + 4 },
@@ -1569,7 +1539,7 @@ export const renderReminderPdf = async (
     color: rgb(0.7, 0.7, 0.7)
   })
   y -= 6
-  settlementRow('Gesamtforderung:', formatEur(total), {
+  settlementRow('Offener Betrag:', formatEur(inv.grossTotal), {
     bold: true,
     italic: true,
     size: 11
@@ -1666,7 +1636,7 @@ export const renderAndPersistReminderPdf = async (
   reminderId: string
 ): Promise<ReminderPdf> => {
   const input = await loadReminderRenderInput(reminderId)
-  if (!input) throw new Error('Mahnung nicht gefunden.')
+  if (!input) throw new Error('Zahlungserinnerung nicht gefunden.')
   const wantedHash = computeReminderInputHash(input)
   const bytes = await renderReminderPdf(input)
   const buffer = Buffer.from(bytes)
@@ -1719,644 +1689,295 @@ export const getReminderPdfMeta = async (
 }
 
 /* ────────────────────────────────────────────────────────────────────── */
-/* Payslip (Lohnzettel)                                                   */
+/* Phase 5: QR labels + A4-landscape car sale sign                        */
 /* ────────────────────────────────────────────────────────────────────── */
 
-export type PayslipRenderInput = {
-  entry: PayrollEntry
-  period: PayrollPeriod
-  employee: Employee
-  lineItems: PayrollLineItem[]
-  deductions: PayrollDeduction[]
-  settings: CompanySettings
-}
+/**
+ * Render a small A6-landscape QR-Etikett for an article. The QR
+ * payload is `{origin}/items/<articleNumber>`; consumers pass an
+ * optional `origin` (request origin) so the same code works in dev /
+ * staging / prod without a hard-coded base URL.
+ *
+ * Layout: a 90 mm × 60 mm card (close to A6 landscape) with the QR
+ * on the left, article number + truncated description + current
+ * price on the right.
+ */
+export async function renderArticleLabelPdf(
+  item: {
+    articleNumber: string
+    description: string
+    unitPriceNet?: string | null
+    kind?: string | null
+  },
+  qrPayload: string
+): Promise<Buffer> {
+  const qr = await renderQrPng(qrPayload, { size: 320 })
 
-const monthLabelDe = (m: number): string =>
-  [
-    'Januar',
-    'Februar',
-    'März',
-    'April',
-    'Mai',
-    'Juni',
-    'Juli',
-    'August',
-    'September',
-    'Oktober',
-    'November',
-    'Dezember'
-  ][m - 1] ?? String(m)
+  const doc = await PDFDocument.create()
+  // A6 landscape: 148 × 105 mm → 419.5 × 297.6 pt
+  const page = doc.addPage([419.5, 297.6])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const qrImage = await doc.embedPng(qr)
 
-export const computePayslipInputHash = (input: PayslipRenderInput): string => {
-  const canonical = sortObject({
-    entry: {
-      id: input.entry.id,
-      status: input.entry.status,
-      workingDays: input.entry.workingDays,
-      vacationDaysUsed: input.entry.vacationDaysUsed,
-      sickDays: input.entry.sickDays,
-      grossTotal: input.entry.grossTotal,
-      taxTotal: input.entry.taxTotal,
-      socialEmployeeTotal: input.entry.socialEmployeeTotal,
-      socialEmployerTotal: input.entry.socialEmployerTotal,
-      deductionsTotal: input.entry.deductionsTotal,
-      netTotal: input.entry.netTotal,
-      payoutAmount: input.entry.payoutAmount,
-      payoutDate: input.entry.payoutDate,
-      payoutMethod: input.entry.payoutMethod,
-      notes: input.entry.notes,
-      updatedAt: input.entry.updatedAt
-    },
-    period: {
-      year: input.period.year,
-      month: input.period.month,
-      status: input.period.status
-    },
-    employee: {
-      id: input.employee.id,
-      personnelNumber: input.employee.personnelNumber,
-      firstName: input.employee.firstName,
-      lastName: input.employee.lastName,
-      street: input.employee.street,
-      zip: input.employee.zip,
-      city: input.employee.city,
-      taxId: input.employee.taxId,
-      taxClass: input.employee.taxClass,
-      socialInsuranceNumber: input.employee.socialInsuranceNumber,
-      healthInsurance: input.employee.healthInsurance,
-      bankAccountHolder: input.employee.bankAccountHolder,
-      bankIban: input.employee.bankIban,
-      bankBic: input.employee.bankBic,
-      bankName: input.employee.bankName
-    },
-    lineItems: input.lineItems.map((l) => ({
-      n: l.positionNumber,
-      k: l.kind,
-      l: l.label,
-      q: l.quantity,
-      u: l.unit,
-      r: l.rate,
-      a: l.amount
-    })),
-    deductions: input.deductions.map((d) => ({
-      n: d.positionNumber,
-      k: d.kind,
-      l: d.label,
-      a: d.amount,
-      e: d.isEmployer
-    })),
-    settings: {
-      name: input.settings.companyName,
-      owner: input.settings.owner,
-      street: input.settings.street,
-      zip: input.settings.zip,
-      city: input.settings.city,
-      email: input.settings.email,
-      phone: input.settings.phone,
-      mobile: input.settings.mobile,
-      fax: input.settings.fax,
-      website: input.settings.website,
-      taxNumber: input.settings.taxNumber,
-      vatId: input.settings.vatId,
-      bankName: input.settings.bankName,
-      iban: input.settings.iban,
-      bic: input.settings.bic,
-      logoMime: input.settings.logoMime,
-      logoHash: input.settings.logoData
-        ? createHash('sha256').update(input.settings.logoData).digest('hex')
-        : null
-    }
+  page.drawImage(qrImage, { x: 16, y: 40, width: 220, height: 220 })
+
+  let y = 260
+  page.drawText(item.articleNumber, {
+    x: 250,
+    y,
+    size: 18,
+    font: bold,
+    color: rgb(0, 0, 0)
   })
-  return createHash('sha256').update(JSON.stringify(canonical)).digest('hex')
+  y -= 26
+  page.drawText(truncate(item.description, 60), {
+    x: 250,
+    y,
+    size: 10,
+    font,
+    color: rgb(0.2, 0.2, 0.2),
+    maxWidth: 150
+  })
+  if (item.unitPriceNet) {
+    y -= 70
+    page.drawText(`${item.unitPriceNet} €`, {
+      x: 250,
+      y,
+      size: 22,
+      font: bold,
+      color: rgb(0, 0, 0)
+    })
+  }
+
+  return Buffer.from(await doc.save())
 }
 
 /**
- * Render an A4 Lohnzettel-PDF. Uses the same modern Twincars header as
- * {@link renderDocumentPdf} (logo + company block right) but the body
- * is structured around the German payslip layout: employee block on the
- * left (Name, Personalnr., Steuer-ID, SV-Nr., Steuerklasse, Krankenkasse,
- * Anschrift), Abrechnungszeitraum + Tagesübersicht on the right, then a
- * Lohnarten-Tabelle, a Deductions-Tabelle (mit AG-Anteilen separat),
- * und ein Brutto/Steuer/SV/Netto-Block mit Auszahlungsbetrag und
- * Bankverbindung.
- *
- * Per `anforderungen.md` §13: this is **no** zertifizierte Abrechnung —
- * der Nutzer pflegt Lohnarten und Sätze selbst, die App rechnet damit.
+ * Render an A6-landscape QR-Etikett for a tire-storage entry. The QR
+ * payload is `scanUrl` — a deep link of the form
+ * `{origin}/tire-storage/scan/<storageNumber>` so a phone scan opens the
+ * entry directly. Falls back to the bare storage number when no URL is
+ * supplied (offline / legacy callers still get a readable code).
  */
-export const renderPayslipPdf = async (
-  input: PayslipRenderInput
-): Promise<Uint8Array> => {
-  const pdf = await PDFDocument.create()
-  pdf.setTitle(
-    `Lohnabrechnung ${monthLabelDe(input.period.month)} ${input.period.year} — ${input.employee.firstName} ${input.employee.lastName}`
-  )
-  pdf.setProducer('TwinCarsManager')
-  if (input.settings.companyName) pdf.setAuthor(input.settings.companyName)
-  pdf.setCreationDate(new Date())
-  const font = await pdf.embedFont(StandardFonts.Helvetica)
-  const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
-  const fontItalic = await pdf.embedFont(StandardFonts.HelveticaOblique)
-  const fontBoldItalic = await pdf.embedFont(StandardFonts.HelveticaBoldOblique)
+export async function renderTireStorageLabelPdf(
+  entry: import('$lib/server/db/schema').TireStorage & {
+    customerName?: string
+  },
+  scanUrl?: string
+): Promise<Buffer> {
+  const qr = await renderQrPng(scanUrl ?? entry.storageNumber, { size: 320 })
 
-  /* — Embed logo — */
-  let logoImage:
-    | Awaited<ReturnType<typeof pdf.embedPng>>
-    | Awaited<ReturnType<typeof pdf.embedJpg>>
-    | null = null
-  if (input.settings.logoData && input.settings.logoMime) {
-    try {
-      const m = /^data:([^;]+);base64,(.+)$/.exec(input.settings.logoData)
-      const mime = m ? m[1] : input.settings.logoMime
-      const base64 = m ? m[2] : input.settings.logoData
-      const bytes = Buffer.from(base64, 'base64')
-      if (/png/i.test(mime)) logoImage = await pdf.embedPng(bytes)
-      else if (/jpe?g/i.test(mime)) logoImage = await pdf.embedJpg(bytes)
-    } catch {
-      logoImage = null
-    }
-  }
+  const doc = await PDFDocument.create()
+  const page = doc.addPage([419.5, 297.6])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+  const qrImage = await doc.embedPng(qr)
 
-  const PAGE_W = 595.28
-  const PAGE_H = 841.89
-  const ml = 50
-  const mr = 50
-  const innerW = PAGE_W - ml - mr
-  const co = input.settings
-  const emp = input.employee
-  const periodLabel = `${monthLabelDe(input.period.month)} ${input.period.year}`
+  page.drawImage(qrImage, { x: 16, y: 40, width: 220, height: 220 })
 
-  const page = pdf.addPage([PAGE_W, PAGE_H])
-
-  const text = (
-    s: string,
-    x: number,
-    yy: number,
-    opts: {
-      size?: number
-      font?: PDFFont
-      color?: [number, number, number]
-      width?: number
-      align?: 'left' | 'right'
-      lineHeight?: number
-    } = {}
-  ) => {
-    const f = opts.font ?? font
-    const size = opts.size ?? 10
-    let drawX = x
-    if (opts.align === 'right') {
-      const tw = f.widthOfTextAtSize(s, size)
-      drawX = x - tw
-    }
-    page.drawText(s, {
-      x: drawX,
-      y: yy,
-      size,
-      font: f,
-      color: rgb(...(opts.color ?? [0, 0, 0])),
-      maxWidth: opts.width,
-      lineHeight: opts.lineHeight
-    })
-  }
-
-  /* ── Header (same layout as Rechnung/KV) ────────────────────────── */
-  const top = PAGE_H - 40
-  if (logoImage) {
-    const maxW = 210
-    const maxH = 70
-    const ratio = Math.min(maxW / logoImage.width, maxH / logoImage.height)
-    page.drawImage(logoImage, {
-      x: ml,
-      y: top - logoImage.height * ratio,
-      width: logoImage.width * ratio,
-      height: logoImage.height * ratio
-    })
-  } else {
-    text(co.companyName || 'Firma', ml, top - 14, { size: 14, font: fontBold })
-  }
-
-  let ry = top
-  const rightX = PAGE_W - mr
-  text(co.companyName || 'Firma', rightX, ry, {
-    size: 14,
-    font: fontBold,
-    align: 'right'
+  let y = 260
+  page.drawText(entry.storageNumber, {
+    x: 250,
+    y,
+    size: 20,
+    font: bold,
+    color: rgb(0, 0, 0)
   })
-  ry -= 16
-  if (co.owner) {
-    text(`KFZ Meisterbetrieb Inh. ${co.owner}`, rightX, ry, {
-      size: 9,
-      align: 'right'
+  if (entry.customerName) {
+    y -= 30
+    page.drawText(truncate(entry.customerName, 30), {
+      x: 250,
+      y,
+      size: 12,
+      font,
+      color: rgb(0.2, 0.2, 0.2)
     })
-    ry -= 11
   }
-  text(co.street, rightX, ry, { size: 9, align: 'right' })
-  ry -= 11
-  text(`${co.zip} ${co.city}`.trim(), rightX, ry, { size: 9, align: 'right' })
-  ry -= 11
-  if (co.phone) {
-    text(`Tel: ${co.phone}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
+  if (entry.brand || entry.size) {
+    y -= 22
+    page.drawText(
+      truncate(
+        [entry.brand, entry.model, entry.size].filter(Boolean).join(' '),
+        30
+      ),
+      { x: 250, y, size: 10, font, color: rgb(0.3, 0.3, 0.3) }
+    )
   }
-  if (co.email) {
-    text(`Email: ${co.email}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.vatId) {
-    text(`Ust.ID.Nr.: ${co.vatId}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.taxNumber) {
-    text(`St.Nr.: ${co.taxNumber}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
+  if (entry.season) {
+    y -= 18
+    page.drawText(entry.season, {
+      x: 250,
+      y,
+      size: 10,
+      font,
+      color: rgb(0.3, 0.3, 0.3)
+    })
   }
 
-  /* ── Employee block (left) ─────────────────────────────────────── */
-  let cy = top - 90
-  if (logoImage) cy = top - 110
-  if (co.companyName || co.street || co.city) {
-    const rts = `${co.companyName} ° ${co.street} ° ${co.zip} ${co.city}`.trim()
-    text(rts, ml, cy, { size: 7, color: [0.3, 0.3, 0.3] })
-    const rtsW = font.widthOfTextAtSize(rts, 7)
-    page.drawLine({
-      start: { x: ml, y: cy - 1 },
-      end: { x: ml + rtsW, y: cy - 1 },
-      thickness: 0.3,
+  return Buffer.from(await doc.save())
+}
+
+/**
+ * Render an A4-landscape "ZUM VERKAUF"-Schild for a vehicle, intended
+ * to be printed and placed under the windshield. Layout: large
+ * headline + price at the top; key facts in a two-column grid below;
+ * QR code at the bottom-right linking to the inventory listing.
+ *
+ * The `vehicle` argument is enriched with the cover photo bytes, the
+ * gross price (already snapshotted on the listing row), the current
+ * plate, and a short `highlights` array of marketing bullet points.
+ */
+export async function renderVehicleSaleSignPdf(input: {
+  vehicle: import('$lib/server/db/schema').Vehicle
+  coverPhoto?: { mime: string; data?: Buffer; dataUrl?: string } | null
+  salesPriceGross?: number | null
+  differentialTax?: boolean
+  salesNotes?: string | null
+  qrPayload?: string
+  settings?: { companyName?: string | null; phone?: string | null }
+}): Promise<Buffer> {
+  const vehicle = input.vehicle
+  const photoMime = input.coverPhoto?.mime ?? null
+  let photoBytes: Buffer | null = null
+  if (input.coverPhoto?.data) {
+    photoBytes = input.coverPhoto.data
+  } else if (input.coverPhoto?.dataUrl) {
+    const m = /^data:[^;]+;base64,(.+)$/.exec(input.coverPhoto.dataUrl)
+    if (m) photoBytes = Buffer.from(m[1], 'base64')
+  }
+  const priceGross =
+    input.salesPriceGross != null
+      ? input.salesPriceGross.toFixed(2).replace('.', ',')
+      : null
+  const highlights = (input.salesNotes ?? '')
+    .split(/\r?\n/)
+    .map((s) => s.trim())
+    .filter(Boolean)
+  const companyName = input.settings?.companyName ?? undefined
+  const companyPhone = input.settings?.phone ?? undefined
+  const listingUrl = input.qrPayload
+  const doc = await PDFDocument.create()
+  // A4 landscape: 297 × 210 mm → 841.89 × 595.28 pt
+  const page = doc.addPage([841.89, 595.28])
+  const font = await doc.embedFont(StandardFonts.Helvetica)
+  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
+
+  // Headline
+  page.drawText('ZUM VERKAUF', {
+    x: 32,
+    y: 530,
+    size: 56,
+    font: bold,
+    color: rgb(0, 0, 0)
+  })
+  if (priceGross) {
+    page.drawText(`${priceGross} €`, {
+      x: 32,
+      y: 460,
+      size: 48,
+      font: bold,
+      color: rgb(0.7, 0.1, 0.1)
+    })
+  }
+
+  // Photo (left half) — fall back to a placeholder rectangle.
+  if (photoBytes && photoMime) {
+    try {
+      const img = photoMime.includes('png')
+        ? await doc.embedPng(photoBytes)
+        : await doc.embedJpg(photoBytes)
+      const w = 380
+      const h = 280
+      page.drawImage(img, { x: 32, y: 130, width: w, height: h })
+    } catch {
+      // Bad image bytes — skip.
+    }
+  }
+
+  // Key data column (right)
+  const v = vehicle as Record<string, unknown>
+  const facts: Array<[string, string | null | undefined]> = [
+    [
+      'Hersteller / Modell',
+      `${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim()
+    ],
+    ['Erstzulassung', (v.firstRegistration as string | null) ?? null],
+    ['Kilometer', v.mileageKm != null ? `${v.mileageKm} km` : null],
+    ['Kraftstoff', (v.fuel as string | null) ?? null],
+    ['Getriebe', (v.transmission as string | null) ?? null],
+    ['Leistung', v.powerKw != null ? `${v.powerKw} kW` : null],
+    ['Farbe', (v.color as string | null) ?? null],
+    ['TÜV bis', (v.nextHu as string | null) ?? null]
+  ]
+  let fy = 400
+  for (const [label, value] of facts) {
+    if (!value) continue
+    page.drawText(`${label}:`, {
+      x: 440,
+      y: fy,
+      size: 12,
+      font,
       color: rgb(0.4, 0.4, 0.4)
     })
-    cy -= 12
-  }
-  // Salutation line — for employees we use Herr/Frau if set, else the
-  // employer is printing their own employee, no formal salutation needed.
-  text(`${emp.firstName} ${emp.lastName}`, ml, cy, { size: 11, font: fontBold })
-  cy -= 14
-  if (emp.street) {
-    text(emp.street, ml, cy, { size: 10 })
-    cy -= 12
-  }
-  if (emp.zip || emp.city) {
-    text(`${emp.zip ?? ''} ${emp.city ?? ''}`.trim(), ml, cy, { size: 10 })
-    cy -= 12
-  }
-  cy -= 6
-  // Mitarbeiter-Stammblock im italic mit zwei Spalten
-  const ti = (s2: string, x: number, yy: number) =>
-    text(s2, x, yy, { size: 9, font: fontItalic })
-  const colA = ml
-  const colB = ml + 200
-  ti(`Personalnr.: ${emp.personnelNumber}`, colA, cy)
-  if (emp.taxClass) ti(`Steuerklasse: ${emp.taxClass}`, colB, cy)
-  cy -= 11
-  if (emp.taxId) ti(`Steuer-ID: ${emp.taxId}`, colA, cy)
-  if (emp.socialInsuranceNumber)
-    ti(`SV-Nummer: ${emp.socialInsuranceNumber}`, colB, cy)
-  cy -= 11
-  if (emp.healthInsurance) ti(`Krankenkasse: ${emp.healthInsurance}`, colA, cy)
-  cy -= 11
-
-  /* ── Title + Abrechnungszeitraum (right) ───────────────────────── */
-  let ty = ry - 30
-  text('Lohnabrechnung', rightX, ty, {
-    size: 22,
-    font: fontBoldItalic,
-    align: 'right'
-  })
-  ty -= 22
-  text(`Abrechnungszeitraum: ${periodLabel}`, rightX, ty, {
-    size: 10,
-    font: fontBold,
-    align: 'right'
-  })
-  ty -= 12
-  if (input.entry.workingDays != null) {
-    text(`Soll-Arbeitstage: ${input.entry.workingDays}`, rightX, ty, {
-      size: 9,
-      font: fontItalic,
-      align: 'right'
+    page.drawText(truncate(String(value), 40), {
+      x: 600,
+      y: fy,
+      size: 14,
+      font: bold,
+      color: rgb(0, 0, 0)
     })
-    ty -= 11
+    fy -= 22
   }
-  text(`Urlaubstage: ${Number(input.entry.vacationDaysUsed)}`, rightX, ty, {
-    size: 9,
-    font: fontItalic,
-    align: 'right'
-  })
-  ty -= 11
-  text(`Krankheitstage: ${Number(input.entry.sickDays)}`, rightX, ty, {
-    size: 9,
-    font: fontItalic,
-    align: 'right'
-  })
-  ty -= 11
-  if (input.entry.payoutDate) {
-    text(`Auszahlung: ${formatDate(input.entry.payoutDate)}`, rightX, ty, {
+
+  // QR code (bottom-right)
+  if (listingUrl) {
+    const qr = await renderQrPng(listingUrl, { size: 220 })
+    const qrImage = await doc.embedPng(qr)
+    page.drawImage(qrImage, { x: 720, y: 32, width: 96, height: 96 })
+    page.drawText('Online-Inserat', {
+      x: 720,
+      y: 16,
       size: 9,
-      font: fontItalic,
-      align: 'right'
+      font,
+      color: rgb(0.4, 0.4, 0.4)
     })
-    ty -= 11
   }
 
-  /* ── Lohnarten-Tabelle ─────────────────────────────────────────── */
-  let y = Math.min(cy, ty) - 24
-
-  const cols = {
-    label: ml,
-    qty: ml + 280,
-    rate: ml + 350,
-    amount: ml + innerW - 5
+  // Contact footer (bottom-left)
+  if (companyName || companyPhone) {
+    page.drawText([companyName, companyPhone].filter(Boolean).join(' · '), {
+      x: 32,
+      y: 60,
+      size: 14,
+      font,
+      color: rgb(0.2, 0.2, 0.2)
+    })
   }
-  text('Lohnarten', ml, y, { size: 10, font: fontBold })
-  y -= 14
-  text('Bezeichnung', cols.label, y, { size: 9, font: fontItalic })
-  text('Menge', cols.qty, y, { size: 9, font: fontItalic, align: 'right' })
-  text('Satz', cols.rate, y, { size: 9, font: fontItalic, align: 'right' })
-  text('Betrag', cols.amount, y, { size: 9, font: fontItalic, align: 'right' })
-  page.drawLine({
-    start: { x: ml, y: y - 4 },
-    end: { x: PAGE_W - mr, y: y - 4 },
-    thickness: 0.5,
-    color: rgb(0.7, 0.7, 0.7)
-  })
-  y -= 14
 
-  for (const l of input.lineItems) {
-    text(l.label, cols.label, y, { size: 9, width: cols.qty - cols.label - 6 })
-    if (l.quantity != null) {
-      const unit = l.unit ? ` ${l.unit}` : ''
-      text(`${Number(l.quantity)}${unit}`, cols.qty - 5, y, {
-        size: 9,
-        align: 'right'
+  // Highlights row
+  if (highlights.length > 0) {
+    let hx = 32
+    let hy = 100
+    for (const h of highlights.slice(0, 4)) {
+      page.drawText(`• ${truncate(h, 36)}`, {
+        x: hx,
+        y: hy,
+        size: 11,
+        font,
+        color: rgb(0.2, 0.2, 0.2)
       })
-    }
-    if (l.rate != null) {
-      text(formatEur(l.rate), cols.rate, y, { size: 9, align: 'right' })
-    }
-    text(formatEur(l.amount), cols.amount, y, { size: 9, align: 'right' })
-    y -= 12
-  }
-  page.drawLine({
-    start: { x: ml, y: y + 4 },
-    end: { x: PAGE_W - mr, y: y + 4 },
-    thickness: 0.5,
-    color: rgb(0.7, 0.7, 0.7)
-  })
-  text('Brutto gesamt', cols.label, y, { size: 10, font: fontBold })
-  text(formatEur(input.entry.grossTotal), cols.amount, y, {
-    size: 10,
-    font: fontBold,
-    align: 'right'
-  })
-  y -= 18
-
-  /* ── Abzüge-Tabelle ────────────────────────────────────────────── */
-  text('Abzüge (Arbeitnehmer)', ml, y, { size: 10, font: fontBold })
-  y -= 12
-  const employeeDeductions = input.deductions.filter((d) => !d.isEmployer)
-  if (employeeDeductions.length === 0) {
-    text('— keine Abzüge erfasst —', ml, y, {
-      size: 9,
-      font: fontItalic,
-      color: [0.5, 0.5, 0.5]
-    })
-    y -= 12
-  } else {
-    for (const d of employeeDeductions) {
-      text(d.label, cols.label, y, { size: 9 })
-      text(formatEur(d.amount), cols.amount, y, { size: 9, align: 'right' })
-      y -= 12
+      hx += 180
+      if (hx > 600) {
+        hx = 32
+        hy -= 18
+      }
     }
   }
-  page.drawLine({
-    start: { x: ml, y: y + 4 },
-    end: { x: PAGE_W - mr, y: y + 4 },
-    thickness: 0.5,
-    color: rgb(0.7, 0.7, 0.7)
-  })
-  text('Steuern', cols.label, y, { size: 10, font: fontItalic })
-  text(formatEur(input.entry.taxTotal), cols.amount, y, {
-    size: 10,
-    font: fontItalic,
-    align: 'right'
-  })
-  y -= 12
-  text('Sozialversicherung (AN)', cols.label, y, { size: 10, font: fontItalic })
-  text(formatEur(input.entry.socialEmployeeTotal), cols.amount, y, {
-    size: 10,
-    font: fontItalic,
-    align: 'right'
-  })
-  y -= 14
 
-  /* ── Brutto / Netto-Box ────────────────────────────────────────── */
-  page.drawLine({
-    start: { x: ml, y: y + 4 },
-    end: { x: PAGE_W - mr, y: y + 4 },
-    thickness: 0.6,
-    color: rgb(0, 0, 0)
-  })
-  y -= 6
-  text('Auszahlungsbetrag', cols.label, y, { size: 12, font: fontBoldItalic })
-  text(formatEur(input.entry.payoutAmount), cols.amount, y, {
-    size: 12,
-    font: fontBoldItalic,
-    align: 'right'
-  })
-  // Doppelte Unterstreichung
-  page.drawLine({
-    start: { x: cols.amount - 80, y: y + 12 },
-    end: { x: cols.amount, y: y + 12 },
-    thickness: 0.6,
-    color: rgb(0, 0, 0)
-  })
-  page.drawLine({
-    start: { x: cols.amount - 80, y: y + 10 },
-    end: { x: cols.amount, y: y + 10 },
-    thickness: 0.6,
-    color: rgb(0, 0, 0)
-  })
-  y -= 20
-
-  /* ── AG-Anteile (informativ) ──────────────────────────────────── */
-  const employerDeductions = input.deductions.filter((d) => d.isEmployer)
-  if (employerDeductions.length > 0) {
-    text('Arbeitgeber-Anteile (informativ)', ml, y, {
-      size: 9,
-      font: fontItalic,
-      color: [0.4, 0.4, 0.4]
-    })
-    y -= 12
-    for (const d of employerDeductions) {
-      text(d.label, cols.label, y, {
-        size: 9,
-        font: fontItalic,
-        color: [0.4, 0.4, 0.4]
-      })
-      text(formatEur(d.amount), cols.amount, y, {
-        size: 9,
-        font: fontItalic,
-        color: [0.4, 0.4, 0.4],
-        align: 'right'
-      })
-      y -= 11
-    }
-    text('Summe AG-Anteile', cols.label, y, {
-      size: 9,
-      font: fontItalic,
-      color: [0.4, 0.4, 0.4]
-    })
-    text(formatEur(input.entry.socialEmployerTotal), cols.amount, y, {
-      size: 9,
-      font: fontItalic,
-      color: [0.4, 0.4, 0.4],
-      align: 'right'
-    })
-    y -= 18
-  }
-
-  /* ── Bankverbindung des Mitarbeiters ──────────────────────────── */
-  if (emp.bankIban || emp.bankAccountHolder) {
-    text(
-      'Auszahlung per ' + (input.entry.payoutMethod ?? 'Überweisung'),
-      ml,
-      y,
-      { size: 10, font: fontBold }
-    )
-    y -= 12
-    if (emp.bankAccountHolder)
-      text(`Kontoinhaber: ${emp.bankAccountHolder}`, ml, y, { size: 9 })
-    y -= 11
-    if (emp.bankIban) text(`IBAN: ${emp.bankIban}`, ml, y, { size: 9 })
-    y -= 11
-    if (emp.bankBic) text(`BIC: ${emp.bankBic}`, ml, y, { size: 9 })
-    y -= 11
-    if (emp.bankName) text(emp.bankName, ml, y, { size: 9 })
-    y -= 16
-  }
-
-  /* ── Fußnote (Entwurf-Hinweis bis freigegeben) ─────────────────── */
-  const noteY = 80
-  if (input.entry.status !== 'approved') {
-    text(
-      'Vorläufige Abrechnung — wird mit Freigabe rechtsverbindlich.',
-      ml,
-      noteY,
-      { size: 9, font: fontItalic, color: [0.5, 0.5, 0.5] }
-    )
-  }
-  text(
-    'Diese Abrechnung ist eine interne Lohnabrechnung im deutschen Standardformat.',
-    ml,
-    noteY - 12,
-    { size: 8, font: fontItalic, color: [0.5, 0.5, 0.5], width: innerW }
-  )
-
-  return await pdf.save()
+  return Buffer.from(await doc.save())
 }
 
-/* ── Cache layer (Payslip) ───────────────────────────────────────── */
-
-const loadPayslipRenderInput = async (
-  entryId: string
-): Promise<PayslipRenderInput | null> => {
-  const [entry] = await db
-    .select()
-    .from(payrollEntries)
-    .where(eq(payrollEntries.id, entryId))
-    .limit(1)
-  if (!entry) return null
-  const [period] = await db
-    .select()
-    .from(payrollPeriods)
-    .where(eq(payrollPeriods.id, entry.periodId))
-    .limit(1)
-  if (!period) return null
-  const [employee] = await db
-    .select()
-    .from(employees)
-    .where(eq(employees.id, entry.employeeId))
-    .limit(1)
-  if (!employee) return null
-  const [lineItems, deductions] = await Promise.all([
-    db
-      .select()
-      .from(payrollLineItems)
-      .where(eq(payrollLineItems.entryId, entryId)),
-    db
-      .select()
-      .from(payrollDeductions)
-      .where(eq(payrollDeductions.entryId, entryId))
-  ])
-  const settings = await getSettings()
-  return { entry, period, employee, lineItems, deductions, settings }
-}
-
-export const loadCachedPayslipPdf = async (
-  entryId: string
-): Promise<typeof payslipPdfs.$inferSelect | null> => {
-  const [row] = await db
-    .select()
-    .from(payslipPdfs)
-    .where(eq(payslipPdfs.entryId, entryId))
-    .limit(1)
-  return row ?? null
-}
-
-export const renderAndPersistPayslipPdf = async (
-  entryId: string
-): Promise<typeof payslipPdfs.$inferSelect> => {
-  const input = await loadPayslipRenderInput(entryId)
-  if (!input) throw new Error('Lohnabrechnung nicht gefunden.')
-  const wantedHash = computePayslipInputHash(input)
-  const bytes = await renderPayslipPdf(input)
-  const buffer = Buffer.from(bytes)
-  const safeName =
-    `${input.employee.lastName}_${input.employee.firstName}_${input.period.year}-${String(input.period.month).padStart(2, '0')}`.replace(
-      /[^A-Za-z0-9_-]/g,
-      '_'
-    )
-  const filename = `Lohnabrechnung_${safeName}.pdf`
-  await db.delete(payslipPdfs).where(eq(payslipPdfs.entryId, entryId))
-  const [row] = await db
-    .insert(payslipPdfs)
-    .values({
-      entryId,
-      inputHash: wantedHash,
-      filename,
-      mime: 'application/pdf',
-      size: buffer.length,
-      data: buffer
-    })
-    .returning()
-  return row
-}
-
-/**
- * @deprecated View-Pfade nutzen {@link loadCachedPayslipPdf}; nur
- * Mail-Versand etc. greifen on-demand.
- */
-export const getOrRenderPayslipPdf = async (
-  entryId: string
-): Promise<typeof payslipPdfs.$inferSelect> => {
-  const cached = await loadCachedPayslipPdf(entryId)
-  if (cached) return cached
-  return renderAndPersistPayslipPdf(entryId)
-}
-
-export const getPayslipPdfMeta = async (
-  entryId: string
-): Promise<Omit<typeof payslipPdfs.$inferSelect, 'data'> | null> => {
-  const [row] = await db
-    .select({
-      id: payslipPdfs.id,
-      entryId: payslipPdfs.entryId,
-      inputHash: payslipPdfs.inputHash,
-      filename: payslipPdfs.filename,
-      mime: payslipPdfs.mime,
-      size: payslipPdfs.size,
-      createdAt: payslipPdfs.createdAt
-    })
-    .from(payslipPdfs)
-    .where(eq(payslipPdfs.entryId, entryId))
-    .limit(1)
-  return row ?? null
+function truncate(s: string, max: number): string {
+  return s.length > max ? `${s.slice(0, max - 1)}…` : s
 }

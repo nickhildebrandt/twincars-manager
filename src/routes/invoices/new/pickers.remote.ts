@@ -3,6 +3,7 @@ import {
   customerPickers,
   vehiclePickers
 } from '$lib/server/services/picker-service'
+import { requireAnyPermission } from '$lib/server/auth-guards'
 
 /**
  * Pickers used by the invoice/offer creation form.
@@ -11,6 +12,7 @@ import {
  * @module invoices
  */
 export const getInvoicePickers = query(async () => {
+  requireAnyPermission('invoices', 'offers')
   const [customers, vehicles] = await Promise.all([
     customerPickers(),
     vehiclePickers()

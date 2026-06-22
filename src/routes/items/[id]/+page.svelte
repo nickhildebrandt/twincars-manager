@@ -4,8 +4,13 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import { getItemPriceHistoryRemote, getItemRemote } from '../items.remote'
-  import { Pencil } from '@lucide/svelte'
+  import { getArticleLabelPdfRemote } from '../labels.remote'
+  import { Pencil, QrCode } from '@lucide/svelte'
   import { formatEuro } from '$lib/utils/money'
+  import { itemKindLabel } from '$lib/utils/status-labels'
+  import { busy } from '$lib/stores/busy.svelte'
+  import { handleClientError } from '$lib/utils/client-error'
+  import { openPdfInNewTab } from '$lib/utils/pdf-download'
 
   const id = untrack(() => page.params.id!)
 
@@ -34,6 +39,21 @@
       year: 'numeric'
     })
   }
+
+  /**
+   * Fetch the QR-Etikett-PDF (base64) and open it in a new tab via a
+   * `blob:` URL. We deliberately don't trigger an automatic download
+   * — opening in a tab lets the user preview, then print or save
+   * from the browser's PDF viewer.
+   */
+  const printLabel = async () => {
+    try {
+      const res = await busy.run(() => getArticleLabelPdfRemote({ id }).run())
+      openPdfInNewTab(res)
+    } catch (err) {
+      handleClientError(err, 'QR-Etikett konnte nicht erzeugt werden')
+    }
+  }
 </script>
 
 <PageHeader
@@ -47,41 +67,54 @@
 />
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
+    <div
+      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div class="min-w-0">
+        <h3 class="card-title text-base">Artikelnummer</h3>
+        <p class="font-mono text-lg break-all">{i.articleNumber}</p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline gap-2 sm:w-auto"
+        disabled={busy.active}
+        onclick={printLabel}
+      >
+        <QrCode size={16} />
+        QR-Etikett drucken
+      </button>
+    </div>
+  </div>
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Stammdaten</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Typ</dt><dd class="col-span-2"
-          >{i.kind}</dd
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Typ</dt><dd class="sm:col-span-2"
+          >{itemKindLabel(i.kind)}</dd
         >
-        <dt class="text-base-content/60">Einheit</dt><dd class="col-span-2"
+        <dt class="text-base-content/60">Einheit</dt><dd class="sm:col-span-2"
           >{i.unit ?? '—'}</dd
-        >
-        <dt class="text-base-content/60">Auslaufartikel</dt><dd
-          class="col-span-2">{i.discontinued ? 'Ja' : 'Nein'}</dd
         >
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Preise & Lager</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">VK netto</dt><dd
-          class="col-span-2 font-mono"
+          class="font-mono sm:col-span-2"
           >{formatEuro(Number(i.unitPriceNet ?? 0))}</dd
         >
         <dt class="text-base-content/60">EK netto</dt><dd
-          class="col-span-2 font-mono"
+          class="font-mono sm:col-span-2"
           >{i.purchasePriceNet
             ? formatEuro(Number(i.purchasePriceNet))
             : '—'}</dd
         >
-        <dt class="text-base-content/60">Bestand</dt><dd class="col-span-2"
+        <dt class="text-base-content/60">Bestand</dt><dd class="sm:col-span-2"
           >{i.stockOnHand}</dd
-        >
-        <dt class="text-base-content/60">Min / Max</dt><dd class="col-span-2"
-          >{i.stockMin ?? '—'} / {i.stockMax ?? '—'}</dd
         >
       </dl>
     </div>

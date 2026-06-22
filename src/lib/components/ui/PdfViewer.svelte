@@ -22,7 +22,6 @@
   import { onMount, onDestroy } from 'svelte'
   import {
     getDocumentPdfBytesRemote,
-    getPayslipPdfBytesRemote,
     getReminderPdfBytesRemote
   } from '../../../routes/pdfs.remote'
   import { handleClientError } from '$lib/utils/client-error'
@@ -33,10 +32,9 @@
     /**
      * Which cache to fetch from. `document` is the default and covers
      * invoices / offers / cost estimates / order confirmations;
-     * `reminder` routes to the dunning cache; `payslip` to the
-     * Lohnzettel cache (keyed by payroll-entry id).
+     * `reminder` routes to the dunning cache.
      */
-    kind?: 'document' | 'reminder' | 'payslip'
+    kind?: 'document' | 'reminder'
     /** Visual height of the embedded viewer. */
     height?: string
   }
@@ -46,9 +44,7 @@
   const fetchBytes = (id: string) =>
     kind === 'reminder'
       ? getReminderPdfBytesRemote({ id }).run()
-      : kind === 'payslip'
-        ? getPayslipPdfBytesRemote({ id }).run()
-        : getDocumentPdfBytesRemote({ id }).run()
+      : getDocumentPdfBytesRemote({ id }).run()
 
   let iframeSrc = $state<string | null>(null)
   let blobUrl: string | null = null

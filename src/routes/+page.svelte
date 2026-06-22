@@ -68,7 +68,12 @@
     icon={Receipt}
     color="warning"
   />
-  <StatCard title="Mahnungen" value="0" icon={AlertTriangle} color="error" />
+  <StatCard
+    title="Zahlungserinnerungen"
+    value="0"
+    icon={AlertTriangle}
+    color="error"
+  />
   <StatCard title="Termine heute" value="0" icon={CalendarClock} />
   <StatCard
     title="Saldo dieser Monat"

@@ -23,9 +23,12 @@
     listLedgerEntriesRemote,
     deleteLedgerEntryRemote
   } from './ledger.remote'
+  import { exportDatevRemote } from './datev.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { downloadBase64File } from '$lib/utils/pdf-download'
+  import { FileDown } from '@lucide/svelte'
   import {
     paymentStatusBadge,
     paymentStatusLabel
@@ -130,6 +133,45 @@
   let confirmOpen = $state(false)
   let toDelete = $state<{ id: string; desc: string } | null>(null)
 
+  /**
+   * DATEV-Export-Modal. Default range = aktuelles Quartal (lehnt sich an
+   * den Steuer-Quartals-Rhythmus an, in dem die meisten Kfz-Betriebe
+   * ihre Buchhaltung übergeben).
+   */
+  const currentQuarter = $derived.by(() => {
+    const q = Math.floor((today.getMonth() / 3) | 0) + 1
+    const fromMonth = (q - 1) * 3 + 1
+    const toMonth = q * 3
+    const y = today.getFullYear()
+    const fromIso = `${y}-${String(fromMonth).padStart(2, '0')}-01`
+    const lastDay = new Date(Date.UTC(y, toMonth, 0)).getUTCDate()
+    const toIso = `${y}-${String(toMonth).padStart(2, '0')}-${String(lastDay).padStart(2, '0')}`
+    return { from: fromIso, to: toIso }
+  })
+  let datevOpen = $state(false)
+  // Initial values default to the current quarter; the user can edit them
+  // freely in the modal before exporting.
+  let datevFrom = $state('')
+  let datevTo = $state('')
+  const openDatev = () => {
+    const q = currentQuarter
+    datevFrom = q.from
+    datevTo = q.to
+    datevOpen = true
+  }
+  const runDatevExport = async () => {
+    try {
+      const res = await busy.run(() =>
+        exportDatevRemote({ from: datevFrom, to: datevTo })
+      )
+      downloadBase64File(res)
+      toast.success('DATEV-Export heruntergeladen.')
+      datevOpen = false
+    } catch (err) {
+      handleClientError(err, 'DATEV-Export')
+    }
+  }
+
   const remove = async () => {
     if (!toDelete) return
     const { id } = toDelete
@@ -221,6 +263,15 @@
       {monthLabel(viewMonth)}
       {viewYear}
     </h2>
+    <button
+      type="button"
+      class="btn btn-sm btn-ghost gap-2"
+      onclick={openDatev}
+      disabled={busy.active}
+    >
+      <FileDown size={14} />
+      DATEV-Export
+    </button>
   </div>
 </div>
 
@@ -347,3 +398,62 @@
   onConfirm={remove}
   onClose={() => (confirmOpen = false)}
 />
+
+<!--
+  DATEV-Export-Dialog. Zeitraum-Auswahl mit zwei Date-Inputs. Defaults
+  ergeben das aktuelle Kalenderquartal — der typische Übergabe-Rhythmus
+  Richtung Steuerberater. Der eigentliche Export geschieht über die
+  Remote, die das CSV als base64 zurückliefert; downloadBase64File
+  triggert dann den Browser-Download.
+-->
+{#if datevOpen}
+  <dialog class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="text-lg font-semibold">DATEV-Export</h3>
+      <p class="text-base-content/80 py-3 text-sm">
+        Exportiert Rechnungen + Buchungen des gewählten Zeitraums als
+        DATEV-Buchungsstapel-CSV (Format 7.0, CP1252).
+      </p>
+      <div class="grid grid-cols-2 gap-3">
+        <label class="form-control">
+          <span class="label-text mb-1 text-sm">Von</span>
+          <input
+            type="date"
+            class="input input-bordered input-sm"
+            bind:value={datevFrom}
+          />
+        </label>
+        <label class="form-control">
+          <span class="label-text mb-1 text-sm">Bis</span>
+          <input
+            type="date"
+            class="input input-bordered input-sm"
+            bind:value={datevTo}
+          />
+        </label>
+      </div>
+      <div class="modal-action">
+        <button
+          class="btn btn-ghost"
+          onclick={() => (datevOpen = false)}
+          disabled={busy.active}
+        >
+          Abbrechen
+        </button>
+        <button
+          class="btn btn-primary"
+          onclick={runDatevExport}
+          disabled={busy.active}
+        >
+          Export starten
+        </button>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="modal-backdrop"
+      aria-label="Schließen"
+      onclick={() => (datevOpen = false)}
+    ></button>
+  </dialog>
+{/if}

@@ -16,7 +16,7 @@
   let pageNum = $state(1)
   const size = 25
   let q = $state('')
-  let kindFilter = $state<'all' | 'private' | 'business'>('all')
+  let kindFilter = $state<'all' | 'private' | 'business' | 'ebay'>('all')
 
   /**
    * Anchored remote query, reactive to filter/page state. The first
@@ -98,7 +98,22 @@
   const customerLabel = (c: (typeof items)[number]) =>
     c.company ||
     `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() ||
+    c.ebayHandle ||
     c.customerNumber
+
+  const setKind = (k: typeof kindFilter) => {
+    if (kindFilter === k) return
+    kindFilter = k
+    pageNum = 1
+  }
+
+  /** Human-readable creation date (yyyy-mm-dd) for the eBay tab. */
+  const formatCreatedAt = (d: Date | string | null) => {
+    if (!d) return '—'
+    const date = d instanceof Date ? d : new Date(d)
+    if (Number.isNaN(date.getTime())) return '—'
+    return date.toISOString().slice(0, 10)
+  }
 </script>
 
 <PageHeader
@@ -108,19 +123,48 @@
   {#snippet toolbar()}
     <Toolbar
       bind:query={q}
-      placeholder="Kunden suchen: Name, Kundennr., Ort, Telefon ..."
+      placeholder="Kunden suchen: Name, Kundennr., Ort, Telefon, eBay-Name ..."
       onQuery={() => (pageNum = 1)}
     >
       {#snippet filters()}
-        <select
-          class="select select-sm select-bordered w-full"
-          bind:value={kindFilter}
-          onchange={() => (pageNum = 1)}
-        >
-          <option value="all">Alle</option>
-          <option value="private">Privatkunden</option>
-          <option value="business">Firmenkunden</option>
-        </select>
+        <div role="tablist" class="tabs tabs-box">
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={kindFilter === 'all'}
+            onclick={() => setKind('all')}
+          >
+            Alle
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={kindFilter === 'private'}
+            onclick={() => setKind('private')}
+          >
+            Privat
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={kindFilter === 'business'}
+            onclick={() => setKind('business')}
+          >
+            Firma
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={kindFilter === 'ebay'}
+            onclick={() => setKind('ebay')}
+          >
+            eBay
+          </button>
+        </div>
       {/snippet}
     </Toolbar>
   {/snippet}
@@ -141,14 +185,23 @@
         {/snippet}
       </EmptyState>
     {:else}
-      <div class="overflow-x-auto">
+      <!--
+        Desktop / tablet: full table. Hidden below `lg` to avoid
+        horizontal scroll on phones and small tablets.
+      -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
               <th>Kundennr.</th>
               <th>Name / Firma</th>
-              <th>Ort</th>
-              <th>Telefon</th>
+              {#if kindFilter === 'ebay'}
+                <th>eBay-Name</th>
+                <th>eingetragen am</th>
+              {:else}
+                <th>Ort</th>
+                <th>Telefon</th>
+              {/if}
               <th>E-Mail</th>
               <th class="w-32 text-right">Aktion</th>
             </tr>
@@ -161,8 +214,13 @@
               >
                 <td class="font-mono text-xs">{c.customerNumber}</td>
                 <td class="font-medium">{customerLabel(c)}</td>
-                <td>{c.city ?? ''}</td>
-                <td>{c.phone ?? ''}</td>
+                {#if kindFilter === 'ebay'}
+                  <td>{c.ebayHandle ?? '—'}</td>
+                  <td>{formatCreatedAt(c.createdAt)}</td>
+                {:else}
+                  <td>{c.city ?? ''}</td>
+                  <td>{c.phone ?? ''}</td>
+                {/if}
                 <td>{c.email ?? ''}</td>
                 <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end gap-1">
@@ -187,6 +245,55 @@
           </tbody>
         </table>
       </div>
+      <!--
+        Phone / small tablet: stacked card list — one row per customer
+        with the most important fields. The whole row is an `<a>` so the
+        browser handles navigation and we get keyboard focus / Enter for
+        free; the action cluster sits next to it as a sibling so its
+        edit/delete buttons remain reachable independently.
+      -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as c (c.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/customers/${c.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate text-sm font-medium">
+                {customerLabel(c)}
+              </span>
+              <span class="text-base-content/60 truncate font-mono text-xs">
+                {c.customerNumber}
+              </span>
+              {#if kindFilter === 'ebay'}
+                <span class="text-base-content/70 mt-0.5 truncate text-xs">
+                  {c.ebayHandle ?? formatCreatedAt(c.createdAt)}
+                </span>
+              {:else if c.city || c.phone}
+                <span class="text-base-content/70 mt-0.5 truncate text-xs">
+                  {[c.city, c.phone].filter(Boolean).join(' · ')}
+                </span>
+              {/if}
+            </a>
+            <div class="flex shrink-0 items-start gap-1">
+              <a
+                class="btn btn-ghost btn-sm btn-square"
+                href="/customers/{c.id}/edit"
+                aria-label="Bearbeiten"
+              >
+                <Pencil size={16} />
+              </a>
+              <button
+                class="btn btn-ghost btn-sm btn-square text-error"
+                aria-label="Löschen"
+                onclick={() => askDelete(c.id, customerLabel(c))}
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
       <Pagination
         {total}
         page={pageNum}

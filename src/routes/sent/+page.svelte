@@ -19,13 +19,7 @@
   const size = 25
   let q = $state('')
   let type = $state<
-    | 'all'
-    | 'invoice'
-    | 'offer'
-    | 'cost_estimate'
-    | 'reminder'
-    | 'payslip'
-    | 'mailing'
+    'all' | 'invoice' | 'offer' | 'cost_estimate' | 'reminder' | 'mailing'
   >('all')
 
   /**
@@ -133,8 +127,7 @@
           <option value="invoice">Rechnung</option>
           <option value="offer">Angebot</option>
           <option value="cost_estimate">Kostenvoranschlag</option>
-          <option value="reminder">Mahnung</option>
-          <option value="payslip">Lohnzettel</option>
+          <option value="reminder">Zahlungserinnerung</option>
           <option value="mailing">Serienbrief</option>
         </select>
       {/snippet}

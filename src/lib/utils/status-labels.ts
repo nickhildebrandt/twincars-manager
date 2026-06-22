@@ -13,6 +13,11 @@
  * Document lifecycle. Both KV / Angebot and Rechnung share `created`,
  * `sent`, and `cancelled`. Rechnung adds `paid`. KV adds `converted`.
  *
+ * GoBD-Storno adds `storno`: this is the discriminator for the
+ * cancellation document (`type='invoice'`, `cancelsDocumentId` points
+ * to the original). The original Rechnung itself flips to `cancelled`
+ * + `cancelledAt` once a storno has been issued.
+ *
  * Legacy values kept as aliases:
  *   - `draft`    → renders as "Angelegt" (== `created`).
  *   - `open`     → "Offen" (used in older queries to mean "not paid"; new
@@ -26,6 +31,7 @@ export type DocumentStatus =
   | 'open'
   | 'paid'
   | 'cancelled'
+  | 'storno'
   | 'converted'
   | 'overdue'
 
@@ -36,6 +42,7 @@ const documentStatusMap: Record<DocumentStatus, string> = {
   open: 'Offen',
   paid: 'Bezahlt',
   cancelled: 'Storniert',
+  storno: 'Stornorechnung',
   converted: 'In Rechnung überführt',
   overdue: 'Überfällig'
 }
@@ -62,6 +69,8 @@ export const documentStatusBadge = (
       return 'badge-error'
     case 'cancelled':
       return 'badge-ghost'
+    case 'storno':
+      return 'badge-error'
     case 'converted':
       return 'badge-success'
     case 'draft':
@@ -163,40 +172,25 @@ export const sentMessageStatusBadge = (
   }
 }
 
-/** Reminder dunning level (1..4) → German label. */
+/**
+ * Reminder sequential counter → German label. There is no escalation
+ * anymore — every call sends the same friendly "Zahlungserinnerung".
+ * The label just communicates "no reminder yet" vs. "the N-th
+ * Zahlungserinnerung has been sent".
+ */
 export const reminderLevelLabel = (
   level: number | null | undefined
 ): string => {
-  switch (level) {
-    case 1:
-      return 'Zahlungserinnerung'
-    case 2:
-      return '1. Mahnung'
-    case 3:
-      return '2. Mahnung'
-    case 4:
-      return 'Letzte Mahnung'
-    case 0:
-    default:
-      return 'Noch keine Mahnung'
-  }
+  if (!level || level <= 0) return 'Noch keine Zahlungserinnerung'
+  if (level === 1) return 'Zahlungserinnerung'
+  return `${level}. Zahlungserinnerung`
 }
 
 export const reminderLevelBadge = (
   level: number | null | undefined
 ): string => {
-  switch (level) {
-    case 1:
-      return 'badge-info'
-    case 2:
-      return 'badge-warning'
-    case 3:
-    case 4:
-      return 'badge-error'
-    case 0:
-    default:
-      return 'badge-ghost'
-  }
+  if (!level || level <= 0) return 'badge-ghost'
+  return 'badge-info'
 }
 
 /** Document / sent-message type label. */
@@ -212,16 +206,12 @@ export const documentTypeLabel = (type: string | null | undefined): string => {
       return 'Auftragsbestätigung'
     case 'reminder':
     case 'reminder_1':
-      return 'Zahlungserinnerung'
     case 'reminder_2':
-      return '1. Mahnung'
     case 'reminder_3':
-      return '2. Mahnung'
+      return 'Zahlungserinnerung'
     case 'customer_letter':
     case 'mailing':
       return 'Serienbrief'
-    case 'payslip':
-      return 'Lohnzettel'
     default:
       return type ?? '—'
   }

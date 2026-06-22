@@ -2,8 +2,12 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Users2, ArrowRight } from '@lucide/svelte'
-  import { createCalendarEntryRemote } from '../calendar.remote'
+  import {
+    createCalendarEntryRemote,
+    findOverlappingAppointmentsRemote
+  } from '../calendar.remote'
   import {
     pickCustomersRemote,
     pickVehiclesRemote,
@@ -55,6 +59,20 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /** Submit button validity gate — mirrors the rules in `submit`. */
+  const valid = $derived.by(() => {
+    if (!title.trim()) return false
+    if (kind === 'appointment') {
+      const startStr = allDay ? `${startsAt.slice(0, 10)}T00:00` : startsAt
+      const endStr = allDay ? `${endsAt.slice(0, 10)}T00:00` : endsAt
+      if (!allDay && new Date(endStr) <= new Date(startStr)) return false
+      if (allDay && endStr.slice(0, 10) < startStr.slice(0, 10)) return false
+    } else {
+      if (dateTo < dateFrom) return false
+    }
+    return true
+  })
+
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
     pickCustomersRemote({
       ...params,
@@ -70,6 +88,39 @@
       ...params,
       size: params.size as 10 | 25 | 50 | 100
     }).run()
+
+  /**
+   * Overlap-confirmation state. When the user submits an appointment
+   * that intersects another non-cancelled appointment we open a
+   * ConfirmDialog instead of saving straight away. `pendingSave` is
+   * the closure that performs the actual save, captured at submit
+   * time so we don't have to rebuild the payload after confirm.
+   */
+  let overlapOpen = $state(false)
+  let overlapList = $state<
+    Array<{ id: string; title: string; startsAt: Date; endsAt: Date }>
+  >([])
+  let pendingSave: (() => Promise<void>) | null = null
+
+  const fmtRange = (s: Date, e: Date): string => {
+    const f = (d: Date): string =>
+      new Intl.DateTimeFormat('de-DE', {
+        day: '2-digit',
+        month: '2-digit',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit'
+      }).format(d)
+    return `${f(s)} – ${f(e)}`
+  }
+
+  const overlapMessage = $derived.by(() => {
+    if (overlapList.length === 0) return ''
+    const lines = overlapList
+      .map((o) => `  • ${o.title} (${fmtRange(o.startsAt, o.endsAt)})`)
+      .join('\n')
+    return `In diesem Zeitfenster gibt es bereits ${overlapList.length} Termin(e):\n${lines}\n\nTrotzdem speichern?`
+  })
 
   const submit = async (e: Event) => {
     e.preventDefault()
@@ -91,27 +142,57 @@
         errorMsg = 'Bis-Datum darf nicht vor dem Von-Datum liegen.'
         return
       }
-      try {
-        formDirty.clear()
-        await busy.run(() =>
-          createCalendarEntryRemote({
-            kind: 'appointment',
-            title: title.trim(),
-            startsAt: startStr,
-            endsAt: endStr,
-            allDay,
-            status,
-            customerId: customerId || undefined,
-            vehicleId: vehicleId || undefined,
-            employeeId: employeeId || undefined,
-            notes: notes.trim() || undefined
-          })
-        )
-        toast.success('Termin angelegt.')
-        goto('/calendar')
-      } catch (err) {
-        handleClientError(err)
+
+      const doSave = async () => {
+        try {
+          formDirty.clear()
+          await busy.run(() =>
+            createCalendarEntryRemote({
+              kind: 'appointment',
+              title: title.trim(),
+              startsAt: startStr,
+              endsAt: endStr,
+              allDay,
+              status,
+              customerId: customerId || undefined,
+              vehicleId: vehicleId || undefined,
+              employeeId: employeeId || undefined,
+              notes: notes.trim() || undefined
+            })
+          )
+          toast.success('Termin angelegt.')
+          goto('/calendar')
+        } catch (err) {
+          handleClientError(err)
+        }
       }
+
+      // Overlap check is best-effort — if the lookup itself fails we
+      // still let the user save (the warning is a courtesy, not a
+      // hard gate; the server allows the double-booking anyway).
+      try {
+        const overlaps = await busy.run(() =>
+          findOverlappingAppointmentsRemote({
+            startsAt: startStr,
+            endsAt: endStr
+          }).run()
+        )
+        if (overlaps.length > 0) {
+          overlapList = overlaps.map((o) => ({
+            id: o.id,
+            title: o.title,
+            startsAt: new Date(o.startsAt),
+            endsAt: new Date(o.endsAt)
+          }))
+          pendingSave = doSave
+          overlapOpen = true
+          return
+        }
+      } catch {
+        // Swallow — proceed to save without the warning.
+      }
+
+      await doSave()
       return
     }
 
@@ -324,7 +405,11 @@
       >
         Abbrechen
       </button>
-      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        disabled={busy.active || !valid}
+      >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}
@@ -349,3 +434,20 @@
     <ArrowRight size={14} />
   </a>
 </div>
+
+<ConfirmDialog
+  bind:open={overlapOpen}
+  title="Terminkollision"
+  message={overlapMessage}
+  confirmLabel="Trotzdem speichern"
+  cancelLabel="Abbrechen"
+  variant="primary"
+  onConfirm={async () => {
+    const fn = pendingSave
+    pendingSave = null
+    if (fn) await fn()
+  }}
+  onClose={() => {
+    pendingSave = null
+  }}
+/>

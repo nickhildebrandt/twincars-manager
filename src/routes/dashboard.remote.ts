@@ -1,4 +1,5 @@
 import { query } from '$app/server'
+import { requireUser } from '$lib/server/auth-guards'
 import { db } from '$lib/server/db/client'
 import {
   calendarEntries,
@@ -16,6 +17,7 @@ import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
  * @module dashboard
  */
 export const getDashboardKpis = query(async () => {
+  requireUser()
   // Aktueller Monat als Datums-Range — Drizzle verträgt Strings für
   // date-Spalten; das ist sauberer als ein date_trunc-Vergleich.
   const now = new Date()
@@ -78,6 +80,7 @@ export type UpcomingItem =
   | { kind: 'appointment'; dateIso: string; title: string; entryId: string }
 
 export const getUpcomingRemote = query(async (): Promise<UpcomingItem[]> => {
+  requireUser()
   const today = new Date().toISOString().slice(0, 10)
   const todayTs = new Date(`${today}T00:00:00Z`)
 

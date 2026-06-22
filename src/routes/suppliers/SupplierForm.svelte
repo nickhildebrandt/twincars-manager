@@ -68,6 +68,17 @@
 
   let errorMsg = $state<string | null>(null)
 
+  const emailInvalid = $derived(
+    Boolean(email.trim()) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
+  )
+
+  /** Validity gate for the Submit button — mirrors the rules in `submit`. */
+  const valid = $derived.by(() => {
+    if (!name.trim()) return false
+    if (emailInvalid) return false
+    return true
+  })
+
   const u = (v: string) => {
     const t = v.trim()
     return t === '' ? undefined : t
@@ -208,11 +219,18 @@
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">E-Mail</span>
           <input
-            class="input input-bordered w-full"
+            class="input input-bordered w-full {emailInvalid
+              ? 'input-error'
+              : ''}"
             type="email"
             maxlength="254"
             bind:value={email}
           />
+          {#if emailInvalid}
+            <span class="text-error text-sm"
+              >Bitte eine gültige E-Mail-Adresse eingeben.</span
+            >
+          {/if}
         </label>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Website</span>
@@ -273,7 +291,11 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        disabled={busy.active || !valid}
+      >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

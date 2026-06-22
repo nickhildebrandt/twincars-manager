@@ -33,20 +33,31 @@
       r.readAsDataURL(f)
     })
 
-  const startImport = async () => {
+  /**
+   * Run the import. `dryRun` does a non-destructive preview (no wipe, no
+   * writes, no PDFs) so the operator can review the counts + drop report
+   * before committing. The real run keeps the picked file cleared; the
+   * preview keeps it so the operator can launch the real import next.
+   */
+  const runImport = async (dryRun: boolean) => {
     if (!pickedFile) return
     confirmOpen = false
     try {
       const dataUrl = await readAsDataUrl(pickedFile)
       const res = await busy.run(() =>
-        runMdbImportRemote({ fileBase64: dataUrl })
+        runMdbImportRemote({ fileBase64: dataUrl, dryRun })
       )
       summary = res
       resultOpen = true
-      pickedFile = null
-      if (fileInput) fileInput.value = ''
+      if (!dryRun) {
+        pickedFile = null
+        if (fileInput) fileInput.value = ''
+      }
     } catch (err) {
-      handleClientError(err, 'Import fehlgeschlagen')
+      handleClientError(
+        err,
+        dryRun ? 'Vorschau fehlgeschlagen' : 'Import fehlgeschlagen'
+      )
     }
   }
 
@@ -60,7 +71,10 @@
     s.invoicePayments +
     s.offers +
     s.offerItems +
-    s.reminders
+    s.reminders +
+    s.tireStorage +
+    s.employees +
+    s.appointments
 </script>
 
 <PageHeader title="Daten aus KFZ-Kaufmann importieren" back="/settings" />
@@ -101,7 +115,15 @@
         </div>
       {/if}
 
-      <div class="flex justify-end">
+      <div class="flex justify-end gap-2">
+        <button
+          type="button"
+          class="btn btn-ghost gap-2"
+          disabled={!pickedFile || busy.active}
+          onclick={() => runImport(true)}
+        >
+          Vorschau (ohne Speichern)
+        </button>
         <button
           type="button"
           class="btn btn-primary gap-2"
@@ -124,9 +146,9 @@
       <ul class="text-base-content/70 list-inside list-disc space-y-2 text-sm">
         <li>
           Bestehende Daten in der App (Kunden, Fahrzeuge, Belege, Artikel,
-          Lieferanten, Mahnungen, Lohnabrechnungen, Sonderzahlungen,
-          Buchhaltungs-Einträge, Kalender-Einträge, Gesendet-Liste) werden vor
-          dem Import komplett gelöscht.
+          Lieferanten, Zahlungserinnerungen, Buchhaltungs-Einträge,
+          Kalender-Einträge, Gesendet-Liste) werden vor dem Import komplett
+          gelöscht.
         </li>
         <li>
           Einstellungen (Firmendaten, SMTP, Mailvorlagen,
@@ -159,17 +181,32 @@
   confirmLabel="Jetzt importieren"
   cancelLabel="Abbrechen"
   variant="danger"
-  onConfirm={startImport}
+  onConfirm={() => runImport(false)}
   onClose={() => {}}
 />
 
 {#if resultOpen && summary}
   <div class="modal modal-open" role="dialog" aria-modal="true">
     <div class="modal-box max-w-2xl">
-      <h3 class="text-lg font-bold">Import abgeschlossen</h3>
-      <p class="text-base-content/70 mt-2 text-sm">
-        Insgesamt {totalRows(summary).toLocaleString('de-DE')} Datensätze übernommen.
-      </p>
+      <h3 class="text-lg font-bold">
+        {summary.dryRun ? 'Vorschau des Imports' : 'Import abgeschlossen'}
+      </h3>
+      {#if summary.dryRun}
+        <div class="alert alert-info mt-2 items-start text-sm">
+          <Info size={16} class="mt-0.5 shrink-0" />
+          <div>
+            Es wurde <strong>nichts gespeichert</strong>. Diese Vorschau zeigt,
+            was beim echten Import übernommen ({totalRows(
+              summary
+            ).toLocaleString('de-DE')} Datensätze) bzw. übersprungen würde. PDFs werden
+            erst beim echten Import erzeugt.
+          </div>
+        </div>
+      {:else}
+        <p class="text-base-content/70 mt-2 text-sm">
+          Insgesamt {totalRows(summary).toLocaleString('de-DE')} Datensätze übernommen.
+        </p>
+      {/if}
 
       <div class="border-base-300 mt-4 overflow-x-auto rounded border">
         <table class="table-sm table">
@@ -226,8 +263,23 @@
               ></tr
             >
             <tr
-              ><td>Mahnungen</td><td class="text-right font-mono"
+              ><td>Zahlungserinnerungen</td><td class="text-right font-mono"
                 >{summary.reminders}</td
+              ></tr
+            >
+            <tr
+              ><td>Reifeneinlagerungen</td><td class="text-right font-mono"
+                >{summary.tireStorage}</td
+              ></tr
+            >
+            <tr
+              ><td>Mitarbeiter</td><td class="text-right font-mono"
+                >{summary.employees}</td
+              ></tr
+            >
+            <tr
+              ><td>Termine</td><td class="text-right font-mono"
+                >{summary.appointments}</td
               ></tr
             >
             <tr
@@ -264,12 +316,51 @@
 
       {#if summary.skipped.reminders + summary.skipped.payments + summary.skipped.invoiceItems + summary.skipped.offerItems + summary.skipped.pdfRenders > 0}
         <div class="text-base-content/60 mt-3 text-xs">
-          Übersprungen:
-          {summary.skipped.reminders} Mahnungen ohne Rechnung,
-          {summary.skipped.payments} Teilzahlungen ohne Rechnung,
+          Übersprungen (Gründe siehe Detailliste):
+          {summary.skipped.reminders} Zahlungserinnerungen,
+          {summary.skipped.payments} Teilzahlungen,
           {summary.skipped.invoiceItems} Rechnungspositionen,
           {summary.skipped.offerItems} Angebotspositionen,
           {summary.skipped.pdfRenders} PDF-Render-Fehler.
+        </div>
+      {/if}
+
+      {#if summary.skippedTotal > 0}
+        <div
+          class="collapse-arrow border-base-300 bg-base-100 collapse mt-3 border"
+        >
+          <input type="checkbox" />
+          <div class="collapse-title text-sm font-medium">
+            {summary.skippedTotal} nicht importierte Datensätze – Details anzeigen
+          </div>
+          <div class="collapse-content">
+            <div class="max-h-64 overflow-y-auto">
+              <table class="table-xs table">
+                <thead>
+                  <tr>
+                    <th>Tabelle</th>
+                    <th>Schlüssel</th>
+                    <th>Grund</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {#each summary.skippedDetail as s, i (i)}
+                    <tr>
+                      <td class="font-mono">{s.table}</td>
+                      <td class="font-mono">{s.legacyKey ?? '—'}</td>
+                      <td>{s.reason}</td>
+                    </tr>
+                  {/each}
+                </tbody>
+              </table>
+            </div>
+            {#if summary.skippedDetailTruncated}
+              <p class="text-base-content/50 mt-2 text-xs">
+                Liste auf {summary.skippedDetail.length} Einträge gekürzt (insgesamt
+                {summary.skippedTotal} übersprungen).
+              </p>
+            {/if}
+          </div>
         </div>
       {/if}
 
@@ -287,11 +378,25 @@
       <div class="modal-action">
         <button
           type="button"
-          class="btn btn-primary"
+          class="btn btn-ghost"
           onclick={() => (resultOpen = false)}
         >
           Schließen
         </button>
+        {#if summary.dryRun}
+          <button
+            type="button"
+            class="btn btn-primary gap-2"
+            disabled={busy.active || !pickedFile}
+            onclick={() => {
+              resultOpen = false
+              confirmOpen = true
+            }}
+          >
+            <Upload size={16} />
+            Jetzt wirklich importieren
+          </button>
+        {/if}
       </div>
     </div>
     <button

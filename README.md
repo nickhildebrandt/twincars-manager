@@ -64,40 +64,44 @@ Weitere Hilfen: `date-fns`, `nanoid`, `file-type`, `ibantools`, `sanitize-filena
 ```bash
 git clone <repo> twincars-manager
 cd twincars-manager
-npm install
+pnpm install
 cp .env.example .env
-# DATABASE_URL und APP_ENCRYPTION_KEY in .env anpassen
-npm run db:migrate
-npm run dev
+# DATABASE_URL und APP_SECRET in .env anpassen
+pnpm db:migrate
+pnpm dev
 ```
 
 Beim ersten Aufruf von `http://localhost:5173/` werden Sie automatisch zum **First Setup Wizard** weitergeleitet.
 
 ## Umgebungsvariablen
 
-| Name                 | Pflicht | Beschreibung                                             |
-| -------------------- | ------- | -------------------------------------------------------- |
-| `DATABASE_URL`       | ja      | Postgres-Connection-String                               |
-| `APP_ENCRYPTION_KEY` | ja      | Schlüssel für AES-GCM-Verschlüsselung des SMTP-Passworts |
-| `NODE_ENV`           | nein    | `development` / `production`                             |
+| Name           | Pflicht | Beschreibung                                                                                                                                                                                |
+| -------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `DATABASE_URL` | ja      | Postgres-Connection-String                                                                                                                                                                  |
+| `APP_SECRET`   | ja      | HMAC-Geheimnis für better-auth Session-Cookies (Signatur, keine Datenverschlüsselung)                                                                                                       |
+| `API_TOKENS`   | nein    | Komma-separierte Liste der Bearer-Tokens für `/api/public/*`. Mindestens 8 Zeichen je Eintrag, ideal: kryptographisch zufällige ≥ 16 Zeichen. Leer/unset = öffentliche API blockiert alles. |
+| `NODE_ENV`     | nein    | `development` / `production`                                                                                                                                                                |
 
 Beispiel `.env`:
 
 ```env
 DATABASE_URL=postgres://admin:TwinCars2026!@localhost:5432/twincars-manager
-APP_ENCRYPTION_KEY=please-change-me-in-production-32bytes
+APP_SECRET=please-change-me-in-production-32bytes
+API_TOKENS=dev-token-please-change-me-aaaaaaaaaaaaaaaaaaaa
 NODE_ENV=development
 ```
+
+Die `API_TOKENS`-Liste wird bei jedem Request ausgewertet, ein Rotations-Workflow ist ein Config-Änderung + Server-Neustart — keine Admin-UI, keine Mint-/Revoke-Schritte mehr. Trennzeichen sind Komma, Semikolon und Zeilenumbruch.
 
 `.env` und `.env.*` werden über `.gitignore` ausgeschlossen — `.env.example` ist die Vorlage.
 
 ## Datenbank-Setup und Migrationen
 
 ```bash
-npm run db:generate     # Drizzle-Migrations aus dem Schema erzeugen (drizzle-kit, dev only)
-npm run db:migrate      # Migrationen anwenden (drizzle-orm Runtime-Migrator, dev + prod)
-npm run db:push         # Schema direkt pushen (drizzle-kit, dev only — niemals in Production)
-npm run db:studio       # Drizzle Studio öffnen
+pnpm db:generate     # Drizzle-Migrations aus dem Schema erzeugen (drizzle-kit, dev only)
+pnpm db:migrate      # Migrationen anwenden (drizzle-orm Runtime-Migrator, dev + prod)
+pnpm db:push         # Schema direkt pushen (drizzle-kit, dev only — niemals in Production)
+pnpm db:studio       # Drizzle Studio öffnen
 ```
 
 `db:migrate` ruft `node scripts/migrate.js` auf und ist die einzige
@@ -114,16 +118,16 @@ und damit keine Migrations-Aufgabe.
 ## Start im Dev-Modus
 
 ```bash
-npm run dev          # Vite-Dev-Server auf http://localhost:5173
+pnpm dev          # Vite-Dev-Server auf http://localhost:5173
 ```
 
 ## Build und Produktionsbetrieb
 
 ```bash
-npm run build        # Build erzeugt einen Node-Server in /build
-npm run preview      # Lokal anschauen
-npm run db:migrate   # Migrationen anwenden (idempotent)
-npm start            # Server starten (PORT=3000 default)
+pnpm build        # Build erzeugt einen Node-Server in /build
+pnpm preview      # Lokal anschauen
+pnpm db:migrate   # Migrationen anwenden (idempotent)
+pnpm start            # Server starten (PORT=3000 default)
 ```
 
 Im Container ist die Reihenfolge **migrate → start** ein einzelner
@@ -147,15 +151,15 @@ Ein produktionsfähiger `Dockerfile` liegt im Repo-Root.
 
 Multi-stage Build auf Basis von `node:lts-alpine`:
 
-| Stage     | Zweck                            | Was passiert                                                                                                                                                                                                           |
-| --------- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `build`   | Vollständige Toolchain, einmalig | `npm ci` mit dev + prod Deps · `npm run build` (Vite + adapter-node erzeugen `build/`) · `npm prune --omit=dev` strippt drizzle-kit / vite / vitest / svelte-check / prettier / typescript / @types / testing-library  |
-| `runtime` | Schlankes Final-Image            | Übernimmt aus `build` ausschließlich: `build/`, `node_modules/` (production-only), `package.json`, `scripts/`, `drizzle/`. **Kein** Sourcecode (`src/`), **kein** drizzle-kit, **keine** Tests, **keine** Build-Tools. |
+| Stage     | Zweck                            | Was passiert                                                                                                                                                                                                                            |
+| --------- | -------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `build`   | Vollständige Toolchain, einmalig | `pnpm install --frozen-lockfile` mit dev + prod Deps · `pnpm build` (Vite + adapter-node erzeugen `build/`) · `pnpm prune --prod` strippt drizzle-kit / vite / vitest / svelte-check / prettier / typescript / @types / testing-library |
+| `runtime` | Schlankes Final-Image            | Übernimmt aus `build` ausschließlich: `build/`, `node_modules/` (production-only), `package.json`, `scripts/`, `drizzle/`. **Kein** Sourcecode (`src/`), **kein** drizzle-kit, **keine** Tests, **keine** Build-Tools.                  |
 
 Caching-Reihenfolge: `package.json`/`package-lock.json` werden zuerst
-kopiert, dann `npm ci` — so überleben App-Code-Änderungen die
-npm-install-Layer. Nur wenn sich die Dependency-Lockdatei ändert,
-läuft `npm ci` neu.
+kopiert, dann `pnpm install --frozen-lockfile` — so überleben App-Code-Änderungen die
+pnpm-install-Layer. Nur wenn sich die Dependency-Lockdatei ändert,
+läuft `pnpm install --frozen-lockfile` neu.
 
 Ergebnis: Ein Image, das ausschließlich enthält, was zur Laufzeit
 gebraucht wird — den kompilierten SvelteKit-Server, den
@@ -179,7 +183,7 @@ CMD ["sh", "-c", "node scripts/migrate.js && node build"]
 
 `drizzle-kit` ist im Runtime-Image **nicht enthalten**. Migrationen
 werden ausschließlich mit `drizzle-orm/postgres-js/migrator`
-angewendet — derselbe Code, den `npm run db:migrate` lokal ausführt.
+angewendet — derselbe Code, den `pnpm db:migrate` lokal ausführt.
 
 #### Build und Run
 
@@ -187,7 +191,7 @@ angewendet — derselbe Code, den `npm run db:migrate` lokal ausführt.
 docker build -t twincars-manager .
 docker run --rm -p 3000:3000 \
   -e DATABASE_URL=postgres://admin:secret@db:5432/twincars-manager \
-  -e APP_ENCRYPTION_KEY=$(openssl rand -hex 32) \
+  -e APP_SECRET=$(openssl rand -hex 32) \
   twincars-manager
 ```
 
@@ -471,17 +475,17 @@ Die App selbst, der Migration-Runner und das Container-Image führen
 - E2E erfolgt **extern** durch das Playwright-Plugin des AI-Coding-Agents — **kein** Playwright im Projekt.
 
 ```bash
-npm test           # einmalig
-npm run test:watch # Watch-Modus
-npm run test:cov   # mit Coverage-Report
+pnpm test           # einmalig
+pnpm test:watch # Watch-Modus
+pnpm test:cov   # mit Coverage-Report
 ```
 
 ## Code-Formatierung mit Prettier + Husky
 
 - `.prettierrc` (no semi, single quotes, no trailing comma, 2-space, LF, printWidth 80)
-- Pre-Commit-Hook (`.husky/pre-commit`) ruft `npx lint-staged` auf, das bei jedem Commit
+- Pre-Commit-Hook (`.husky/pre-commit`) ruft `pnpm exec lint-staged` auf, das bei jedem Commit
   `prettier --write --ignore-unknown` über alle gestageten Dateien laufen lässt.
-- `npm run format` formatiert alles, `npm run format:check` für CI.
+- `pnpm format` formatiert alles, `pnpm format:check` für CI.
 
 ## Bekannte Einschränkungen
 

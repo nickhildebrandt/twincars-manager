@@ -1,13 +1,20 @@
 import type {
   Handle,
   HandleServerError,
-  HandleValidationError
+  HandleValidationError,
+  RequestEvent
 } from '@sveltejs/kit'
+import { json, redirect } from '@sveltejs/kit'
+import { building } from '$app/environment'
+import { svelteKitHandler } from 'better-auth/svelte-kit'
+import { auth } from '$lib/server/auth'
+import { loadUserPermissions } from '$lib/server/auth-permissions'
+import { isUserActive, isUsernameDeactivated } from '$lib/server/auth-users'
 import { seedDefaults } from '$lib/server/db/seed-defaults'
-import {
-  autoGeneratePayrollEntries,
-  autoSendPayrollEmails
-} from '$lib/server/services/payroll-service'
+import { rateLimit } from '$lib/server/rate-limit'
+
+/** Sign-in attempts per IP per minute before further attempts are denied. */
+const SIGNIN_RATE_PER_MINUTE = 10
 
 /**
  * Schema migrations are NOT run here. Production runs `node
@@ -37,40 +44,162 @@ const ensureSeeded = () => {
 }
 
 /**
- * In-Process Tages-Scheduler für die Auto-Lohnabrechnung. Beim ersten
- * Request nach Server-Start wird ein `setInterval` aufgesetzt, der
- * einmal alle 6 Stunden `autoGeneratePayrollEntries()` und danach
- * `autoSendPayrollEmails()` ausführt. Beide Funktionen sind
- * idempotent — die häufige Frequenz schützt nur vor langen Stillen
- * (z.B. Container-Restart kurz nach dem Stichtag).
- *
- * Bei einem Multi-Replica-Deployment würde das mehrfach laufen; das
- * Setup ist explizit Single-Container (siehe CONTRIBUTING §17), daher
- * ist die Race weder real noch problematisch.
+ * Routes that are always allowed without an authenticated session:
+ * the login page itself, the better-auth catch-all, the first-run
+ * setup wizard (the admin creates the very first user there), and
+ * any static asset / public API namespace.
  */
-let payrollSchedulerStarted = false
-const sixHoursMs = 6 * 60 * 60 * 1000
-const startPayrollScheduler = () => {
-  if (payrollSchedulerStarted) return
-  payrollSchedulerStarted = true
-  const tick = async () => {
-    try {
-      await autoGeneratePayrollEntries()
-      await autoSendPayrollEmails()
-    } catch (err) {
-      console.error('[payroll-scheduler]', err)
+const PUBLIC_PREFIXES = [
+  '/login',
+  '/api/auth',
+  '/api/public',
+  '/setup',
+  '/_app',
+  '/favicon'
+]
+
+const isPublicRoute = (pathname: string): boolean =>
+  PUBLIC_PREFIXES.some((p) => pathname === p || pathname.startsWith(`${p}/`))
+
+/**
+ * Resolve the best-effort client IP for rate-limiting purposes. Prefer
+ * `x-forwarded-for` when the app sits behind a reverse proxy (Caddy /
+ * nginx / Traefik in front of the Node container) — the first entry in
+ * the comma-separated list is the originating IP. Falls back to
+ * `event.getClientAddress()` which reads the socket remote address.
+ *
+ * Returns `'unknown'` as a last resort so the limiter still has a
+ * stable bucket — anonymous floods then share one bucket, which is
+ * the desired fail-closed behaviour.
+ */
+export const resolveClientIp = (event: RequestEvent): string => {
+  const fwd = event.request.headers.get('x-forwarded-for')
+  if (fwd) {
+    const first = fwd.split(',')[0]?.trim()
+    if (first) return first
+  }
+  try {
+    return event.getClientAddress()
+  } catch {
+    return 'unknown'
+  }
+}
+
+/**
+ * Brute-force shield on the better-auth sign-in endpoint. POST requests
+ * to `/api/auth/sign-in/*` are bucketed per client IP at 10 attempts
+ * per minute. Denied requests get a 429 with a friendly German body so
+ * the login form's existing error handling renders a useful message.
+ *
+ * Sign-up, sign-out, session-refresh and other auth sub-paths are not
+ * throttled: sign-up is `disableSignUp: true` anyway, and the others
+ * are not brute-force vectors.
+ */
+const rateLimitSignIn: Handle = async ({ event, resolve }) => {
+  const { pathname } = event.url
+  if (
+    event.request.method === 'POST' &&
+    pathname.startsWith('/api/auth/sign-in')
+  ) {
+    const ip = resolveClientIp(event)
+    const result = rateLimit(`signin:${ip}`, {
+      perMinute: SIGNIN_RATE_PER_MINUTE
+    })
+    if (!result.allowed) {
+      return json(
+        { message: 'Zu viele Anmeldeversuche, bitte warten Sie eine Minute.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(result.retryAfter ?? 60) }
+        }
+      )
     }
   }
-  // Erste Ausführung kurz nach Boot (nicht blockierend), dann
-  // regelmäßig.
-  setTimeout(tick, 30_000).unref?.()
-  setInterval(tick, sixHoursMs).unref?.()
+  return resolve(event)
+}
+
+/**
+ * Reject a sign-in attempt for a deactivated account *before* better-auth
+ * validates credentials and mints a session. Returns a 403 with a curated
+ * German message that the login form surfaces directly (it reads
+ * `error.message`). The body is cloned so better-auth still sees the
+ * original request on the (rare) active-account path. Unknown usernames
+ * fall through to better-auth's normal "invalid credentials" response —
+ * no account enumeration.
+ */
+const blockDeactivatedSignIn: Handle = async ({ event, resolve }) => {
+  const { pathname } = event.url
+  if (
+    event.request.method === 'POST' &&
+    pathname.startsWith('/api/auth/sign-in')
+  ) {
+    let username: string | undefined
+    try {
+      const body = await event.request.clone().json()
+      if (body && typeof body.username === 'string') username = body.username
+    } catch {
+      // Non-JSON / empty body — let better-auth handle it.
+    }
+    if (username && (await isUsernameDeactivated(username))) {
+      return json(
+        {
+          message:
+            'Dieses Konto ist deaktiviert. Bitte wenden Sie sich an die Administration.'
+        },
+        { status: 403 }
+      )
+    }
+  }
+  return resolve(event)
+}
+
+const populateAuthLocals: Handle = async ({ event, resolve }) => {
+  const session = await auth.api.getSession({ headers: event.request.headers })
+  // Re-check `active` against the DB on every request (not the possibly
+  // cached session user) so deactivation takes effect immediately, even
+  // inside the 5-minute session-cookie cache window.
+  if (session && (await isUserActive(session.user.id))) {
+    event.locals.session = session.session
+    event.locals.user = session.user
+    event.locals.permissions = await loadUserPermissions(session.user.id)
+  } else {
+    event.locals.session = null
+    event.locals.user = null
+    event.locals.permissions = new Set()
+  }
+  return resolve(event)
+}
+
+const requireAuthHandle: Handle = async ({ event, resolve }) => {
+  const { pathname } = event.url
+  if (!isPublicRoute(pathname) && !event.locals.user) {
+    // Preserve the requested URL so we can bounce back after login.
+    const redirectTo = encodeURIComponent(pathname + event.url.search)
+    throw redirect(303, `/login?redirectTo=${redirectTo}`)
+  }
+  return resolve(event)
 }
 
 export const handle: Handle = async ({ event, resolve }) => {
   await ensureSeeded()
-  startPayrollScheduler()
-  return resolve(event)
+  return rateLimitSignIn({
+    event,
+    resolve: (e0) =>
+      blockDeactivatedSignIn({
+        event: e0,
+        resolve: (e1) =>
+          svelteKitHandler({
+            event: e1,
+            resolve: (e) =>
+              populateAuthLocals({
+                event: e,
+                resolve: (e2) => requireAuthHandle({ event: e2, resolve })
+              }),
+            auth,
+            building
+          })
+      })
+  })
 }
 
 /**

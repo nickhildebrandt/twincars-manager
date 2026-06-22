@@ -1,0 +1,6 @@
+# pnpm 11 reads build-script approval from this file (the package.json
+# "pnpm" field is no longer honoured). esbuild ships a platform binary via
+# its install script; vite/vitest need it, so it must be allowed to run on
+# a fresh `pnpm install` (Docker / CI included).
+allowBuilds:
+  esbuild: true

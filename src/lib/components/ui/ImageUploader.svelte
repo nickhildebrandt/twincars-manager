@@ -64,6 +64,14 @@
   }: Props = $props()
 
   let fileInput = $state<HTMLInputElement | null>(null)
+  /**
+   * `dragActive` flips the dashed-border overlay on while a file is
+   * being dragged over the card. `dragDepth` tracks the number of
+   * nested dragenter events so that crossing a child boundary does
+   * not reset the active flag prematurely.
+   */
+  let dragActive = $state(false)
+  let dragDepth = 0
 
   const readDataUrl = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -73,20 +81,21 @@
       reader.readAsDataURL(file)
     })
 
-  const onPicked = async (e: Event) => {
-    const input = e.target as HTMLInputElement
-    const files = Array.from(input.files ?? [])
+  /**
+   * Shared ingestion path for both the `<input type=file>` picker and
+   * the drag-and-drop drop handler. Validation (mime + size) is
+   * identical in both cases, as are the toast messages.
+   */
+  const ingest = async (files: File[]) => {
     if (files.length === 0) return
     const mb = Math.round(maxBytes / (1024 * 1024))
     for (const file of files) {
       if (!/^image\//.test(file.type)) {
         toast.error(`„${file.name}" ist keine Bilddatei.`)
-        input.value = ''
         return
       }
       if (file.size > maxBytes) {
         toast.error(`„${file.name}" ist größer als ${mb} MB.`)
-        input.value = ''
         return
       }
     }
@@ -97,9 +106,56 @@
           await onUpload({ mime: file.type, dataUrl })
         }
       })
-      if (fileInput) fileInput.value = ''
     } catch {
       // Caller is expected to surface errors via handleClientError.
+    }
+  }
+
+  const onPicked = async (e: Event) => {
+    const input = e.target as HTMLInputElement
+    const files = Array.from(input.files ?? [])
+    await ingest(files)
+    if (fileInput) fileInput.value = ''
+  }
+
+  const isFileDrag = (e: DragEvent): boolean => {
+    const types = e.dataTransfer?.types
+    if (!types) return false
+    // DataTransferItemList implements iterable; cast for older typings.
+    return Array.from(types as unknown as string[]).includes('Files')
+  }
+
+  const onDragEnter = (e: DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragDepth += 1
+    dragActive = true
+  }
+
+  const onDragOver = (e: DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy'
+    dragActive = true
+  }
+
+  const onDragLeave = (e: DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragDepth = Math.max(0, dragDepth - 1)
+    if (dragDepth === 0) dragActive = false
+  }
+
+  const onDrop = async (e: DragEvent) => {
+    if (!isFileDrag(e)) return
+    e.preventDefault()
+    dragDepth = 0
+    dragActive = false
+    const files = Array.from(e.dataTransfer?.files ?? [])
+    if (single && files.length > 1) {
+      await ingest(files.slice(0, 1))
+    } else {
+      await ingest(files)
     }
   }
 
@@ -126,7 +182,32 @@
   )
 </script>
 
-<div class="card border-base-300 bg-base-100 border">
+<!--
+  The whole card is the drop zone. `dragover` must `preventDefault`
+  for the browser to fire `drop`. While a file is dragged over we
+  show a dashed primary border + fade overlay; pointer-events stay
+  off the overlay so the underlying `drop` handler still receives
+  the event.
+-->
+<div
+  class="card border-base-300 bg-base-100 relative border transition-colors {dragActive
+    ? 'border-primary border-dashed'
+    : ''}"
+  ondragenter={onDragEnter}
+  ondragover={onDragOver}
+  ondragleave={onDragLeave}
+  ondrop={onDrop}
+  role="region"
+  aria-label={title}
+  data-drag-active={dragActive ? 'true' : 'false'}
+>
+  {#if dragActive}
+    <div
+      class="bg-primary/10 pointer-events-none absolute inset-0 z-10 flex items-center justify-center rounded text-sm font-medium opacity-90"
+    >
+      Dateien hier ablegen
+    </div>
+  {/if}
   <div class="card-body gap-3">
     <div>
       <h3 class="card-title text-base">{title}</h3>
@@ -148,9 +229,12 @@
         </div>
       {:else}
         <div
-          class="border-base-300 bg-base-200 text-base-content/40 flex h-40 items-center justify-center rounded border text-sm"
+          class="border-base-300 bg-base-200 text-base-content/40 flex h-40 flex-col items-center justify-center rounded border text-sm"
         >
-          Kein Bild hinterlegt
+          <span>Kein Bild hinterlegt</span>
+          <span class="mt-1 text-xs">
+            Bilder hierher ziehen oder Datei auswählen
+          </span>
         </div>
       {/if}
     {:else if images.length > 0}
@@ -215,9 +299,12 @@
       </div>
     {:else}
       <div
-        class="border-base-300 bg-base-200 text-base-content/40 flex h-32 items-center justify-center rounded border text-sm"
+        class="border-base-300 bg-base-200 text-base-content/40 flex h-32 flex-col items-center justify-center rounded border text-sm"
       >
-        Noch keine Fotos hinterlegt
+        <span>Noch keine Fotos hinterlegt</span>
+        <span class="mt-1 text-xs">
+          Bilder hierher ziehen oder Datei auswählen
+        </span>
       </div>
     {/if}
 

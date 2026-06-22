@@ -77,20 +77,20 @@ describe('sentMessageStatusLabel', () => {
 })
 
 describe('reminderLevelLabel', () => {
-  it('returns the right escalation step for each level', () => {
-    expect(reminderLevelLabel(0)).toBe('Noch keine Mahnung')
+  it('labels each reminder count as a friendly Zahlungserinnerung', () => {
+    expect(reminderLevelLabel(0)).toBe('Noch keine Zahlungserinnerung')
     expect(reminderLevelLabel(1)).toBe('Zahlungserinnerung')
-    expect(reminderLevelLabel(2)).toBe('1. Mahnung')
-    expect(reminderLevelLabel(3)).toBe('2. Mahnung')
-    expect(reminderLevelLabel(4)).toBe('Letzte Mahnung')
+    expect(reminderLevelLabel(2)).toBe('2. Zahlungserinnerung')
+    expect(reminderLevelLabel(3)).toBe('3. Zahlungserinnerung')
+    expect(reminderLevelLabel(4)).toBe('4. Zahlungserinnerung')
   })
 
-  it('escalates badge color from ghost → error', () => {
+  it('keeps every sent reminder on the same info badge — no escalation', () => {
     expect(reminderLevelBadge(0)).toBe('badge-ghost')
     expect(reminderLevelBadge(1)).toBe('badge-info')
-    expect(reminderLevelBadge(2)).toBe('badge-warning')
-    expect(reminderLevelBadge(3)).toBe('badge-error')
-    expect(reminderLevelBadge(4)).toBe('badge-error')
+    expect(reminderLevelBadge(2)).toBe('badge-info')
+    expect(reminderLevelBadge(3)).toBe('badge-info')
+    expect(reminderLevelBadge(4)).toBe('badge-info')
   })
 })
 
@@ -102,9 +102,8 @@ describe('documentTypeLabel', () => {
     expect(documentTypeLabel('order_confirmation')).toBe('Auftragsbestätigung')
     expect(documentTypeLabel('reminder')).toBe('Zahlungserinnerung')
     expect(documentTypeLabel('reminder_1')).toBe('Zahlungserinnerung')
-    expect(documentTypeLabel('reminder_2')).toBe('1. Mahnung')
-    expect(documentTypeLabel('reminder_3')).toBe('2. Mahnung')
-    expect(documentTypeLabel('payslip')).toBe('Lohnzettel')
+    expect(documentTypeLabel('reminder_2')).toBe('Zahlungserinnerung')
+    expect(documentTypeLabel('reminder_3')).toBe('Zahlungserinnerung')
     expect(documentTypeLabel('mailing')).toBe('Serienbrief')
   })
 })

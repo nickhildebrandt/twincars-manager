@@ -3,11 +3,13 @@ import { error } from '@sveltejs/kit'
 import { object } from 'valibot'
 import { idSchema } from '$lib/server/db/validation'
 import {
+  requireAnyPermission,
+  requirePermission
+} from '$lib/server/auth-guards'
+import {
   getDocumentPdfMeta,
-  getPayslipPdfMeta,
   getReminderPdfMeta,
   loadCachedDocumentPdf,
-  loadCachedPayslipPdf,
   loadCachedReminderPdf
 } from '$lib/server/services/pdf-service'
 
@@ -23,6 +25,7 @@ import {
 export const getDocumentPdfMetaRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requireAnyPermission('invoices', 'offers')
     const meta = await getDocumentPdfMeta(id)
     return meta
       ? {
@@ -48,6 +51,7 @@ export const getDocumentPdfMetaRemote = query(
 export const getDocumentPdfBytesRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requireAnyPermission('invoices', 'offers')
     const row = await loadCachedDocumentPdf(id)
     if (!row) error(404, 'Für diesen Beleg ist kein PDF gespeichert.')
     return {
@@ -69,6 +73,7 @@ export const getDocumentPdfBytesRemote = query(
 export const getReminderPdfMetaRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('reminders')
     const meta = await getReminderPdfMeta(id)
     return meta
       ? {
@@ -84,7 +89,7 @@ export const getReminderPdfMetaRemote = query(
 )
 
 /**
- * Liefert das persistierte Mahn-PDF — kein Auto-Render.
+ * Liefert das persistierte Zahlungserinnerungs-PDF — kein Auto-Render.
  *
  * @group integration
  * @module pdfs
@@ -92,52 +97,10 @@ export const getReminderPdfMetaRemote = query(
 export const getReminderPdfBytesRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('reminders')
     const row = await loadCachedReminderPdf(id)
-    if (!row) error(404, 'Für diese Mahnung ist kein PDF gespeichert.')
-    return {
-      filename: row.filename,
-      mime: row.mime,
-      size: row.size,
-      base64: Buffer.from(row.data).toString('base64')
-    }
-  }
-)
-
-/**
- * Payslip metadata. Same contract as the document/reminder variants but
- * keyed by the payroll-entry id.
- *
- * @group integration
- * @module pdfs
- */
-export const getPayslipPdfMetaRemote = query(
-  object({ id: idSchema }),
-  async ({ id }) => {
-    const meta = await getPayslipPdfMeta(id)
-    return meta
-      ? {
-          id: meta.id,
-          entryId: meta.entryId,
-          filename: meta.filename,
-          mime: meta.mime,
-          size: meta.size,
-          createdAt: meta.createdAt
-        }
-      : null
-  }
-)
-
-/**
- * Liefert das persistierte Lohnzettel-PDF — kein Auto-Render.
- *
- * @group integration
- * @module pdfs
- */
-export const getPayslipPdfBytesRemote = query(
-  object({ id: idSchema }),
-  async ({ id }) => {
-    const row = await loadCachedPayslipPdf(id)
-    if (!row) error(404, 'Für diese Abrechnung ist kein PDF gespeichert.')
+    if (!row)
+      error(404, 'Für diese Zahlungserinnerung ist kein PDF gespeichert.')
     return {
       filename: row.filename,
       mime: row.mime,

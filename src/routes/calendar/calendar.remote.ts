@@ -14,9 +14,11 @@ import {
   variant
 } from 'valibot'
 import { idSchema, notesSchema } from '$lib/server/db/validation'
+import { requirePermission } from '$lib/server/auth-guards'
 import {
   createCalendarEntry,
   deleteCalendarEntry,
+  findOverlappingAppointments,
   getCalendarEntry,
   listAppointments,
   listCalendarEvents,
@@ -96,8 +98,10 @@ export const listCalendarEventsRemote = query(
     to: isoDateSchema,
     employeeId: optional(idSchema)
   }),
-  async ({ from, to, employeeId }) =>
-    listCalendarEvents(from, to, employeeId ?? null)
+  async ({ from, to, employeeId }) => {
+    requirePermission('calendar')
+    return listCalendarEvents(from, to, employeeId ?? null)
+  }
 )
 
 /**
@@ -107,9 +111,10 @@ export const listCalendarEventsRemote = query(
  * @group integration
  * @module calendar
  */
-export const listAppointmentsRemote = query(listSchema, async (params) =>
-  listAppointments(params)
-)
+export const listAppointmentsRemote = query(listSchema, async (params) => {
+  requirePermission('calendar')
+  return listAppointments(params)
+})
 
 /**
  * Create a calendar entry. Discriminated by `kind`:
@@ -126,6 +131,7 @@ export const listAppointmentsRemote = query(listSchema, async (params) =>
 export const createCalendarEntryRemote = command(
   createInputSchema,
   async (input) => {
+    requirePermission('calendar')
     if (input.kind === 'appointment') {
       const allDay = input.allDay ?? false
       const startsAt = new Date(input.startsAt)
@@ -220,6 +226,7 @@ export const createCalendarEntryRemote = command(
 export const deleteCalendarEntryRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('calendar')
     await deleteCalendarEntry(id)
     await requested(listAppointmentsRemote, 4).refreshAll()
   }
@@ -235,6 +242,7 @@ export const deleteCalendarEntryRemote = command(
 export const getCalendarEntryRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('calendar')
     const row = await getCalendarEntry(id)
     if (!row) error(404, 'Kalendereintrag nicht gefunden.')
     return row
@@ -254,6 +262,7 @@ export const getCalendarEntryRemote = query(
 export const updateCalendarEntryRemote = command(
   object({ id: idSchema, values: createInputSchema }),
   async ({ id, values: input }) => {
+    requirePermission('calendar')
     const existing = await getCalendarEntry(id)
     if (!existing) error(404, 'Kalendereintrag nicht gefunden.')
     if (existing.kind !== input.kind) {
@@ -336,6 +345,34 @@ export const updateCalendarEntryRemote = command(
       if (e instanceof Error) error(400, e.message)
       throw e
     }
+  }
+)
+
+/**
+ * Return any existing appointments whose time window intersects the
+ * candidate `[startsAt, endsAt]`. Used by the calendar form to warn —
+ * NOT to refuse — when the operator is about to double-book a slot.
+ *
+ * @group integration
+ * @module calendar
+ */
+export const findOverlappingAppointmentsRemote = query(
+  object({
+    startsAt: dateTimeStringSchema,
+    endsAt: dateTimeStringSchema,
+    excludeId: optional(idSchema)
+  }),
+  async ({ startsAt, endsAt, excludeId }) => {
+    requirePermission('calendar')
+    const s = new Date(startsAt)
+    const e = new Date(endsAt)
+    if (Number.isNaN(s.getTime()) || Number.isNaN(e.getTime())) {
+      error(400, 'Bitte einen gültigen Zeitraum angeben.')
+    }
+    if (e <= s) {
+      error(400, 'Endzeit muss nach Startzeit liegen.')
+    }
+    return findOverlappingAppointments(s, e, excludeId)
   }
 )
 

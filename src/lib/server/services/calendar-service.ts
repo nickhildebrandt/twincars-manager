@@ -20,10 +20,13 @@ import {
   count,
   desc,
   eq,
+  gt,
   gte,
   ilike,
   isNotNull,
-  lte
+  lt,
+  lte,
+  ne
 } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
@@ -383,4 +386,57 @@ export async function updateCalendarEntry(
     .where(eq(calendarEntries.id, id))
     .returning()
   return row
+}
+
+/* ── Overlap detection ──────────────────────────────────────────────
+ *
+ * Admins are allowed to deliberately double-book a slot (a customer
+ * may walk in while another is already booked), but the calendar UI
+ * surfaces an explicit warning beforehand so it never happens by
+ * accident. Public-API bookings use a stricter check that 409s on any
+ * overlap — this helper is a *warning* gate, not a hard refusal.
+ *
+ * The classic interval-overlap predicate is
+ *   `existing.startsAt < candidate.endsAt AND existing.endsAt > candidate.startsAt`.
+ * Exact boundary touches (e.g. one slot ending at 10:00 and the next
+ * starting at 10:00) are NOT treated as overlap — they're allowed
+ * back-to-back without a warning.
+ */
+
+export type OverlappingAppointment = {
+  id: string
+  title: string
+  startsAt: Date
+  endsAt: Date
+}
+
+export async function findOverlappingAppointments(
+  startsAt: Date,
+  endsAt: Date,
+  excludeId?: string
+): Promise<OverlappingAppointment[]> {
+  const filters = [
+    eq(calendarEntries.kind, 'appointment'),
+    lt(calendarEntries.startsAt, endsAt),
+    gt(calendarEntries.endsAt, startsAt),
+    // Cancelled appointments shouldn't generate a warning — the slot
+    // is effectively free as far as the operator is concerned.
+    ne(calendarEntries.status, 'cancelled')
+  ]
+  if (excludeId) {
+    filters.push(ne(calendarEntries.id, excludeId))
+  }
+
+  const rows = await db
+    .select({
+      id: calendarEntries.id,
+      title: calendarEntries.title,
+      startsAt: calendarEntries.startsAt,
+      endsAt: calendarEntries.endsAt
+    })
+    .from(calendarEntries)
+    .where(and(...filters))
+    .orderBy(asc(calendarEntries.startsAt))
+
+  return rows
 }

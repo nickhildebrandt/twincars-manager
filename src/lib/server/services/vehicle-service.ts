@@ -1,6 +1,9 @@
 import { db } from '$lib/server/db/client'
 import {
   vehicleLicensePlateVersions,
+  vehicleListings,
+  vehiclePhotos,
+  vehicleSales,
   vehicles,
   type Vehicle,
   type NewVehicle,
@@ -304,3 +307,166 @@ export async function withCurrentPlates<T extends { id: string }>(
 }
 
 export { asc }
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Public storefront helpers                                              */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * One row in the public used-car listing, projected to what an
+ * external website is allowed to see. Only fields that already appear
+ * in the customer-facing inventory are exposed; internal price
+ * margins, purchase data and internal notes never make it into this
+ * shape.
+ */
+export type PublicUsedCar = {
+  id: string
+  make: string | null
+  model: string | null
+  firstRegistration: string | null
+  mileageKm: number | null
+  priceGross: number | null
+  fuel: string | null
+  transmission: string | null
+  description: string | null
+  photos: Array<{ mime: string; dataUrl: string }>
+}
+
+/**
+ * Inventory vehicles available for the public used-car listing:
+ * not archived, no customer (i.e. stock), not sold yet, and with a
+ * sales listing in `available` state. Each vehicle is enriched with
+ * its cover photo plus up to 6 additional photos in `sortOrder`,
+ * encoded as data URLs ready to be embedded into a public website.
+ */
+export async function listPublicUsedCars(): Promise<PublicUsedCar[]> {
+  const rows = await db
+    .select({
+      id: vehicles.id,
+      make: vehicles.make,
+      model: vehicles.model,
+      firstRegistration: vehicles.firstRegistration,
+      mileageKm: vehicles.mileageKm,
+      fuelType: vehicles.fuelType,
+      gearbox: vehicles.gearbox,
+      salesPriceGross: vehicleListings.salesPriceGross,
+      highlights: vehicleListings.highlights,
+      status: vehicleListings.status,
+      saleId: vehicleSales.id
+    })
+    .from(vehicles)
+    .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+    .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+    .where(
+      and(
+        eq(vehicles.archived, false),
+        isNull(vehicles.customerId),
+        isNull(vehicleSales.id)
+      )
+    )
+    .orderBy(desc(vehicles.createdAt))
+
+  if (rows.length === 0) return []
+
+  // Pull all photos for these vehicles in one query, then bucket by id.
+  const ids = rows.map((r) => r.id)
+  const photoRows = await db
+    .select({
+      vehicleId: vehiclePhotos.vehicleId,
+      mime: vehiclePhotos.mime,
+      dataUrl: vehiclePhotos.dataUrl,
+      isMain: vehiclePhotos.isMain,
+      sortOrder: vehiclePhotos.sortOrder
+    })
+    .from(vehiclePhotos)
+    .where(inArray(vehiclePhotos.vehicleId, ids))
+    .orderBy(
+      desc(vehiclePhotos.isMain),
+      asc(vehiclePhotos.sortOrder),
+      asc(vehiclePhotos.createdAt)
+    )
+  const photosByVehicle = new Map<
+    string,
+    Array<{ mime: string; dataUrl: string }>
+  >()
+  for (const p of photoRows) {
+    const list = photosByVehicle.get(p.vehicleId) ?? []
+    // Cap at 7 photos per vehicle (cover + 6 additional).
+    if (list.length < 7) list.push({ mime: p.mime, dataUrl: p.dataUrl })
+    photosByVehicle.set(p.vehicleId, list)
+  }
+
+  return rows.map((r) => ({
+    id: r.id,
+    make: r.make,
+    model: r.model,
+    firstRegistration: r.firstRegistration,
+    mileageKm: r.mileageKm == null ? null : Number(r.mileageKm),
+    priceGross: r.salesPriceGross == null ? null : Number(r.salesPriceGross),
+    fuel: r.fuelType,
+    transmission: r.gearbox,
+    description: r.highlights ?? null,
+    photos: photosByVehicle.get(r.id) ?? []
+  }))
+}
+
+/**
+ * Single-row equivalent of {@link listPublicUsedCars}. Returns the
+ * same `PublicUsedCar` projection for one vehicle, or `null` when the
+ * id is unknown, the vehicle is archived, owned by a customer, or
+ * already sold. Used by `GET /api/public/used-cars/:id` for the
+ * external website's vehicle-detail page.
+ */
+export async function getPublicUsedCar(
+  id: string
+): Promise<PublicUsedCar | null> {
+  const [row] = await db
+    .select({
+      id: vehicles.id,
+      make: vehicles.make,
+      model: vehicles.model,
+      firstRegistration: vehicles.firstRegistration,
+      mileageKm: vehicles.mileageKm,
+      fuelType: vehicles.fuelType,
+      gearbox: vehicles.gearbox,
+      salesPriceGross: vehicleListings.salesPriceGross,
+      highlights: vehicleListings.highlights,
+      saleId: vehicleSales.id
+    })
+    .from(vehicles)
+    .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+    .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
+    .where(
+      and(
+        eq(vehicles.id, id),
+        eq(vehicles.archived, false),
+        isNull(vehicles.customerId),
+        isNull(vehicleSales.id)
+      )
+    )
+    .limit(1)
+  if (!row) return null
+  const photoRows = await db
+    .select({ mime: vehiclePhotos.mime, dataUrl: vehiclePhotos.dataUrl })
+    .from(vehiclePhotos)
+    .where(eq(vehiclePhotos.vehicleId, row.id))
+    .orderBy(
+      desc(vehiclePhotos.isMain),
+      asc(vehiclePhotos.sortOrder),
+      asc(vehiclePhotos.createdAt)
+    )
+  const photos = photoRows.slice(0, 7)
+  return {
+    id: row.id,
+    make: row.make,
+    model: row.model,
+    firstRegistration: row.firstRegistration,
+    mileageKm: row.mileageKm == null ? null : Number(row.mileageKm),
+    priceGross:
+      row.salesPriceGross == null ? null : Number(row.salesPriceGross),
+    fuel: row.fuelType,
+    transmission: row.gearbox,
+    description: row.highlights ?? null,
+    photos
+  }
+}

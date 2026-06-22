@@ -15,6 +15,10 @@ type NewItem = typeof items.$inferInsert
  * Preisversion. `unitPriceNet` ist `null`, wenn noch keine Version
  * existiert (sollte nach dem Backfill aus Migration 0008 nicht
  * vorkommen — Defensive für neu angelegte Items während des Übergangs).
+ *
+ * Items in dieser Tabelle sind ausschließlich Werkstattleistungen,
+ * Material und Durchlaufposten — Reifen liegen seit Migration 0022 in
+ * der dedizierten `tires`-Tabelle.
  */
 export type ItemWithPrice = Item & { unitPriceNet: string | null }
 
@@ -122,6 +126,25 @@ export async function getItem(id: string): Promise<ItemWithPrice | null> {
 export async function nextArticleNumber(): Promise<string> {
   const [{ value }] = await db.select({ value: count() }).from(items)
   return `ART-${String(Number(value) + 1).padStart(5, '0')}`
+}
+
+/**
+ * Returns all items of `kind = 'service'`, enriched with the currently
+ * valid price. Used by the Phase 7 public REST API to expose the workshop
+ * service catalogue to the public website.
+ */
+export async function listPublicServices(): Promise<ItemWithPrice[]> {
+  const rows = await db
+    .select()
+    .from(items)
+    .where(eq(items.kind, 'service'))
+    .orderBy(desc(items.createdAt))
+  return Promise.all(
+    rows.map(async (i) => {
+      const v = await getCurrentItemPrice(i.id)
+      return { ...i, unitPriceNet: v?.unitPriceNet ?? null }
+    })
+  )
 }
 
 /* ── Versionierte Preise ───────────────────────────────────────────── */

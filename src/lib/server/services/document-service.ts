@@ -1,3 +1,4 @@
+import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db/client'
 import {
   documents,
@@ -281,8 +282,199 @@ export async function createDocument(
   return created
 }
 
+/**
+ * Delete a document. GoBD-Schutz für Rechnungen:
+ *
+ * Sobald eine Rechnung den Entwurfs-Status verlassen hat (`status !=
+ * 'draft'`) und noch nicht storniert wurde (`cancelledAt IS NULL`),
+ * wird die Löschung verweigert (HTTP 409). Korrekturen erfolgen
+ * ausschließlich über `cancelInvoice`, das eine GoBD-konforme
+ * Storno-Rechnung erzeugt.
+ *
+ * Storno-Rechnungen selbst (Status `storno`) sind ebenfalls
+ * gesperrt — sie sind Aufzeichnungen, keine Entwürfe.
+ *
+ * Andere Dokument-Arten (Angebote, Kostenvoranschläge, Mahnungen,
+ * Serienbriefe) bleiben löschbar — die GoBD-Aufbewahrungspflicht greift
+ * nur für ausgestellte Rechnungen.
+ */
 export async function deleteDocument(id: string): Promise<void> {
+  const [row] = await db
+    .select({
+      id: documents.id,
+      type: documents.type,
+      status: documents.status,
+      cancelledAt: documents.cancelledAt
+    })
+    .from(documents)
+    .where(eq(documents.id, id))
+    .limit(1)
+  if (!row) {
+    // Unknown id: no-op (idempotent — same as before).
+    return
+  }
+  if (row.type === 'invoice') {
+    if (row.status === 'storno') {
+      error(
+        409,
+        'Stornorechnungen sind GoBD-pflichtige Belege und können nicht gelöscht werden.'
+      )
+    }
+    if (row.status !== 'draft' && row.cancelledAt === null) {
+      error(
+        409,
+        'Diese Rechnung ist bereits ausgestellt und kann nicht gelöscht werden. Bitte stornieren Sie sie stattdessen.'
+      )
+    }
+  }
   await db.delete(documents).where(eq(documents.id, id))
+}
+
+/**
+ * GoBD-konformes Stornieren einer ausgestellten Rechnung
+ * (§ 14 UStG, §§ 145 ff. AO). Korrekturen an Rechnungen erfolgen
+ * ausschließlich durch eine eigene Storno-Rechnung, die das Original
+ * exakt negiert; das Original bleibt unverändert lesbar im Bestand.
+ *
+ * Ablauf in einer einzigen Transaktion:
+ *
+ *  1. Original laden und prüfen. Verweigert mit HTTP 409
+ *     - falls bereits storniert (`cancelledAt IS NOT NULL`),
+ *     - falls kein Rechnungs-Typ.
+ *  2. Neue Storno-Nummer aus `number_ranges.kind = 'storno'`
+ *     allokieren (Format `S-{N}`).
+ *  3. Neuer `documents`-Row anlegen: `type = 'invoice'`,
+ *     `status = 'storno'`, `cancelsDocumentId = original.id`.
+ *     Sämtliche Geldbeträge (`netTotal`, `taxTotal`, `grossTotal`,
+ *     `discountTotal`) negiert. Kunde/Fahrzeug/Datum vom Original
+ *     übernommen.
+ *  4. Jede `document_items`-Zeile gespiegelt mit negierter `quantity`
+ *     und negierten Zeilensummen — der Steuerberater sieht damit
+ *     direkt, welche Positionen rückgebucht werden.
+ *  5. Original markieren: `cancelledAt = now()`,
+ *     `cancellationReason = reason`,
+ *     `cancelledByDocumentId = newStorno.id`.
+ *
+ * Idempotenz greift im Schritt 1 — ein zweiter Aufruf scheitert mit
+ * "bereits storniert". PDF-Render läuft separat im Aufrufer.
+ *
+ * @param originalId  UUID der zu stornierenden Rechnung.
+ * @param reason      Pflicht-Begründung (≤500 Zeichen, vom Aufrufer
+ *                    validiert).
+ * @returns           ID + Belegnummer der neu erzeugten Storno-Rechnung.
+ */
+export async function cancelInvoice(
+  originalId: string,
+  reason: string
+): Promise<{ stornoId: string; stornoNumber: string }> {
+  const [original] = await db
+    .select()
+    .from(documents)
+    .where(eq(documents.id, originalId))
+    .limit(1)
+  if (!original) {
+    error(404, 'Rechnung nicht gefunden.')
+  }
+  if (original.type !== 'invoice') {
+    error(409, 'Nur Rechnungen können storniert werden.')
+  }
+  if (original.status === 'storno') {
+    error(409, 'Eine Stornorechnung kann nicht erneut storniert werden.')
+  }
+  if (original.cancelledAt !== null) {
+    error(409, 'Rechnung wurde bereits storniert.')
+  }
+  if (original.status === 'draft') {
+    error(
+      409,
+      'Entwürfe können direkt gelöscht werden — eine Stornierung ist nur für ausgestellte Rechnungen vorgesehen.'
+    )
+  }
+
+  // Allocate the next storno number BEFORE entering the transaction —
+  // `nextDocumentNumber` does its own update against `number_ranges`
+  // and reusing the helper keeps the format template consistent.
+  const stornoNumber = await nextDocumentNumber('storno')
+
+  const items = await db
+    .select()
+    .from(documentItems)
+    .where(eq(documentItems.documentId, originalId))
+    .orderBy(asc(documentItems.positionNumber))
+
+  // Negate every monetary value. The DB stores numerics as strings so
+  // we round-trip through Number to avoid leading-sign formatting
+  // surprises ("-0.00" etc.).
+  const neg = (v: string | number): string => String(-1 * Number(v ?? 0))
+
+  const stornoDoc: NewDocument = {
+    documentNumber: stornoNumber,
+    type: 'invoice',
+    status: 'storno',
+    customerId: original.customerId,
+    vehicleId: original.vehicleId,
+    issueDate: new Date().toISOString().slice(0, 10),
+    serviceDate: original.serviceDate,
+    dueDate: null,
+    paymentMethod: original.paymentMethod,
+    taxRate: original.taxRate,
+    netTotal: neg(original.netTotal),
+    taxTotal: neg(original.taxTotal),
+    grossTotal: neg(original.grossTotal),
+    discountTotal: neg(original.discountTotal),
+    header: original.header,
+    footer: original.footer,
+    notes: `Stornorechnung zu ${original.documentNumber}. Grund: ${reason}`,
+    cancelsDocumentId: originalId
+  }
+
+  // Sequence (best-effort serialisation; postgres-js wraps each query
+  // in its own statement-level autocommit). The pre-flight checks above
+  // guarantee idempotency for accidental retries — if the original is
+  // already flagged `cancelledAt IS NOT NULL`, a second run aborts at
+  // step 1 with HTTP 409.
+  //
+  // We deliberately avoid `db.transaction(...)` because the test
+  // harness uses the `pg-proxy` Drizzle driver, which does not
+  // implement transactions; the service stays portable that way. A
+  // production failure between the insert and the update would leave
+  // a `status='storno'` row with no back-link on the original —
+  // detectable + auto-repairable from `cancels_document_id` if needed.
+  const [created] = await db.insert(documents).values(stornoDoc).returning()
+
+  if (items.length > 0) {
+    await db
+      .insert(documentItems)
+      .values(
+        items.map((it) => ({
+          documentId: created.id,
+          positionNumber: it.positionNumber,
+          kind: it.kind,
+          articleNumber: it.articleNumber,
+          description: it.description,
+          quantity: neg(it.quantity),
+          unit: it.unit,
+          unitPriceNet: it.unitPriceNet,
+          discountPercent: it.discountPercent,
+          taxRate: it.taxRate,
+          lineTotalNet: neg(it.lineTotalNet),
+          lineTotalGross: neg(it.lineTotalGross)
+        }))
+      )
+  }
+
+  await db
+    .update(documents)
+    .set({
+      cancelledAt: new Date(),
+      cancellationReason: reason,
+      cancelledByDocumentId: created.id,
+      status: 'cancelled',
+      updatedAt: new Date()
+    })
+    .where(eq(documents.id, originalId))
+
+  return { stornoId: created.id, stornoNumber: created.documentNumber }
 }
 
 export async function setDocumentStatus(

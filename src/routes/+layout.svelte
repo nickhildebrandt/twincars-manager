@@ -4,7 +4,7 @@
   import { page } from '$app/state'
   import AppShell from '$lib/components/layout/AppShell.svelte'
   import ToastTray from '$lib/components/ui/ToastTray.svelte'
-  import { getLayoutContext } from './layout.remote'
+  import { getCurrentUserRemote, getLayoutContext } from './layout.remote'
   import { busy } from '$lib/stores/busy.svelte'
 
   const { children } = $props()
@@ -16,8 +16,10 @@
    * dehydrated cache without re-fetching.
    */
   const data = await getLayoutContext()
+  const currentUser = await getCurrentUserRemote()
 
   const isSetupRoute = $derived(page.url.pathname.startsWith('/setup'))
+  const isLoginRoute = $derived(page.url.pathname === '/login')
 
   $effect(() => {
     if (data.setupCompleted || isSetupRoute) return
@@ -46,12 +48,12 @@
   <title>TwinCarsManager</title>
 </svelte:head>
 
-{#if isSetupRoute || !data.setupCompleted}
+{#if isSetupRoute || !data.setupCompleted || isLoginRoute}
   <div class="min-h-dvh">
     {@render children?.()}
   </div>
 {:else}
-  <AppShell companyName={data.companyName}>
+  <AppShell companyName={data.companyName} {currentUser}>
     {@render children?.()}
   </AppShell>
 {/if}

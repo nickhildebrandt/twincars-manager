@@ -1,8 +1,6 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
-  import { invalidateAll } from '$app/navigation'
+  import { goto, invalidateAll } from '$app/navigation'
   import {
-    Wrench,
     ArrowLeft,
     ArrowRight,
     Check,
@@ -10,23 +8,43 @@
     Banknote,
     Image as ImageIcon,
     Mail,
-    Database
+    Database,
+    Clock,
+    UserCog,
+    ListChecks,
+    Pencil,
+    ChevronDown
   } from '@lucide/svelte'
-  import { saveCompanyData, saveSmtp, completeSetup } from './setup.remote'
+  import {
+    saveCompanyData,
+    saveSmtp,
+    completeSetup,
+    createInitialAdmin,
+    listWorkshopHoursForSetup,
+    saveWorkshopHoursForSetup
+  } from './setup.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
+  import { busy } from '$lib/stores/busy.svelte'
 
   let step = $state(1)
-  const totalSteps = 7
+  const totalSteps = 9
 
+  /**
+   * Step list. Order matches the wizard flow exactly; the indicator and
+   * the verification card both iterate this. `short` is shown on the
+   * compact mobile pill so the header doesn't wrap on narrow screens.
+   */
   const steps = [
-    { n: 1, title: 'Willkommen' },
-    { n: 2, title: 'Firmendaten' },
-    { n: 3, title: 'Steuer & Bank' },
-    { n: 4, title: 'Logo & Anrede' },
-    { n: 5, title: 'E-Mail (SMTP)' },
-    { n: 6, title: 'Lohn & Mahnwesen' },
-    { n: 7, title: 'Abschluss' }
+    { n: 1, title: 'Willkommen', short: 'Start' },
+    { n: 2, title: 'Firmendaten', short: 'Firma' },
+    { n: 3, title: 'Steuer & Bank', short: 'Bank' },
+    { n: 4, title: 'Logo & Anrede', short: 'Logo' },
+    { n: 5, title: 'E-Mail (SMTP)', short: 'SMTP' },
+    { n: 6, title: 'Öffnungszeiten', short: 'Zeiten' },
+    { n: 7, title: 'Datenimport', short: 'Import' },
+    { n: 8, title: 'Administrator', short: 'Admin' },
+    { n: 9, title: 'Verifikation', short: 'Prüfen' }
   ]
 
   let companyName = $state('')
@@ -57,18 +75,68 @@
   let smtpPassword = $state('')
   let fromAddress = $state('')
   let fromName = $state('')
+  /**
+   * SMTP is an optional integration: the workshop can finish setup
+   * without it and configure mail later under Settings. When skipped, the
+   * step's fields are disabled and not persisted.
+   */
+  let smtpSkip = $state(false)
 
-  // Schritt 6 — Lohn & Mahnwesen
-  let payrollGenerationDay = $state(25)
-  let reminderDays1 = $state(3)
-  let reminderDays2 = $state(10)
-  let reminderDays3 = $state(20)
-  let reminderDays4 = $state(30)
-  let reminderInterestRate = $state(9.62)
+  // Workshop hours. Defaults from the schema seed (Mon-Fri 08:00-17:00,
+  // Sat+Sun closed) are loaded once.
+  type HoursRow = {
+    weekday: number
+    opensAt: string
+    closesAt: string
+    closed: boolean
+  }
+  const initialHours = await listWorkshopHoursForSetup()
+  let hoursRows = $state<HoursRow[]>(
+    initialHours.map((r) => ({
+      weekday: r.weekday,
+      opensAt: r.opensAt,
+      closesAt: r.closesAt,
+      closed: r.closed
+    }))
+  )
+  const weekdayLabel = (w: number): string => {
+    switch (w) {
+      case 0:
+        return 'Sonntag'
+      case 1:
+        return 'Montag'
+      case 2:
+        return 'Dienstag'
+      case 3:
+        return 'Mittwoch'
+      case 4:
+        return 'Donnerstag'
+      case 5:
+        return 'Freitag'
+      case 6:
+        return 'Samstag'
+      default:
+        return `Tag ${w}`
+    }
+  }
 
   let mdbChoice = $state<'now' | 'later' | 'fresh'>('later')
+  const mdbChoiceLabel = (c: typeof mdbChoice): string =>
+    c === 'now'
+      ? 'Jetzt importieren'
+      : c === 'fresh'
+        ? 'Frischstart (keine Übernahme)'
+        : 'Später'
 
-  let busy = $state(false)
+  // Administrator-Konto — created on step 8 so the user who configured
+  // the workshop also gets the very first login. Marked "created" once
+  // `createInitialAdmin` succeeded; the verification step relies on
+  // this to show a green badge without re-trying the call.
+  let adminUsername = $state('')
+  let adminName = $state('')
+  let adminPassword = $state('')
+  let adminPasswordConfirm = $state('')
+  let adminCreated = $state(false)
 
   const handleLogoUpload = (e: Event) => {
     const input = e.target as HTMLInputElement
@@ -103,10 +171,9 @@
       if (!bic.trim()) return 'Bitte BIC eingeben.'
       if (!bankName.trim()) return 'Bitte Bankname eingeben.'
     }
-    if (n === 4) {
-      if (!logoData) return 'Bitte ein Logo hochladen.'
-    }
-    if (n === 5) {
+    // Step 4 (logo) is optional — a logo can be added later in Settings,
+    // so the step never blocks. Salutation always has a value.
+    if (n === 5 && !smtpSkip) {
       if (!smtpHost.trim()) return 'Bitte SMTP-Server eingeben.'
       if (!smtpUser.trim()) return 'Bitte SMTP-Benutzer eingeben.'
       if (!smtpPassword) return 'Bitte SMTP-Passwort eingeben.'
@@ -114,96 +181,145 @@
       if (!fromName.trim()) return 'Bitte Absender-Name eingeben.'
     }
     if (n === 6) {
-      if (
-        !Number.isInteger(payrollGenerationDay) ||
-        payrollGenerationDay < 1 ||
-        payrollGenerationDay > 28
-      )
-        return 'Stichtag der Lohnabrechnung muss zwischen 1 und 28 liegen.'
-      if (
-        reminderDays1 < 0 ||
-        reminderDays2 < 0 ||
-        reminderDays3 < 0 ||
-        reminderDays4 < 0
-      )
-        return 'Mahnstufen-Tage dürfen nicht negativ sein.'
-      if (
-        !(
-          reminderDays1 < reminderDays2 &&
-          reminderDays2 < reminderDays3 &&
-          reminderDays3 < reminderDays4
-        )
-      )
-        return 'Mahnstufen müssen aufsteigend sein (1 < 2 < 3 < 4).'
+      for (const r of hoursRows) {
+        if (r.closed) continue
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(r.opensAt))
+          return `Bitte eine gültige Öffnungszeit für ${weekdayLabel(r.weekday)} eingeben.`
+        if (!/^([01]\d|2[0-3]):[0-5]\d$/.test(r.closesAt))
+          return `Bitte eine gültige Schließzeit für ${weekdayLabel(r.weekday)} eingeben.`
+        if (r.closesAt <= r.opensAt)
+          return `Schließzeit muss nach Öffnungszeit liegen (${weekdayLabel(r.weekday)}).`
+      }
+    }
+    if (n === 8) {
+      const u = adminUsername.trim()
+      if (u.length < 3)
+        return 'Bitte Benutzernamen (mind. 3 Zeichen) für den Admin angeben.'
+      if (!/^[a-zA-Z0-9_.]+$/.test(u))
+        return 'Benutzername darf nur Buchstaben, Ziffern, Punkt und Unterstrich enthalten.'
+      if (!adminName.trim())
+        return 'Bitte den Namen des Administrators angeben.'
+      if (adminPassword.length < 8)
+        return 'Admin-Passwort muss mindestens 8 Zeichen lang sein.'
+      if (adminPassword !== adminPasswordConfirm)
+        return 'Die beiden Passwort-Eingaben stimmen nicht überein.'
     }
     return null
   }
 
-  const next = () => {
+  /**
+   * Whether the step the user is currently looking at is complete enough
+   * to enable the primary action. Used to gate "Weiter" / "Setup
+   * abschließen". The previous-buttons are not gated.
+   */
+  const stepValid = $derived(validateStep(step) === null)
+
+  /**
+   * Persist data that belongs to the step that's being left. Each block
+   * has its own dedicated remote so we don't have to re-send unrelated
+   * fields. Returns true on success — caller advances the step only then.
+   */
+  const persistLeavingStep = async (n: number): Promise<boolean> => {
+    try {
+      if (n === 4) {
+        // Company data spans steps 2–4 and is persisted once, when the
+        // last company sub-step is left — by then every server-required
+        // field (incl. tax number + bank details) has been entered, so
+        // the single authoritative `companyDataSchema` validation passes.
+        await busy.run(() =>
+          saveCompanyData({
+            companyName: companyName.trim(),
+            owner: owner.trim() || undefined,
+            street: street.trim(),
+            zip: zip.trim(),
+            city: city.trim(),
+            state: bundesland.trim(),
+            phone: phone.trim(),
+            mobile: mobile.trim() || undefined,
+            email: email.trim(),
+            website: website.trim() || undefined,
+            vatId: vatId.trim() || undefined,
+            taxNumber: taxNumber.trim(),
+            bankName: bankName.trim(),
+            iban: iban.trim(),
+            bic: bic.trim(),
+            salutationStyle: salutation,
+            logoMime: logoMime || undefined,
+            logoData: logoData || undefined
+          })
+        )
+        return true
+      }
+      if (n === 5) {
+        // Skipped → nothing to persist; mail is set up later in Settings.
+        if (smtpSkip) return true
+        await busy.run(() =>
+          saveSmtp({
+            host: smtpHost.trim(),
+            port: smtpPort.trim(),
+            secure: smtpSecure,
+            username: smtpUser.trim(),
+            password: smtpPassword,
+            fromAddress: fromAddress.trim(),
+            fromName: fromName.trim(),
+            replyTo: undefined
+          })
+        )
+        return true
+      }
+      if (n === 6) {
+        await busy.run(() => saveWorkshopHoursForSetup({ rows: hoursRows }))
+        return true
+      }
+      if (n === 8 && !adminCreated) {
+        await busy.run(() =>
+          createInitialAdmin({
+            username: adminUsername.trim(),
+            name: adminName.trim(),
+            password: adminPassword
+          })
+        )
+        adminCreated = true
+        return true
+      }
+      return true
+    } catch (e) {
+      handleClientError(e, 'Schritt konnte nicht gespeichert werden')
+      return false
+    }
+  }
+
+  const next = async () => {
     const err = validateStep(step)
     if (err) {
       toast.error(err)
       return
     }
+    const ok = await persistLeavingStep(step)
+    if (!ok) return
     step = Math.min(totalSteps, step + 1)
   }
   const prev = () => {
     step = Math.max(1, step - 1)
   }
 
-  const persistAndFinish = async () => {
-    busy = true
+  /** Jump back to a specific step from the verification card. */
+  const jumpTo = (n: number) => {
+    step = Math.max(1, Math.min(totalSteps, n))
+  }
+
+  const finishSetup = async () => {
     try {
-      await saveCompanyData({
-        companyName: companyName.trim(),
-        owner: owner.trim() || undefined,
-        street: street.trim(),
-        zip: zip.trim(),
-        city: city.trim(),
-        state: bundesland.trim(),
-        phone: phone.trim(),
-        mobile: mobile.trim() || undefined,
-        email: email.trim(),
-        website: website.trim() || undefined,
-        vatId: vatId.trim() || undefined,
-        taxNumber: taxNumber.trim() || undefined,
-        bankName: bankName.trim() || undefined,
-        iban: iban.trim() || undefined,
-        bic: bic.trim() || undefined,
-        salutationStyle: salutation,
-        logoMime: logoMime || undefined,
-        logoData: logoData || undefined,
-        payrollGenerationDay,
-        reminderDays1,
-        reminderDays2,
-        reminderDays3,
-        reminderDays4,
-        reminderInterestRate
-      })
-
-      await saveSmtp({
-        host: smtpHost.trim(),
-        port: smtpPort.trim(),
-        secure: smtpSecure,
-        username: smtpUser.trim(),
-        password: smtpPassword,
-        fromAddress: fromAddress.trim(),
-        fromName: fromName.trim(),
-        replyTo: undefined
-      })
-
-      await completeSetup()
+      await busy.run(() => completeSetup())
       toast.success('Setup abgeschlossen!')
       await invalidateAll()
       if (mdbChoice === 'now') {
         goto('/import')
       } else {
-        goto('/')
+        goto('/login')
       }
-    } catch (err) {
-      handleClientError(err, 'Setup konnte nicht gespeichert werden')
-    } finally {
-      busy = false
+    } catch (e) {
+      handleClientError(e, 'Setup konnte nicht abgeschlossen werden')
     }
   }
 </script>
@@ -211,9 +327,15 @@
 <div class="bg-base-200 min-h-dvh">
   <div class="mx-auto max-w-3xl px-4 py-8">
     <div class="mb-6 flex items-center gap-3">
-      <div class="bg-primary/10 text-primary rounded-lg p-2">
-        <Wrench size={24} />
-      </div>
+      <img
+        src="/icons/icon-128.webp"
+        alt=""
+        width="48"
+        height="48"
+        class="rounded-xl"
+        loading="eager"
+        decoding="async"
+      />
       <div>
         <h1 class="text-xl font-bold">TwinCarsManager einrichten</h1>
         <p class="text-base-content/60 text-sm">
@@ -223,11 +345,51 @@
       </div>
     </div>
 
-    <ul class="steps mb-6 w-full">
-      {#each steps as s (s.n)}
-        <li class="step" class:step-primary={step >= s.n}>{s.title}</li>
-      {/each}
-    </ul>
+    <!--
+      Responsive step indicator. Three tiers:
+        <md  → compact "Schritt X von Y · Title" + thin progress bar
+        md   → DaisyUI horizontal steps with short labels
+        lg+  → DaisyUI horizontal steps with the full labels
+    -->
+    <div class="mb-6">
+      <div class="md:hidden">
+        <div class="mb-2 flex items-center justify-between text-sm">
+          <span class="text-base-content/70">
+            Schritt {step} von {totalSteps}
+          </span>
+          <span class="font-medium">{steps[step - 1].title}</span>
+        </div>
+        <progress
+          class="progress progress-primary w-full"
+          value={step}
+          max={totalSteps}
+        ></progress>
+        <details class="mt-2">
+          <summary
+            class="text-base-content/60 hover:text-base-content inline-flex cursor-pointer items-center gap-1 text-xs"
+          >
+            <ChevronDown size={14} /> Alle Schritte
+          </summary>
+          <ol
+            class="text-base-content/80 mt-2 list-decimal space-y-1 pl-6 text-sm"
+          >
+            {#each steps as s (s.n)}
+              <li class:font-semibold={step === s.n}>{s.title}</li>
+            {/each}
+          </ol>
+        </details>
+      </div>
+      <ul class="steps hidden w-full md:flex lg:hidden">
+        {#each steps as s (s.n)}
+          <li class="step" class:step-primary={step >= s.n}>{s.short}</li>
+        {/each}
+      </ul>
+      <ul class="steps hidden w-full lg:flex">
+        {#each steps as s (s.n)}
+          <li class="step" class:step-primary={step >= s.n}>{s.title}</li>
+        {/each}
+      </ul>
+    </div>
 
     <div class="card border-base-300 bg-base-100 border">
       <div class="card-body">
@@ -240,8 +402,10 @@
           <ul class="text-base-content/80 list-disc space-y-1 pl-6 text-sm">
             <li>Firmenname, Anschrift und Kontakt</li>
             <li>Steuer- und Bankdaten (für Rechnungen)</li>
-            <li>Ihr Logo als Bilddatei</li>
-            <li>SMTP-Zugangsdaten für den E-Mail-Versand</li>
+            <li>Ihr Logo als Bilddatei (optional)</li>
+            <li>SMTP-Zugangsdaten für den E-Mail-Versand (optional)</li>
+            <li>Werkstatt-Öffnungszeiten</li>
+            <li>Benutzername + Passwort für den ersten Login</li>
           </ul>
           <p class="text-base-content/60 text-sm">
             Alle weiteren Optionen — Mailvorlagen, PDF-Layout, Nummernkreise,
@@ -405,13 +569,14 @@
             <h2 class="card-title">Logo und Anrede</h2>
           </div>
           <p class="text-base-content/70 text-sm">
-            Das Logo erscheint auf jedem PDF (Rechnung, Angebot, Verkaufsschild,
-            Lohnzettel).
+            Das Logo erscheint auf jedem PDF (Rechnung, Angebot,
+            Verkaufsschild). Optional — Sie können es auch später unter
+            Einstellungen hinterlegen.
           </p>
           <div class="flex flex-col gap-4 sm:flex-row">
             <div class="flex-1">
               <label class="flex w-full flex-col gap-1">
-                <span class="label-text">Logo (PNG/JPG/SVG, max. 5 MB) *</span>
+                <span class="label-text">Logo (PNG/JPG/SVG, max. 5 MB)</span>
                 <input
                   class="file-input file-input-bordered w-full"
                   type="file"
@@ -466,15 +631,28 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Damit Sie Rechnungen, Angebote und Mahnungen direkt versenden
-            können.
+            können. Optional — Sie können den E-Mail-Versand auch später unter
+            Einstellungen → E-Mail/SMTP einrichten.
           </p>
-          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <label class="label cursor-pointer justify-start gap-3">
+            <input
+              type="checkbox"
+              class="checkbox checkbox-primary"
+              bind:checked={smtpSkip}
+            />
+            <span>Später einrichten (überspringen)</span>
+          </label>
+          <div
+            class="grid grid-cols-1 gap-3 sm:grid-cols-2"
+            class:opacity-50={smtpSkip}
+          >
             <label class="flex w-full flex-col gap-1 sm:col-span-2">
               <span class="label-text">Absenderadresse *</span>
               <input
                 class="input input-bordered w-full"
                 type="email"
                 maxlength="254"
+                disabled={smtpSkip}
                 bind:value={fromAddress}
               />
             </label>
@@ -483,6 +661,7 @@
               <input
                 class="input input-bordered w-full"
                 maxlength="200"
+                disabled={smtpSkip}
                 bind:value={fromName}
               />
             </label>
@@ -491,6 +670,7 @@
               <input
                 class="input input-bordered w-full"
                 maxlength="255"
+                disabled={smtpSkip}
                 bind:value={smtpHost}
               />
             </label>
@@ -501,6 +681,7 @@
                 type="number"
                 min="1"
                 max="65535"
+                disabled={smtpSkip}
                 bind:value={smtpPort}
               />
             </label>
@@ -508,6 +689,7 @@
               <span class="label-text">Verschlüsselung *</span>
               <select
                 class="select select-bordered w-full"
+                disabled={smtpSkip}
                 bind:value={smtpSecure}
               >
                 <option value="STARTTLS">STARTTLS</option>
@@ -520,6 +702,7 @@
               <input
                 class="input input-bordered w-full"
                 maxlength="200"
+                disabled={smtpSkip}
                 bind:value={smtpUser}
               />
             </label>
@@ -529,97 +712,71 @@
                 class="input input-bordered w-full"
                 type="password"
                 maxlength="200"
+                disabled={smtpSkip}
                 bind:value={smtpPassword}
               />
             </label>
           </div>
-          <p class="text-base-content/50 mt-2 text-xs">
-            Hinweis: Eine Test-Mail können Sie nach dem Setup unter
-            Einstellungen → E-Mail/SMTP auslösen.
-          </p>
         {:else if step === 6}
-          <h2 class="card-title">Lohn & Mahnwesen</h2>
-          <p class="text-base-content/70 text-sm">
-            Diese Defaults greifen für alle künftigen Lohnabrechnungen und
-            Mahnungen. Sie lassen sich später in den Einstellungen anpassen.
-          </p>
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Lohnabrechnung</legend>
-            <label class="flex w-full max-w-xs flex-col gap-1">
-              <span class="label-text"> Stichtag (Tag im Monat, 1–28) * </span>
-              <input
-                class="input input-bordered w-full"
-                type="number"
-                min="1"
-                max="28"
-                bind:value={payrollGenerationDay}
-              />
-              <span class="text-base-content/50 text-xs">
-                Ab diesem Tag werden Lohnabrechnungen für den laufenden Monat
-                automatisch angelegt.
-              </span>
-            </label>
-          </fieldset>
-          <fieldset class="fieldset mt-2">
-            <legend class="fieldset-legend"
-              >Mahnstufen — Tage nach Fälligkeit</legend
-            >
-            <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <label class="flex flex-col gap-1">
-                <span class="label-text">Zahlungserinnerung *</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  bind:value={reminderDays1}
-                />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="label-text">1. Mahnung *</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  bind:value={reminderDays2}
-                />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="label-text">2. Mahnung *</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  bind:value={reminderDays3}
-                />
-              </label>
-              <label class="flex flex-col gap-1">
-                <span class="label-text">Letzte Mahnung *</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  bind:value={reminderDays4}
-                />
-              </label>
-            </div>
-            <label class="mt-3 flex max-w-xs flex-col gap-1">
-              <span class="label-text">Verzugszinsen p.a. (%)</span>
-              <input
-                class="input input-bordered w-full"
-                type="number"
-                step="0.01"
-                min="0"
-                bind:value={reminderInterestRate}
-              />
-            </label>
-          </fieldset>
-        {:else if step === 7}
           <div class="flex items-center gap-2">
-            <Check size={22} class="text-primary" />
-            <h2 class="card-title">Abschluss</h2>
+            <Clock size={22} class="text-primary" />
+            <h2 class="card-title">Werkstatt-Öffnungszeiten</h2>
           </div>
           <p class="text-base-content/70 text-sm">
-            Möchten Sie alte Daten aus Kfz-Kaufmann (.mdb) jetzt importieren?
+            Diese Zeiten bestimmen, wann Termine über die öffentliche Website
+            gebucht werden können. Sie lassen sich später unter Einstellungen →
+            Öffnungszeiten anpassen.
+          </p>
+          <div class="overflow-x-auto">
+            <table class="table">
+              <thead>
+                <tr>
+                  <th>Wochentag</th>
+                  <th>Öffnet</th>
+                  <th>Schließt</th>
+                  <th>Geschlossen</th>
+                </tr>
+              </thead>
+              <tbody>
+                {#each hoursRows as r (r.weekday)}
+                  <tr>
+                    <td class="font-medium">{weekdayLabel(r.weekday)}</td>
+                    <td>
+                      <input
+                        type="time"
+                        class="input input-bordered input-sm w-full max-w-[10rem]"
+                        bind:value={r.opensAt}
+                        disabled={r.closed}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="time"
+                        class="input input-bordered input-sm w-full max-w-[10rem]"
+                        bind:value={r.closesAt}
+                        disabled={r.closed}
+                      />
+                    </td>
+                    <td>
+                      <input
+                        type="checkbox"
+                        class="toggle toggle-primary"
+                        bind:checked={r.closed}
+                      />
+                    </td>
+                  </tr>
+                {/each}
+              </tbody>
+            </table>
+          </div>
+        {:else if step === 7}
+          <div class="flex items-center gap-2">
+            <Database size={22} class="text-primary" />
+            <h2 class="card-title">Datenimport aus Kfz-Kaufmann</h2>
+          </div>
+          <p class="text-base-content/70 text-sm">
+            Möchten Sie alte Daten aus Kfz-Kaufmann (.mdb) übernehmen? Der
+            Import lässt sich später jederzeit unter „Import" aufrufen.
           </p>
           <fieldset class="fieldset">
             <label class="label cursor-pointer justify-start gap-3">
@@ -629,9 +786,10 @@
                 value="now"
                 bind:group={mdbChoice}
               />
-              <span
-                ><strong>Jetzt importieren</strong> — direkt zur Importseite weiter</span
-              >
+              <span>
+                <strong>Jetzt importieren</strong> — direkt zur Importseite weiter,
+                sobald das Setup abgeschlossen ist
+              </span>
             </label>
             <label class="label cursor-pointer justify-start gap-3">
               <input
@@ -640,10 +798,10 @@
                 value="later"
                 bind:group={mdbChoice}
               />
-              <span
-                ><strong>Später</strong> — kann jederzeit unter Import durchgeführt
-                werden</span
-              >
+              <span>
+                <strong>Später</strong> — kann jederzeit unter „Import" durchgeführt
+                werden
+              </span>
             </label>
             <label class="label cursor-pointer justify-start gap-3">
               <input
@@ -652,36 +810,363 @@
                 value="fresh"
                 bind:group={mdbChoice}
               />
-              <span
-                ><strong>Frischstart</strong> — keine alten Daten übernehmen</span
-              >
+              <span>
+                <strong>Frischstart</strong> — keine alten Daten übernehmen
+              </span>
             </label>
           </fieldset>
-          <div class="bg-base-200 rounded-lg p-3 text-sm">
-            <p class="font-semibold">Übersicht</p>
-            <ul
-              class="text-base-content/80 mt-2 grid grid-cols-1 gap-y-1 sm:grid-cols-2"
-            >
-              <li
-                ><span class="text-base-content/50">Firma:</span>
-                {companyName}</li
-              >
-              <li
-                ><span class="text-base-content/50">Anschrift:</span>
-                {street}, {zip}
-                {city}</li
-              >
-              <li><span class="text-base-content/50">E-Mail:</span> {email}</li>
-              <li
-                ><span class="text-base-content/50">SMTP:</span>
-                {smtpHost}:{smtpPort}</li
-              >
-              <li><span class="text-base-content/50">IBAN:</span> {iban}</li>
-              <li
-                ><span class="text-base-content/50">Anrede:</span>
-                {salutation}</li
-              >
-            </ul>
+        {:else if step === 8}
+          <div class="flex items-center gap-2">
+            <UserCog size={22} class="text-primary" />
+            <h2 class="card-title">Administrator-Konto</h2>
+          </div>
+          <p class="text-base-content/70 text-sm">
+            Mit diesem Konto melden Sie sich nach Abschluss erstmals an. Bitte
+            Benutzername und Passwort sicher merken — beide lassen sich später
+            unter „Einstellungen → Benutzer" ändern.
+          </p>
+          <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            <label class="flex w-full flex-col gap-1">
+              <span class="label-text">Benutzername *</span>
+              <input
+                type="text"
+                class="input input-bordered w-full"
+                bind:value={adminUsername}
+                autocomplete="off"
+                required
+                minlength="3"
+                maxlength="64"
+                disabled={adminCreated}
+              />
+            </label>
+            <label class="flex w-full flex-col gap-1">
+              <span class="label-text">Anzeigename *</span>
+              <input
+                type="text"
+                class="input input-bordered w-full"
+                bind:value={adminName}
+                autocomplete="off"
+                required
+                maxlength="200"
+                disabled={adminCreated}
+              />
+            </label>
+            <label class="flex w-full flex-col gap-1">
+              <span class="label-text">Passwort *</span>
+              <input
+                type="password"
+                class="input input-bordered w-full"
+                bind:value={adminPassword}
+                autocomplete="new-password"
+                required
+                minlength="8"
+                disabled={adminCreated}
+              />
+            </label>
+            <label class="flex w-full flex-col gap-1">
+              <span class="label-text">Passwort wiederholen *</span>
+              <input
+                type="password"
+                class="input input-bordered w-full"
+                bind:value={adminPasswordConfirm}
+                autocomplete="new-password"
+                required
+                minlength="8"
+                disabled={adminCreated}
+              />
+            </label>
+          </div>
+          {#if adminCreated}
+            <div class="alert alert-success mt-3 text-sm" role="status">
+              <Check size={16} />
+              <span>
+                Administrator-Konto „{adminUsername.trim().toLowerCase()}" wurde
+                angelegt. Es lässt sich in diesem Wizard nicht mehr ändern.
+              </span>
+            </div>
+          {:else}
+            <p class="text-base-content/50 mt-1 text-xs">
+              Erlaubte Zeichen: Buchstaben, Ziffern, Punkt und Unterstrich. Der
+              Benutzername wird beim Anmelden klein geschrieben behandelt.
+            </p>
+          {/if}
+        {:else if step === 9}
+          <div class="flex items-center gap-2">
+            <ListChecks size={22} class="text-primary" />
+            <h2 class="card-title">Verifikation &amp; Abschluss</h2>
+          </div>
+          <p class="text-base-content/70 text-sm">
+            Bitte prüfen Sie Ihre Eingaben. Über „Bearbeiten" gelangen Sie
+            zurück zum entsprechenden Schritt — beim erneuten „Weiter" landen
+            Sie wieder hier.
+          </p>
+
+          <div class="mt-2 grid grid-cols-1 gap-4">
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <Building2 size={18} class="text-primary" />
+                    <h3 class="font-semibold">Firma</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(2)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <dl
+                  class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
+                >
+                  <dt class="text-base-content/50">Name</dt>
+                  <dd>{companyName || '—'}</dd>
+                  <dt class="text-base-content/50">Anschrift</dt>
+                  <dd>{street}, {zip} {city} ({bundesland})</dd>
+                  <dt class="text-base-content/50">Telefon</dt>
+                  <dd>{phone || '—'}</dd>
+                  {#if mobile}
+                    <dt class="text-base-content/50">Mobil</dt>
+                    <dd>{mobile}</dd>
+                  {/if}
+                  <dt class="text-base-content/50">E-Mail</dt>
+                  <dd>{email || '—'}</dd>
+                  {#if website}
+                    <dt class="text-base-content/50">Website</dt>
+                    <dd>{website}</dd>
+                  {/if}
+                </dl>
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <Banknote size={18} class="text-primary" />
+                    <h3 class="font-semibold">Steuer &amp; Bank</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(3)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <dl
+                  class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
+                >
+                  <dt class="text-base-content/50">USt-IdNr.</dt>
+                  <dd>{vatId || '—'}</dd>
+                  <dt class="text-base-content/50">Steuernummer</dt>
+                  <dd>{taxNumber || '—'}</dd>
+                  <dt class="text-base-content/50">Bankname</dt>
+                  <dd>{bankName || '—'}</dd>
+                  <dt class="text-base-content/50">IBAN</dt>
+                  <dd>{iban || '—'}</dd>
+                  <dt class="text-base-content/50">BIC</dt>
+                  <dd>{bic || '—'}</dd>
+                </dl>
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <ImageIcon size={18} class="text-primary" />
+                    <h3 class="font-semibold">Logo &amp; Anrede</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(4)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <div
+                  class="text-base-content/80 mt-1 flex items-center gap-4 text-sm"
+                >
+                  <div class="w-32 shrink-0">
+                    {#if logoData}
+                      <div class="border-base-300 rounded border bg-white p-2">
+                        <img
+                          src={logoData}
+                          alt="Logo Vorschau"
+                          class="h-20 w-full object-contain"
+                        />
+                      </div>
+                    {:else}
+                      <div
+                        class="border-base-300 bg-base-200 text-base-content/40 flex h-24 items-center justify-center rounded border text-xs"
+                      >
+                        kein Logo
+                      </div>
+                    {/if}
+                  </div>
+                  <div>
+                    <p>
+                      <span class="text-base-content/50">Anrede-Stil:</span>
+                      {salutation}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <Mail size={18} class="text-primary" />
+                    <h3 class="font-semibold">E-Mail (SMTP)</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(5)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                {#if smtpSkip}
+                  <p class="text-base-content/60 mt-1 text-sm">
+                    Übersprungen — kann später unter Einstellungen → E-Mail/SMTP
+                    eingerichtet werden.
+                  </p>
+                {:else}
+                  <dl
+                    class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
+                  >
+                    <dt class="text-base-content/50">Host : Port</dt>
+                    <dd>{smtpHost || '—'} : {smtpPort}</dd>
+                    <dt class="text-base-content/50">Verschlüsselung</dt>
+                    <dd>{smtpSecure}</dd>
+                    <dt class="text-base-content/50">Benutzer</dt>
+                    <dd>{smtpUser || '—'}</dd>
+                    <dt class="text-base-content/50">Passwort</dt>
+                    <dd>{smtpPassword ? '••••••••' : '—'}</dd>
+                    <dt class="text-base-content/50">Absender</dt>
+                    <dd>
+                      {fromName || '—'}
+                      {#if fromAddress}
+                        &lt;{fromAddress}&gt;
+                      {/if}
+                    </dd>
+                  </dl>
+                {/if}
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <Clock size={18} class="text-primary" />
+                    <h3 class="font-semibold">Öffnungszeiten</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(6)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <div class="overflow-x-auto">
+                  <table class="table-sm mt-1 table">
+                    <thead>
+                      <tr>
+                        <th>Wochentag</th>
+                        <th>Zeit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {#each [1, 2, 3, 4, 5, 6, 0] as wd (wd)}
+                        {@const r = hoursRows.find((x) => x.weekday === wd)}
+                        {#if r}
+                          <tr>
+                            <td class="font-medium">{weekdayLabel(wd)}</td>
+                            <td>
+                              {#if r.closed}
+                                <span class="text-base-content/50"
+                                  >geschlossen</span
+                                >
+                              {:else}
+                                {r.opensAt} – {r.closesAt}
+                              {/if}
+                            </td>
+                          </tr>
+                        {/if}
+                      {/each}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <Database size={18} class="text-primary" />
+                    <h3 class="font-semibold">MDB-Import</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(7)}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <p class="text-base-content/80 mt-1 text-sm">
+                  {mdbChoiceLabel(mdbChoice)}
+                </p>
+              </div>
+            </div>
+
+            <div class="card border-base-300 bg-base-100 border">
+              <div class="card-body">
+                <div class="flex items-start justify-between gap-2">
+                  <div class="flex items-center gap-2">
+                    <UserCog size={18} class="text-primary" />
+                    <h3 class="font-semibold">Administrator</h3>
+                  </div>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    onclick={() => jumpTo(8)}
+                    disabled={adminCreated}
+                  >
+                    <Pencil size={14} /> Bearbeiten
+                  </button>
+                </div>
+                <dl
+                  class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
+                >
+                  <dt class="text-base-content/50">Benutzername</dt>
+                  <dd>{adminUsername.trim().toLowerCase() || '—'}</dd>
+                  <dt class="text-base-content/50">Anzeigename</dt>
+                  <dd>{adminName || '—'}</dd>
+                  <dt class="text-base-content/50">Status</dt>
+                  <dd>
+                    {#if adminCreated}
+                      <span class="badge badge-success badge-sm">
+                        <Check size={12} /> Konto angelegt
+                      </span>
+                    {:else}
+                      <span class="badge badge-warning badge-sm"
+                        >noch nicht angelegt</span
+                      >
+                    {/if}
+                  </dd>
+                </dl>
+              </div>
+            </div>
           </div>
         {/if}
 
@@ -689,24 +1174,37 @@
           <button
             class="btn btn-ghost"
             onclick={prev}
-            disabled={step === 1 || busy}
+            disabled={step === 1 || busy.active}
           >
             <ArrowLeft size={16} /> Zurück
           </button>
           {#if step < totalSteps}
-            <button class="btn btn-primary" onclick={next} disabled={busy}>
-              Weiter <ArrowRight size={16} />
+            <button
+              class="btn btn-primary"
+              onclick={next}
+              disabled={busy.active || !stepValid}
+            >
+              {#if busy.active}
+                <span class="loading loading-spinner loading-sm"></span>
+              {/if}
+              {#if step === 8 && !adminCreated}
+                Konto anlegen
+              {:else}
+                Weiter
+              {/if}
+              <ArrowRight size={16} />
             </button>
           {:else}
             <button
               class="btn btn-primary"
-              onclick={persistAndFinish}
-              disabled={busy}
+              onclick={finishSetup}
+              disabled={busy.active || !adminCreated}
             >
-              {#if busy}<span class="loading loading-spinner loading-sm"
-                ></span>{/if}
+              {#if busy.active}
+                <span class="loading loading-spinner loading-sm"></span>
+              {/if}
               {#if mdbChoice === 'now'}
-                <Database size={16} /> Abschluss & Import
+                <Database size={16} /> Setup abschließen &amp; importieren
               {:else}
                 <Check size={16} /> Setup abschließen
               {/if}

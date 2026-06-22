@@ -3,14 +3,27 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import { ArrowRight, FileText, Send, XCircle } from '@lucide/svelte'
+  import {
+    ArrowRight,
+    Clock,
+    FileText,
+    Send,
+    Trash2,
+    XCircle
+  } from '@lucide/svelte'
   import {
     cancelOfferRemote,
     getOfferRemote,
     sendOfferRemote
   } from '../offers.remote'
+  import {
+    deleteTimeEntryRemote,
+    listTimeEntriesRemote
+  } from '../../hours/hours.remote'
+  import { getCurrentUserRemote } from '../../layout.remote'
   import PdfViewer from '$lib/components/ui/PdfViewer.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import QuickTimeEntryModal from '$lib/components/ui/QuickTimeEntryModal.svelte'
   import { formatEuro } from '$lib/utils/money'
   import { busy } from '$lib/stores/busy.svelte'
   import { toast } from '$lib/stores/toast.svelte'
@@ -24,7 +37,40 @@
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const data = await getOfferRemote({ id })
+  const [data, currentUser] = await Promise.all([
+    getOfferRemote({ id }),
+    getCurrentUserRemote()
+  ])
+
+  const timeEntriesQ = $derived(
+    listTimeEntriesRemote({ page: 1, size: 25, documentId: id })
+  )
+  const timeEntriesInitial = await untrack(() => timeEntriesQ)
+  let lastTimeEntries = $state(timeEntriesInitial)
+  $effect(() => {
+    if (timeEntriesQ.current) lastTimeEntries = timeEntriesQ.current
+  })
+  const timeEntries = $derived(timeEntriesQ.current ?? lastTimeEntries)
+
+  const callerPermissions = $derived(new Set(currentUser?.permissions ?? []))
+  const hasAny = (...keys: string[]): boolean =>
+    callerPermissions.has('*') || keys.some((k) => callerPermissions.has(k))
+  const canLogHours = $derived(hasAny('hours', 'hours:write_own'))
+
+  const fmtDate = (s: string | null | undefined) => {
+    if (!s) return '—'
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : s
+  }
+
+  const removeTimeEntry = async (entryId: string) => {
+    try {
+      await busy.run(() => deleteTimeEntryRemote({ id: entryId }))
+      toast.success('Eintrag gelöscht.')
+    } catch (err) {
+      handleClientError(err, 'Eintrag konnte nicht gelöscht werden')
+    }
+  }
 
   const isConverted = $derived(
     data.doc.status === 'converted' || !!data.doc.convertedToInvoiceId
@@ -43,6 +89,7 @@
    */
   let sendOpen = $state(false)
   let cancelOpen = $state(false)
+  let logHoursOpen = $state(false)
 
   const sendOffer = async () => {
     try {
@@ -85,6 +132,20 @@
   back="/offers"
   primaryAction={headerAction}
 />
+
+{#if canLogHours}
+  <div class="mb-4 flex justify-end">
+    <button
+      type="button"
+      class="btn btn-sm gap-2"
+      onclick={() => (logHoursOpen = true)}
+      disabled={busy.active}
+    >
+      <Clock size={14} />
+      Arbeit erfassen
+    </button>
+  </div>
+{/if}
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
   {#if isConverted && data.doc.convertedToInvoiceId}
@@ -215,6 +276,66 @@
     </div>
   {/if}
 
+  {#if timeEntries.items.length > 0}
+    <div class="card border-base-300 bg-base-100 border lg:col-span-3">
+      <div class="card-body p-0">
+        <div class="border-base-300 border-b px-4 py-3">
+          <h3 class="text-base font-semibold">Erfasste Stunden</h3>
+          <p class="text-base-content/60 text-sm">
+            Stundeneinträge, die auf dieses Dokument verbucht wurden.
+          </p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Mitarbeiter</th>
+                <th>Aufgabe</th>
+                <th class="text-right">Stunden</th>
+                <th class="text-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each timeEntries.items as t (t.id)}
+                {@const mine = t.employeeId === currentUser?.id}
+                {@const canDelete =
+                  callerPermissions.has('*') ||
+                  callerPermissions.has('hours') ||
+                  (callerPermissions.has('hours:write_own') && mine)}
+                <tr>
+                  <td>{fmtDate(t.date)}</td>
+                  <td>
+                    {[t.employeeFirstName, t.employeeLastName]
+                      .filter(Boolean)
+                      .join(' ') || t.employeeNumber}
+                  </td>
+                  <td>{t.task ?? '—'}</td>
+                  <td class="text-right font-mono"
+                    >{Number(t.hours).toFixed(2)}</td
+                  >
+                  <td class="text-right">
+                    {#if canDelete}
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error gap-1"
+                        onclick={() => removeTimeEntry(t.id)}
+                        disabled={busy.active}
+                      >
+                        <Trash2 size={14} />
+                        Löschen
+                      </button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <div class="lg:col-span-3">
     <PdfViewer documentId={data.doc.id} />
   </div>
@@ -237,5 +358,11 @@
   confirmLabel="Stornieren"
   variant="danger"
   onConfirm={cancelOffer}
+  onClose={() => {}}
+/>
+
+<QuickTimeEntryModal
+  bind:open={logHoursOpen}
+  documentId={data.doc.id}
   onClose={() => {}}
 />

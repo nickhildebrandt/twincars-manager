@@ -35,6 +35,11 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /** Submit button validity gate — mirrors the rules in `submit`. */
+  const valid = $derived(
+    Boolean(description.trim()) && amountGross !== '' && Number(amountGross) > 0
+  )
+
   const cats = $derived(listCategoriesRemote({ direction }))
   const categories = $derived(cats.current ?? [])
 
@@ -178,7 +183,11 @@
         onclick={() => goto('/ledger')}
         disabled={busy.active}>Abbrechen</button
       >
-      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        disabled={busy.active || !valid}
+      >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

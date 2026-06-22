@@ -5,30 +5,43 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import {
     ArrowRight,
+    Ban,
     BellRing,
     Car,
     CheckCircle2,
+    Clock,
     Send,
+    Trash2,
     User
   } from '@lucide/svelte'
   import {
+    cancelInvoiceRemote,
+    deleteInvoiceRemote,
     getInvoiceRemote,
     sendInvoiceRemote,
     setInvoiceStatusRemote
   } from '../invoices.remote'
+  import { getInvoiceXRechnungRemote } from '../xrechnung.remote'
   import {
-    createReminderRemote,
+    createPaymentReminderRemote,
     listRemindersForInvoiceRemote
   } from '../../reminders/reminders.remote'
+  import {
+    deleteTimeEntryRemote,
+    listTimeEntriesRemote
+  } from '../../hours/hours.remote'
+  import { getCurrentUserRemote } from '../../layout.remote'
   import PdfViewer from '$lib/components/ui/PdfViewer.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import QuickTimeEntryModal from '$lib/components/ui/QuickTimeEntryModal.svelte'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { downloadBase64File } from '$lib/utils/pdf-download'
+  import { FileCode } from '@lucide/svelte'
   import {
     documentStatusBadge,
-    documentStatusLabel,
-    reminderLevelLabel
+    documentStatusLabel
   } from '$lib/utils/status-labels'
   import { formatEuro } from '$lib/utils/money'
 
@@ -40,17 +53,42 @@
    * The reminder list is loaded in parallel; it's a small query and fits the
    * same SSR-hydration story.
    */
-  const [data, invoiceReminders] = await Promise.all([
+  const [data, invoiceReminders, currentUser] = await Promise.all([
     getInvoiceRemote({ id }),
-    listRemindersForInvoiceRemote({ invoiceId: id })
+    listRemindersForInvoiceRemote({ invoiceId: id }),
+    getCurrentUserRemote()
   ])
 
-  /** Most recent reminder drives the banner CTA. */
+  /**
+   * Reactive list of time entries logged against this document. The
+   * size cap matches the global pagination contract (25) — it's enough
+   * to show recent work without making the detail page scroll
+   * forever. Filtering happens server-side via the existing
+   * `documentId` filter on `listTimeEntries`.
+   */
+  const timeEntriesQ = $derived(
+    listTimeEntriesRemote({ page: 1, size: 25, documentId: id })
+  )
+  const timeEntriesInitial = await untrack(() => timeEntriesQ)
+  let lastTimeEntries = $state(timeEntriesInitial)
+  $effect(() => {
+    if (timeEntriesQ.current) lastTimeEntries = timeEntriesQ.current
+  })
+  const timeEntries = $derived(timeEntriesQ.current ?? lastTimeEntries)
+
+  /** Permission set granted to the caller via assigned roles. */
+  const callerPermissions = $derived(new Set(currentUser?.permissions ?? []))
+  const hasAny = (...keys: string[]): boolean =>
+    callerPermissions.has('*') || keys.some((k) => callerPermissions.has(k))
+  const canLogHours = $derived(hasAny('hours', 'hours:write_own'))
+
+  /** Most recent reminder drives the banner copy. */
   const latestReminder = $derived(
     invoiceReminders.length
       ? invoiceReminders[invoiceReminders.length - 1]
       : null
   )
+  const reminderCount = $derived(invoiceReminders.length)
 
   const markPaid = async () => {
     try {
@@ -63,6 +101,29 @@
 
   let sendOpen = $state(false)
   let reminderOpen = $state(false)
+  let logHoursOpen = $state(false)
+  /** Stornieren-Dialog state — Begründung ist Pflicht. */
+  let stornoOpen = $state(false)
+  let stornoReason = $state('')
+  let stornoSubmitting = $state(false)
+  /** Löschen-Dialog state — nur für Entwürfe (`status='draft'`). */
+  let deleteOpen = $state(false)
+
+  /**
+   * Delete a single time entry. The remote function enforces ownership
+   * — `:write_own`-only callers can only delete their own rows, so the
+   * UI doesn't need to gate the button per-row beyond the explicit
+   * comparison below (which keeps the action discoverable to managers
+   * while staying honest about who owns what).
+   */
+  const removeTimeEntry = async (entryId: string) => {
+    try {
+      await busy.run(() => deleteTimeEntryRemote({ id: entryId }))
+      toast.success('Eintrag gelöscht.')
+    } catch (err) {
+      handleClientError(err, 'Eintrag konnte nicht gelöscht werden')
+    }
+  }
 
   const sendInvoice = async () => {
     try {
@@ -74,20 +135,85 @@
   }
 
   /**
-   * Erzeugt die nächste Mahnstufe (0 → Zahlungserinnerung,
-   * 1 → 1. Mahnung, …). Der Server-Service ermittelt den Level
-   * automatisch — wir müssen ihn nicht angeben.
+   * GoBD-konformes Stornieren einer ausgestellten Rechnung. Der Server
+   * erzeugt eine neue Storno-Rechnung, negiert alle Beträge und
+   * verkettet beide Belege (`cancelsDocumentId` ↔
+   * `cancelledByDocumentId`). Anschließend navigieren wir direkt auf
+   * den neuen Storno-Beleg.
    */
-  const createReminder = async () => {
+  const cancelInvoice = async () => {
+    const reason = stornoReason.trim()
+    if (reason.length === 0) {
+      toast.error('Bitte einen Stornogrund angeben.')
+      return
+    }
+    stornoSubmitting = true
+    try {
+      const res = await busy.run(() => cancelInvoiceRemote({ id, reason }))
+      toast.success(`Stornorechnung ${res.stornoNumber} erstellt.`)
+      stornoOpen = false
+      stornoReason = ''
+      goto(`/invoices/${res.stornoId}`)
+    } catch (err) {
+      handleClientError(err, 'Rechnung konnte nicht storniert werden')
+    } finally {
+      stornoSubmitting = false
+    }
+  }
+
+  /**
+   * Entwurfs-Rechnung löschen. Bei ausgestellten Rechnungen verweigert
+   * der Server mit HTTP 409 — die Toast-Nachricht aus
+   * `handleClientError` weist den Anwender dann auf den Storno-Pfad
+   * hin.
+   */
+  const deleteInvoice = async () => {
+    try {
+      await busy.run(() => deleteInvoiceRemote({ id }))
+      toast.success('Rechnung gelöscht.')
+      goto('/invoices')
+    } catch (err) {
+      handleClientError(err, 'Rechnung konnte nicht gelöscht werden')
+    }
+  }
+
+  /**
+   * E-Rechnung (XRechnung 3.0 UBL) als XML herunterladen. Pflicht für
+   * B2B-Rechnungen ab 2026. Reuses denselben Loader wie der PDF-Render,
+   * sodass PDF + XML aus identischen Stammdaten kommen.
+   */
+  const downloadXRechnung = async () => {
+    try {
+      const res = await busy.run(() => getInvoiceXRechnungRemote({ id }))
+      downloadBase64File(res)
+      toast.success('E-Rechnung (XRechnung) heruntergeladen.')
+    } catch (err) {
+      handleClientError(err, 'E-Rechnung-Download')
+    }
+  }
+
+  /**
+   * Sendet die Zahlungserinnerung. Es gibt KEINE Mahn-Stufen —
+   * solange die Rechnung offen ist, geht dieselbe freundliche
+   * Erinnerung in regelmäßigen Abständen erneut raus. Jeder Klick
+   * legt eine neue Zahlungserinnerung an.
+   */
+  const sendReminder = async () => {
     try {
       const reminder = await busy.run(() =>
-        createReminderRemote({ invoiceId: id })
+        createPaymentReminderRemote({ invoiceId: id })
       )
-      toast.success('Mahnung angelegt.')
+      toast.success('Zahlungserinnerung versendet.')
       goto(`/reminders/${reminder.id}`)
     } catch (err) {
       handleClientError(err)
     }
+  }
+
+  const fmtDate = (s: string | null | undefined) => {
+    if (!s) return '—'
+    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
+    return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
 
   /** Rechnung ist überfällig wenn dueDate < heute und nicht bezahlt. */
@@ -98,14 +224,14 @@
     const today = new Date().toISOString().slice(0, 10)
     return data.doc.dueDate < today
   })
-  const canEscalate = $derived(isOverdue && data.doc.reminderLevel < 4)
 
   /**
    * Header CTA reflects the next step in the lifecycle:
    *   created → versenden
    *   sent    → als bezahlt markieren
    *   paid    → no CTA (terminal)
-   * Mahnstufen werden über das Mahnungs-Modul gestiegert; hier nicht.
+   * Zahlungserinnerungen werden über das Mahnwesen-Modul versendet;
+   * der Banner oben bietet den direkten CTA dafür.
    */
   const headerAction = $derived.by(() => {
     if (data.doc.status === 'paid' || data.doc.status === 'cancelled')
@@ -128,68 +254,194 @@
 
 {#if latestReminder}
   <!--
-    Banner shows ONLY the link to the *latest* reminder. The full
-    reminder history lives in the Mahnungen card below — keeps the
-    banner short and the entry point unambiguous (Rechnung → aktuelle
-    Mahnung; ältere Mahnungen → aktuelle Mahnung → Rechnung).
+    Es gibt keine Eskalation: derselbe freundliche Erinnerungstext geht
+    in regelmäßigen Abständen erneut raus. Banner zeigt nur Anzahl +
+    Datum der letzten Erinnerung und bietet einen klaren CTA, falls die
+    nächste manuell ausgelöst werden soll.
   -->
-  <div class="alert alert-warning mb-4">
+  <div class="alert alert-warning mb-4 flex-wrap">
     <BellRing size={20} />
-    <div>
+    <div class="min-w-0 flex-1">
       <div class="font-medium">
-        Gemahnt — aktuelle Stufe: {reminderLevelLabel(latestReminder.level)}
+        {reminderCount === 1
+          ? '1 Zahlungserinnerung versendet'
+          : `${reminderCount} Zahlungserinnerungen versendet`}
       </div>
       <div class="text-sm">
-        {invoiceReminders.length === 1
-          ? 'Zu dieser Rechnung wurde 1 Mahnung erzeugt.'
-          : `Zu dieser Rechnung wurden ${invoiceReminders.length} Mahnungen erzeugt.`}
-      </div>
-    </div>
-    {#if canEscalate}
-      <button
-        type="button"
-        class="btn btn-sm btn-warning gap-1"
-        onclick={() => (reminderOpen = true)}
-        disabled={busy.active}
-      >
-        <BellRing size={14} />
-        Nächste Stufe erzeugen
-      </button>
-    {/if}
-    <a class="btn btn-sm gap-1" href={`/reminders/${latestReminder.id}`}>
-      Zur aktuellen Mahnung
-      <ArrowRight size={14} />
-    </a>
-  </div>
-{:else if isOverdue}
-  <!--
-    Erste Mahnstufe ist noch nie erzeugt worden. Banner blinkt nicht
-    selbst — er bietet nur den klaren CTA, den ersten Schritt zu
-    starten. Die Levels werden vom Server automatisch berechnet.
-  -->
-  <div class="alert alert-warning mb-4">
-    <BellRing size={20} />
-    <div>
-      <div class="font-medium">Rechnung überfällig</div>
-      <div class="text-sm">
-        Die Fälligkeit ist überschritten. Eine Zahlungserinnerung kann jetzt
-        erzeugt werden.
+        Letzte Erinnerung am {fmtDate(latestReminder.issueDate)}.
       </div>
     </div>
     <button
       type="button"
       class="btn btn-sm btn-warning gap-1"
-      onclick={createReminder}
+      onclick={() => (reminderOpen = true)}
       disabled={busy.active}
     >
       <BellRing size={14} />
-      Zahlungserinnerung erzeugen
+      Erneut senden
+    </button>
+    <a
+      class="btn btn-sm btn-ghost gap-1"
+      href={`/reminders/${latestReminder.id}`}
+    >
+      Zur letzten Erinnerung
+      <ArrowRight size={14} />
+    </a>
+  </div>
+{:else if isOverdue}
+  <!--
+    Noch nie erinnert. Banner bietet den CTA, die erste Zahlungs-
+    erinnerung zu versenden.
+  -->
+  <div class="alert alert-warning mb-4 flex-wrap">
+    <BellRing size={20} />
+    <div class="min-w-0 flex-1">
+      <div class="font-medium">Rechnung überfällig</div>
+      <div class="text-sm">
+        Die Fälligkeit ist überschritten. Eine freundliche Zahlungserinnerung
+        kann jetzt versendet werden.
+      </div>
+    </div>
+    <button
+      type="button"
+      class="btn btn-sm btn-warning gap-1"
+      onclick={sendReminder}
+      disabled={busy.active}
+    >
+      <BellRing size={14} />
+      Zahlungserinnerung senden
+    </button>
+  </div>
+{/if}
+
+<!--
+  Storno-Banner — drei Zustände in einer einzigen Sektion:
+
+  1. `originalDoc` gesetzt: dies IST eine Stornorechnung. Zurücklink
+     auf das Original.
+  2. `cancelledAt` gesetzt: das Original wurde storniert. Forward-Link
+     auf die Stornorechnung.
+
+  Aktive (nicht-stornierte) Rechnungen rendern keinen Banner.
+-->
+{#if data.originalDoc}
+  <div class="alert alert-error mb-4 flex-wrap">
+    <Ban size={20} />
+    <div class="min-w-0 flex-1">
+      <div class="font-medium">
+        Stornorechnung zu Rechnung {data.originalDoc.documentNumber}
+      </div>
+      <div class="text-sm">
+        Diese Rechnung negiert das Original gemäß § 14 UStG.
+      </div>
+    </div>
+    <a
+      class="btn btn-sm btn-ghost gap-1"
+      href={`/invoices/${data.originalDoc.id}`}
+    >
+      Zur Original-Rechnung
+      <ArrowRight size={14} />
+    </a>
+  </div>
+{:else if data.doc.cancelledAt}
+  <div class="alert alert-error mb-4 flex-wrap">
+    <Ban size={20} />
+    <div class="min-w-0 flex-1">
+      <div class="font-medium">
+        Diese Rechnung wurde am {fmtDate(
+          data.doc.cancelledAt instanceof Date
+            ? data.doc.cancelledAt.toISOString()
+            : data.doc.cancelledAt
+        )} storniert.
+      </div>
+      {#if data.stornoDoc}
+        <div class="text-sm">
+          Stornorechnung: <a
+            class="link link-hover font-mono"
+            href={`/invoices/${data.stornoDoc.id}`}
+            >{data.stornoDoc.documentNumber}</a
+          >
+        </div>
+      {/if}
+      {#if data.doc.cancellationReason}
+        <div class="text-base-content/70 mt-1 text-sm">
+          Grund: {data.doc.cancellationReason}
+        </div>
+      {/if}
+    </div>
+    {#if data.stornoDoc}
+      <a
+        class="btn btn-sm btn-ghost gap-1"
+        href={`/invoices/${data.stornoDoc.id}`}
+      >
+        Zur Stornorechnung
+        <ArrowRight size={14} />
+      </a>
+    {/if}
+  </div>
+{/if}
+
+<!--
+  Stornieren / Löschen actions — GoBD-Logik:
+  - `draft` → klassisches Löschen erlaubt.
+  - `cancelled` / `storno` → keine destruktive Action (Storno-Belege
+    sind aufbewahrungspflichtig).
+  - Alles dazwischen (`created`, `sent`, `paid`) → nur Stornieren.
+-->
+{#if data.doc.status !== 'cancelled' && data.doc.status !== 'storno'}
+  <div class="mb-4 flex flex-col justify-end gap-2 sm:flex-row">
+    {#if canLogHours}
+      <button
+        type="button"
+        class="btn btn-sm gap-2"
+        onclick={() => (logHoursOpen = true)}
+        disabled={busy.active}
+      >
+        <Clock size={14} />
+        Arbeit erfassen
+      </button>
+    {/if}
+    {#if data.doc.status === 'draft'}
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost text-error gap-2"
+        onclick={() => (deleteOpen = true)}
+        disabled={busy.active}
+      >
+        <Trash2 size={14} />
+        Löschen
+      </button>
+    {:else}
+      <button
+        type="button"
+        class="btn btn-sm btn-ghost text-error gap-2"
+        onclick={() => {
+          stornoReason = ''
+          stornoOpen = true
+        }}
+        disabled={busy.active}
+      >
+        <Ban size={14} />
+        Stornieren
+      </button>
+    {/if}
+  </div>
+{:else if canLogHours}
+  <div class="mb-4 flex flex-col justify-end gap-2 sm:flex-row">
+    <button
+      type="button"
+      class="btn btn-sm gap-2"
+      onclick={() => (logHoursOpen = true)}
+      disabled={busy.active}
+    >
+      <Clock size={14} />
+      Arbeit erfassen
     </button>
   </div>
 {/if}
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-3">
-  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
     <div class="card-body p-0">
       <div class="overflow-x-auto">
         <table class="table">
@@ -249,7 +501,7 @@
     </div>
   </div>
 
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Summen</h3>
       <dl class="grid grid-cols-2 gap-y-1 text-sm">
@@ -290,9 +542,9 @@
   -->
   {#if data.customer}
     {@const c = data.customer}
-    <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
       <div class="card-body">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="card-title text-base">
             <User size={18} class="text-base-content/60" />
             Kunde
@@ -301,19 +553,19 @@
             Zum Kunden
           </a>
         </div>
-        <dl class="grid grid-cols-3 gap-y-1 text-sm">
+        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Kundennr.</dt>
-          <dd class="col-span-2 font-mono">{c.customerNumber}</dd>
+          <dd class="font-mono break-all sm:col-span-2">{c.customerNumber}</dd>
           <dt class="text-base-content/60">Name</dt>
-          <dd class="col-span-2">
+          <dd class="break-words sm:col-span-2">
             {c.company ||
               `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() ||
               '—'}
           </dd>
           <dt class="text-base-content/60">Telefon</dt>
-          <dd class="col-span-2">{c.phone ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{c.phone ?? '—'}</dd>
           <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="col-span-2">{c.email ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{c.email ?? '—'}</dd>
         </dl>
       </div>
     </div>
@@ -321,9 +573,9 @@
 
   {#if data.vehicle}
     {@const v = data.vehicle}
-    <div class="card border-base-300 bg-base-100 border">
+    <div class="card border-base-300 bg-base-100 min-w-0 border">
       <div class="card-body">
-        <div class="flex items-center justify-between">
+        <div class="flex flex-wrap items-center justify-between gap-2">
           <h3 class="card-title text-base">
             <Car size={18} class="text-base-content/60" />
             Fahrzeug
@@ -332,19 +584,23 @@
             Zum Fahrzeug
           </a>
         </div>
-        <dl class="grid grid-cols-3 gap-y-1 text-sm">
+        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Kennzeichen</dt>
-          <dd class="col-span-2 font-mono">{v.licensePlate ?? '—'}</dd>
+          <dd class="font-mono break-all sm:col-span-2"
+            >{v.licensePlate ?? '—'}</dd
+          >
           <dt class="text-base-content/60">Marke / Modell</dt>
-          <dd class="col-span-2">
+          <dd class="break-words sm:col-span-2">
             {[v.make, v.model].filter(Boolean).join(' ') || '—'}
           </dd>
           <dt class="text-base-content/60">FIN</dt>
-          <dd class="col-span-2 font-mono text-xs">{v.vin ?? '—'}</dd>
+          <dd class="font-mono text-xs break-all sm:col-span-2"
+            >{v.vin ?? '—'}</dd
+          >
           <dt class="text-base-content/60">EZ</dt>
-          <dd class="col-span-2">{v.firstRegistration ?? '—'}</dd>
+          <dd class="sm:col-span-2">{v.firstRegistration ?? '—'}</dd>
           <dt class="text-base-content/60">km-Stand</dt>
-          <dd class="col-span-2">
+          <dd class="sm:col-span-2">
             {v.mileageKm
               ? Number(v.mileageKm).toLocaleString('de-DE') + ' km'
               : '—'}
@@ -367,10 +623,13 @@
     <div class="card border-base-300 bg-base-100 border lg:col-span-3">
       <div class="card-body p-0">
         <div class="border-base-300 border-b px-4 py-3">
-          <h3 class="text-base font-semibold">Mahnungen-Verlauf</h3>
+          <h3 class="text-base font-semibold"
+            >Versendete Zahlungserinnerungen</h3
+          >
           <p class="text-base-content/60 text-sm">
-            Vollständige Historie aller bisher zur Rechnung erzeugten
-            Mahnstufen.
+            Vollständige Historie aller bisher zu dieser Rechnung versendeten
+            Erinnerungen. Es gibt keine Eskalation — derselbe freundliche Text
+            geht in regelmäßigen Abständen erneut raus.
           </p>
         </div>
         <div class="overflow-x-auto">
@@ -379,9 +638,7 @@
               <tr>
                 <th>Nummer</th>
                 <th>Datum</th>
-                <th>Stufe</th>
-                <th class="text-right">Gebühr</th>
-                <th class="text-right">Zinsen</th>
+                <th>Nr. der Erinnerung</th>
                 <th>Zahlbar bis</th>
                 <th class="text-right">Aktion</th>
               </tr>
@@ -395,15 +652,9 @@
                   <td class="font-mono text-xs font-medium"
                     >{r.documentNumber}</td
                   >
-                  <td>{r.issueDate}</td>
-                  <td>{reminderLevelLabel(r.level)}</td>
-                  <td class="text-right font-mono"
-                    >{formatEuro(Number(r.fee))}</td
-                  >
-                  <td class="text-right font-mono"
-                    >{formatEuro(Number(r.interest))}</td
-                  >
-                  <td>{r.dueDate}</td>
+                  <td>{fmtDate(r.issueDate)}</td>
+                  <td>{r.level}. Erinnerung</td>
+                  <td>{fmtDate(r.dueDate)}</td>
                   <td class="text-right">
                     <a
                       class="btn btn-ghost btn-xs"
@@ -422,7 +673,78 @@
     </div>
   {/if}
 
+  {#if timeEntries.items.length > 0}
+    <div class="card border-base-300 bg-base-100 border lg:col-span-3">
+      <div class="card-body p-0">
+        <div class="border-base-300 border-b px-4 py-3">
+          <h3 class="text-base font-semibold">Erfasste Stunden</h3>
+          <p class="text-base-content/60 text-sm">
+            Stundeneinträge, die auf diese Rechnung verbucht wurden.
+          </p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Mitarbeiter</th>
+                <th>Aufgabe</th>
+                <th class="text-right">Stunden</th>
+                <th class="text-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each timeEntries.items as t (t.id)}
+                {@const mine = t.employeeId === currentUser?.id}
+                {@const canDelete =
+                  callerPermissions.has('*') ||
+                  callerPermissions.has('hours') ||
+                  (callerPermissions.has('hours:write_own') && mine)}
+                <tr>
+                  <td>{fmtDate(t.date)}</td>
+                  <td>
+                    {[t.employeeFirstName, t.employeeLastName]
+                      .filter(Boolean)
+                      .join(' ') || t.employeeNumber}
+                  </td>
+                  <td>{t.task ?? '—'}</td>
+                  <td class="text-right font-mono"
+                    >{Number(t.hours).toFixed(2)}</td
+                  >
+                  <td class="text-right">
+                    {#if canDelete}
+                      <button
+                        type="button"
+                        class="btn btn-ghost btn-xs text-error gap-1"
+                        onclick={() => removeTimeEntry(t.id)}
+                        disabled={busy.active}
+                      >
+                        <Trash2 size={14} />
+                        Löschen
+                      </button>
+                    {/if}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {/if}
+
   <div class="lg:col-span-3">
+    <div class="mb-2 flex flex-col justify-end gap-2 sm:flex-row">
+      <button
+        type="button"
+        class="btn btn-sm gap-2"
+        onclick={downloadXRechnung}
+        disabled={busy.active}
+      >
+        <FileCode size={14} />
+        E-Rechnung (XRechnung) herunterladen
+      </button>
+    </div>
     <PdfViewer documentId={data.doc.id} />
   </div>
 </div>
@@ -439,10 +761,90 @@
 
 <ConfirmDialog
   bind:open={reminderOpen}
-  title="Nächste Mahnstufe erzeugen?"
-  message="Es wird eine Mahnung der nächsthöheren Stufe für diese Rechnung angelegt."
-  confirmLabel="Mahnung anlegen"
+  title="Zahlungserinnerung erneut senden?"
+  message="Es wird eine weitere Zahlungserinnerung mit dem gleichen freundlichen Text an den Kunden versendet."
+  confirmLabel="Jetzt senden"
   variant="primary"
-  onConfirm={createReminder}
+  onConfirm={sendReminder}
   onClose={() => {}}
 />
+
+<QuickTimeEntryModal
+  bind:open={logHoursOpen}
+  documentId={data.doc.id}
+  onClose={() => {}}
+/>
+
+<ConfirmDialog
+  bind:open={deleteOpen}
+  title="Entwurfs-Rechnung löschen?"
+  message="Diese Rechnung ist ein Entwurf und kann unwiderruflich entfernt werden. Bereits ausgestellte Rechnungen lassen sich nur stornieren."
+  confirmLabel="Endgültig löschen"
+  variant="danger"
+  onConfirm={deleteInvoice}
+  onClose={() => {}}
+/>
+
+<!--
+  Storno-Dialog: Pflicht-Begründung (max. 500 Zeichen). Kein
+  `ConfirmDialog`, weil wir das `<textarea>` brauchen — das normale
+  ConfirmDialog hat keinen Body-Slot.
+-->
+{#if stornoOpen}
+  <dialog class="modal modal-open">
+    <div class="modal-box">
+      <h3 class="text-lg font-semibold">Rechnung stornieren?</h3>
+      <p class="text-base-content/80 py-2 text-sm">
+        Eine GoBD-konforme Stornorechnung wird erzeugt, die diese Rechnung exakt
+        negiert. Das Original bleibt unverändert lesbar im Bestand.
+      </p>
+      <label class="floating-label mt-2">
+        <span>Stornogrund</span>
+        <textarea
+          class="textarea textarea-bordered w-full"
+          rows="3"
+          maxlength="500"
+          placeholder="Bitte Stornogrund eingeben"
+          bind:value={stornoReason}
+          disabled={stornoSubmitting}
+        ></textarea>
+      </label>
+      <div class="text-base-content/60 mt-1 text-right text-xs">
+        {stornoReason.length} / 500
+      </div>
+      <div class="modal-action">
+        <button
+          type="button"
+          class="btn btn-ghost"
+          onclick={() => {
+            stornoOpen = false
+            stornoReason = ''
+          }}
+          disabled={stornoSubmitting}
+        >
+          Abbrechen
+        </button>
+        <button
+          type="button"
+          class="btn btn-error"
+          onclick={cancelInvoice}
+          disabled={stornoSubmitting || stornoReason.trim().length === 0}
+        >
+          {#if stornoSubmitting}
+            <span class="loading loading-spinner loading-sm"></span>
+          {/if}
+          Stornieren
+        </button>
+      </div>
+    </div>
+    <button
+      type="button"
+      class="modal-backdrop"
+      aria-label="Schließen"
+      onclick={() => {
+        stornoOpen = false
+        stornoReason = ''
+      }}
+    ></button>
+  </dialog>
+{/if}

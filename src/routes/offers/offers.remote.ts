@@ -40,6 +40,7 @@ import {
   type DocumentMailKind
 } from '$lib/server/services/mail-service'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const itemSchema = object({
   description: pipe(string(), trim(), maxLength(500)),
@@ -98,6 +99,7 @@ const listSchema = object({
  * @module offers
  */
 export const listOffersRemote = query(listSchema, async (params) => {
+  requirePermission('offers')
   const subtype = params.subtype ?? 'all'
   if (subtype !== 'all') {
     return listDocuments({ ...params, type: subtype })
@@ -137,6 +139,7 @@ export const listOffersRemote = query(listSchema, async (params) => {
 export const getOfferRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('offers')
     const result = await getDocument(id)
     if (
       !result ||
@@ -160,6 +163,7 @@ export const getOfferRemote = query(
  * @module offers
  */
 export const createOfferRemote = command(inputSchema, async (values) => {
+  requirePermission('offers')
   if (values.items.length === 0)
     error(400, 'Bitte mindestens eine Position eingeben.')
   const created = await createDocument(values)
@@ -176,6 +180,7 @@ export const createOfferRemote = command(inputSchema, async (values) => {
 export const deleteOfferRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('offers')
     await deleteDocument(id)
     await requested(listOffersRemote, 4).refreshAll()
   }
@@ -197,6 +202,7 @@ export const deleteOfferRemote = command(
 export const convertOfferToInvoiceRemote = command(
   object({ offerId: idSchema, values: convertSchema }),
   async ({ offerId, values }) => {
+    requirePermission('invoices')
     if (values.items.length === 0)
       error(400, 'Bitte mindestens eine Position eingeben.')
     try {
@@ -222,6 +228,7 @@ export const convertOfferToInvoiceRemote = command(
 export const cancelOfferRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('offers')
     const existing = await getDocument(id)
     if (
       !existing ||
@@ -262,6 +269,7 @@ export const cancelOfferRemote = command(
 export const markOfferSentRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('offers')
     await setDocumentStatus(id, 'sent')
     await Promise.all([
       getOfferRemote({ id }).refresh(),
@@ -282,6 +290,7 @@ export const markOfferSentRemote = command(
 export const sendOfferRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('offers')
     const result = await getDocument(id)
     if (
       !result ||

@@ -13,6 +13,7 @@ import {
 import { db } from '$lib/server/db/client'
 import { vehicles, vehicleListings, vehicleSales } from '$lib/server/db/schema'
 import { idSchema } from '$lib/server/db/validation'
+import { requirePermission } from '$lib/server/auth-guards'
 import { and, asc, count, eq, ilike, inArray, isNull, or } from 'drizzle-orm'
 import { vehicleLicensePlateVersions } from '$lib/server/db/schema'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
@@ -49,6 +50,7 @@ const buildInventorySelect = (lp: ReturnType<typeof latestPlateSubquery>) => ({
  * @module inventory
  */
 export const listInventoryRemote = query(listSchema, async (params) => {
+  requirePermission('inventory')
   const { page, size, q } = params
   const offset = (page - 1) * size
 
@@ -123,6 +125,7 @@ export const listInventoryRemote = query(listSchema, async (params) => {
 export const getInventoryVehicleRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('inventory')
     // LEFT JOIN auf `vehicleListings`, weil ein neu angelegtes
     // Verkaufsfahrzeug noch keinen Listing-Eintrag hat (Preis,
     // Standort etc.). Ohne LEFT JOIN würde der Verkaufen-Button

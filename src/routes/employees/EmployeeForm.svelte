@@ -82,6 +82,9 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /** Submit button validity gate — mirrors the server-side rules. */
+  const valid = $derived(Boolean(firstName.trim()) && Boolean(lastName.trim()))
+
   const u = (v: string) => {
     const t = v.trim()
     return t === '' ? undefined : t
@@ -441,7 +444,11 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button type="submit" class="btn btn-primary" disabled={busy.active}>
+      <button
+        type="submit"
+        class="btn btn-primary"
+        disabled={busy.active || !valid}
+      >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

@@ -1,7 +1,10 @@
 import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
+  array,
+  boolean,
   maxLength,
+  minLength,
   number,
   object,
   optional,
@@ -28,10 +31,12 @@ import {
   listCustomers,
   updateCustomer
 } from '$lib/server/services/customer-service'
+import { sendAdHocCustomerEmail } from '$lib/server/services/mail-service'
 import { db } from '$lib/server/db/client'
 import { documents, vehicles } from '$lib/server/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
 /**
  * Validation schema shared by `createCustomerRemote` and
@@ -58,7 +63,11 @@ const customerInputSchema = object({
   bankIban: optional(pipe(string(), trim(), maxLength(34))),
   bankBic: optional(pipe(string(), trim(), maxLength(11))),
   bankName: optional(pipe(string(), trim(), maxLength(100))),
-  customerNumber: optional(pipe(string(), trim(), maxLength(50)))
+  customerNumber: optional(pipe(string(), trim(), maxLength(50))),
+  kind: optional(picklist(['regular', 'ebay'])),
+  ebayHandle: optional(pipe(string(), trim(), maxLength(100))),
+  wantsBroadcast: optional(boolean()),
+  wantsTireReminders: optional(boolean())
 })
 
 /**
@@ -70,30 +79,32 @@ const listSchema = object({
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
   sort: optional(pipe(string(), trim(), maxLength(30))),
-  kind: optional(picklist(['all', 'private', 'business']))
+  kind: optional(picklist(['all', 'private', 'business', 'ebay']))
 })
 
 /**
- * Paginated, searchable customer list with a Privat/Firma filter.
+ * Paginated, searchable customer list with a Privat/Firma/eBay filter.
  *
  * @remarks
- * The `kind` filter accepts `'all' | 'private' | 'business'` and is
- * derived from `customers.company` at the service layer (a non-null
- * company is a Firmenkunde, otherwise Privatkunde). Archived customers
- * are always excluded.
+ * The `kind` filter accepts `'all' | 'private' | 'business' | 'ebay'`.
+ * `'ebay'` restricts to `customers.kind = 'ebay'`; the other three
+ * always restrict to `customers.kind = 'regular'` and additionally
+ * narrow by the legacy `customers.company` column. Archived
+ * customers are always excluded.
  *
  * @group integration
  * @module customers
  */
-export const listCustomersRemote = query(listSchema, async (params) =>
-  listCustomers({
+export const listCustomersRemote = query(listSchema, async (params) => {
+  requirePermission('customers')
+  return listCustomers({
     page: params.page,
     size: params.size,
     q: params.q,
     sort: params.sort,
     kind: params.kind ?? 'all'
   })
-)
+})
 
 /**
  * Load a single customer by id. Throws `404` if the customer does not exist.
@@ -104,6 +115,7 @@ export const listCustomersRemote = query(listSchema, async (params) =>
 export const getCustomerRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('customers')
     const row = await getCustomer(id)
     if (!row) error(404, 'Kunde nicht gefunden.')
     return row
@@ -121,6 +133,7 @@ export const getCustomerRemote = query(
 export const getCustomerRelatedRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('customers')
     const lp = latestPlateSubquery()
     const [vehicleRows, invoiceRows] = await Promise.all([
       db
@@ -163,7 +176,10 @@ export const getCustomerRelatedRemote = query(
  * @group integration
  * @module customers
  */
-export const countCustomersRemote = query(async () => countCustomers())
+export const countCustomersRemote = query(async () => {
+  requirePermission('customers')
+  return countCustomers()
+})
 
 /**
  * Refresh the dashboard count plus every list instance the client requested
@@ -191,6 +207,7 @@ const refreshListsAndCount = async (): Promise<void> => {
 export const createCustomerRemote = command(
   customerInputSchema,
   async (input) => {
+    requirePermission('customers')
     const data = await createCustomer(input)
     await refreshListsAndCount()
     return data
@@ -210,6 +227,7 @@ export const createCustomerRemote = command(
 export const updateCustomerRemote = command(
   object({ id: idSchema, values: customerInputSchema }),
   async ({ id, values }) => {
+    requirePermission('customers')
     const data = await updateCustomer(id, values)
     await Promise.all([
       getCustomerRemote({ id }).refresh(),
@@ -232,7 +250,74 @@ export const updateCustomerRemote = command(
 export const deleteCustomerRemote = command(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('customers')
     await deleteCustomer(id)
     await refreshListsAndCount()
+  }
+)
+
+/**
+ * Per-attachment cap for ad-hoc and broadcast emails. ~10 MB raw
+ * encodes to ~13.5 MB base64; 14 MB gives a small buffer without
+ * letting a malicious payload exhaust server memory.
+ */
+const ATTACHMENT_BASE64_MAX = 14_000_000
+
+const attachmentSchema = object({
+  filename: pipe(
+    string('Bitte einen Dateinamen angeben.'),
+    trim(),
+    minLength(1, 'Dateiname darf nicht leer sein.'),
+    maxLength(255, 'Dateiname darf maximal 255 Zeichen lang sein.')
+  ),
+  mime: pipe(
+    string(),
+    trim(),
+    maxLength(100, 'MIME-Typ darf maximal 100 Zeichen lang sein.')
+  ),
+  base64Data: pipe(
+    string('Anhang-Daten fehlen.'),
+    minLength(1, 'Anhang-Daten dürfen nicht leer sein.'),
+    maxLength(
+      ATTACHMENT_BASE64_MAX,
+      'Der Anhang ist zu groß (maximal 10 MB pro Datei).'
+    )
+  )
+})
+
+const adHocEmailSchema = object({
+  customerId: idSchema,
+  subject: pipe(
+    string('Bitte einen Betreff eingeben.'),
+    trim(),
+    minLength(1, 'Der Betreff darf nicht leer sein.'),
+    maxLength(200, 'Der Betreff darf maximal 200 Zeichen lang sein.')
+  ),
+  body: pipe(
+    string('Bitte einen Nachrichtentext eingeben.'),
+    minLength(1, 'Die Nachricht darf nicht leer sein.'),
+    maxLength(50_000, 'Die Nachricht darf maximal 50.000 Zeichen lang sein.')
+  ),
+  attachments: array(attachmentSchema)
+})
+
+/**
+ * Send a free-form email to a single customer (composer modal on the
+ * customer detail page). Wraps `sendAdHocCustomerEmail` from the mail
+ * service; failures bubble up as curated German `error(400, …)` so
+ * `handleClientError` shows a clean toast.
+ *
+ * @group integration
+ * @module customers
+ */
+export const sendAdHocCustomerEmailRemote = command(
+  adHocEmailSchema,
+  async (input) => {
+    requirePermission('customers')
+    const send = await sendAdHocCustomerEmail(input)
+    if (!send.ok) {
+      error(400, `E-Mail konnte nicht versendet werden: ${send.error}`)
+    }
+    return { messageId: send.messageId }
   }
 )

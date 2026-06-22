@@ -44,6 +44,11 @@
 
   let errorMsg = $state<string | null>(null)
 
+  /** Submit button validity gate — mirrors the rules in `submit`. */
+  const valid = $derived(
+    Boolean(description.trim()) && amountGross !== '' && Number(amountGross) > 0
+  )
+
   const cats = $derived(listCategoriesRemote({ direction }))
   const categories = $derived(cats.current ?? [])
 
@@ -234,7 +239,7 @@
         <button
           type="submit"
           class="btn btn-primary"
-          disabled={busy.active || !isManual}
+          disabled={busy.active || !isManual || !valid}
         >
           Speichern
         </button>

@@ -10,6 +10,7 @@ import {
 } from 'valibot'
 import { db } from '$lib/server/db/client'
 import { documents, customers } from '$lib/server/db/schema'
+import { requirePermission } from '$lib/server/auth-guards'
 import { and, asc, eq, gte, lte } from 'drizzle-orm'
 
 const filterSchema = object({
@@ -53,6 +54,7 @@ const computeRange = (
  * @module sales-ledger
  */
 export const getSalesLedgerRemote = query(filterSchema, async (params) => {
+  requirePermission('ledger')
   const { from, to } = computeRange(params.period, params.from, params.to)
   const conds = [eq(documents.type, 'invoice')]
   if (from) conds.push(gte(documents.issueDate, from))

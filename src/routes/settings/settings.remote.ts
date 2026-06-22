@@ -18,7 +18,6 @@ import {
   mailTemplates,
   smtpSettings
 } from '$lib/server/db/schema'
-import { encrypt } from '$lib/server/utils/crypto'
 import { getSettings } from '$lib/server/services/settings-service'
 import { defaultMailTemplates } from '$lib/server/db/seed-defaults'
 import {
@@ -33,6 +32,7 @@ import {
   nameSchema,
   optionalEmailSchema
 } from '$lib/server/db/validation'
+import { requirePermission } from '$lib/server/auth-guards'
 
 const companyDataSchema = object({
   companyName: nameSchema,
@@ -54,24 +54,30 @@ const companyDataSchema = object({
   defaultPaymentTermDays: optional(number()),
   defaultVatRate: optional(number()),
   salutationStyle: picklist(['Sie', 'Du']),
-  pdfFooter: optional(pipe(string(), trim(), maxLength(10000))),
-  payrollGenerationDay: optional(
-    pipe(number(), integer(), minValue(1), maxValue(28))
-  )
+  pdfFooter: optional(pipe(string(), trim(), maxLength(10000)))
 })
 
+/**
+ * Zahlungserinnerung settings — single friendly template, no
+ * escalation, no Mahngebühr, no Verzugszinsen. The operator
+ * configures only the on/off toggle, the wait time before the first
+ * Zahlungserinnerung and the recurrence interval.
+ */
 const reminderSettingsSchema = object({
   reminderAutoEnabled: boolean(),
   smallBusinessExempt: boolean(),
-  reminderDays1: pipe(number(), integer(), minValue(0), maxValue(365)),
-  reminderDays2: pipe(number(), integer(), minValue(0), maxValue(365)),
-  reminderDays3: pipe(number(), integer(), minValue(0), maxValue(365)),
-  reminderDays4: pipe(number(), integer(), minValue(0), maxValue(365)),
-  reminderFee1: pipe(number(), minValue(0), maxValue(1_000)),
-  reminderFee2: pipe(number(), minValue(0), maxValue(1_000)),
-  reminderFee3: pipe(number(), minValue(0), maxValue(1_000)),
-  reminderFee4: pipe(number(), minValue(0), maxValue(1_000)),
-  reminderInterestRate: pipe(number(), minValue(0), maxValue(50))
+  reminderDays1: pipe(
+    number('Bitte einen Wert eingeben.'),
+    integer('Bitte ganze Zahl eingeben.'),
+    minValue(0, 'Bitte keinen negativen Wert eingeben.'),
+    maxValue(365, 'Maximal 365 Tage.')
+  ),
+  reminderRecurEveryDays: pipe(
+    number('Bitte einen Wert eingeben.'),
+    integer('Bitte ganze Zahl eingeben.'),
+    minValue(1, 'Intervall muss mindestens 1 Tag betragen.'),
+    maxValue(365, 'Maximal 365 Tage.')
+  )
 })
 
 const smtpUpdateSchema = object({
@@ -98,6 +104,7 @@ const smtpUpdateSchema = object({
  * @module settings
  */
 export const getAllSettingsRemote = query(async () => {
+  requirePermission('settings')
   const [company, smtp] = await Promise.all([
     getSettings(),
     db.select().from(smtpSettings).limit(1)
@@ -110,10 +117,10 @@ export const getAllSettingsRemote = query(async () => {
           port: smtp[0].port,
           secure: smtp[0].secure,
           username: smtp[0].username,
-          // Reines Boolean — der Klartext-Inhalt verlässt den Server
-          // niemals. Die UI nutzt das Flag nur, um die Punkte als
-          // Platzhalter zu rendern.
-          hasPassword: !!smtp[0].passwordEncrypted,
+          // Reines Boolean — das Passwort verlässt den Server niemals.
+          // Die UI nutzt das Flag nur, um die Punkte als Platzhalter
+          // zu rendern.
+          hasPassword: !!smtp[0].password,
           fromAddress: smtp[0].fromAddress,
           fromName: smtp[0].fromName,
           replyTo: smtp[0].replyTo,
@@ -127,6 +134,7 @@ export const getAllSettingsRemote = query(async () => {
  * Persist company data (settings page).
  */
 export const updateCompanyRemote = command(companyDataSchema, async (data) => {
+  requirePermission('settings')
   const settings = await getSettings()
   await db
     .update(companySettings)
@@ -154,8 +162,6 @@ export const updateCompanyRemote = command(companyDataSchema, async (data) => {
         : settings.defaultVatRate,
       salutationStyle: data.salutationStyle,
       pdfFooter: data.pdfFooter ?? '',
-      payrollGenerationDay:
-        data.payrollGenerationDay ?? settings.payrollGenerationDay,
       updatedAt: new Date()
     })
     .where(eq(companySettings.id, settings.id))
@@ -163,7 +169,7 @@ export const updateCompanyRemote = command(companyDataSchema, async (data) => {
 })
 
 /**
- * Persist Mahnwesen / dunning settings.
+ * Persist Zahlungserinnerung settings.
  *
  * @group integration
  * @module settings
@@ -171,6 +177,7 @@ export const updateCompanyRemote = command(companyDataSchema, async (data) => {
 export const updateReminderSettingsRemote = command(
   reminderSettingsSchema,
   async (data) => {
+    requirePermission('settings')
     const settings = await getSettings()
     await db
       .update(companySettings)
@@ -178,14 +185,7 @@ export const updateReminderSettingsRemote = command(
         reminderAutoEnabled: data.reminderAutoEnabled,
         smallBusinessExempt: data.smallBusinessExempt,
         reminderDays1: data.reminderDays1,
-        reminderDays2: data.reminderDays2,
-        reminderDays3: data.reminderDays3,
-        reminderDays4: data.reminderDays4,
-        reminderFee1: String(data.reminderFee1),
-        reminderFee2: String(data.reminderFee2),
-        reminderFee3: String(data.reminderFee3),
-        reminderFee4: String(data.reminderFee4),
-        reminderInterestRate: String(data.reminderInterestRate),
+        reminderRecurEveryDays: data.reminderRecurEveryDays,
         updatedAt: new Date()
       })
       .where(eq(companySettings.id, settings.id))
@@ -213,6 +213,7 @@ const logoSchema = object({
  * @module settings
  */
 export const updateLogoRemote = command(logoSchema, async (data) => {
+  requirePermission('settings')
   const settings = await getSettings()
   await db
     .update(companySettings)
@@ -232,6 +233,7 @@ export const updateLogoRemote = command(logoSchema, async (data) => {
  * @module settings
  */
 export const removeLogoRemote = command(async () => {
+  requirePermission('settings')
   const settings = await getSettings()
   await db
     .update(companySettings)
@@ -251,6 +253,7 @@ export const removeLogoRemote = command(async () => {
  * @module settings
  */
 export const listMailTemplatesRemote = query(async () => {
+  requirePermission('settings')
   const rows = await db
     .select()
     .from(mailTemplates)
@@ -280,6 +283,7 @@ const mailTemplateUpdateSchema = object({
 export const updateMailTemplateRemote = command(
   mailTemplateUpdateSchema,
   async ({ key, subject, body }) => {
+    requirePermission('settings')
     const [existing] = await db
       .select()
       .from(mailTemplates)
@@ -305,6 +309,7 @@ export const updateMailTemplateRemote = command(
 export const resetMailTemplateRemote = command(
   object({ key: pipe(string(), trim(), maxLength(50)) }),
   async ({ key }) => {
+    requirePermission('settings')
     const def = defaultMailTemplates.find((t) => t.key === key)
     if (!def) error(404, `Standardvorlage für „${key}" nicht hinterlegt.`)
     await db
@@ -324,6 +329,7 @@ export const resetMailTemplateRemote = command(
  * Persist SMTP credentials. Password only updated if non-empty.
  */
 export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
+  requirePermission('settings')
   const port = Number(data.port)
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     error(400, 'Ungültiger SMTP-Port.')
@@ -338,7 +344,7 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
         port,
         secure: data.secure,
         username: data.username,
-        passwordEncrypted: encrypt(data.password ?? ''),
+        password: data.password ?? '',
         fromAddress: data.fromAddress,
         fromName: data.fromName,
         replyTo: data.replyTo ?? null,
@@ -353,9 +359,7 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
         port,
         secure: data.secure,
         username: data.username,
-        passwordEncrypted: data.password
-          ? encrypt(data.password)
-          : rows[0].passwordEncrypted,
+        password: data.password ? data.password : rows[0].password,
         fromAddress: data.fromAddress,
         fromName: data.fromName,
         replyTo: data.replyTo ?? null,

@@ -6,9 +6,7 @@
  *   and an optional attachment (e.g. AU-Bescheinigung scan);
  * - feed into the calendar and dashboard automatically;
  * - drive the remaining-vacation calculation (Resturlaub) on the
- *   employee detail view;
- * - feed payroll (vacation/sick days per period) — see
- *   {@link absenceDaysInPeriod}.
+ *   employee detail view.
  *
  * Working-day model: weekends are skipped, half-days count as 0.5. The
  * model is intentionally conservative (no Feiertags-Awareness yet) — it

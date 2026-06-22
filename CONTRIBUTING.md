@@ -38,9 +38,29 @@ wins**: align the code, do not weaken the guideline.
 | Adapter          | **`@sveltejs/adapter-node`**                               |
 | Tests            | **Vitest** + **`@testing-library/svelte`**                 |
 | Format           | **Prettier** + **Husky** + **lint-staged**                 |
+| Package manager  | **pnpm** (via corepack, pinned in `packageManager`)        |
 
 Languages: **all code, comments, JSDoc, identifiers and commit messages are
 in English. The user-facing UI is in German.**
+
+### Package manager (pnpm, binding)
+
+The project uses **pnpm**, activated through corepack and pinned by the
+`packageManager` field in `package.json` — do not run `npm install` /
+`npm ci` (they would regenerate a `package-lock.json`, which is **not**
+committed). Use `pnpm install`, `pnpm <script>`, `pnpm exec <bin>`.
+
+- `pnpm-lock.yaml` is the single committed lockfile. `pnpm-workspace.yaml`
+  carries build-script approvals (`allowBuilds: esbuild: true` — esbuild
+  ships a platform binary that vite/vitest need).
+- Framework packages whose **experimental** APIs change between minors
+  (`@sveltejs/kit`, `svelte`, `@testing-library/svelte`) are **pinned to
+  exact versions**, not caret ranges — the remote-functions / runes APIs
+  are not yet stable across minors. Bump them deliberately, never via a
+  blind `^` float, and re-run `pnpm check && pnpm test && pnpm build`.
+- The Dockerfile uses `corepack enable` + `pnpm install --frozen-lockfile`
+  then `pnpm prune --prod`. `.npmrc` is gitignored / local-only and is
+  intentionally not part of the build context.
 
 ## 3. Library policy
 
@@ -90,6 +110,39 @@ export const createXRemote = command(inputSchema, async (input) => {
 ```
 
 JSDoc every export with `@group integration` and `@module <name>`.
+
+### Authorization (per-module, binding)
+
+The permission model is intentionally simple: **one key per module** — a
+user either has access to a module or not, and if they do they can do
+everything in it. There is **no** `:read` / `:write` / `:delete` split.
+
+- Canonical keys live in `src/lib/permissions.ts` (`MODULE_PERMISSIONS`):
+  `customers`, `vehicles`, `suppliers`, `employees`, `items`, `offers`,
+  `invoices`, `reminders`, `ledger`, `calendar`, `inventory`, `hours`,
+  `mailings`, `import`, `settings`, `users`, `tires`, `shipping`. The
+  wildcard `*` grants everything (seeded "Administrator" role).
+- **The one exception is `hours:write_own`** — a self-service grant that
+  lets an employee log only their **own** time entries. So `hours` has two
+  levels: full (`hours`) or self-service (`hours:write_own`). Do not add
+  further sub-keys to any module without the same level of justification.
+- **Every** `query` / `command` body starts with a guard as its first
+  statement: `requireUser()`, `requirePermission('<module>')`, or
+  `requireAnyPermission('<module>', …)` from `auth-guards.ts`. The hours
+  remotes use `requireAnyPermission('hours', 'hours:write_own')` and scope
+  the result set when only the self-service key is held.
+- Seeded roles (`seed-defaults.ts`): **Administrator** (`*`),
+  **Werkstattleiter** (every module except `settings` / `users`),
+  **Mitarbeiter** (operational modules + `hours:write_own`).
+- Sidebar items carry a single `permission` key in `navigation.ts`;
+  `filterNavigationByPermissions` drops items + empty groups.
+- **Account deactivation:** `users.active` gates sign-in. A deactivated
+  account is rejected at the sign-in POST (`blockDeactivatedSignIn` in
+  `hooks.server.ts`, clean German error on the login form) and on every
+  request (`populateAuthLocals` re-checks `active` against the DB so the
+  lockout beats the 5-minute session-cookie cache). Deactivating also
+  deletes the user's sessions (`deleteUserSessions`). The last account
+  holding the wildcard `*` cannot be deactivated or deleted.
 
 ## 5. Page patterns
 
@@ -876,9 +929,9 @@ templates are canonical. Reuse the wording when adding new modules.
   co-located next to the source file (`X.svelte` ↔ `X.test.ts`).
 - **No Playwright in the project**. The Claude Code Playwright MCP is the
   E2E harness during development.
-- Run `npm test`, `npm run test:cov`, `npm run dev` + Playwright
+- Run `pnpm test`, `pnpm test:cov`, `pnpm dev` + Playwright
   walkthrough before declaring a feature done.
-- Type checking: `npx svelte-check --tsconfig ./tsconfig.json` must report
+- Type checking: `pnpm exec svelte-check --tsconfig ./tsconfig.json` must report
   **0 errors / 0 warnings** before commit.
 
 ## 14. Git workflow
@@ -1036,18 +1089,18 @@ request against a half-migrated database. There is exactly one
 runtime container instance, so no migration race is possible.
 
 `drizzle-kit` is a dev-only tool. It is **not** required at runtime
-and is not present in the runtime container — `npm prune --omit=dev`
+and is not present in the runtime container — `pnpm prune --prod`
 in the Dockerfile build stage strips it. The runtime migrator from
 `drizzle-orm/postgres-js/migrator` is the only thing executing SQL
 in production.
 
 ### Workflow
 
-1. **Edit `schema.ts`.** Then `npm run db:generate` (interactive —
+1. **Edit `schema.ts`.** Then `pnpm db:generate` (interactive —
    answer the "rename or new?" prompt). Commit the produced
    `drizzle/<NNNN>_*.sql` and `drizzle/meta/*.json` together.
 
-2. **Apply locally** with `npm run db:migrate` — same script the
+2. **Apply locally** with `pnpm db:migrate` — same script the
    container runs. No `db:push` in any environment.
 
 3. **Make migrations idempotent.** Drizzle-kit produces

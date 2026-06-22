@@ -123,7 +123,9 @@
 		Stable dialog dimensions: fixed width, fixed height — independent of how
 		many results are loaded. The list area scrolls inside.
 	-->
-  <div class="modal-box flex h-[640px] w-full max-w-2xl flex-col p-0">
+  <div
+    class="modal-box flex h-[80dvh] max-h-[640px] w-full max-w-2xl flex-col p-0"
+  >
     <header
       class="border-base-300 flex items-center justify-between border-b px-4 py-3"
     >
@@ -153,7 +155,7 @@
         />
       </label>
     </div>
-    <div class="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+    <div class="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto">
       {#if loading && items.length === 0}
         <div class="flex h-full items-center justify-center">
           <Loader />

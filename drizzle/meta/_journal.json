@@ -71,6 +71,132 @@
       "when": 1778025500000,
       "tag": "0009_versioned_license_plates",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1779719590557,
+      "tag": "0010_auth_better_auth_and_rbac",
+      "breakpoints": true
+    },
+    {
+      "idx": 11,
+      "version": "7",
+      "when": 1779720500000,
+      "tag": "0011_phase3_data_model",
+      "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1779722000000,
+      "tag": "0012_time_tracking",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1779747500000,
+      "tag": "0013_public_api_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1779750000000,
+      "tag": "0014_recurring_reminder",
+      "breakpoints": true
+    },
+    {
+      "idx": 15,
+      "version": "7",
+      "when": 1779800000000,
+      "tag": "0015_remove_payroll",
+      "breakpoints": true
+    },
+    {
+      "idx": 16,
+      "version": "7",
+      "when": 1779900000000,
+      "tag": "0016_customer_inquiries",
+      "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1779900100000,
+      "tag": "0017_item_photos",
+      "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1779900200000,
+      "tag": "0018_company_geo",
+      "breakpoints": true
+    },
+    {
+      "idx": 19,
+      "version": "7",
+      "when": 1779900300000,
+      "tag": "0019_tire_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 20,
+      "version": "7",
+      "when": 1779900400000,
+      "tag": "0020_invoice_storno",
+      "breakpoints": true
+    },
+    {
+      "idx": 21,
+      "version": "7",
+      "when": 1779900500000,
+      "tag": "0021_smtp_plain_password",
+      "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1779900600000,
+      "tag": "0022_tires_dedicated_table",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1779900700000,
+      "tag": "0023_inquiry_notification_status",
+      "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1779900800000,
+      "tag": "0024_simplify_reminders",
+      "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1779900900000,
+      "tag": "0025_drop_api_tokens",
+      "breakpoints": true
+    },
+    {
+      "idx": 26,
+      "version": "7",
+      "when": 1782099654445,
+      "tag": "0026_shop_refocus_drop_stock_fields",
+      "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1782102526227,
+      "tag": "0027_user_active_flag",
+      "breakpoints": true
     }
   ]
 }

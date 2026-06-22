@@ -3,14 +3,12 @@
   import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import Pagination from '$lib/components/ui/Pagination.svelte'
   import {
     createAbsenceRemote,
     deleteAbsenceRemote,
     getAbsenceConflictsRemote,
     getEmployeeRemote,
     listAbsencesRemote,
-    listEmployeePayrollRemote,
     listEmployeeSalaryVersionsRemote,
     updateAbsenceRemote
   } from '../employees.remote'
@@ -21,8 +19,7 @@
     CalendarDays,
     ChevronLeft,
     ChevronRight,
-    Stethoscope,
-    Wallet
+    Stethoscope
   } from '@lucide/svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { toast } from '$lib/stores/toast.svelte'
@@ -32,7 +29,6 @@
   const id = untrack(() => page.params.id!)
   const currentYear = new Date().getFullYear()
   let absenceYear = $state(currentYear)
-  let payrollPage = $state(1)
 
   /**
    * Top-level await: SSR carries the data, hydration reuses the cache.
@@ -44,10 +40,6 @@
     listAbsencesRemote({ employeeId: id, year: absenceYear })
   )
   const initialAbs = await untrack(() => absencesQ)
-  const initialPayroll = await listEmployeePayrollRemote({
-    employeeId: id,
-    page: 1
-  })
   const salaryVersionsQ = listEmployeeSalaryVersionsRemote({ employeeId: id })
   const initialSalaryVersions = await salaryVersionsQ
   let salaryVersions = $state<typeof initialSalaryVersions>(
@@ -87,12 +79,6 @@
    */
   const sickAllowed = $derived(absenceYear <= currentYear)
 
-  /* — Payroll history (paginated). — */
-  const payrollQ = $derived(
-    listEmployeePayrollRemote({ employeeId: id, page: payrollPage })
-  )
-  const payroll = $derived(payrollQ.current ?? initialPayroll)
-
   /**
    * Frei navigierbare Jahres-Auswahl: prev/Heute/next, ohne fixe
    * Range. Auch mehrere Jahre im Voraus geplante Urlaube sind so
@@ -118,25 +104,6 @@
       'November',
       'Dezember'
     ][m - 1] ?? String(m)
-
-  const payrollStatusLabel = (s: string) =>
-    s === 'open'
-      ? 'Angelegt'
-      : s === 'sent'
-        ? 'Versendet'
-        : s === 'paid' || s === 'approved'
-          ? 'Ausgezahlt'
-          : s === 'cancelled'
-            ? 'Storniert'
-            : s
-  const payrollStatusBadge = (s: string) =>
-    s === 'cancelled'
-      ? 'badge-ghost'
-      : s === 'paid' || s === 'approved'
-        ? 'badge-success'
-        : s === 'sent'
-          ? 'badge-info'
-          : 'badge-warning'
 
   /* — New-absence form state — */
   const todayIso = new Date().toISOString().slice(0, 10)
@@ -345,84 +312,86 @@
 />
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Person & Anschrift</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Geburtstag</dt><dd class="col-span-2"
-          >{e.birthday ?? '—'}</dd
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Geburtstag</dt><dd
+          class="sm:col-span-2">{e.birthday ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Anschrift</dt><dd class="col-span-2"
+        <dt class="text-base-content/60">Anschrift</dt><dd
+          class="break-words sm:col-span-2"
           >{[e.street, e.zip, e.city].filter(Boolean).join(', ') || '—'}</dd
         >
-        <dt class="text-base-content/60">E-Mail</dt><dd class="col-span-2"
-          >{e.privateEmail ?? '—'}</dd
+        <dt class="text-base-content/60">E-Mail</dt><dd
+          class="break-all sm:col-span-2">{e.privateEmail ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Telefon</dt><dd class="col-span-2"
-          >{e.privatePhone ?? '—'}</dd
+        <dt class="text-base-content/60">Telefon</dt><dd
+          class="break-all sm:col-span-2">{e.privatePhone ?? '—'}</dd
         >
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Beschäftigung</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Eintritt</dt><dd class="col-span-2"
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Eintritt</dt><dd class="sm:col-span-2"
           >{e.hireDate ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Position</dt><dd class="col-span-2"
-          >{e.position ?? '—'}</dd
+        <dt class="text-base-content/60">Position</dt><dd
+          class="break-words sm:col-span-2">{e.position ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Abteilung</dt><dd class="col-span-2"
-          >{e.department ?? '—'}</dd
+        <dt class="text-base-content/60">Abteilung</dt><dd
+          class="break-words sm:col-span-2">{e.department ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Art</dt><dd class="col-span-2"
+        <dt class="text-base-content/60">Art</dt><dd class="sm:col-span-2"
           >{e.employmentType ?? '—'}</dd
         >
         <dt class="text-base-content/60">Wochenstunden</dt><dd
-          class="col-span-2">{e.weeklyHours ?? '—'}</dd
+          class="sm:col-span-2">{e.weeklyHours ?? '—'}</dd
         >
         <dt class="text-base-content/60">Urlaub / Jahr</dt><dd
-          class="col-span-2">{e.vacationDaysPerYear ?? '—'}</dd
+          class="sm:col-span-2">{e.vacationDaysPerYear ?? '—'}</dd
         >
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Steuer & SV</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Steuer-ID</dt><dd
-          class="col-span-2 font-mono">{e.taxId ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.taxId ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Steuerklasse</dt><dd class="col-span-2"
-          >{e.taxClass ?? '—'}</dd
+        <dt class="text-base-content/60">Steuerklasse</dt><dd
+          class="sm:col-span-2">{e.taxClass ?? '—'}</dd
         >
         <dt class="text-base-content/60">SV-Nummer</dt><dd
-          class="col-span-2 font-mono">{e.socialInsuranceNumber ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2"
+          >{e.socialInsuranceNumber ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Krankenkasse</dt><dd class="col-span-2"
-          >{e.healthInsurance ?? '—'}</dd
+        <dt class="text-base-content/60">Krankenkasse</dt><dd
+          class="break-words sm:col-span-2">{e.healthInsurance ?? '—'}</dd
         >
       </dl>
     </div>
   </div>
-  <div class="card border-base-300 bg-base-100 border">
+  <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Bankverbindung</h3>
-      <dl class="grid grid-cols-3 gap-y-1 text-sm">
-        <dt class="text-base-content/60">Inhaber</dt><dd class="col-span-2"
-          >{e.bankAccountHolder ?? '—'}</dd
+      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+        <dt class="text-base-content/60">Inhaber</dt><dd
+          class="break-words sm:col-span-2">{e.bankAccountHolder ?? '—'}</dd
         >
         <dt class="text-base-content/60">IBAN</dt><dd
-          class="col-span-2 font-mono">{e.bankIban ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.bankIban ?? '—'}</dd
         >
         <dt class="text-base-content/60">BIC</dt><dd
-          class="col-span-2 font-mono">{e.bankBic ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.bankBic ?? '—'}</dd
         >
-        <dt class="text-base-content/60">Bank</dt><dd class="col-span-2"
-          >{e.bankName ?? '—'}</dd
+        <dt class="text-base-content/60">Bank</dt><dd
+          class="break-words sm:col-span-2">{e.bankName ?? '—'}</dd
         >
       </dl>
     </div>
@@ -432,11 +401,10 @@
 <!-- Gehaltshistorie — read-only Anzeige. Neue Versionen entstehen
      ausschließlich durch Bearbeiten der Stammdaten (siehe Edit-Seite);
      der Server hängt bei Änderung automatisch eine Version mit
-     `valid_from = heute` an. Vergangene Lohnabrechnungen bleiben
-     unverändert (Snapshot in payroll_entries). -->
+     `valid_from = heute` an. -->
 <div class="card border-base-300 bg-base-100 mt-4 border">
   <div class="card-body gap-3">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="card-title text-base">Gehaltshistorie</h3>
       <span class="text-base-content/60 text-sm">
         Aktuell:
@@ -492,7 +460,7 @@
 <!-- Abwesenheiten — Urlaub / Krankheit / Sonstiges, jahresweise -->
 <div class="card border-base-300 bg-base-100 mt-4 border">
   <div class="card-body gap-4">
-    <div class="flex items-center justify-between">
+    <div class="flex flex-wrap items-center justify-between gap-2">
       <h3 class="card-title text-base">Abwesenheiten</h3>
       <div class="join">
         <button
@@ -684,78 +652,6 @@
         </table>
       {/if}
     </div>
-  </div>
-</div>
-
-<!-- Gehaltsabrechnungen — paginiert, read-only Liste. Mutationen
-     laufen ab Phase 4 ausschließlich über Auto-Generation aus
-     den Settings-Stichtagen. -->
-<div class="card border-base-300 bg-base-100 mt-4 border">
-  <div class="card-body p-0">
-    <div
-      class="border-base-300 flex items-center justify-between border-b px-4 py-3"
-    >
-      <h3 class="text-base font-semibold">
-        <Wallet size={18} class="text-base-content/60 mr-1 inline" />
-        Gehaltsabrechnungen
-      </h3>
-      <span class="text-base-content/60 text-sm">
-        {payroll.total}
-        {payroll.total === 1 ? 'Eintrag' : 'Einträge'}
-      </span>
-    </div>
-    {#if payroll.items.length === 0}
-      <div class="text-base-content/60 px-4 py-6 text-sm">
-        Noch keine Gehaltsabrechnungen — werden ab dem nächsten Stichtag
-        automatisch erstellt.
-      </div>
-    {:else}
-      <div class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Periode</th>
-              <th class="text-right">Brutto</th>
-              <th class="text-right">Netto</th>
-              <th>Auszahlung</th>
-              <th>Status</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each payroll.items as p (p.id)}
-              <tr
-                class="hover:bg-base-200 cursor-pointer"
-                onclick={() => goto(`/payroll/${p.periodId}/employee/${id}`)}
-              >
-                <td class="font-medium">
-                  {monthLabel(p.month)}
-                  {p.year}
-                </td>
-                <td class="text-right font-mono">
-                  {formatEuro(p.grossTotal)}
-                </td>
-                <td class="text-right font-mono">
-                  {formatEuro(p.netTotal)}
-                </td>
-                <td>{p.payoutDate ? fmt(p.payoutDate) : '—'}</td>
-                <td>
-                  <span class="badge badge-sm {payrollStatusBadge(p.status)}">
-                    {payrollStatusLabel(p.status)}
-                  </span>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-      <Pagination
-        total={payroll.total}
-        page={payroll.page}
-        pageCount={payroll.pageCount}
-        size={payroll.size}
-        onPage={(p) => (payrollPage = p)}
-      />
-    {/if}
   </div>
 </div>
 

@@ -1,24 +1,31 @@
 import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
-import { number, object, optional, picklist } from 'valibot'
+import { object } from 'valibot'
 import { idSchema } from '$lib/server/db/validation'
 import { db } from '$lib/server/db/client'
 import { documents, customers, documentPayments } from '$lib/server/db/schema'
-import { and, asc, eq, ne, sum } from 'drizzle-orm'
+import { and, asc, eq, max, ne, sum } from 'drizzle-orm'
+import { reminders as remindersTable } from '$lib/server/db/schema'
 import {
-  createReminderForInvoice,
+  autoSendDuePaymentReminders,
   getReminderById,
   listOpenReminders,
-  listRemindersForInvoice
+  listRemindersForInvoice,
+  sendPaymentReminder
 } from '$lib/server/services/reminder-service'
+import { requirePermission } from '$lib/server/auth-guards'
 
 /**
- * Open invoices (everything not paid/cancelled).
+ * Open invoices (everything not paid/cancelled), enriched with the
+ * count of reminders already sent and the date of the most recent one
+ * so the operator can decide at a glance whether another reminder is
+ * due.
  *
  * @group integration
  * @module reminders
  */
 export const listOpenInvoicesRemote = query(async () => {
+  requirePermission('reminders')
   // Aggregierte Teilzahlungen pro Beleg als eigene Drizzle-Subquery —
   // ohne handgeschriebene Korrelations-Subquery.
   const pt = db
@@ -29,6 +36,17 @@ export const listOpenInvoicesRemote = query(async () => {
     .from(documentPayments)
     .groupBy(documentPayments.documentId)
     .as('payments_total')
+
+  // Latest reminder issue-date per invoice, joined onto the row so the
+  // list can render "Letzte Erinnerung am …" without an N+1 query.
+  const lr = db
+    .select({
+      invoiceId: remindersTable.invoiceId,
+      lastReminderDate: max(remindersTable.issueDate).as('last_reminder_date')
+    })
+    .from(remindersTable)
+    .groupBy(remindersTable.invoiceId)
+    .as('last_reminder')
 
   const rows = await db
     .select({
@@ -41,11 +59,13 @@ export const listOpenInvoicesRemote = query(async () => {
       reminderLevel: documents.reminderLevel,
       customerCompany: customers.company,
       customerLastName: customers.lastName,
-      totalPaid: pt.total
+      totalPaid: pt.total,
+      lastReminderDate: lr.lastReminderDate
     })
     .from(documents)
     .leftJoin(customers, eq(documents.customerId, customers.id))
     .leftJoin(pt, eq(pt.documentId, documents.id))
+    .leftJoin(lr, eq(lr.invoiceId, documents.id))
     .where(
       and(
         eq(documents.type, 'invoice'),
@@ -78,38 +98,28 @@ export const listOpenInvoicesRemote = query(async () => {
       openAmount: open,
       status: r.status,
       overdueDays,
-      // The persistent level on the invoice. Drives the "next allowed
-      // reminder" button in the UI.
-      reminderLevel: r.reminderLevel
+      /** Number of reminders already sent for this invoice (0 = none). */
+      reminderCount: r.reminderLevel,
+      /** Date the most recent reminder was sent, if any. */
+      lastReminderDate: r.lastReminderDate as string | null
     }
   })
 })
 
 /**
- * List all currently open reminders across the company.
+ * List all currently open Zahlungserinnerungen across the company.
  *
  * @group integration
  * @module reminders
  */
 export const listRemindersRemote = query(async () => {
+  requirePermission('reminders')
   const rows = await listOpenReminders()
-  return rows.map((r) => ({
-    ...r,
-    fee: Number(r.fee),
-    interest: Number(r.interest),
-    grossTotal: Number(r.grossTotal)
-  }))
+  return rows.map((r) => ({ ...r, grossTotal: Number(r.grossTotal) }))
 })
 
 /**
- * Create the next reminder for an invoice. Refuses to skip levels or to
- * duplicate an existing level — the service layer enforces that.
- *
- * @group integration
- * @module reminders
- */
-/**
- * Single reminder detail (joined with invoice + customer).
+ * Single Zahlungserinnerung detail (joined with invoice + customer).
  *
  * @group integration
  * @module reminders
@@ -117,8 +127,9 @@ export const listRemindersRemote = query(async () => {
 export const getReminderRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requirePermission('reminders')
     const row = await getReminderById(id)
-    if (!row) error(404, 'Mahnung nicht gefunden')
+    if (!row) error(404, 'Zahlungserinnerung nicht gefunden.')
     return {
       id: row.reminder.id,
       documentNumber: row.reminder.documentNumber,
@@ -129,8 +140,6 @@ export const getReminderRemote = query(
       level: row.reminder.level,
       issueDate: row.reminder.issueDate,
       dueDate: row.reminder.dueDate,
-      fee: Number(row.reminder.fee),
-      interest: Number(row.reminder.interest),
       status: row.reminder.status,
       notes: row.reminder.notes,
       customerName: row.customerName,
@@ -140,7 +149,7 @@ export const getReminderRemote = query(
 )
 
 /**
- * All reminders attached to a given invoice (oldest level first).
+ * All Zahlungserinnerungen attached to a given invoice (oldest first).
  *
  * @group integration
  * @module reminders
@@ -148,6 +157,7 @@ export const getReminderRemote = query(
 export const listRemindersForInvoiceRemote = query(
   object({ invoiceId: idSchema }),
   async ({ invoiceId }) => {
+    requirePermission('reminders')
     const rows = await listRemindersForInvoice(invoiceId)
     return rows.map((r) => ({
       id: r.id,
@@ -155,26 +165,26 @@ export const listRemindersForInvoiceRemote = query(
       level: r.level,
       issueDate: r.issueDate,
       dueDate: r.dueDate,
-      fee: Number(r.fee),
-      interest: Number(r.interest),
       status: r.status
     }))
   }
 )
 
-export const createReminderRemote = command(
-  object({
-    invoiceId: idSchema,
-    level: optional(picklist([1, 2, 3, 4])),
-    fee: optional(number())
-  }),
-  async (input) => {
+/**
+ * Send the (next) payment reminder for an invoice. Always inserts a
+ * new row — there is no escalation, the same friendly template goes
+ * out every time. Counter on `documents.reminderLevel` is incremented
+ * by one per call.
+ *
+ * @group integration
+ * @module reminders
+ */
+export const createPaymentReminderRemote = command(
+  object({ invoiceId: idSchema }),
+  async ({ invoiceId }) => {
+    requirePermission('reminders')
     try {
-      const created = await createReminderForInvoice({
-        invoiceId: input.invoiceId,
-        level: input.level,
-        fee: input.fee
-      })
+      const created = await sendPaymentReminder(invoiceId)
       await Promise.all([
         requested(listOpenInvoicesRemote, 4).refreshAll(),
         requested(listRemindersRemote, 4).refreshAll()
@@ -186,3 +196,28 @@ export const createReminderRemote = command(
     }
   }
 )
+
+/**
+ * @deprecated Use {@link createPaymentReminderRemote}. Thin alias for
+ * older callers that still reference the pre-refactor name.
+ */
+export const createReminderRemote = createPaymentReminderRemote
+
+/**
+ * Trigger the recurring auto-send batch on demand. Returns the number
+ * of reminders that were created and the number that failed. Intended
+ * for the operator's "Jetzt prüfen" action; a periodic scheduler can
+ * be wired up in a follow-up.
+ *
+ * @group integration
+ * @module reminders
+ */
+export const autoSendDuePaymentRemindersRemote = command(async () => {
+  requirePermission('reminders')
+  const result = await autoSendDuePaymentReminders()
+  await Promise.all([
+    requested(listOpenInvoicesRemote, 4).refreshAll(),
+    requested(listRemindersRemote, 4).refreshAll()
+  ])
+  return result
+})

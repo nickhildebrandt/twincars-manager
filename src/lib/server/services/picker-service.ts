@@ -57,7 +57,6 @@ export async function itemPickers(): Promise<
       unit: items.unit
     })
     .from(items)
-    .where(eq(items.discontinued, false))
     .orderBy(asc(items.articleNumber))
   // Aktuellen Preis pro Item aus `item_price_versions` ziehen — den
   // Picker-Aufruf nutzen z.B. ältere Stellen vor dem Refactor; sie

@@ -34,6 +34,7 @@ import { parse as parseCsv } from 'csv-parse/sync'
 import { eq } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
+  accessImportJobs,
   calendarEntries,
   customers,
   documentItems,
@@ -48,17 +49,11 @@ import {
   ledgerEntries,
   numberRanges,
   recurringEntries,
-  payrollDeductions,
-  payrollEntries,
-  payrollLineItems,
-  payrollPeriods,
-  payslipPdfs,
   reminderPdfs,
   reminders,
   sentMessages,
-  specialPaymentEmployees,
-  specialPayments,
   suppliers,
+  tireStorage,
   vehicleLicensePlateVersions,
   vehicleListings,
   vehiclePhotos,
@@ -80,6 +75,12 @@ export type ImportSummary = {
   offers: number
   offerItems: number
   reminders: number
+  /** Importierte Reifeneinlagerungen (Legacy `reifenlager`). */
+  tireStorage: number
+  /** Importierte Mitarbeiter (Legacy `mitarbeiter`). */
+  employees: number
+  /** Importierte Termine → Kalendereinträge (Legacy `termine`). */
+  appointments: number
   /** Anzahl gerenderter PDFs (Rechnungen + Angebote + Mahnungen). */
   pdfsRendered: number
   /** Legacy-Rechnungsnummern, die `Bestandskorrektur=true` getragen haben. */
@@ -97,7 +98,35 @@ export type ImportSummary = {
     offerItems: number
     pdfRenders: number
   }
+  /**
+   * Per-row drop log so nothing is lost silently (§15 of the brief: bad
+   * or unclear rows must be visible, never imported wrong unnoticed).
+   * Each entry names the source table, the legacy key (if any) and the
+   * reason the row was not imported. Capped at {@link MAX_SKIP_DETAIL}
+   * entries — the aggregate counts in `skipped` and the totals on the
+   * persisted `access_import_jobs` row remain exact even past the cap.
+   */
+  skippedDetail: Array<{
+    table: string
+    legacyKey: string | null
+    reason: string
+  }>
+  /** Whether the detail list was capped (more drops happened than logged). */
+  skippedDetailTruncated: boolean
+  /** Total rows dropped across all tables (exact, even past the detail cap). */
+  skippedTotal: number
+  /**
+   * When true this was a non-destructive preview: tables were parsed,
+   * mapped and validated and the counts/skip report are real, but the
+   * database was NOT wiped, nothing was written and no PDFs were
+   * rendered. `pdfsRendered` then holds the number that WOULD be
+   * rendered on a real run.
+   */
+  dryRun: boolean
 }
+
+/** Upper bound on the per-row drop log so a dirty MDB can't blow up memory. */
+const MAX_SKIP_DETAIL = 1000
 
 /* ── Hilfsfunktionen ───────────────────────────────────────────────── */
 
@@ -283,6 +312,20 @@ const mapOfferType = (formulartyp: string | null): string => {
   return 'offer'
 }
 
+/** Reifenlager-Saison aus Legacy-`Art` (z.B. „Winterreifen"). */
+const mapStorageSeason = (art: string | null): string | null => {
+  const s = (art ?? '').toLowerCase()
+  if (s.includes('winter')) return 'winter'
+  if (s.includes('sommer')) return 'summer'
+  if (
+    s.includes('ganzjahr') ||
+    s.includes('allseason') ||
+    s.includes('allwetter')
+  )
+    return 'allseason'
+  return null
+}
+
 /* ── Wipe ──────────────────────────────────────────────────────────── */
 
 async function wipeData(): Promise<void> {
@@ -297,16 +340,12 @@ async function wipeData(): Promise<void> {
   await db.delete(documentPayments)
   await db.delete(documentItems)
   await db.delete(documents)
-  await db.delete(payslipPdfs)
-  await db.delete(payrollDeductions)
-  await db.delete(payrollLineItems)
-  await db.delete(payrollEntries)
-  await db.delete(payrollPeriods)
   await db.delete(employeeSalaryVersions)
   await db.delete(employeeAbsences)
-  await db.delete(specialPaymentEmployees)
-  await db.delete(specialPayments)
   await db.delete(employees)
+  // Reifeneinlagerungen referenzieren Kunden (FK restrict) + Fahrzeuge
+  // (set null) — vor beiden löschen.
+  await db.delete(tireStorage)
   await db.delete(vehiclePhotos)
   await db.delete(vehicleSales)
   await db.delete(vehicleListings)
@@ -338,18 +377,24 @@ async function insertInBatches<T>(
 
 /* ── Hauptablauf ───────────────────────────────────────────────────── */
 
-export async function importMdb(buffer: Buffer): Promise<ImportSummary> {
+export async function importMdb(
+  buffer: Buffer,
+  opts: { dryRun?: boolean } = {}
+): Promise<ImportSummary> {
   const dir = await mkdtemp(join(tmpdir(), 'tc-import-'))
   const mdbPath = join(dir, 'kfz-kaufmann.mdb')
   await writeFile(mdbPath, buffer)
   try {
-    return await runImport(mdbPath)
+    return await runImport(mdbPath, opts.dryRun ?? false)
   } finally {
     await rm(dir, { recursive: true, force: true })
   }
 }
 
-async function runImport(mdbPath: string): Promise<ImportSummary> {
+async function runImport(
+  mdbPath: string,
+  dryRun: boolean
+): Promise<ImportSummary> {
   const summary: ImportSummary = {
     customers: 0,
     vehicles: 0,
@@ -361,6 +406,9 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     offers: 0,
     offerItems: 0,
     reminders: 0,
+    tireStorage: 0,
+    employees: 0,
+    appointments: 0,
     pdfsRendered: 0,
     inventoryAdjustmentInvoiceNumbers: [],
     skipped: {
@@ -369,13 +417,102 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       invoiceItems: 0,
       offerItems: 0,
       pdfRenders: 0
+    },
+    skippedDetail: [],
+    skippedDetailTruncated: false,
+    skippedTotal: 0,
+    dryRun
+  }
+  const recordSkip = (
+    table: string,
+    legacyKey: string | null,
+    reason: string
+  ): void => {
+    summary.skippedTotal += 1
+    if (summary.skippedDetail.length < MAX_SKIP_DETAIL) {
+      summary.skippedDetail.push({ table, legacyKey, reason })
+    } else {
+      summary.skippedDetailTruncated = true
     }
   }
 
-  // 1. Wipe
-  await wipeData()
+  // Dry-run / preview: parse + map + validate only. No audit row, no
+  // wipe, no inserts, no PDF rendering — the DB is left untouched and the
+  // returned counts/skip report show exactly what a real run WOULD do.
+  if (dryRun) {
+    await runImportSteps(mdbPath, summary, recordSkip, true)
+    return summary
+  }
 
-  // 2. Quelltabellen lesen.
+  // Track the real (destructive) run in `access_import_jobs` so it always
+  // leaves an audit trail (start / finish / status / counts), even on a
+  // mid-run failure. (§15: the import must never fail silently.)
+  const [job] = await db
+    .insert(accessImportJobs)
+    .values({ status: 'running' })
+    .returning({ id: accessImportJobs.id })
+
+  try {
+    await runImportSteps(mdbPath, summary, recordSkip, false)
+  } catch (err) {
+    await db
+      .update(accessImportJobs)
+      .set({
+        status: 'failed',
+        finishedAt: new Date(),
+        notes: `Import fehlgeschlagen: ${(err as Error)?.message ?? String(err)}`
+      })
+      .where(eq(accessImportJobs.id, job.id))
+    throw err
+  }
+
+  const rowsImported =
+    summary.customers +
+    summary.vehicles +
+    summary.suppliers +
+    summary.items +
+    summary.invoices +
+    summary.invoiceItems +
+    summary.invoicePayments +
+    summary.offers +
+    summary.offerItems +
+    summary.reminders +
+    summary.tireStorage +
+    summary.employees +
+    summary.appointments
+  await db
+    .update(accessImportJobs)
+    .set({
+      status: 'completed',
+      finishedAt: new Date(),
+      tablesProcessed: 13,
+      rowsImported,
+      rowsSkipped: summary.skippedTotal,
+      notes: `Kunden ${summary.customers}, Fahrzeuge ${summary.vehicles}, Artikel ${summary.items}, Belege ${summary.invoices + summary.offers}, übersprungen ${summary.skippedTotal}`
+    })
+    .where(eq(accessImportJobs.id, job.id))
+  return summary
+}
+
+async function runImportSteps(
+  mdbPath: string,
+  summary: ImportSummary,
+  recordSkip: (table: string, legacyKey: string | null, reason: string) => void,
+  dryRun: boolean
+): Promise<void> {
+  // All persistence flows through this closure so a dry run computes the
+  // same row arrays (and therefore the same counts + skip report) without
+  // touching the database.
+  const insertRows = async <T>(
+    rows: T[],
+    fn: (chunk: T[]) => Promise<void>
+  ): Promise<void> => {
+    if (!dryRun) await insertInBatches(rows, fn)
+  }
+
+  // 1. Quelltabellen lesen — ZUERST, damit eine kaputte / falsche MDB
+  //    fehlschlägt, BEVOR irgendetwas gelöscht wird (sonst stünde die DB
+  //    bei einem mdb-export-Fehler leer da). Der Wipe folgt erst danach.
   const [
     kunden,
     autos,
@@ -386,7 +523,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     angebote,
     angebotDetails,
     mahnungen,
-    teilzahlungen
+    teilzahlungen,
+    reifenlager,
+    mitarbeiter,
+    termine
   ] = await Promise.all([
     dumpTable(mdbPath, 'Kunden'),
     dumpTable(mdbPath, 'Autos'),
@@ -397,8 +537,15 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     dumpTable(mdbPath, 'Angebote'),
     dumpTable(mdbPath, 'AngebotDetails'),
     dumpTable(mdbPath, 'Mahnungen'),
-    dumpTable(mdbPath, 'Teilzahlungen')
+    dumpTable(mdbPath, 'Teilzahlungen'),
+    dumpTable(mdbPath, 'reifenlager'),
+    dumpTable(mdbPath, 'mitarbeiter'),
+    dumpTable(mdbPath, 'termine')
   ])
+
+  // 2. Erst jetzt wipen — alle Tabellen sind erfolgreich gelesen, die MDB
+  //    ist also gültig. Im Dry-Run wird nie gewipt.
+  if (!dryRun) await wipeData()
 
   /* — 3. Kunden — */
   type CustomerInsert = typeof customers.$inferInsert
@@ -406,7 +553,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const customerRows: CustomerInsert[] = []
   for (const k of kunden) {
     const legacyNr = trim(k['Kunden-Nr'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      recordSkip('Kunden', null, 'Datensatz ohne Kunden-Nr.')
+      continue
+    }
     const id = crypto.randomUUID()
     customerIdByLegacy.set(legacyNr, id)
     customerRows.push({
@@ -444,7 +594,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
           .join('\n\n') || null
     })
   }
-  await insertInBatches(customerRows, async (chunk) => {
+  await insertRows(customerRows, async (chunk) => {
     await db.insert(customers).values(chunk)
   })
   summary.customers = customerRows.length
@@ -454,12 +604,27 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   type PlateVersionInsert = typeof vehicleLicensePlateVersions.$inferInsert
   const vehicleRows: VehicleInsert[] = []
   const plateVersionRows: PlateVersionInsert[] = []
+  // Legacy `ID_Auto` → neue Fahrzeug-UUID, für die Reifeneinlagerungs-
+  // Verknüpfung (reifenlager.id_auto).
+  const vehicleIdByLegacyAutoId = new Map<string, string>()
   for (const a of autos) {
     const legacyKunde = trim(a['Kunden-Nr'])
     const customerId = legacyKunde ? customerIdByLegacy.get(legacyKunde) : null
-    if (!customerId) continue // Fahrzeug ohne gültigen Halter überspringen
+    if (!customerId) {
+      // Fahrzeug ohne gültigen Halter überspringen.
+      recordSkip(
+        'Autos',
+        trim(a['ID_Auto']),
+        legacyKunde
+          ? `Halter (Kunden-Nr ${legacyKunde}) nicht gefunden.`
+          : 'Fahrzeug ohne Kunden-Nr.'
+      )
+      continue
+    }
     const { make, model } = splitMakeModel(trim(a['KFZ-Typ']))
     const id = crypto.randomUUID()
+    const legacyAutoId = trim(a['ID_Auto'])
+    if (legacyAutoId) vehicleIdByLegacyAutoId.set(legacyAutoId, id)
     vehicleRows.push({
       id,
       customerId,
@@ -492,10 +657,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       })
     }
   }
-  await insertInBatches(vehicleRows, async (chunk) => {
+  await insertRows(vehicleRows, async (chunk) => {
     await db.insert(vehicles).values(chunk)
   })
-  await insertInBatches(plateVersionRows, async (chunk) => {
+  await insertRows(plateVersionRows, async (chunk) => {
     await db.insert(vehicleLicensePlateVersions).values(chunk)
   })
   summary.vehicles = vehicleRows.length
@@ -506,7 +671,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const supplierRows: SupplierInsert[] = []
   for (const l of lieferanten) {
     const legacyNr = trim(l['Lieferantennummer'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      recordSkip('Lieferanten', null, 'Datensatz ohne Lieferantennummer.')
+      continue
+    }
     const id = crypto.randomUUID()
     supplierIdByLegacy.set(legacyNr, id)
     supplierRows.push({
@@ -528,7 +696,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       bankName: clip(trim(l['BANK']), 100)
     })
   }
-  await insertInBatches(supplierRows, async (chunk) => {
+  await insertRows(supplierRows, async (chunk) => {
     await db.insert(suppliers).values(chunk)
   })
   summary.suppliers = supplierRows.length
@@ -540,7 +708,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const priceRows: (typeof itemPriceVersions.$inferInsert)[] = []
   for (const a of artikel) {
     const legacyId = trim(a['Artikel-Nr'])
-    if (legacyId == null) continue
+    if (legacyId == null) {
+      recordSkip('Artikel', null, 'Datensatz ohne Artikel-Nr.')
+      continue
+    }
     const id = crypto.randomUUID()
     itemIdByLegacyArtNr.set(legacyId, id)
     const articleNumber = trim(a['Artikelnummer']) ?? legacyId
@@ -552,13 +723,6 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       kind: mapArtToKind(trim(a['Art'])),
       unit: trim(a['Me']),
       stockOnHand: Math.max(0, Math.round(toFloat(a['Bestand']) ?? 0)),
-      stockMin: toFloat(a['BestandMin'])
-        ? Math.round(toFloat(a['BestandMin'])!)
-        : null,
-      stockMax: toFloat(a['BestandMax'])
-        ? Math.round(toFloat(a['BestandMax'])!)
-        : null,
-      discontinued: toBool(a['Auslaufartikel']),
       notes: trim(a['Anmerkung'])
     })
     const price = toFloat(a['Einzelpreis'])
@@ -571,10 +735,10 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       })
     }
   }
-  await insertInBatches(itemRows, async (chunk) => {
+  await insertRows(itemRows, async (chunk) => {
     await db.insert(items).values(chunk)
   })
-  await insertInBatches(priceRows, async (chunk) => {
+  await insertRows(priceRows, async (chunk) => {
     await db.insert(itemPriceVersions).values(chunk)
   })
   summary.items = itemRows.length
@@ -586,10 +750,17 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
 
   const invoiceIdByLegacyNr = new Map<string, string>()
   const invoiceDocRows: DocInsert[] = []
+  // Beleg-Steuersatz je Dokument-Id, damit die Positionen denselben Satz
+  // wie der Beleg-Header bekommen (statt hart 19 %) — sonst stimmen
+  // Zeilen- und Belegsummen bei abweichenden Sätzen nicht überein.
+  const taxRateByDocId = new Map<string, number>()
 
   for (const r of rechnungen) {
     const legacyNr = trim(r['Rechnungsnummer'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      recordSkip('Rechnungen', null, 'Rechnung ohne Rechnungsnummer.')
+      continue
+    }
     const customerId =
       customerIdByLegacy.get(trim(r['Kunden-Nr']) ?? '') ?? null
     const id = crypto.randomUUID()
@@ -601,6 +772,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     }
 
     const taxRate = toFloat(r['MWSteuer']) ?? 19
+    taxRateByDocId.set(id, taxRate)
     const status = mapInvoiceStatus({
       status: trim(r['Status']),
       bezahldatum: trim(r['Bezahldatum'])
@@ -660,7 +832,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
           .join(' ') || null
     })
   }
-  await insertInBatches(invoiceDocRows, async (chunk) => {
+  await insertRows(invoiceDocRows, async (chunk) => {
     await db.insert(documents).values(chunk)
   })
   summary.invoices = invoiceDocRows.length
@@ -671,10 +843,19 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const posCounters = new Map<string, number>()
   for (const d of rechnungDetails) {
     const legacyNr = trim(d['Rechnungsnummer'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      summary.skipped.invoiceItems += 1
+      recordSkip('RechnungDetails', null, 'Position ohne Rechnungsnummer.')
+      continue
+    }
     const documentId = invoiceIdByLegacyNr.get(legacyNr)
     if (!documentId) {
       summary.skipped.invoiceItems += 1
+      recordSkip(
+        'RechnungDetails',
+        legacyNr,
+        `Rechnung ${legacyNr} nicht importiert.`
+      )
       continue
     }
     const pos = (posCounters.get(documentId) ?? 0) + 1
@@ -691,7 +872,9 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     // Wir vereinfachen: Preise auf Detail-Ebene als netto annehmen — die
     // Header-Summen wurden bereits korrekt berechnet (s. oben).
     const discountPercent = toFloat(d['Rabatt']) ?? 0
-    const taxRate = 19 // Detail-Ebene hat in der Legacy-DB keine eigene Rate
+    // Detail-Ebene hat in der Legacy-DB keine eigene Rate → Header-Satz
+    // der Rechnung verwenden, damit Zeilen- und Belegsummen passen.
+    const taxRate = taxRateByDocId.get(documentId) ?? 19
     const lineNet =
       Math.round(qty * rawPrice * (1 - discountPercent / 100) * 100) / 100
     const lineGross = Math.round(lineNet * (1 + taxRate / 100) * 100) / 100
@@ -713,7 +896,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       lineTotalGross: String(lineGross)
     })
   }
-  await insertInBatches(invoiceItemRows, async (chunk) => {
+  await insertRows(invoiceItemRows, async (chunk) => {
     await db.insert(documentItems).values(chunk)
   })
   summary.invoiceItems = invoiceItemRows.length
@@ -726,15 +909,32 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const paymentRows: DocPayInsert[] = []
   for (const t of teilzahlungen) {
     const legacyNr = trim(t['RGNR'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      summary.skipped.payments += 1
+      recordSkip('Teilzahlungen', null, 'Zahlung ohne Rechnungsnummer (RGNR).')
+      continue
+    }
     const documentId = invoiceIdByLegacyNr.get(legacyNr)
     if (!documentId) {
       summary.skipped.payments += 1
+      recordSkip(
+        'Teilzahlungen',
+        legacyNr,
+        `Rechnung ${legacyNr} nicht importiert.`
+      )
       continue
     }
     const date = isoDate(t['Bezahldatum'])
     const amount = toFloat(t['Betrag'])
-    if (!date || amount == null) continue
+    if (!date || amount == null) {
+      summary.skipped.payments += 1
+      recordSkip(
+        'Teilzahlungen',
+        legacyNr,
+        'Zahlung ohne gültiges Datum oder Betrag.'
+      )
+      continue
+    }
     paymentRows.push({
       id: crypto.randomUUID(),
       documentId,
@@ -743,7 +943,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       method: trim(t['BezahlArt'])
     })
   }
-  await insertInBatches(paymentRows, async (chunk) => {
+  await insertRows(paymentRows, async (chunk) => {
     await db.insert(documentPayments).values(chunk)
   })
   summary.invoicePayments = paymentRows.length
@@ -753,12 +953,16 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   const offerDocRows: DocInsert[] = []
   for (const a of angebote) {
     const legacyNr = trim(a['Angebotsnummer'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      recordSkip('Angebote', null, 'Angebot ohne Angebotsnummer.')
+      continue
+    }
     const customerId =
       customerIdByLegacy.get(trim(a['Kunden-Nr']) ?? '') ?? null
     const id = crypto.randomUUID()
     offerIdByLegacyNr.set(legacyNr, id)
     const taxRate = toFloat(a['MWSteuer']) ?? 19
+    taxRateByDocId.set(id, taxRate)
     let issueDate = isoDate(a['Angebotsdatum'])
     let datelessOffer = false
     if (!issueDate) {
@@ -802,7 +1006,7 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
           .join(' ') || null
     })
   }
-  await insertInBatches(offerDocRows, async (chunk) => {
+  await insertRows(offerDocRows, async (chunk) => {
     await db.insert(documents).values(chunk)
   })
   summary.offers = offerDocRows.length
@@ -810,13 +1014,59 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
   /* — 11. Angebot-Positionen — */
   const offerItemRows: DocItemInsert[] = []
   const offerPosCounters = new Map<string, number>()
+
+  // Positionen ohne (auflösbare) Angebotsnummer werden NICHT verworfen —
+  // sie werden unter einem einzigen generierten „Sammel-Angebot"
+  // gesammelt, damit keine Daten verloren gehen (auf Wunsch). Das
+  // Dokument wird lazy angelegt und seine Summen aus den Positionen
+  // gebildet.
+  let orphanOfferId: string | null = null
+  const orphanOfferRows: DocInsert[] = []
+  let orphanNet = 0
+  let orphanGross = 0
+  const ensureOrphanOffer = (): string => {
+    if (orphanOfferId) return orphanOfferId
+    orphanOfferId = crypto.randomUUID()
+    orphanOfferRows.push({
+      id: orphanOfferId,
+      documentNumber: `AN-IMPORT-SAMMEL-${new Date().getFullYear()}`,
+      legacyDocumentNumber: null,
+      type: 'offer',
+      status: 'sent',
+      customerId: null,
+      vehicleId: null,
+      issueDate: '1900-01-01',
+      taxRate: '19',
+      netTotal: '0',
+      taxTotal: '0',
+      grossTotal: '0',
+      notes: '[Import] Sammel-Angebot für Positionen ohne Angebotszuordnung.'
+    })
+    return orphanOfferId
+  }
+
   for (const d of angebotDetails) {
-    const legacyNr = trim(d['angebotsnummer'])
-    if (legacyNr == null) continue
-    const documentId = offerIdByLegacyNr.get(legacyNr)
-    if (!documentId) {
-      summary.skipped.offerItems += 1
-      continue
+    // MDB-Spalte ist `Angebotsnummer` (Großschreibung) — der frühere
+    // lowercase-Zugriff `d['angebotsnummer']` lieferte immer undefined,
+    // wodurch ALLE Angebotspositionen still verworfen wurden (vom
+    // Dry-Run-Drop-Bericht aufgedeckt).
+    const legacyNr = trim(d['Angebotsnummer'])
+    let documentId: string
+    if (legacyNr == null) {
+      // Kein Angebotsbezug → ins Sammel-Angebot mit generierter Nummer.
+      documentId = ensureOrphanOffer()
+    } else {
+      const found = offerIdByLegacyNr.get(legacyNr)
+      if (!found) {
+        summary.skipped.offerItems += 1
+        recordSkip(
+          'AngebotDetails',
+          legacyNr,
+          `Angebot ${legacyNr} nicht importiert.`
+        )
+        continue
+      }
+      documentId = found
     }
     const pos = (offerPosCounters.get(documentId) ?? 0) + 1
     offerPosCounters.set(documentId, pos)
@@ -829,10 +1079,15 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     const qty = toFloat(d['Anzahl']) ?? 1
     const rawPrice = toFloat(d['Einzelpreis']) ?? 0
     const discountPercent = toFloat(d['Rabatt']) ?? 0
-    const taxRate = 19
+    // Header-Satz des Angebots verwenden (Sammel-Angebot fällt auf 19 %).
+    const taxRate = taxRateByDocId.get(documentId) ?? 19
     const lineNet =
       Math.round(qty * rawPrice * (1 - discountPercent / 100) * 100) / 100
     const lineGross = Math.round(lineNet * (1 + taxRate / 100) * 100) / 100
+    if (documentId === orphanOfferId) {
+      orphanNet = Math.round((orphanNet + lineNet) * 100) / 100
+      orphanGross = Math.round((orphanGross + lineGross) * 100) / 100
+    }
     offerItemRows.push({
       id: crypto.randomUUID(),
       documentId,
@@ -850,29 +1105,55 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       lineTotalGross: String(lineGross)
     })
   }
-  await insertInBatches(offerItemRows, async (chunk) => {
+  // Sammel-Angebot (falls Waisen-Positionen existieren) VOR seinen
+  // Positionen einfügen — die Positionen referenzieren es per FK.
+  if (orphanOfferRows.length > 0) {
+    orphanOfferRows[0].netTotal = String(orphanNet)
+    orphanOfferRows[0].taxTotal = String(
+      Math.round((orphanGross - orphanNet) * 100) / 100
+    )
+    orphanOfferRows[0].grossTotal = String(orphanGross)
+    await insertRows(orphanOfferRows, async (chunk) => {
+      await db.insert(documents).values(chunk)
+    })
+    summary.offers += orphanOfferRows.length
+  }
+  await insertRows(offerItemRows, async (chunk) => {
     await db.insert(documentItems).values(chunk)
   })
   summary.offerItems = offerItemRows.length
 
-  /* — 12. Mahnungen — */
+  /* — 12. Zahlungserinnerungen (Legacy: „Mahnungen") — */
   type ReminderInsert = typeof reminders.$inferInsert
   const reminderRows: ReminderInsert[] = []
   let reminderCounter = 1
   for (const m of mahnungen) {
     const legacyNr = trim(m['Rechnungsnummer'])
-    if (legacyNr == null) continue
+    if (legacyNr == null) {
+      summary.skipped.reminders += 1
+      recordSkip('Mahnungen', null, 'Mahnung ohne Rechnungsnummer.')
+      continue
+    }
     const invoiceId = invoiceIdByLegacyNr.get(legacyNr)
     if (!invoiceId) {
       summary.skipped.reminders += 1
+      recordSkip(
+        'Mahnungen',
+        legacyNr,
+        `Rechnung ${legacyNr} nicht importiert.`
+      )
       continue
     }
     const issueDate = isoDate(m['Mahnung'])
-    if (!issueDate) continue
+    if (!issueDate) {
+      summary.skipped.reminders += 1
+      recordSkip('Mahnungen', legacyNr, 'Mahnung ohne gültiges Datum.')
+      continue
+    }
     const level = toInt(m['NrMahnung']) ?? 1
-    const fee = toFloat(m['Gebuehr']) ?? 0
     // Legacy speichert kein eigenes Fälligkeitsdatum — wir setzen
-    // konservativ +14 Tage ab Mahnungsdatum als Default.
+    // konservativ +14 Tage ab Erinnerungsdatum als Default. Legacy
+    // „Gebuehr" wird ignoriert: das neue Modell kennt keine Mahngebühr.
     const due = new Date(`${issueDate}T00:00:00Z`)
     due.setUTCDate(due.getUTCDate() + 14)
     const dueDate = due.toISOString().slice(0, 10)
@@ -883,14 +1164,202 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       level,
       issueDate,
       dueDate,
-      fee: String(fee),
       status: 'sent'
     })
   }
-  await insertInBatches(reminderRows, async (chunk) => {
+  await insertRows(reminderRows, async (chunk) => {
     await db.insert(reminders).values(chunk)
   })
   summary.reminders = reminderRows.length
+
+  /* — 12b. Reifeneinlagerungen (Legacy: „reifenlager") —
+   *
+   * `idkunde` entspricht der sichtbaren Kunden-Nr (bestätigt), daher die
+   * bestehende `customerIdByLegacy`-Zuordnung. `nummer` ist die
+   * geschäftskritische Einlagerungsnummer (UNIQUE) — Duplikate/fehlende
+   * werden suffixiert/generiert statt verworfen. Profiltiefen (VL/VR/HL/HR),
+   * DOT-Codes, Felgen- und Lagerort-Infos wandern in die Notiz; das
+   * Mindestprofil landet zusätzlich strukturiert in `profileMm`.
+   */
+  type TireStorageInsert = typeof tireStorage.$inferInsert
+  const tireStorageRows: TireStorageInsert[] = []
+  const seenStorageNumbers = new Set<string>()
+  for (const rl of reifenlager) {
+    const legacyKunde = trim(rl['IDKunde'])
+    const customerId = legacyKunde
+      ? customerIdByLegacy.get(legacyKunde)
+      : undefined
+    if (!customerId) {
+      recordSkip(
+        'reifenlager',
+        trim(rl['Nummer']),
+        legacyKunde
+          ? `Kunde (Kunden-Nr ${legacyKunde}) nicht gefunden.`
+          : 'Einlagerung ohne Kundenzuordnung.'
+      )
+      continue
+    }
+
+    // Einlagerungsnummer eindeutig halten (UNIQUE-Index) ohne Datenverlust.
+    let storageNumber = trim(rl['Nummer'])
+    let dupNote: string | null = null
+    if (storageNumber == null) {
+      storageNumber = `RL-IMPORT-${trim(rl['Id']) ?? crypto.randomUUID().slice(0, 8)}`
+      dupNote = '[Import: Einlagerungsnummer fehlte, generiert]'
+    }
+    if (seenStorageNumbers.has(storageNumber)) {
+      const original = storageNumber
+      let n = 2
+      while (seenStorageNumbers.has(`${original}-${n}`)) n++
+      storageNumber = `${original}-${n}`
+      dupNote = `[Import: doppelte Einlagerungsnummer ${original}]`
+    }
+    seenStorageNumbers.add(storageNumber)
+
+    const legacyAutoId = trim(rl['ID_Auto'])
+    const vehicleId =
+      (legacyAutoId ? vehicleIdByLegacyAutoId.get(legacyAutoId) : undefined) ??
+      null
+
+    const eingelagert = toBool(rl['Eingelagert'])
+    const storedAt = isoDate(rl['Annahmedatum']) ?? '1900-01-01'
+    // „eingelagert" = noch da → kein Abholdatum; sonst Abholdatum (Fallback
+    // auf Einlagerungsdatum, damit der Status „abgeholt" korrekt ist).
+    const retrievedAt = eingelagert
+      ? null
+      : (isoDate(rl['Abholdatum']) ?? storedAt)
+
+    const depths = ['VL', 'VR', 'HL', 'HR']
+      .map((k) => toFloat(rl[k]))
+      .filter((v): v is number => v != null)
+    const profileMm = depths.length > 0 ? Math.min(...depths) : null
+    const dotCodes = ['DOT1', 'DOT2', 'DOT3', 'DOT4']
+      .map((k) => trim(rl[k]))
+      .filter(Boolean)
+
+    const notes =
+      [
+        dupNote,
+        trim(rl['Notiz']),
+        trim(rl['Zustand']) ? `Zustand: ${trim(rl['Zustand'])}` : null,
+        trim(rl['FMarke']) ? `Felge: ${trim(rl['FMarke'])}` : null,
+        trim(rl['AluStahlLose']),
+        trim(rl['Lagerort']) ? `Lagerort: ${trim(rl['Lagerort'])}` : null,
+        depths.length > 0
+          ? `Profil VL/VR/HL/HR: ${['VL', 'VR', 'HL', 'HR'].map((k) => trim(rl[k]) ?? '–').join(' / ')} mm`
+          : null,
+        dotCodes.length > 0 ? `DOT: ${dotCodes.join(', ')}` : null
+      ]
+        .filter(Boolean)
+        .join('\n') || null
+
+    tireStorageRows.push({
+      id: crypto.randomUUID(),
+      storageNumber: clip(storageNumber, 50)!,
+      customerId,
+      vehicleId,
+      brand: clip(trim(rl['RMarke']), 80),
+      size: clip(trim(rl['Grösse']), 40),
+      profileMm: profileMm != null ? String(profileMm) : null,
+      season: mapStorageSeason(trim(rl['Art'])),
+      quantity: toInt(rl['Menge']) ?? 4,
+      notes,
+      storedAt,
+      retrievedAt
+    })
+  }
+  await insertRows(tireStorageRows, async (chunk) => {
+    await db.insert(tireStorage).values(chunk)
+  })
+  summary.tireStorage = tireStorageRows.length
+
+  /* — 12c. Mitarbeiter — */
+  type EmployeeInsert = typeof employees.$inferInsert
+  const employeeRows: EmployeeInsert[] = []
+  let empCounter = 1
+  for (const m of mitarbeiter) {
+    employeeRows.push({
+      id: crypto.randomUUID(),
+      personnelNumber: clip(trim(m['Kuerzel']) ?? `MA-${empCounter}`, 30)!,
+      firstName: clip(trim(m['Vorname']), 100) ?? '—',
+      lastName: clip(trim(m['Nachname']), 100) ?? '—',
+      birthday: isoDate(m['Geboren'])
+    })
+    empCounter++
+  }
+  await insertRows(employeeRows, async (chunk) => {
+    await db.insert(employees).values(chunk)
+  })
+  summary.employees = employeeRows.length
+
+  /* — 12d. Termine → Kalendereinträge (kind=appointment) —
+   *
+   * Datum + Uhrzeit/UhrzeitBis werden zusammengesetzt; fehlt die Uhrzeit
+   * → Ganztagstermin. Vergangene Termine werden als „completed" markiert.
+   * `Name`/`Mitarbeiter`/`Intervall` landen in der Notiz (keine FKs in der
+   * Legacy-Tabelle).
+   */
+  type CalendarInsert = typeof calendarEntries.$inferInsert
+  const calendarRows: CalendarInsert[] = []
+  const nowMs = Date.now()
+  const pad2 = (n: number): string => String(n).padStart(2, '0')
+  const timeOf = (
+    v: string | undefined | null
+  ): { h: number; m: number } | null => {
+    const ts = isoTimestamp(v)
+    return ts ? { h: ts.getUTCHours(), m: ts.getUTCMinutes() } : null
+  }
+  for (const t of termine) {
+    const dateStr = isoDate(t['Datum'])
+    if (!dateStr) {
+      recordSkip('termine', trim(t['Id']), 'Termin ohne gültiges Datum.')
+      continue
+    }
+    const start = timeOf(t['Uhrzeit'])
+    const allDay = start == null
+    const startsAt = new Date(
+      `${dateStr}T${start ? `${pad2(start.h)}:${pad2(start.m)}` : '00:00'}:00Z`
+    )
+    const end = timeOf(t['UhrzeitBis'])
+    let endsAt: Date
+    if (end) {
+      endsAt = new Date(`${dateStr}T${pad2(end.h)}:${pad2(end.m)}:00Z`)
+    } else if (!allDay) {
+      endsAt = new Date(startsAt.getTime() + 60 * 60 * 1000)
+    } else {
+      endsAt = new Date(`${dateStr}T23:59:00Z`)
+    }
+    if (endsAt.getTime() < startsAt.getTime()) endsAt = startsAt
+
+    const text = trim(t['TerminText'])
+    const name = trim(t['Name'])
+    const title = clip(text ?? name ?? 'Importierter Termin', 200)!
+    const notes =
+      [
+        name && name !== text ? `Name: ${name}` : null,
+        trim(t['Mitarbeiter'])
+          ? `Mitarbeiter: ${trim(t['Mitarbeiter'])}`
+          : null,
+        trim(t['Intervall']) ? `Intervall: ${trim(t['Intervall'])}` : null
+      ]
+        .filter(Boolean)
+        .join('\n') || null
+
+    calendarRows.push({
+      id: crypto.randomUUID(),
+      kind: 'appointment',
+      title,
+      startsAt,
+      endsAt,
+      allDay,
+      status: startsAt.getTime() < nowMs ? 'completed' : 'scheduled',
+      notes
+    })
+  }
+  await insertRows(calendarRows, async (chunk) => {
+    await db.insert(calendarEntries).values(chunk)
+  })
+  summary.appointments = calendarRows.length
 
   /* — 13. Number-Ranges auf Legacy-Max+1 setzen — */
   const maxCustomer = customerRows.reduce(
@@ -906,21 +1375,23 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
     0
   )
 
-  await db
-    .update(numberRanges)
-    .set({ nextValue: maxCustomer + 1, formatTemplate: '{N}' })
-    .where(eq(numberRanges.kind, 'customer'))
-  await db
-    .update(numberRanges)
-    .set({ nextValue: maxInvoice + 1, formatTemplate: '{N}' })
-    .where(eq(numberRanges.kind, 'invoice'))
-  // Angebote/KV/AB teilen den Legacy-Number-Pool — wir setzen alle drei
-  // auf max+1, damit kein Zähler kleiner anfängt.
-  for (const k of ['offer', 'cost_estimate', 'order_confirmation']) {
+  if (!dryRun) {
     await db
       .update(numberRanges)
-      .set({ nextValue: maxOffer + 1, formatTemplate: '{N}' })
-      .where(eq(numberRanges.kind, k))
+      .set({ nextValue: maxCustomer + 1, formatTemplate: '{N}' })
+      .where(eq(numberRanges.kind, 'customer'))
+    await db
+      .update(numberRanges)
+      .set({ nextValue: maxInvoice + 1, formatTemplate: '{N}' })
+      .where(eq(numberRanges.kind, 'invoice'))
+    // Angebote/KV/AB teilen den Legacy-Number-Pool — wir setzen alle drei
+    // auf max+1, damit kein Zähler kleiner anfängt.
+    for (const k of ['offer', 'cost_estimate', 'order_confirmation']) {
+      await db
+        .update(numberRanges)
+        .set({ nextValue: maxOffer + 1, formatTemplate: '{N}' })
+        .where(eq(numberRanges.kind, k))
+    }
   }
 
   /* — 14. PDF-Vorab-Generierung —
@@ -933,13 +1404,21 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
    * ab — der Beleg-Datensatz bleibt erhalten und kann manuell neu
    * gerendert werden.
    */
-  const { renderAndPersistDocumentPdf, renderAndPersistReminderPdf } =
-    await import('./pdf-service')
-
   const allDocIds: string[] = [
     ...invoiceDocRows.map((r) => r.id as string),
     ...offerDocRows.map((r) => r.id as string)
   ]
+
+  // A dry run renders nothing — report the number that WOULD be rendered
+  // so the preview is honest about the (heavy) PDF step.
+  if (dryRun) {
+    summary.pdfsRendered = allDocIds.length + reminderRows.length
+    return
+  }
+
+  const { renderAndPersistDocumentPdf, renderAndPersistReminderPdf } =
+    await import('./pdf-service')
+
   const PARALLEL = 8
   let cursor = 0
   const work = async () => {
@@ -965,6 +1444,4 @@ async function runImport(mdbPath: string): Promise<ImportSummary> {
       console.error('[import] Mahnungs-PDF-Render fehlgeschlagen', r.id, err)
     }
   }
-
-  return summary
 }

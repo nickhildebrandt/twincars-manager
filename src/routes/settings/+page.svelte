@@ -1,7 +1,13 @@
 <script lang="ts">
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import ImageUploader from '$lib/components/ui/ImageUploader.svelte'
-  import { Building2, Server, FileText, AlertTriangle } from '@lucide/svelte'
+  import {
+    Building2,
+    Server,
+    FileText,
+    AlertTriangle,
+    Disc3
+  } from '@lucide/svelte'
   import {
     getAllSettingsRemote,
     listMailTemplatesRemote,
@@ -27,7 +33,7 @@
   const tabs: { id: Tab; label: string; icon: typeof Building2 }[] = [
     { id: 'company', label: 'Firmendaten', icon: Building2 },
     { id: 'mail', label: 'Mailvorlagen', icon: FileText },
-    { id: 'reminders', label: 'Mahnwesen', icon: AlertTriangle },
+    { id: 'reminders', label: 'Zahlungserinnerung', icon: AlertTriangle },
     { id: 'smtp', label: 'SMTP', icon: Server }
   ]
 
@@ -75,7 +81,6 @@
   let iban = $state('')
   let bic = $state('')
   let pdfFooter = $state('')
-  let payrollGenerationDay = $state(25)
 
   // SMTP fields
   let smtpHost = $state('')
@@ -91,18 +96,18 @@
   let fromAddress = $state('')
   let fromName = $state('')
 
-  // Mahnwesen fields
+  // Zahlungserinnerung fields — single friendly template that
+  // repeats every N days; keine Eskalation, keine Mahngebühr,
+  // keine Verzugszinsen.
   let reminderAutoEnabled = $state(true)
   let smallBusinessExempt = $state(false)
   let reminderDays1 = $state(3)
-  let reminderDays2 = $state(10)
-  let reminderDays3 = $state(20)
-  let reminderDays4 = $state(30)
-  let reminderFee1 = $state(0)
-  let reminderFee2 = $state(5)
-  let reminderFee3 = $state(10)
-  let reminderFee4 = $state(15)
-  let reminderInterestRate = $state(9.62)
+  let reminderRecurEveryDays = $state(14)
+  // Inline Vorlagentext für die einzige `reminder_1`-Mailvorlage,
+  // damit der Operator Betreff + Body direkt aus diesem Tab pflegen
+  // kann, ohne in die Mailvorlagen wechseln zu müssen.
+  let reminderTemplateSubject = $state('')
+  let reminderTemplateBody = $state('')
 
   /* — Mail template state — */
   const templatesQ = $derived(listMailTemplatesRemote())
@@ -143,7 +148,6 @@
     iban = data.company.iban ?? ''
     bic = data.company.bic ?? ''
     pdfFooter = data.company.pdfFooter
-    payrollGenerationDay = data.company.payrollGenerationDay ?? 25
     if (data.smtp) {
       smtpHost = data.smtp.host
       smtpPort = data.smtp.port
@@ -157,15 +161,22 @@
     reminderAutoEnabled = data.company.reminderAutoEnabled
     smallBusinessExempt = data.company.smallBusinessExempt
     reminderDays1 = data.company.reminderDays1
-    reminderDays2 = data.company.reminderDays2
-    reminderDays3 = data.company.reminderDays3
-    reminderDays4 = data.company.reminderDays4
-    reminderFee1 = Number(data.company.reminderFee1)
-    reminderFee2 = Number(data.company.reminderFee2)
-    reminderFee3 = Number(data.company.reminderFee3)
-    reminderFee4 = Number(data.company.reminderFee4)
-    reminderInterestRate = Number(data.company.reminderInterestRate)
+    reminderRecurEveryDays = data.company.reminderRecurEveryDays
     initialised = true
+  })
+
+  // Hydrate the inline Zahlungserinnerungs-Vorlage from the mail
+  // templates list as soon as it arrives. Runs once — subsequent edits
+  // stay user-driven so we don't fight typing.
+  let reminderTemplateInitialised = $state(false)
+  $effect(() => {
+    if (reminderTemplateInitialised || !templates.length) return
+    const tpl = templates.find((t) => t.key === 'reminder_1')
+    if (tpl) {
+      reminderTemplateSubject = tpl.subject
+      reminderTemplateBody = tpl.body
+      reminderTemplateInitialised = true
+    }
   })
 
   const saveCompany = async (e: Event) => {
@@ -191,8 +202,7 @@
           bankName: bankName || undefined,
           iban: iban || undefined,
           bic: bic || undefined,
-          pdfFooter,
-          payrollGenerationDay
+          pdfFooter
         })
       )
       toast.success('Einstellungen gespeichert.')
@@ -228,24 +238,34 @@
     e.preventDefault()
     try {
       formDirty.clear()
-      await busy.run(() =>
-        updateReminderSettingsRemote({
+      await busy.run(async () => {
+        await updateReminderSettingsRemote({
           reminderAutoEnabled,
           smallBusinessExempt,
           reminderDays1,
-          reminderDays2,
-          reminderDays3,
-          reminderDays4,
-          reminderFee1,
-          reminderFee2,
-          reminderFee3,
-          reminderFee4,
-          reminderInterestRate
+          reminderRecurEveryDays
         })
-      )
-      toast.success('Mahnwesen-Einstellungen gespeichert.')
+        // Persist the inline template edits alongside the settings so
+        // the operator gets a single "Speichern" experience.
+        await updateMailTemplateRemote({
+          key: 'reminder_1',
+          subject: reminderTemplateSubject,
+          body: reminderTemplateBody
+        })
+      })
+      toast.success('Einstellungen für Zahlungserinnerungen gespeichert.')
     } catch (err) {
       handleClientError(err)
+    }
+  }
+
+  const resetReminderTemplate = async () => {
+    try {
+      await busy.run(() => resetMailTemplateRemote({ key: 'reminder_1' }))
+      reminderTemplateInitialised = false
+      toast.success('Vorlage zurückgesetzt.')
+    } catch (err) {
+      handleClientError(err, 'Vorlage konnte nicht zurückgesetzt werden')
     }
   }
 
@@ -290,14 +310,8 @@
         return 'Auftragsbestätigung'
       case 'reminder_1':
         return 'Zahlungserinnerung'
-      case 'reminder_2':
-        return '2. Mahnung'
-      case 'reminder_3':
-        return 'Letzte Mahnung'
       case 'mailing':
         return 'Serienbrief'
-      case 'payslip':
-        return 'Lohnabrechnung'
       default:
         return key
     }
@@ -573,26 +587,6 @@
               </div>
             </fieldset>
             <fieldset class="fieldset">
-              <legend class="fieldset-legend">Lohnabrechnung</legend>
-              <p class="text-base-content/60 text-sm">
-                Tag im Monat, ab dem die Lohnabrechnungen automatisch angelegt
-                werden. Davor erscheint der laufende Monat noch nicht in der
-                Liste.
-              </p>
-              <div class="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-3">
-                <label class="flex w-full flex-col gap-1">
-                  <span class="label-text">Stichtag (1–28)</span>
-                  <input
-                    class="input input-bordered w-full"
-                    type="number"
-                    min="1"
-                    max="28"
-                    bind:value={payrollGenerationDay}
-                  />
-                </label>
-              </div>
-            </fieldset>
-            <fieldset class="fieldset">
               <legend class="fieldset-legend">PDF-Endtext</legend>
               <p class="text-base-content/60 text-sm">
                 Erscheint unter der Summe auf jedem Beleg-PDF. Ideal für
@@ -614,6 +608,28 @@
               </button>
             </div>
           </form>
+
+          <!--
+            Reifenwechsel-Erinnerungen: eigene Unterseite, weil dort
+            zwei eigenständige Karten (Frühjahr + Herbst) mit Vorschau
+            und „Jetzt senden" leben — passt nicht in einen einzelnen
+            Tab-Form-Submit.
+          -->
+          <a
+            href="/settings/tire-reminders"
+            class="card border-base-300 bg-base-100 hover:bg-base-200 border"
+          >
+            <div class="card-body flex-row items-center gap-3">
+              <Disc3 size={20} class="text-base-content/60" />
+              <div class="grow">
+                <div class="font-medium">Reifenwechsel-Erinnerungen</div>
+                <div class="text-base-content/60 text-sm">
+                  Twice-yearly Mailings an Kunden mit eingelagerten Reifen.
+                </div>
+              </div>
+              <span class="btn btn-ghost btn-sm">Öffnen</span>
+            </div>
+          </a>
         </div>
       {:else if t.id === 'mail'}
         {#if templates.length > 0}
@@ -701,6 +717,15 @@
           onchange={markDirty}
           class="flex flex-col gap-4"
         >
+          <div class="alert alert-info">
+            <span class="text-sm">
+              Es gibt nur eine einzige freundliche „Zahlungserinnerung" — keine
+              Mahnstufen, keine Mahngebühr, keine Verzugszinsen. Sie wird ab dem
+              konfigurierten Tag nach Fälligkeit versendet und so lange in
+              regelmäßigen Abständen wiederholt, bis die Rechnung bezahlt ist.
+            </span>
+          </div>
+
           <fieldset class="fieldset">
             <legend class="fieldset-legend">Allgemein</legend>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -710,7 +735,7 @@
                   class="toggle toggle-primary"
                   bind:checked={reminderAutoEnabled}
                 />
-                <span>Mahnungen automatisch erzeugen lassen</span>
+                <span>Zahlungserinnerungen automatisch versenden</span>
               </label>
               <label class="label cursor-pointer justify-start gap-3">
                 <input
@@ -724,12 +749,12 @@
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend class="fieldset-legend"
-              >Mahnstufen — Tage nach Fälligkeit</legend
-            >
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
+            <legend class="fieldset-legend">Zeitplan</legend>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <label class="flex w-full flex-col gap-1">
-                <span class="label-text">Zahlungserinnerung</span>
+                <span class="label-text"
+                  >Erste Erinnerung nach (Tagen nach Fälligkeit)</span
+                >
                 <input
                   class="input input-bordered w-full"
                   type="number"
@@ -740,108 +765,56 @@
                 />
               </label>
               <label class="flex w-full flex-col gap-1">
-                <span class="label-text">1. Mahnung</span>
+                <span class="label-text">Folge-Erinnerung alle (Tage)</span>
                 <input
                   class="input input-bordered w-full"
                   type="number"
-                  min="0"
+                  min="1"
                   max="365"
                   step="1"
-                  bind:value={reminderDays2}
+                  bind:value={reminderRecurEveryDays}
                 />
-              </label>
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">2. Mahnung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="365"
-                  step="1"
-                  bind:value={reminderDays3}
-                />
-              </label>
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">Letzte Mahnung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="365"
-                  step="1"
-                  bind:value={reminderDays4}
-                />
+                <span class="label-text-alt text-base-content/60 mt-1 text-xs">
+                  Solange die Rechnung offen ist, wird die Zahlungserinnerung
+                  alle {reminderRecurEveryDays} Tage erneut versendet.
+                </span>
               </label>
             </div>
           </fieldset>
 
           <fieldset class="fieldset">
-            <legend class="fieldset-legend">Mahngebühren (€)</legend>
-            <div class="grid grid-cols-1 gap-3 sm:grid-cols-4">
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">Zahlungserinnerung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  step="0.01"
-                  bind:value={reminderFee1}
-                />
-              </label>
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">1. Mahnung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  step="0.01"
-                  bind:value={reminderFee2}
-                />
-              </label>
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">2. Mahnung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  step="0.01"
-                  bind:value={reminderFee3}
-                />
-              </label>
-              <label class="flex w-full flex-col gap-1">
-                <span class="label-text">Letzte Mahnung</span>
-                <input
-                  class="input input-bordered w-full"
-                  type="number"
-                  min="0"
-                  max="1000"
-                  step="0.01"
-                  bind:value={reminderFee4}
-                />
-              </label>
-            </div>
-          </fieldset>
-
-          <fieldset class="fieldset">
-            <legend class="fieldset-legend">Verzugszinsen</legend>
-            <label class="flex w-full max-w-xs flex-col gap-1">
-              <span class="label-text">Zinssatz pro Jahr (%)</span>
+            <legend class="fieldset-legend">Vorlagentext</legend>
+            <label class="flex w-full flex-col gap-1">
+              <span class="label-text">Betreff</span>
               <input
                 class="input input-bordered w-full"
-                type="number"
-                min="0"
-                max="50"
-                step="0.01"
-                bind:value={reminderInterestRate}
+                maxlength="200"
+                bind:value={reminderTemplateSubject}
               />
+            </label>
+            <label class="mt-2 flex w-full flex-col gap-1">
+              <span class="label-text">Nachricht</span>
+              <textarea
+                class="textarea textarea-bordered w-full"
+                rows="10"
+                bind:value={reminderTemplateBody}
+              ></textarea>
               <span class="label-text-alt text-base-content/60 mt-1 text-xs">
-                Standard: 9,62 % p. a. (Basiszinssatz + 8,12 % bei B2B nach §
-                288 Abs. 2 BGB).
+                Verfügbare Platzhalter: {'{firma}'}, {'{rechnungNummer}'},
+                {'{rechnungDatum}'}, {'{rechnungOffenerBetrag}'},
+                {'{verzugstage}'}, {'{fälligkeitsDatum}'}.
               </span>
             </label>
+            <div class="mt-2 flex justify-end">
+              <button
+                type="button"
+                class="btn btn-ghost btn-sm"
+                disabled={busy.active}
+                onclick={resetReminderTemplate}
+              >
+                Auf Standard zurücksetzen
+              </button>
+            </div>
           </fieldset>
 
           <div class="flex justify-end">

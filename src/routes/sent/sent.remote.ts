@@ -14,6 +14,7 @@ import { idSchema } from '$lib/server/db/validation'
 import { db } from '$lib/server/db/client'
 import { sentMessages } from '$lib/server/db/schema'
 import { count, desc, gte, ilike, lte, or, and, eq } from 'drizzle-orm'
+import { requireAnyPermission } from '$lib/server/auth-guards'
 
 const listSchema = object({
   page: number(),
@@ -31,6 +32,7 @@ const listSchema = object({
  * @module sent
  */
 export const listSentRemote = query(listSchema, async (params) => {
+  requireAnyPermission('invoices', 'offers', 'reminders')
   const offset = (params.page - 1) * params.size
   const filters = []
   if (params.q) {
@@ -76,8 +78,8 @@ export const listSentRemote = query(listSchema, async (params) => {
 /**
  * Einzelne gesendete Nachricht — Body und Metadaten. Das angehängte
  * PDF lädt der `PdfViewer` selbst über `getDocumentPdfBytesRemote` /
- * `getPayslipPdfBytesRemote`; hier wird nur der zu nutzende Cache
- * (`document` / `payslip` / `reminder`) signalisiert.
+ * `getReminderPdfBytesRemote`; hier wird nur der zu nutzende Cache
+ * (`document` / `reminder`) signalisiert.
  *
  * @group integration
  * @module sent
@@ -85,6 +87,7 @@ export const listSentRemote = query(listSchema, async (params) => {
 export const getSentMessageRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
+    requireAnyPermission('invoices', 'offers', 'reminders')
     const [row] = await db
       .select()
       .from(sentMessages)
@@ -92,14 +95,12 @@ export const getSentMessageRemote = query(
       .limit(1)
     if (!row) error(404, 'Gesendete Nachricht nicht gefunden.')
 
-    const pdfKind: 'document' | 'reminder' | 'payslip' | null =
+    const pdfKind: 'document' | 'reminder' | null =
       row.documentId == null
         ? null
-        : row.documentType === 'payslip'
-          ? 'payslip'
-          : row.documentType.startsWith('reminder')
-            ? 'reminder'
-            : 'document'
+        : row.documentType.startsWith('reminder')
+          ? 'reminder'
+          : 'document'
     return { ...row, pdfKind }
   }
 )

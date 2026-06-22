@@ -8,13 +8,21 @@
 FROM node:lts-slim AS build
 WORKDIR /app
 
-# Cache deps before copying the rest so changes to source don't bust
-# the npm-install layer.
-COPY package.json package-lock.json ./
-RUN npm ci
+# Activate the pnpm shim shipped with corepack; the exact pnpm version is
+# pinned via the `packageManager` field in package.json.
+RUN corepack enable
+
+# Cache deps before copying the rest so changes to source don't bust the
+# install layer. pnpm-workspace.yaml carries the esbuild build-script
+# approval. (.npmrc is gitignored / local-only, so it is intentionally not
+# copied — a frozen-lockfile install does not need it.)
+COPY package.json pnpm-lock.yaml pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
 
 COPY . .
-RUN npm run build && npm prune --omit=dev
+# Build, then strip devDependencies (drizzle-kit included — the runtime
+# uses only the drizzle-orm migrator, never drizzle-kit).
+RUN pnpm run build && pnpm prune --prod
 
 # ─── Runtime stage ────────────────────────────────────────────────────
 # Minimal image: only the built server, the migration runner, the
