@@ -4,10 +4,23 @@ import { db } from '$lib/server/db/client'
 import {
   calendarEntries,
   customers,
+  documents,
   ledgerEntries,
+  reminders,
   vehicles
 } from '$lib/server/db/schema'
-import { and, asc, count, eq, gte, isNotNull, lte, sum } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  eq,
+  gte,
+  isNotNull,
+  lt,
+  lte,
+  ne,
+  sum
+} from 'drizzle-orm'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
 
 /**
@@ -18,8 +31,8 @@ import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
  */
 export const getDashboardKpis = query(async () => {
   requireUser()
-  // Aktueller Monat als Datums-Range — Drizzle verträgt Strings für
-  // date-Spalten; das ist sauberer als ein date_trunc-Vergleich.
+  // Current month as a date range. Drizzle accepts plain strings for
+  // date columns, which is cleaner than a date_trunc comparison.
   const now = new Date()
   const monthStartIso = `${now.getUTCFullYear()}-${String(now.getUTCMonth() + 1).padStart(2, '0')}-01`
   const lastDayOfMonth = new Date(
@@ -31,25 +44,61 @@ export const getDashboardKpis = query(async () => {
     lte(ledgerEntries.entryDate, monthEndIso)
   )
 
-  const [customerCount, vehicleCount, incomeRow, expenseRow] =
-    await Promise.all([
-      db
-        .select({ value: count() })
-        .from(customers)
-        .where(eq(customers.archived, false)),
-      db
-        .select({ value: count() })
-        .from(vehicles)
-        .where(eq(vehicles.archived, false)),
-      db
-        .select({ value: sum(ledgerEntries.amountGross) })
-        .from(ledgerEntries)
-        .where(and(monthRange, eq(ledgerEntries.direction, 'income'))),
-      db
-        .select({ value: sum(ledgerEntries.amountGross) })
-        .from(ledgerEntries)
-        .where(and(monthRange, eq(ledgerEntries.direction, 'expense')))
-    ])
+  // Today as a UTC timestamp range for the appointments-today count.
+  const todayIso = now.toISOString().slice(0, 10)
+  const todayStart = new Date(`${todayIso}T00:00:00Z`)
+  const tomorrowStart = new Date(todayStart.getTime() + 24 * 60 * 60 * 1000)
+
+  const [
+    customerCount,
+    vehicleCount,
+    incomeRow,
+    expenseRow,
+    openInvoiceCount,
+    openReminderCount,
+    appointmentsTodayCount
+  ] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(customers)
+      .where(eq(customers.archived, false)),
+    db
+      .select({ value: count() })
+      .from(vehicles)
+      .where(eq(vehicles.archived, false)),
+    db
+      .select({ value: sum(ledgerEntries.amountGross) })
+      .from(ledgerEntries)
+      .where(and(monthRange, eq(ledgerEntries.direction, 'income'))),
+    db
+      .select({ value: sum(ledgerEntries.amountGross) })
+      .from(ledgerEntries)
+      .where(and(monthRange, eq(ledgerEntries.direction, 'expense'))),
+    // Open invoices: sent but not yet paid / cancelled. Mirrors the
+    // "Offen" filter of the invoices list.
+    db
+      .select({ value: count() })
+      .from(documents)
+      .where(and(eq(documents.type, 'invoice'), eq(documents.status, 'sent'))),
+    // Open Zahlungserinnerungen: created but not yet mailed / resolved.
+    // Same definition as `listOpenReminders` in reminder-service.
+    db
+      .select({ value: count() })
+      .from(reminders)
+      .where(eq(reminders.status, 'open')),
+    // Appointments starting today, excluding cancelled ones.
+    db
+      .select({ value: count() })
+      .from(calendarEntries)
+      .where(
+        and(
+          eq(calendarEntries.kind, 'appointment'),
+          gte(calendarEntries.startsAt, todayStart),
+          lt(calendarEntries.startsAt, tomorrowStart),
+          ne(calendarEntries.status, 'cancelled')
+        )
+      )
+  ])
   const income = Number(incomeRow[0]?.value ?? 0)
   const expense = Number(expenseRow[0]?.value ?? 0)
   return {
@@ -57,7 +106,10 @@ export const getDashboardKpis = query(async () => {
     vehicles: Number(vehicleCount[0]?.value ?? 0),
     monthlyIncome: income,
     monthlyExpense: expense,
-    monthlyBalance: income - expense
+    monthlyBalance: income - expense,
+    openInvoices: Number(openInvoiceCount[0]?.value ?? 0),
+    openReminders: Number(openReminderCount[0]?.value ?? 0),
+    appointmentsToday: Number(appointmentsTodayCount[0]?.value ?? 0)
   }
 })
 
@@ -126,7 +178,8 @@ export const getUpcomingRemote = query(async (): Promise<UpcomingItem[]> => {
   const items: UpcomingItem[] = []
   for (const v of huRows) {
     if (!v.nextHu) continue
-    const label = [v.make, v.model].filter(Boolean).join(' ') || v.plate || '—'
+    const label =
+      [v.make, v.model].filter(Boolean).join(' ') || v.plate || 'Fahrzeug'
     const plate = v.plate ? ` · ${v.plate}` : ''
     items.push({
       kind: 'hu_due',

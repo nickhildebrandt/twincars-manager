@@ -188,7 +188,7 @@
       const toY = Number(formTo.slice(0, 4))
       if (fromY > currentYear || toY > currentYear) {
         formError =
-          'Krankmeldungen für ein Folgejahr sind nicht zulässig — Urlaub kann vorausgeplant werden.'
+          'Krankmeldungen für ein Folgejahr sind nicht zulässig - Urlaub kann vorausgeplant werden.'
         return
       }
     }
@@ -317,17 +317,17 @@
       <h3 class="card-title text-base">Person & Anschrift</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Geburtstag</dt><dd
-          class="sm:col-span-2">{e.birthday ?? '—'}</dd
+          class="sm:col-span-2">{e.birthday ?? '-'}</dd
         >
         <dt class="text-base-content/60">Anschrift</dt><dd
           class="break-words sm:col-span-2"
-          >{[e.street, e.zip, e.city].filter(Boolean).join(', ') || '—'}</dd
+          >{[e.street, e.zip, e.city].filter(Boolean).join(', ') || '-'}</dd
         >
         <dt class="text-base-content/60">E-Mail</dt><dd
-          class="break-all sm:col-span-2">{e.privateEmail ?? '—'}</dd
+          class="break-all sm:col-span-2">{e.privateEmail ?? '-'}</dd
         >
         <dt class="text-base-content/60">Telefon</dt><dd
-          class="break-all sm:col-span-2">{e.privatePhone ?? '—'}</dd
+          class="break-all sm:col-span-2">{e.privatePhone ?? '-'}</dd
         >
       </dl>
     </div>
@@ -337,22 +337,22 @@
       <h3 class="card-title text-base">Beschäftigung</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Eintritt</dt><dd class="sm:col-span-2"
-          >{e.hireDate ?? '—'}</dd
+          >{e.hireDate ?? '-'}</dd
         >
         <dt class="text-base-content/60">Position</dt><dd
-          class="break-words sm:col-span-2">{e.position ?? '—'}</dd
+          class="break-words sm:col-span-2">{e.position ?? '-'}</dd
         >
         <dt class="text-base-content/60">Abteilung</dt><dd
-          class="break-words sm:col-span-2">{e.department ?? '—'}</dd
+          class="break-words sm:col-span-2">{e.department ?? '-'}</dd
         >
         <dt class="text-base-content/60">Art</dt><dd class="sm:col-span-2"
-          >{e.employmentType ?? '—'}</dd
+          >{e.employmentType ?? '-'}</dd
         >
         <dt class="text-base-content/60">Wochenstunden</dt><dd
-          class="sm:col-span-2">{e.weeklyHours ?? '—'}</dd
+          class="sm:col-span-2">{e.weeklyHours ?? '-'}</dd
         >
         <dt class="text-base-content/60">Urlaub / Jahr</dt><dd
-          class="sm:col-span-2">{e.vacationDaysPerYear ?? '—'}</dd
+          class="sm:col-span-2">{e.vacationDaysPerYear ?? '-'}</dd
         >
       </dl>
     </div>
@@ -362,17 +362,17 @@
       <h3 class="card-title text-base">Steuer & SV</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Steuer-ID</dt><dd
-          class="font-mono break-all sm:col-span-2">{e.taxId ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.taxId ?? '-'}</dd
         >
         <dt class="text-base-content/60">Steuerklasse</dt><dd
-          class="sm:col-span-2">{e.taxClass ?? '—'}</dd
+          class="sm:col-span-2">{e.taxClass ?? '-'}</dd
         >
         <dt class="text-base-content/60">SV-Nummer</dt><dd
           class="font-mono break-all sm:col-span-2"
-          >{e.socialInsuranceNumber ?? '—'}</dd
+          >{e.socialInsuranceNumber ?? '-'}</dd
         >
         <dt class="text-base-content/60">Krankenkasse</dt><dd
-          class="break-words sm:col-span-2">{e.healthInsurance ?? '—'}</dd
+          class="break-words sm:col-span-2">{e.healthInsurance ?? '-'}</dd
         >
       </dl>
     </div>
@@ -382,16 +382,16 @@
       <h3 class="card-title text-base">Bankverbindung</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Inhaber</dt><dd
-          class="break-words sm:col-span-2">{e.bankAccountHolder ?? '—'}</dd
+          class="break-words sm:col-span-2">{e.bankAccountHolder ?? '-'}</dd
         >
         <dt class="text-base-content/60">IBAN</dt><dd
-          class="font-mono break-all sm:col-span-2">{e.bankIban ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.bankIban ?? '-'}</dd
         >
         <dt class="text-base-content/60">BIC</dt><dd
-          class="font-mono break-all sm:col-span-2">{e.bankBic ?? '—'}</dd
+          class="font-mono break-all sm:col-span-2">{e.bankBic ?? '-'}</dd
         >
         <dt class="text-base-content/60">Bank</dt><dd
-          class="break-words sm:col-span-2">{e.bankName ?? '—'}</dd
+          class="break-words sm:col-span-2">{e.bankName ?? '-'}</dd
         >
       </dl>
     </div>
@@ -436,10 +436,10 @@
               <tr>
                 <td>{fmt(v.validFrom)}</td>
                 <td class="text-right font-mono">
-                  {v.monthlySalary ? formatEuro(Number(v.monthlySalary)) : '—'}
+                  {v.monthlySalary ? formatEuro(Number(v.monthlySalary)) : '-'}
                 </td>
                 <td class="text-right font-mono">
-                  {v.hourlyWage ? formatEuro(Number(v.hourlyWage)) : '—'}
+                  {v.hourlyWage ? formatEuro(Number(v.hourlyWage)) : '-'}
                 </td>
                 <td class="text-base-content/60 text-sm">
                   {fmt(
@@ -595,7 +595,7 @@
                     {typeLabel(a.type)}
                   </span>
                 </td>
-                <td>{fmt(a.dateFrom)} – {fmt(a.dateTo)}</td>
+                <td>{fmt(a.dateFrom)} - {fmt(a.dateTo)}</td>
                 <td class="text-right font-mono">{days}</td>
                 <td>
                   <span class="badge badge-sm {statusBadge(a.status)}">
@@ -681,7 +681,7 @@
               {typeLabel(c.type)}
             </span>
             <span class="font-mono text-xs">
-              {fmt(c.dateFrom)} – {fmt(c.dateTo)}
+              {fmt(c.dateFrom)} - {fmt(c.dateTo)}
             </span>
             <span class="badge badge-sm {statusBadge(c.status)}">
               {statusLabel(c.status)}

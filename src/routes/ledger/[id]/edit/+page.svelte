@@ -166,7 +166,7 @@
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Kategorie</span>
           <select class="select select-bordered w-full" bind:value={categoryId}>
-            <option value="">— wählen —</option>
+            <option value="">- wählen -</option>
             {#each categories as c (c.id)}
               <option value={c.id}>{c.name}</option>
             {/each}
@@ -197,7 +197,7 @@
             class="select select-bordered w-full"
             bind:value={paymentMethod}
           >
-            <option value="">—</option>
+            <option value="">-</option>
             {#each PAYMENT_METHODS as method (method)}
               <option>{method}</option>
             {/each}

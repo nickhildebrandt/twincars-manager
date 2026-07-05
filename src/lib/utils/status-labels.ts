@@ -53,7 +53,7 @@ export const documentStatusLabel = (
 ): string =>
   status && status in documentStatusMap
     ? documentStatusMap[status as DocumentStatus]
-    : '—'
+    : '-'
 
 /** DaisyUI badge class for a document status. */
 export const documentStatusBadge = (
@@ -94,7 +94,7 @@ export const paymentStatusLabel = (
 ): string =>
   status && status in paymentStatusMap
     ? paymentStatusMap[status as PaymentStatus]
-    : '—'
+    : '-'
 
 export const paymentStatusBadge = (
   status: string | null | undefined
@@ -125,7 +125,7 @@ export const appointmentStatusLabel = (
 ): string =>
   status && status in appointmentStatusMap
     ? appointmentStatusMap[status as AppointmentStatus]
-    : '—'
+    : '-'
 
 export const appointmentStatusBadge = (
   status: string | null | undefined
@@ -155,7 +155,7 @@ export const sentMessageStatusLabel = (
 ): string =>
   status && status in sentMessageStatusMap
     ? sentMessageStatusMap[status as SentMessageStatus]
-    : '—'
+    : '-'
 
 export const sentMessageStatusBadge = (
   status: string | null | undefined
@@ -213,7 +213,7 @@ export const documentTypeLabel = (type: string | null | undefined): string => {
     case 'mailing':
       return 'Serienbrief'
     default:
-      return type ?? '—'
+      return type ?? '-'
   }
 }
 
@@ -231,6 +231,6 @@ export const itemKindLabel = (kind: string | null | undefined): string => {
     case 'vehicle':
       return 'Fahrzeug'
     default:
-      return kind ?? '—'
+      return kind ?? '-'
   }
 }

@@ -1,7 +1,35 @@
+<script lang="ts" module>
+  import { maxLength, minLength, object, pipe, string, trim } from 'valibot'
+
+  /**
+   * Client-side schema mirroring the server-side rules: first and last
+   * name are required. Messages are the curated German texts.
+   */
+  const employeeSchema = object({
+    firstName: pipe(
+      string(),
+      trim(),
+      minLength(1, 'Bitte einen Vornamen eingeben.'),
+      maxLength(100, 'Der Vorname darf maximal 100 Zeichen lang sein.')
+    ),
+    lastName: pipe(
+      string(),
+      trim(),
+      minLength(1, 'Bitte einen Nachnamen eingeben.'),
+      maxLength(100, 'Der Nachname darf maximal 100 Zeichen lang sein.')
+    )
+  })
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
+  import {
+    useFormValidation,
+    validationClasses
+  } from '$lib/utils/form-validation.svelte'
 
   type Employee = Record<string, string | number | boolean | null | undefined>
 
@@ -82,8 +110,17 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the server-side rules. */
-  const valid = $derived(Boolean(firstName.trim()) && Boolean(lastName.trim()))
+  /**
+   * Validation handle for the Submit button gate and the per-field
+   * error display. Field errors only surface once the field was
+   * touched (blur) or a submit was attempted.
+   */
+  const fv = useFormValidation(employeeSchema, () => ({ firstName, lastName }))
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const u = (v: string) => {
     const t = v.trim()
@@ -136,11 +173,16 @@
 
   const submit = async (e: Event) => {
     e.preventDefault()
-    errorMsg = null
-    if (!firstName.trim() || !lastName.trim()) {
-      errorMsg = 'Bitte Vor- und Nachnamen eingeben.'
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
       return
     }
+    errorMsg = null
     formDirty.clear()
     await onSave({
       firstName: firstName.trim(),
@@ -202,7 +244,7 @@
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Anrede</span>
           <select class="select select-bordered w-full" bind:value={salutation}>
-            <option value="">—</option>
+            <option value="">-</option>
             <option>Herr</option>
             <option>Frau</option>
           </select>
@@ -215,22 +257,31 @@
             bind:value={birthday}
           />
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Vorname *</span>
+        <FormField
+          label="Vorname"
+          required
+          error={wasTouched('firstName') ? err('firstName') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('firstName'), wasTouched('firstName'))}
             maxlength="100"
             bind:value={firstName}
+            onblur={() => fv.markTouched('firstName')}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1 sm:col-span-2">
-          <span class="label-text">Nachname *</span>
+        </FormField>
+        <FormField
+          label="Nachname"
+          required
+          colSpan="sm:col-span-2"
+          error={wasTouched('lastName') ? err('lastName') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('lastName'), wasTouched('lastName'))}
             maxlength="100"
             bind:value={lastName}
+            onblur={() => fv.markTouched('lastName')}
           />
-        </label>
+        </FormField>
       </div>
     </fieldset>
 
@@ -314,7 +365,7 @@
             class="select select-bordered w-full"
             bind:value={employmentType}
           >
-            <option value="">—</option>
+            <option value="">-</option>
             <option>Vollzeit</option>
             <option>Teilzeit</option>
             <option>Minijob</option>
@@ -378,7 +429,7 @@
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Steuerklasse</span>
           <select class="select select-bordered w-full" bind:value={taxClass}>
-            <option value="">—</option>
+            <option value="">-</option>
             <option>1</option><option>2</option><option>3</option><option
               >4</option
             ><option>5</option><option>6</option>
@@ -447,7 +498,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

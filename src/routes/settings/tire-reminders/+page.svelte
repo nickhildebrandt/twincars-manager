@@ -46,7 +46,7 @@
       const failedCount = result.failed.length
       if (result.sent === 0 && failedCount === 0) {
         toast.success(
-          'Keine offenen Erinnerungen — alle Kunden bereits informiert.'
+          'Keine offenen Erinnerungen, alle Kunden bereits informiert.'
         )
       } else if (failedCount === 0) {
         toast.success(`Erinnerungen versendet: ${result.sent}.`)

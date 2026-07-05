@@ -1,4 +1,14 @@
 <script lang="ts" module>
+  import {
+    check,
+    minLength,
+    object,
+    pipe,
+    string,
+    trim,
+    unknown
+  } from 'valibot'
+
   /**
    * TireForm — master form for the dedicated `tires` table.
    *
@@ -39,6 +49,45 @@
     shippingOptionId?: string | null
     notes?: string
   }
+
+  /** True when the value is a finite number greater than zero. */
+  const positiveNumber = (message: string) =>
+    pipe(
+      unknown(),
+      check((v) => {
+        const n = Number(v)
+        return Number.isFinite(n) && n > 0
+      }, message)
+    )
+
+  /** A single optional EU-label letter A-E (case-insensitive). */
+  const labelLetter = pipe(
+    string(),
+    trim(),
+    check(
+      (v) => /^[A-E]?$/i.test(v),
+      'Bitte einen einzelnen Buchstaben (A-E) angeben.'
+    )
+  )
+
+  /**
+   * Client-side schema mirroring the rules previously enforced ad hoc
+   * in `submit`: brand + model + the size triple are required, EU-label
+   * letters must be single letters. The server-side schema stays
+   * authoritative.
+   */
+  const tireSchema = object({
+    brand: pipe(string(), trim(), minLength(1, 'Bitte die Marke angeben.')),
+    model: pipe(string(), trim(), minLength(1, 'Bitte das Modell angeben.')),
+    width: positiveNumber('Bitte die Breite in mm angeben.'),
+    aspectRatio: positiveNumber('Bitte den Querschnitt in % angeben.'),
+    diameterInch: positiveNumber(
+      'Bitte den Felgendurchmesser in Zoll angeben.'
+    ),
+    fuelEfficiency: labelLetter,
+    wetGrip: labelLetter,
+    noiseClass: labelLetter
+  })
 </script>
 
 <script lang="ts">
@@ -47,6 +96,10 @@
   import { formDirty } from '$lib/stores/form-dirty.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
+  import {
+    useFormValidation,
+    validationClasses
+  } from '$lib/utils/form-validation.svelte'
   import { pickShippingOptionsRemote } from '../pickers.remote'
 
   type Tire = {
@@ -138,64 +191,43 @@
   const u = (v: string) => (v.trim() === '' ? undefined : v.trim())
   const n = (v: number | string) => (v === '' ? undefined : Number(v))
 
-  const LABEL_LETTERS = /^[A-E]?$/i
-
   /**
-   * Pragmatic client-side validity gate for the Submit button. The same
-   * rules are also re-checked in `submit` to produce a curated error
-   * message for screen readers; the server-side schema is authoritative.
+   * Validation handle for the Submit button gate and the per-field
+   * error display. Field errors only surface once the field was
+   * touched (blur) or a submit was attempted; the server-side schema
+   * stays authoritative.
    */
-  const valid = $derived.by(() => {
-    if (!brand.trim()) return false
-    if (!model.trim()) return false
-    const w = Number(width)
-    const ar = Number(aspectRatio)
-    const di = Number(diameterInch)
-    if (!Number.isFinite(w) || w <= 0) return false
-    if (!Number.isFinite(ar) || ar <= 0) return false
-    if (!Number.isFinite(di) || di <= 0) return false
-    for (const value of [fuelEfficiency, wetGrip, noiseClass]) {
-      if (value && !LABEL_LETTERS.test(value.trim())) return false
-    }
-    return true
-  })
+  const fv = useFormValidation(tireSchema, () => ({
+    brand,
+    model,
+    width,
+    aspectRatio,
+    diameterInch,
+    fuelEfficiency,
+    wetGrip,
+    noiseClass
+  }))
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const submit = async (e: Event) => {
     e.preventDefault()
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     errorMsg = null
-    if (!brand.trim()) {
-      errorMsg = 'Bitte die Marke angeben.'
-      return
-    }
-    if (!model.trim()) {
-      errorMsg = 'Bitte das Modell angeben.'
-      return
-    }
     const w = Number(width)
     const ar = Number(aspectRatio)
     const di = Number(diameterInch)
-    if (!Number.isFinite(w) || w <= 0) {
-      errorMsg = 'Bitte die Breite in mm angeben.'
-      return
-    }
-    if (!Number.isFinite(ar) || ar <= 0) {
-      errorMsg = 'Bitte den Querschnitt in % angeben.'
-      return
-    }
-    if (!Number.isFinite(di) || di <= 0) {
-      errorMsg = 'Bitte den Felgendurchmesser in Zoll angeben.'
-      return
-    }
-    for (const [label, value] of [
-      ['Kraftstoffeffizienz', fuelEfficiency],
-      ['Nasshaftung', wetGrip],
-      ['Geräuschklasse', noiseClass]
-    ] as const) {
-      if (value && !LABEL_LETTERS.test(value.trim())) {
-        errorMsg = `${label}: bitte einen einzelnen Buchstaben (A–E) angeben.`
-        return
-      }
-    }
     formDirty.clear()
     await onSave({
       articleNumber: u(articleNumber),
@@ -280,48 +312,68 @@
             <option value="Ganzjahres">Ganzjahres</option>
           </select>
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Marke *</span>
+        <FormField
+          label="Marke"
+          required
+          error={wasTouched('brand') ? err('brand') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('brand'), wasTouched('brand'))}
             maxlength="80"
             bind:value={brand}
+            onblur={() => fv.markTouched('brand')}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1 sm:col-span-2">
-          <span class="label-text">Modell *</span>
+        </FormField>
+        <FormField
+          label="Modell"
+          required
+          colSpan="sm:col-span-2"
+          error={wasTouched('model') ? err('model') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('model'), wasTouched('model'))}
             maxlength="120"
             bind:value={model}
+            onblur={() => fv.markTouched('model')}
           />
-        </label>
+        </FormField>
       </div>
     </fieldset>
 
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Größe & Index</legend>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Breite (mm) *</span>
+        <FormField
+          label="Breite (mm)"
+          required
+          error={wasTouched('width') ? err('width') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('width'), wasTouched('width'))}
             type="number"
             min="50"
             max="500"
             bind:value={width}
+            onblur={() => fv.markTouched('width')}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Querschnitt (%) *</span>
+        </FormField>
+        <FormField
+          label="Querschnitt (%)"
+          required
+          error={wasTouched('aspectRatio') ? err('aspectRatio') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(
+              err('aspectRatio'),
+              wasTouched('aspectRatio')
+            )}
             type="number"
             min="10"
             max="100"
             bind:value={aspectRatio}
+            onblur={() => fv.markTouched('aspectRatio')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Bauart</span>
           <select
@@ -332,16 +384,23 @@
             <option value="D">D (Diagonal)</option>
           </select>
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Zoll *</span>
+        <FormField
+          label="Zoll"
+          required
+          error={wasTouched('diameterInch') ? err('diameterInch') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(
+              err('diameterInch'),
+              wasTouched('diameterInch')
+            )}
             type="number"
             min="8"
             max="30"
             bind:value={diameterInch}
+            onblur={() => fv.markTouched('diameterInch')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Lastindex</span>
           <input
@@ -382,30 +441,45 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">EU-Reifenlabel</legend>
       <div class="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Kraftstoffeffizienz (A–E)</span>
+        <FormField
+          label="Kraftstoffeffizienz (A-E)"
+          error={wasTouched('fuelEfficiency') ? err('fuelEfficiency') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(
+              err('fuelEfficiency'),
+              wasTouched('fuelEfficiency')
+            )}
             maxlength="1"
             bind:value={fuelEfficiency}
+            onblur={() => fv.markTouched('fuelEfficiency')}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Nasshaftung (A–E)</span>
+        </FormField>
+        <FormField
+          label="Nasshaftung (A-E)"
+          error={wasTouched('wetGrip') ? err('wetGrip') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('wetGrip'), wasTouched('wetGrip'))}
             maxlength="1"
             bind:value={wetGrip}
+            onblur={() => fv.markTouched('wetGrip')}
           />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Geräuschklasse (A–C)</span>
+        </FormField>
+        <FormField
+          label="Geräuschklasse (A-C)"
+          error={wasTouched('noiseClass') ? err('noiseClass') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(
+              err('noiseClass'),
+              wasTouched('noiseClass')
+            )}
             maxlength="1"
             bind:value={noiseClass}
+            onblur={() => fv.markTouched('noiseClass')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Geräusch (dB)</span>
           <input
@@ -524,7 +598,7 @@
             <SearchablePicker
               bind:value={shippingOptionId}
               bind:valueLabel={shippingOptionLabel}
-              placeholder="— Versandoption wählen —"
+              placeholder="- Versandoption wählen -"
               dialogTitle="Versandoption auswählen"
               search={searchShipping}
               onSelect={() => formDirty.set(true)}
@@ -564,7 +638,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

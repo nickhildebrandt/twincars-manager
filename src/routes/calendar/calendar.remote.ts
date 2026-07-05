@@ -20,6 +20,7 @@ import {
   deleteCalendarEntry,
   findOverlappingAppointments,
   getCalendarEntry,
+  getCalendarEntryWithLabels,
   listAppointments,
   listCalendarEvents,
   updateCalendarEntry
@@ -243,7 +244,7 @@ export const getCalendarEntryRemote = query(
   object({ id: idSchema }),
   async ({ id }) => {
     requirePermission('calendar')
-    const row = await getCalendarEntry(id)
+    const row = await getCalendarEntryWithLabels(id)
     if (!row) error(404, 'Kalendereintrag nicht gefunden.')
     return row
   }

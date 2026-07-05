@@ -60,7 +60,7 @@
   let confirmOpen = $state(false)
 
   const fmt = (d: Date | string | null) =>
-    d ? new Date(d).toLocaleString('de-DE') : '—'
+    d ? new Date(d).toLocaleString('de-DE') : '-'
 
   const connect = async () => {
     try {

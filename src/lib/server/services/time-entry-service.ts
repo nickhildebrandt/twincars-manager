@@ -304,7 +304,7 @@ export async function utilizationSummary(params: {
     employeeName:
       `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() ||
       r.personnelNumber ||
-      '—',
+      '-',
     totalHours: Number(r.totalHours ?? 0),
     billableHours: Number(r.billableHours ?? 0),
     daysLogged: Number(r.daysLogged ?? 0)
@@ -390,7 +390,7 @@ export async function monthlyReport(params: {
       employeeName:
         `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() ||
         r.personnelNumber ||
-        '—',
+        '-',
       totalHours,
       daysLogged,
       avgHoursPerDay:

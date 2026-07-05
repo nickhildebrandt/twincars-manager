@@ -107,7 +107,7 @@ const formatEur = (v: number | string): string => {
 }
 
 const formatDate = (s: string | null | undefined): string => {
-  if (!s) return '—'
+  if (!s) return '-'
   // YYYY-MM-DD → DD.MM.YYYY
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
   return m ? `${m[3]}.${m[2]}.${m[1]}` : s
@@ -324,7 +324,7 @@ const customerHeading = (cust: Customer | null): string => {
 const customerName = (cust: Customer | null): string => {
   if (!cust) return ''
   if (cust.company) return cust.company
-  return `${cust.firstName ?? ''} ${cust.lastName ?? ''}`.trim() || '—'
+  return `${cust.firstName ?? ''} ${cust.lastName ?? ''}`.trim() || '-'
 }
 
 /** "MM/YY" from a YYYY-MM-DD date — used for Erstzulassung. */
@@ -635,7 +635,7 @@ export const renderDocumentPdf = async (
       const colB = ml + 200
       const txt = (s2: string, x: number, yy: number) =>
         s.text(s2, x, yy, { size: 9, font: fontItalic })
-      const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '—'
+      const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '-'
       txt(`Kfz-Typ: ${kfzTyp}`, colA, vy)
       if (veh.displacementCcm) txt(`Hubraum: ${veh.displacementCcm}`, colB, vy)
       vy -= 11
@@ -1433,7 +1433,7 @@ export const renderReminderPdf = async (
     const colB = ml + 200
     const ti = (s2: string, x: number, yy: number) =>
       text(s2, x, yy, { size: 9, font: fontItalic })
-    const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '—'
+    const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '-'
     ti(`Kfz-Typ: ${kfzTyp}`, colA, vy)
     if (veh.displacementCcm) ti(`Hubraum: ${veh.displacementCcm}`, colB, vy)
     vy -= 11

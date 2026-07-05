@@ -74,7 +74,7 @@ function requireConfig(): EbayConfig {
   const missing = missingEbayConfig()
   if (missing.length > 0) {
     throw new Error(
-      `eBay ist nicht konfiguriert — fehlende Umgebungsvariablen: ${missing.join(', ')}.`
+      `eBay ist nicht konfiguriert - fehlende Umgebungsvariablen: ${missing.join(', ')}.`
     )
   }
   return {

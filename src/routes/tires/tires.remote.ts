@@ -42,7 +42,7 @@ const labelLetterSchema = optional(
   pipe(
     string(),
     trim(),
-    maxLength(1, 'Bitte einen einzelnen Buchstaben angeben (A–E).')
+    maxLength(1, 'Bitte einen einzelnen Buchstaben angeben (A-E).')
   )
 )
 

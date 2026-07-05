@@ -75,7 +75,9 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   documents,
+  employees,
   items,
+  posts,
   suppliers,
   tireStorage,
   tires,
@@ -91,6 +93,8 @@ async function resetDb() {
   await db.delete(tireStorage)
   await db.delete(tires)
   await db.delete(suppliers)
+  await db.delete(employees)
+  await db.delete(posts)
   await db.delete(vehicleLicensePlateVersions)
   await db.delete(vehicles)
   await db.delete(customers)
@@ -173,6 +177,23 @@ describe('globalSearchRemote', () => {
     await db
       .insert(suppliers)
       .values({ name: 'Alpha Lieferant', archived: false })
+    await db
+      .insert(employees)
+      .values({
+        personnelNumber: 'ALPHA-P-1',
+        firstName: 'Alpha',
+        lastName: 'Mitarbeiter',
+        archived: false
+      })
+    await db
+      .insert(posts)
+      .values({
+        title: 'Alpha Neuigkeit',
+        slug: 'alpha-neuigkeit',
+        excerpt: 'Alpha Teaser',
+        body: 'Alpha Inhalt',
+        published: true
+      })
   })
 
   it('rejects anonymous callers with 401', async () => {
@@ -226,7 +247,42 @@ describe('globalSearchRemote', () => {
     expect(res.tires.length).toBeGreaterThan(0)
     expect(res.tireStorage.length).toBeGreaterThan(0)
     expect(res.suppliers.length).toBeGreaterThan(0)
+    expect(res.employees.length).toBeGreaterThan(0)
     expect(res.documents.length).toBeGreaterThan(0)
+    expect(res.posts.length).toBeGreaterThan(0)
+  })
+
+  it('employees module populates only the employees bucket', async () => {
+    authAs(['employees'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.employees.length).toBeGreaterThan(0)
+    expect(res.customers).toEqual([])
+    expect(res.vehicles).toEqual([])
+    expect(res.suppliers).toEqual([])
+    expect(res.posts).toEqual([])
+  })
+
+  it('without the employees module the employees bucket stays empty', async () => {
+    authAs(['customers'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.employees).toEqual([])
+    expect(res.customers.length).toBeGreaterThan(0)
+  })
+
+  it('posts module populates only the posts bucket', async () => {
+    authAs(['posts'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.posts.length).toBeGreaterThan(0)
+    expect(res.customers).toEqual([])
+    expect(res.employees).toEqual([])
+    expect(res.documents).toEqual([])
+  })
+
+  it('without the posts module the posts bucket stays empty', async () => {
+    authAs(['customers'])
+    const res = await globalSearchRemote({ q: 'alpha' })
+    expect(res.posts).toEqual([])
+    expect(res.customers.length).toBeGreaterThan(0)
   })
 
   it('tires module populates both the tires and tire-storage buckets', async () => {
@@ -262,7 +318,9 @@ describe('globalSearchRemote', () => {
     expect(res.tires).toEqual([])
     expect(res.tireStorage).toEqual([])
     expect(res.suppliers).toEqual([])
+    expect(res.employees).toEqual([])
     expect(res.documents).toEqual([])
+    expect(res.posts).toEqual([])
   })
 
   it('users alone does not leak any business bucket', async () => {
@@ -274,7 +332,9 @@ describe('globalSearchRemote', () => {
     expect(res.tires).toEqual([])
     expect(res.tireStorage).toEqual([])
     expect(res.suppliers).toEqual([])
+    expect(res.employees).toEqual([])
     expect(res.documents).toEqual([])
+    expect(res.posts).toEqual([])
   })
 
   it('only invoices populates documents but not other buckets', async () => {

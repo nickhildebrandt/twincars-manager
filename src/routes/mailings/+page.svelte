@@ -124,7 +124,7 @@
         bind:asHtml
         allowHtml
         disabled={!canCompose}
-        hint="Empfänger erhalten die Nachricht via BCC — Adressen werden nicht untereinander sichtbar. Eine Abbestellen-Fußzeile wird automatisch angehängt."
+        hint="Empfänger erhalten die Nachricht via BCC, Adressen werden nicht untereinander sichtbar. Eine Abbestellen-Fußzeile wird automatisch angehängt."
       />
       <div class="card-actions justify-end">
         <button

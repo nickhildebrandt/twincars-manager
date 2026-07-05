@@ -84,9 +84,10 @@ describe('TireStorageForm', () => {
     const form = container.querySelector('form') as HTMLFormElement
     await fireEvent.submit(form)
     expect(onSave).not.toHaveBeenCalled()
+    // The message shows in the alert and under the field.
     expect(
-      screen.getByText(/Stückzahl muss zwischen 1 und 20/i)
-    ).toBeInTheDocument()
+      screen.getAllByText(/Stückzahl muss zwischen 1 und 20/i).length
+    ).toBeGreaterThan(0)
   })
 
   it('emits trimmed brand/model/size and numeric quantity', async () => {
@@ -174,5 +175,42 @@ describe('TireStorageForm', () => {
     render(TireStorageForm, { props: { onSave: vi.fn(), onCancel } })
     await user.click(screen.getByRole('button', { name: /abbrechen/i }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(TireStorageForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText(/Bitte einen Kunden auswählen/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/Bitte eine Saison wählen/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the season error only after blur', async () => {
+    const { container } = render(TireStorageForm, {
+      props: { onSave: vi.fn(), initial: { customerId: 'cust-1' } }
+    })
+    const seasonSelect = container.querySelector('select') as HTMLSelectElement
+    expect(
+      screen.queryByText('Bitte eine Saison wählen.')
+    ).not.toBeInTheDocument()
+    await fireEvent.blur(seasonSelect)
+    expect(screen.getByText('Bitte eine Saison wählen.')).toBeInTheDocument()
+    expect(seasonSelect.className).toContain('select-error')
+  })
+
+  it('surfaces customer + season errors after a submit attempt', async () => {
+    const onSave = vi.fn()
+    const { container } = render(TireStorageForm, { props: { onSave } })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Bitte einen Kunden auswählen/i).length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText(/Bitte eine Saison wählen/i).length
+    ).toBeGreaterThan(0)
   })
 })

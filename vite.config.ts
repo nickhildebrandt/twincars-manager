@@ -3,6 +3,13 @@ import tailwindcss from '@tailwindcss/vite'
 import { defineConfig } from 'vitest/config'
 import { svelteTesting } from '@testing-library/svelte/vite'
 import { fileURLToPath } from 'node:url'
+import { readFileSync } from 'node:fs'
+
+// App version straight from package.json, baked in at build time and
+// shown on the login screen (`__APP_VERSION__`, declared in app.d.ts).
+const pkg = JSON.parse(
+  readFileSync(new URL('./package.json', import.meta.url), 'utf8')
+) as { version: string }
 
 // Alias `@opentelemetry/api` to an inert shim. better-auth wraps every
 // dispatch in `withSpan`, and Rollup's CJS interop can bundle the real
@@ -16,6 +23,7 @@ const otelNoop = fileURLToPath(
 
 export default defineConfig({
   plugins: [tailwindcss(), sveltekit(), svelteTesting()],
+  define: { __APP_VERSION__: JSON.stringify(pkg.version) },
   resolve: { alias: { '@opentelemetry/api': otelNoop } },
   ssr: { noExternal: ['daisyui'] },
   optimizeDeps: { exclude: ['@lucide/svelte'] },

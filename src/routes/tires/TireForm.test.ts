@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -147,5 +147,57 @@ describe('TireForm', () => {
     })
     await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave.mock.calls[0][0].construction).toBe('D')
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(TireForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText('Bitte die Marke angeben.')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Bitte die Breite in mm angeben.')
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the brand error only after blur', async () => {
+    const { container } = render(TireForm, { props: { onSave: vi.fn() } })
+    const brand = container.querySelector(
+      'input[maxlength="80"]'
+    ) as HTMLInputElement
+    expect(
+      screen.queryByText('Bitte die Marke angeben.')
+    ).not.toBeInTheDocument()
+    await fireEvent.blur(brand)
+    expect(screen.getByText('Bitte die Marke angeben.')).toBeInTheDocument()
+    expect(brand.className).toContain('input-error')
+  })
+
+  it('surfaces the per-field errors after a submit attempt', async () => {
+    const onSave = vi.fn()
+    const { container } = render(TireForm, { props: { onSave } })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte die Marke angeben.').length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText('Bitte die Breite in mm angeben.').length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the EU-label error after a submit attempt with a two-letter value', async () => {
+    const { container } = render(TireForm, {
+      props: {
+        onSave: vi.fn(),
+        initial: { ...validBase, fuelEfficiency: 'XY' }
+      }
+    })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(
+      screen.getAllByText('Bitte einen einzelnen Buchstaben (A-E) angeben.')
+        .length
+    ).toBeGreaterThan(0)
   })
 })

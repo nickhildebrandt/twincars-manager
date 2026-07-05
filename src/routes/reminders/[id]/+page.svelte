@@ -26,7 +26,7 @@
   )
 
   const fmt = (s: string | null | undefined) => {
-    if (!s) return '—'
+    if (!s) return '-'
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
@@ -96,7 +96,7 @@
         <dt class="text-base-content/60">Zahlbar bis</dt>
         <dd>{fmt(reminder.dueDate)}</dd>
         <dt class="text-base-content/60">Kunde</dt>
-        <dd>{reminder.customerName ?? '—'}</dd>
+        <dd>{reminder.customerName ?? '-'}</dd>
         <dt class="text-base-content/60">Rechnung</dt>
         <dd>
           <a class="link link-primary" href={`/invoices/${reminder.invoiceId}`}>

@@ -49,7 +49,7 @@
         <dt class="text-base-content/60">Empfänger</dt>
         <dd>
           {#if msg.recipientName}
-            {msg.recipientName} —
+            {msg.recipientName} -
           {/if}
           <span class="font-mono text-xs">{msg.recipientEmail}</span>
         </dd>

@@ -27,14 +27,14 @@
       <h3 class="card-title text-base">Anschrift</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Straße</dt><dd
-          class="break-words sm:col-span-2">{s.street ?? '—'}</dd
+          class="break-words sm:col-span-2">{s.street ?? '-'}</dd
         >
         <dt class="text-base-content/60">PLZ / Ort</dt><dd
           class="break-words sm:col-span-2"
-          >{[s.zip, s.city].filter(Boolean).join(' ') || '—'}</dd
+          >{[s.zip, s.city].filter(Boolean).join(' ') || '-'}</dd
         >
         <dt class="text-base-content/60">Land</dt><dd
-          class="break-words sm:col-span-2">{s.country ?? '—'}</dd
+          class="break-words sm:col-span-2">{s.country ?? '-'}</dd
         >
       </dl>
     </div>
@@ -44,16 +44,16 @@
       <h3 class="card-title text-base">Kontakt</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Telefon</dt><dd
-          class="break-all sm:col-span-2">{s.phone ?? '—'}</dd
+          class="break-all sm:col-span-2">{s.phone ?? '-'}</dd
         >
         <dt class="text-base-content/60">Fax</dt><dd
-          class="break-all sm:col-span-2">{s.fax ?? '—'}</dd
+          class="break-all sm:col-span-2">{s.fax ?? '-'}</dd
         >
         <dt class="text-base-content/60">E-Mail</dt><dd
-          class="break-all sm:col-span-2">{s.email ?? '—'}</dd
+          class="break-all sm:col-span-2">{s.email ?? '-'}</dd
         >
         <dt class="text-base-content/60">Website</dt><dd
-          class="break-all sm:col-span-2">{s.website ?? '—'}</dd
+          class="break-all sm:col-span-2">{s.website ?? '-'}</dd
         >
       </dl>
     </div>
@@ -64,13 +64,13 @@
         <h3 class="card-title text-base">Bankdaten</h3>
         <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Bank</dt><dd
-            class="break-words sm:col-span-2">{s.bankName ?? '—'}</dd
+            class="break-words sm:col-span-2">{s.bankName ?? '-'}</dd
           >
           <dt class="text-base-content/60">IBAN</dt><dd
-            class="font-mono break-all sm:col-span-2">{s.iban ?? '—'}</dd
+            class="font-mono break-all sm:col-span-2">{s.iban ?? '-'}</dd
           >
           <dt class="text-base-content/60">BIC</dt><dd
-            class="font-mono break-all sm:col-span-2">{s.bic ?? '—'}</dd
+            class="font-mono break-all sm:col-span-2">{s.bic ?? '-'}</dd
           >
         </dl>
       </div>

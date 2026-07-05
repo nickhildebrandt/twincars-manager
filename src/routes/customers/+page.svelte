@@ -109,9 +109,9 @@
 
   /** Human-readable creation date (yyyy-mm-dd) for the eBay tab. */
   const formatCreatedAt = (d: Date | string | null) => {
-    if (!d) return '—'
+    if (!d) return '-'
     const date = d instanceof Date ? d : new Date(d)
-    if (Number.isNaN(date.getTime())) return '—'
+    if (Number.isNaN(date.getTime())) return '-'
     return date.toISOString().slice(0, 10)
   }
 </script>
@@ -215,7 +215,7 @@
                 <td class="font-mono text-xs">{c.customerNumber}</td>
                 <td class="font-medium">{customerLabel(c)}</td>
                 {#if kindFilter === 'ebay'}
-                  <td>{c.ebayHandle ?? '—'}</td>
+                  <td>{c.ebayHandle ?? '-'}</td>
                   <td>{formatCreatedAt(c.createdAt)}</td>
                 {:else}
                   <td>{c.city ?? ''}</td>

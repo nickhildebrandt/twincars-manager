@@ -220,7 +220,7 @@
         </li>
         <li>
           KFZ-Kaufmann verknüpft Rechnungen <strong>nicht</strong> mit einem konkreten
-          Fahrzeug. Importierte Belege haben deshalb kein Fahrzeug — die Fahrzeuge
+          Fahrzeug. Importierte Belege haben deshalb kein Fahrzeug - die Fahrzeuge
           selbst werden aber importiert und sind weiterhin am Kunden gepflegt.
         </li>
         <li>
@@ -389,7 +389,7 @@
         >
           <input type="checkbox" />
           <div class="collapse-title text-sm font-medium">
-            {summary.skippedTotal} nicht importierte Datensätze – Details anzeigen
+            {summary.skippedTotal} nicht importierte Datensätze - Details anzeigen
           </div>
           <div class="collapse-content">
             <div class="max-h-64 overflow-y-auto">
@@ -405,7 +405,7 @@
                   {#each summary.skippedDetail as s, i (i)}
                     <tr>
                       <td class="font-mono">{s.table}</td>
-                      <td class="font-mono">{s.legacyKey ?? '—'}</td>
+                      <td class="font-mono">{s.legacyKey ?? '-'}</td>
                       <td>{s.reason}</td>
                     </tr>
                   {/each}
@@ -427,7 +427,7 @@
         <div>
           Belege wurden als „abgeschlossen" angelegt und tauchen nicht in der
           Gesendet-Liste auf. Alle PDFs wurden bereits beim Import gerendert und
-          liegen im Cache — der Detail-View lädt sie unverändert aus der
+          liegen im Cache - der Detail-View lädt sie unverändert aus der
           Datenbank, ohne sie neu zu erzeugen. Rechnungen sind nicht mit
           Fahrzeugen verknüpft (Quelle hatte diese Information nicht).
         </div>

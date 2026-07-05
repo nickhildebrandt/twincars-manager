@@ -63,7 +63,7 @@
     if (customer.email) {
       return name ? `${name} <${customer.email}>` : customer.email
     }
-    return name || '—'
+    return name || '-'
   })
 
   const canSend = $derived(
@@ -143,13 +143,13 @@
             {customer.customerNumber}
           </dd>
           <dt class="text-base-content/60">eBay-Name</dt>
-          <dd class="break-words sm:col-span-2">{customer.ebayHandle ?? '—'}</dd
+          <dd class="break-words sm:col-span-2">{customer.ebayHandle ?? '-'}</dd
           >
           <dt class="text-base-content/60">Name</dt>
           <dd class="break-words sm:col-span-2">
             {[customer.firstName, customer.lastName]
               .filter(Boolean)
-              .join(' ') || '—'}
+              .join(' ') || '-'}
           </dd>
           <dt class="text-base-content/60">Newsletter</dt>
           <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
@@ -164,18 +164,18 @@
         <h3 class="card-title text-base">Anschrift</h3>
         <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Firma</dt>
-          <dd class="break-words sm:col-span-2">{customer.company ?? '—'}</dd>
+          <dd class="break-words sm:col-span-2">{customer.company ?? '-'}</dd>
           <dt class="text-base-content/60">Name</dt>
           <dd class="break-words sm:col-span-2">
             {[customer.salutation, customer.firstName, customer.lastName]
               .filter(Boolean)
-              .join(' ') || '—'}
+              .join(' ') || '-'}
           </dd>
           <dt class="text-base-content/60">Straße</dt>
-          <dd class="break-words sm:col-span-2">{customer.street ?? '—'}</dd>
+          <dd class="break-words sm:col-span-2">{customer.street ?? '-'}</dd>
           <dt class="text-base-content/60">PLZ / Ort</dt>
           <dd class="break-words sm:col-span-2">
-            {[customer.zip, customer.city].filter(Boolean).join(' ') || '—'}
+            {[customer.zip, customer.city].filter(Boolean).join(' ') || '-'}
           </dd>
         </dl>
       </div>
@@ -186,13 +186,13 @@
         <h3 class="card-title text-base">Kontakt</h3>
         <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Telefon</dt>
-          <dd class="break-all sm:col-span-2">{customer.phone ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.phone ?? '-'}</dd>
           <dt class="text-base-content/60">Mobil</dt>
-          <dd class="break-all sm:col-span-2">{customer.mobile ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.mobile ?? '-'}</dd>
           <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="break-all sm:col-span-2">{customer.email ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.email ?? '-'}</dd>
           <dt class="text-base-content/60">Website</dt>
-          <dd class="break-all sm:col-span-2">{customer.website ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.website ?? '-'}</dd>
           <dt class="text-base-content/60">Newsletter</dt>
           <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
           <dt class="text-base-content/60">Reifenwechsel-Erinnerung</dt>
@@ -244,16 +244,16 @@
                   onclick={() => goto(`/vehicles/${v.id}`)}
                 >
                   <td class="font-mono text-xs font-medium"
-                    >{v.licensePlate ?? '—'}</td
+                    >{v.licensePlate ?? '-'}</td
                   >
-                  <td>{[v.make, v.model].filter(Boolean).join(' ') || '—'}</td>
-                  <td>{v.firstRegistration ?? '—'}</td>
+                  <td>{[v.make, v.model].filter(Boolean).join(' ') || '-'}</td>
+                  <td>{v.firstRegistration ?? '-'}</td>
                   <td class="text-right font-mono"
                     >{v.mileageKm != null
                       ? v.mileageKm.toLocaleString('de-DE') + ' km'
-                      : '—'}</td
+                      : '-'}</td
                   >
-                  <td>{v.nextHu ?? '—'}</td>
+                  <td>{v.nextHu ?? '-'}</td>
                 </tr>
               {/each}
             </tbody>
@@ -299,7 +299,7 @@
                     >{inv.documentNumber}</td
                   >
                   <td>{inv.issueDate}</td>
-                  <td>{inv.dueDate ?? '—'}</td>
+                  <td>{inv.dueDate ?? '-'}</td>
                   <td class="text-right font-mono"
                     >{formatEuro(Number(inv.grossTotal))}</td
                   >

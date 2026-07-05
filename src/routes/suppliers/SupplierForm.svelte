@@ -1,7 +1,47 @@
+<script lang="ts" module>
+  import {
+    check,
+    maxLength,
+    minLength,
+    object,
+    pipe,
+    string,
+    trim
+  } from 'valibot'
+
+  /**
+   * Client-side schema mirroring the rules previously enforced ad hoc
+   * in `submit`: the company name is required, the email (when given)
+   * must be well-formed. Messages match the old curated German texts.
+   */
+  const supplierSchema = object({
+    name: pipe(
+      string(),
+      trim(),
+      minLength(1, 'Bitte einen Firmennamen eingeben.'),
+      maxLength(200, 'Der Firmenname darf maximal 200 Zeichen lang sein.')
+    ),
+    email: pipe(
+      string(),
+      trim(),
+      maxLength(254, 'Die E-Mail darf maximal 254 Zeichen lang sein.'),
+      check(
+        (v) => v.length === 0 || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(v),
+        'Bitte eine gültige E-Mail-Adresse eingeben.'
+      )
+    )
+  })
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
+  import {
+    useFormValidation,
+    validationClasses
+  } from '$lib/utils/form-validation.svelte'
 
   type Supplier = {
     name?: string | null
@@ -68,16 +108,17 @@
 
   let errorMsg = $state<string | null>(null)
 
-  const emailInvalid = $derived(
-    Boolean(email.trim()) && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
-  )
+  /**
+   * Validation handle for the Submit button gate and the per-field
+   * error display. Field errors only surface once the field was
+   * touched (blur) or a submit was attempted.
+   */
+  const fv = useFormValidation(supplierSchema, () => ({ name, email }))
 
-  /** Validity gate for the Submit button — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (!name.trim()) return false
-    if (emailInvalid) return false
-    return true
-  })
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const u = (v: string) => {
     const t = v.trim()
@@ -86,15 +127,16 @@
 
   const submit = async (e: Event) => {
     e.preventDefault()
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     errorMsg = null
-    if (!name.trim()) {
-      errorMsg = 'Bitte einen Firmennamen eingeben.'
-      return
-    }
-    if (email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-      errorMsg = 'Bitte eine gültige E-Mail-Adresse eingeben.'
-      return
-    }
     formDirty.clear()
     await onSave({
       name: name.trim(),
@@ -132,14 +174,19 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Firma</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="flex w-full flex-col gap-1 sm:col-span-2">
-          <span class="label-text">Firmenname *</span>
+        <FormField
+          label="Firmenname"
+          required
+          colSpan="sm:col-span-2"
+          error={wasTouched('name') ? err('name') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('name'), wasTouched('name'))}
             maxlength="200"
             bind:value={name}
+            onblur={() => fv.markTouched('name')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Kontaktperson</span>
           <input
@@ -216,22 +263,18 @@
             bind:value={fax}
           />
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">E-Mail</span>
+        <FormField
+          label="E-Mail"
+          error={wasTouched('email') ? err('email') : null}
+        >
           <input
-            class="input input-bordered w-full {emailInvalid
-              ? 'input-error'
-              : ''}"
+            class={validationClasses(err('email'), wasTouched('email'))}
             type="email"
             maxlength="254"
             bind:value={email}
+            onblur={() => fv.markTouched('email')}
           />
-          {#if emailInvalid}
-            <span class="text-error text-sm"
-              >Bitte eine gültige E-Mail-Adresse eingeben.</span
-            >
-          {/if}
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Website</span>
           <input
@@ -294,7 +337,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

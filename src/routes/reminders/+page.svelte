@@ -86,7 +86,7 @@
   }
 
   const fmt = (s: string | null | undefined) => {
-    if (!s) return '—'
+    if (!s) return '-'
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
@@ -94,7 +94,7 @@
 
 <PageHeader
   title="Offene Rechnungen & Zahlungserinnerungen"
-  subtitle="OP-Liste mit automatisch berechneten Verzugstagen — eine einzige freundliche Erinnerung wird wiederholt versendet."
+  subtitle="OP-Liste mit automatisch berechneten Verzugstagen - eine einzige freundliche Erinnerung wird wiederholt versendet."
   primaryAction={{
     label: 'Fällige jetzt versenden',
     onClick: runAutoBatch,
@@ -167,12 +167,12 @@
                   {#if i.overdueDays > 0}
                     <span class="text-error">{i.overdueDays} Tage</span>
                   {:else}
-                    <span class="text-base-content/40">—</span>
+                    <span class="text-base-content/40">-</span>
                   {/if}
                 </td>
                 <td class="text-right">
                   {#if i.reminderCount === 0}
-                    <span class="text-base-content/40">—</span>
+                    <span class="text-base-content/40">-</span>
                   {:else}
                     <span class="badge badge-sm badge-info">
                       {i.reminderCount}×

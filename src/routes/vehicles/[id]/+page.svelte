@@ -151,7 +151,7 @@
       <div class="min-w-0">
         <h3 class="card-title text-base">Verkaufsschild</h3>
         <p class="text-base-content/60 text-sm">
-          A4-Querformat zum Aushängen am Fahrzeug — mit QR-Code zur
+          A4-Querformat zum Aushängen am Fahrzeug, mit QR-Code zur
           Online-Ansicht.
         </p>
       </div>
@@ -171,23 +171,23 @@
       <h3 class="card-title text-base">Stammdaten</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Marke</dt>
-        <dd class="break-words sm:col-span-2">{v.make ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.make ?? '-'}</dd>
         <dt class="text-base-content/60">Modell</dt>
-        <dd class="break-words sm:col-span-2">{v.model ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.model ?? '-'}</dd>
         <dt class="text-base-content/60">Kennzeichen</dt>
         <dd class="font-mono break-all sm:col-span-2"
-          >{v.licensePlate ?? '—'}</dd
+          >{v.licensePlate ?? '-'}</dd
         >
         <dt class="text-base-content/60">FIN</dt>
-        <dd class="font-mono break-all sm:col-span-2">{v.vin ?? '—'}</dd>
+        <dd class="font-mono break-all sm:col-span-2">{v.vin ?? '-'}</dd>
         <dt class="text-base-content/60">Erstzulassung</dt>
-        <dd class="sm:col-span-2">{v.firstRegistration ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.firstRegistration ?? '-'}</dd>
         <dt class="text-base-content/60">km-Stand</dt>
         <dd class="sm:col-span-2">
-          {v.mileageKm ? v.mileageKm.toLocaleString('de-DE') + ' km' : '—'}
+          {v.mileageKm ? v.mileageKm.toLocaleString('de-DE') + ' km' : '-'}
         </dd>
         <dt class="text-base-content/60">Nächste HU</dt>
-        <dd class="sm:col-span-2">{v.nextHu ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.nextHu ?? '-'}</dd>
       </dl>
     </div>
   </div>
@@ -197,20 +197,20 @@
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">HSN/TSN</dt>
         <dd class="break-all sm:col-span-2"
-          >{[v.hsn, v.tsn].filter(Boolean).join(' / ') || '—'}</dd
+          >{[v.hsn, v.tsn].filter(Boolean).join(' / ') || '-'}</dd
         >
         <dt class="text-base-content/60">Hubraum</dt>
         <dd class="sm:col-span-2"
-          >{v.displacementCcm ? `${v.displacementCcm} ccm` : '—'}</dd
+          >{v.displacementCcm ? `${v.displacementCcm} ccm` : '-'}</dd
         >
         <dt class="text-base-content/60">kW</dt>
-        <dd class="sm:col-span-2">{v.powerKw ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.powerKw ?? '-'}</dd>
         <dt class="text-base-content/60">Kraftstoff</dt>
-        <dd class="sm:col-span-2">{v.fuelType ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.fuelType ?? '-'}</dd>
         <dt class="text-base-content/60">Getriebe</dt>
-        <dd class="sm:col-span-2">{v.gearbox ?? '—'}</dd>
+        <dd class="sm:col-span-2">{v.gearbox ?? '-'}</dd>
         <dt class="text-base-content/60">Aufbau</dt>
-        <dd class="break-words sm:col-span-2">{v.bodyType ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{v.bodyType ?? '-'}</dd>
       </dl>
     </div>
   </div>
@@ -250,9 +250,9 @@
           <dt class="text-base-content/60">Name</dt>
           <dd class="break-words sm:col-span-2">{customerLabel(customer)}</dd>
           <dt class="text-base-content/60">Telefon</dt>
-          <dd class="break-all sm:col-span-2">{customer.phone ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.phone ?? '-'}</dd>
           <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="break-all sm:col-span-2">{customer.email ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{customer.email ?? '-'}</dd>
         </dl>
       </div>
     </div>

@@ -23,7 +23,7 @@
   const post = $derived(query.current ?? initial)
 
   const fmt = (d: Date | string | null) =>
-    d ? new Date(d).toLocaleString('de-DE') : '—'
+    d ? new Date(d).toLocaleString('de-DE') : '-'
 
   let confirmOpen = $state(false)
 

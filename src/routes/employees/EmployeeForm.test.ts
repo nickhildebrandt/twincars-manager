@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -173,5 +173,45 @@ describe('EmployeeForm', () => {
     render(EmployeeForm, { props: { onSave: vi.fn(), onCancel } })
     await user.click(screen.getByRole('button', { name: /abbrechen/i }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(EmployeeForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText('Bitte einen Vornamen eingeben.')
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText('Bitte einen Nachnamen eingeben.')
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the per-field error after blurring the empty Vorname field', async () => {
+    const { container } = render(EmployeeForm, { props: { onSave: vi.fn() } })
+    const firstName = container.querySelectorAll(
+      'input[maxlength="100"]'
+    )[0] as HTMLInputElement
+    await fireEvent.blur(firstName)
+    expect(
+      screen.getByText('Bitte einen Vornamen eingeben.')
+    ).toBeInTheDocument()
+    expect(firstName.className).toContain('input-error')
+    // The untouched Nachname stays quiet.
+    expect(
+      screen.queryByText('Bitte einen Nachnamen eingeben.')
+    ).not.toBeInTheDocument()
+  })
+
+  it('lights up both name fields after a submit attempt on an empty form', async () => {
+    const onSave = vi.fn()
+    const { container } = render(EmployeeForm, { props: { onSave } })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Vornamen eingeben.').length
+    ).toBeGreaterThan(0)
+    expect(
+      screen.getAllByText('Bitte einen Nachnamen eingeben.').length
+    ).toBeGreaterThan(0)
   })
 })

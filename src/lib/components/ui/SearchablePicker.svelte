@@ -22,7 +22,7 @@
   let {
     value = $bindable(''),
     valueLabel = $bindable(''),
-    placeholder = '— wählen —',
+    placeholder = 'Bitte wählen',
     dialogTitle = 'Auswählen',
     emptyText = 'Keine Treffer.',
     search,

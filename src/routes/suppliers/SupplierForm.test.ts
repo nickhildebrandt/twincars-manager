@@ -38,7 +38,7 @@ describe('SupplierForm', () => {
     expect(onSave).not.toHaveBeenCalled()
   })
 
-  it('keeps Speichern disabled and shows the inline error on invalid email', async () => {
+  it('keeps Speichern disabled and shows the inline error on invalid email after blur', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(SupplierForm, { props: { onSave } })
@@ -53,12 +53,38 @@ describe('SupplierForm', () => {
     const btn = screen.getByRole('button', {
       name: /speichern/i
     }) as HTMLButtonElement
+    // The button is gated by validity immediately …
     expect(btn).toBeDisabled()
+    // … but the field only lights up after blur (touched).
+    expect(emailInput.className).not.toContain('input-error')
+    await fireEvent.blur(emailInput)
     expect(emailInput.className).toContain('input-error')
     expect(onSave).not.toHaveBeenCalled()
     expect(
       screen.getAllByText(/gültige E-Mail-Adresse/i).length
     ).toBeGreaterThan(0)
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(SupplierForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText(/Bitte einen Firmennamen eingeben/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/gültige E-Mail-Adresse/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the name error after blurring the empty Firmenname field', async () => {
+    const { container } = render(SupplierForm, { props: { onSave: vi.fn() } })
+    const nameInput = container.querySelector(
+      'input[maxlength="200"]'
+    ) as HTMLInputElement
+    await fireEvent.blur(nameInput)
+    expect(
+      screen.getByText('Bitte einen Firmennamen eingeben.')
+    ).toBeInTheDocument()
+    expect(nameInput.className).toContain('input-error')
   })
 
   it('calls onSave with trimmed name and omits empty optional fields', async () => {

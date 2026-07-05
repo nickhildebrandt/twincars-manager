@@ -56,7 +56,7 @@
 
   // Optional grand total of hours in the current filter window. The
   // service returns it as a non-standard extra field on the list
-  // response — read it defensively so older cached results still
+  // response; read it defensively so older cached results still
   // render.
   const totalHours = $derived(
     (result as { totalHours?: number }).totalHours ?? 0
@@ -133,7 +133,7 @@
       class="card border-base-300 bg-base-100 flex flex-col gap-3 border p-3 sm:flex-row sm:flex-wrap sm:items-end"
     >
       {#if canReadAll}
-        <div role="tablist" class="tabs tabs-boxed">
+        <div role="tablist" class="tabs tabs-box">
           <button
             type="button"
             role="tab"
@@ -176,7 +176,7 @@
           <SearchablePicker
             bind:value={employeeFilterId}
             bind:valueLabel={employeeFilterLabel}
-            placeholder="— alle Mitarbeiter —"
+            placeholder="Alle Mitarbeiter"
             dialogTitle="Mitarbeiter auswählen"
             search={searchEmployees}
             onSelect={() => onFilterChange()}
@@ -240,7 +240,7 @@
                   {:else if e.task}
                     {e.task}
                   {:else}
-                    <span class="text-base-content/50">—</span>
+                    <span class="text-base-content/50">-</span>
                   {/if}
                 </td>
                 <td class="max-w-xs truncate">{e.note ?? ''}</td>

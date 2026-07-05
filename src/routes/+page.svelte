@@ -64,17 +64,23 @@
   />
   <StatCard
     title="Offene Rechnungen"
-    value="0"
+    value={loading ? '…' : (kpis?.openInvoices ?? 0).toLocaleString('de-DE')}
     icon={Receipt}
     color="warning"
   />
   <StatCard
     title="Zahlungserinnerungen"
-    value="0"
+    value={loading ? '…' : (kpis?.openReminders ?? 0).toLocaleString('de-DE')}
     icon={AlertTriangle}
     color="error"
   />
-  <StatCard title="Termine heute" value="0" icon={CalendarClock} />
+  <StatCard
+    title="Termine heute"
+    value={loading
+      ? '…'
+      : (kpis?.appointmentsToday ?? 0).toLocaleString('de-DE')}
+    icon={CalendarClock}
+  />
   <StatCard
     title="Saldo dieser Monat"
     value={loading ? '…' : formatEuro(kpis?.monthlyBalance ?? 0)}
@@ -109,7 +115,7 @@
         <a class="btn btn-sm" href="/offers/new"
           ><FileText size={14} /> Neuer Kostenvoranschlag</a
         >
-        <a class="btn btn-sm" href="/import"
+        <a class="btn btn-sm" href="/settings/import"
           ><Database size={14} /> Import starten</a
         >
       </div>

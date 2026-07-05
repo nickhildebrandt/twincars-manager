@@ -97,7 +97,7 @@
                 onclick={() => goto(`/vehicles/${v.id}`)}
               >
                 <td class="font-medium">
-                  {[v.make, v.model].filter(Boolean).join(' ') || '—'}
+                  {[v.make, v.model].filter(Boolean).join(' ') || '-'}
                 </td>
                 <td class="font-mono">{v.plate ?? ''}</td>
                 <td class="font-mono text-xs">{v.vin ?? ''}</td>

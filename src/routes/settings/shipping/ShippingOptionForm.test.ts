@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -187,6 +187,39 @@ describe('ShippingOptionForm', () => {
     const call = onSave.mock.calls[0][0]
     // The form pre-formats to German "5,90" then re-emits it.
     expect(call.priceNet).toBe('5,90')
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(ShippingOptionForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText(/Bitte einen Namen eingeben/i)
+    ).not.toBeInTheDocument()
+    expect(screen.queryByText(/gültigen Preis/i)).not.toBeInTheDocument()
+  })
+
+  it('shows the price error only after blur', async () => {
+    const user = userEvent.setup()
+    render(ShippingOptionForm, {
+      props: { onSave: vi.fn(), initial: { name: 'DHL' } }
+    })
+    const priceInput = screen.getByLabelText(/Preis netto/) as HTMLInputElement
+    await user.clear(priceInput)
+    await user.type(priceInput, 'abc')
+    expect(screen.queryByText(/gültigen Preis/i)).not.toBeInTheDocument()
+    await fireEvent.blur(priceInput)
+    expect(screen.getByText(/gültigen Preis/i)).toBeInTheDocument()
+    expect(priceInput.className).toContain('input-error')
+  })
+
+  it('surfaces the name error after a submit attempt', async () => {
+    const onSave = vi.fn()
+    const { container } = render(ShippingOptionForm, { props: { onSave } })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Bitte einen Namen eingeben/i).length
+    ).toBeGreaterThan(0)
   })
 
   it('emits description when filled in', async () => {

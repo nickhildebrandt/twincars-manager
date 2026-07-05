@@ -121,14 +121,14 @@
         <dt class="text-base-content/60">Größe</dt>
         <dd class="font-mono sm:col-span-2">{sizeLabel}</dd>
         <dt class="text-base-content/60">Lastindex</dt>
-        <dd class="sm:col-span-2">{t.loadIndex ?? '—'}</dd>
+        <dd class="sm:col-span-2">{t.loadIndex ?? '-'}</dd>
         <dt class="text-base-content/60">Geschwindigkeitsindex</dt>
-        <dd class="sm:col-span-2">{t.speedIndex ?? '—'}</dd>
+        <dd class="sm:col-span-2">{t.speedIndex ?? '-'}</dd>
         <dt class="text-base-content/60">EAN</dt>
-        <dd class="font-mono sm:col-span-2">{t.ean ?? '—'}</dd>
+        <dd class="font-mono sm:col-span-2">{t.ean ?? '-'}</dd>
         <dt class="text-base-content/60">Hersteller-Art-Nr.</dt>
         <dd class="font-mono sm:col-span-2"
-          >{t.manufacturerPartNumber ?? '—'}</dd
+          >{t.manufacturerPartNumber ?? '-'}</dd
         >
       </dl>
     </div>
@@ -139,14 +139,14 @@
       <h3 class="card-title text-base">EU-Reifenlabel</h3>
       <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
         <dt class="text-base-content/60">Kraftstoffeffizienz</dt>
-        <dd class="sm:col-span-2">{t.fuelEfficiency ?? '—'}</dd>
+        <dd class="sm:col-span-2">{t.fuelEfficiency ?? '-'}</dd>
         <dt class="text-base-content/60">Nasshaftung</dt>
-        <dd class="sm:col-span-2">{t.wetGrip ?? '—'}</dd>
+        <dd class="sm:col-span-2">{t.wetGrip ?? '-'}</dd>
         <dt class="text-base-content/60">Geräuschklasse</dt>
-        <dd class="sm:col-span-2">{t.noiseClass ?? '—'}</dd>
+        <dd class="sm:col-span-2">{t.noiseClass ?? '-'}</dd>
         <dt class="text-base-content/60">Geräuschwert</dt>
         <dd class="sm:col-span-2"
-          >{t.noiseDb != null ? `${t.noiseDb} dB` : '—'}</dd
+          >{t.noiseDb != null ? `${t.noiseDb} dB` : '-'}</dd
         >
       </dl>
     </div>
@@ -183,7 +183,7 @@
         <dd class="font-mono sm:col-span-2"
           >{t.purchasePriceNet
             ? formatEuro(Number(t.purchasePriceNet))
-            : '—'}</dd
+            : '-'}</dd
         >
         <dt class="text-base-content/60">Bestand</dt>
         <dd class="sm:col-span-2">{t.stockOnHand}</dd>
@@ -213,7 +213,7 @@
   <div class="lg:col-span-2">
     <ImageUploader
       title="Galerie"
-      hint="Bilder per Drag&Drop hochladen — bis 8 MB pro Foto."
+      hint="Bilder per Drag&Drop hochladen - bis 8 MB pro Foto."
       images={photos.map((p) => ({
         id: p.id,
         dataUrl: p.data.startsWith('data:')
@@ -232,7 +232,7 @@
       <div class="p-4 pb-2">
         <h3 class="card-title text-base">Preisverlauf</h3>
         <p class="text-base-content/60 text-sm">
-          Versionierte Stammpreise — Belegpositionen behalten ihren damals
+          Versionierte Stammpreise - Belegpositionen behalten ihren damals
           verwendeten Preis unabhängig davon.
         </p>
       </div>

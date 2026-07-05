@@ -30,7 +30,7 @@
 
 <PageHeader
   title="Neues Verkaufsfahrzeug anlegen"
-  subtitle={'Wird unter „Zu verkaufende Fahrzeuge“ geführt — kein Halter.'}
+  subtitle={'Wird unter „Zu verkaufende Fahrzeuge“ geführt - kein Halter.'}
 />
 <VehicleForm
   mode="stock"

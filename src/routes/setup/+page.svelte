@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto, invalidateAll } from '$app/navigation'
   import {
     ArrowLeft,
     ArrowRight,
@@ -310,8 +309,11 @@
     try {
       await busy.run(() => completeSetup())
       toast.success('Setup abgeschlossen!')
-      await invalidateAll()
-      goto('/login')
+      // Full document load, not a client-side goto: the async root
+      // layout resolved its context while setup was incomplete; a
+      // fresh load re-runs it against the completed state (same
+      // pattern as the post-login navigation).
+      window.location.href = '/login'
     } catch (e) {
       handleClientError(e, 'Setup konnte nicht abgeschlossen werden')
     }
@@ -333,7 +335,7 @@
       <div>
         <h1 class="text-xl font-bold">TwinCarsManager einrichten</h1>
         <p class="text-base-content/60 text-sm">
-          Wir benötigen nur die Kerndaten — alles weitere können Sie später in
+          Wir benötigen nur die Kerndaten, alles weitere können Sie später in
           den Einstellungen anpassen.
         </p>
       </div>
@@ -389,9 +391,9 @@
             <li>Benutzername + Passwort für den ersten Login</li>
           </ul>
           <p class="text-base-content/60 text-sm">
-            Alle weiteren Optionen — Mailvorlagen, PDF-Layout, Nummernkreise,
-            Kfz-Freifelder usw. — sind mit deutschen Standardwerten vorbelegt
-            und können später unter „Einstellungen" geändert werden.
+            Alle weiteren Optionen (Mailvorlagen, PDF-Layout, Nummernkreise,
+            Kfz-Freifelder usw.) sind mit deutschen Standardwerten vorbelegt und
+            können später unter „Einstellungen" geändert werden.
           </p>
         {:else if step === 2}
           <div class="flex items-center gap-2">
@@ -551,7 +553,7 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Das Logo erscheint auf jedem PDF (Rechnung, Angebot,
-            Verkaufsschild). Optional — Sie können es auch später unter
+            Verkaufsschild). Optional: Sie können es auch später unter
             Einstellungen hinterlegen.
           </p>
           <div class="flex flex-col gap-4 sm:flex-row">
@@ -612,7 +614,7 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Damit Sie Rechnungen, Angebote und Mahnungen direkt versenden
-            können. Optional — Sie können den E-Mail-Versand auch später unter
+            können. Optional: Sie können den E-Mail-Versand auch später unter
             Einstellungen → E-Mail/SMTP einrichten.
           </p>
           <label class="label cursor-pointer justify-start gap-3">
@@ -757,7 +759,7 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Mit diesem Konto melden Sie sich nach Abschluss erstmals an. Bitte
-            Benutzername und Passwort sicher merken — beide lassen sich später
+            Benutzername und Passwort sicher merken, beide lassen sich später
             unter „Einstellungen → Benutzer" ändern.
           </p>
           <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
@@ -832,7 +834,7 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Bitte prüfen Sie Ihre Eingaben. Über „Bearbeiten" gelangen Sie
-            zurück zum entsprechenden Schritt — beim erneuten „Weiter" landen
+            zurück zum entsprechenden Schritt - beim erneuten „Weiter" landen
             Sie wieder hier.
           </p>
 
@@ -856,17 +858,17 @@
                   class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
                 >
                   <dt class="text-base-content/50">Name</dt>
-                  <dd>{companyName || '—'}</dd>
+                  <dd>{companyName || '-'}</dd>
                   <dt class="text-base-content/50">Anschrift</dt>
                   <dd>{street}, {zip} {city} ({bundesland})</dd>
                   <dt class="text-base-content/50">Telefon</dt>
-                  <dd>{phone || '—'}</dd>
+                  <dd>{phone || '-'}</dd>
                   {#if mobile}
                     <dt class="text-base-content/50">Mobil</dt>
                     <dd>{mobile}</dd>
                   {/if}
                   <dt class="text-base-content/50">E-Mail</dt>
-                  <dd>{email || '—'}</dd>
+                  <dd>{email || '-'}</dd>
                   {#if website}
                     <dt class="text-base-content/50">Website</dt>
                     <dd>{website}</dd>
@@ -894,15 +896,15 @@
                   class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
                 >
                   <dt class="text-base-content/50">USt-IdNr.</dt>
-                  <dd>{vatId || '—'}</dd>
+                  <dd>{vatId || '-'}</dd>
                   <dt class="text-base-content/50">Steuernummer</dt>
-                  <dd>{taxNumber || '—'}</dd>
+                  <dd>{taxNumber || '-'}</dd>
                   <dt class="text-base-content/50">Bankname</dt>
-                  <dd>{bankName || '—'}</dd>
+                  <dd>{bankName || '-'}</dd>
                   <dt class="text-base-content/50">IBAN</dt>
-                  <dd>{iban || '—'}</dd>
+                  <dd>{iban || '-'}</dd>
                   <dt class="text-base-content/50">BIC</dt>
-                  <dd>{bic || '—'}</dd>
+                  <dd>{bic || '-'}</dd>
                 </dl>
               </div>
             </div>
@@ -969,7 +971,7 @@
                 </div>
                 {#if smtpSkip}
                   <p class="text-base-content/60 mt-1 text-sm">
-                    Übersprungen — kann später unter Einstellungen → E-Mail/SMTP
+                    Übersprungen - kann später unter Einstellungen → E-Mail/SMTP
                     eingerichtet werden.
                   </p>
                 {:else}
@@ -977,16 +979,16 @@
                     class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
                   >
                     <dt class="text-base-content/50">Host : Port</dt>
-                    <dd>{smtpHost || '—'} : {smtpPort}</dd>
+                    <dd>{smtpHost || '-'} : {smtpPort}</dd>
                     <dt class="text-base-content/50">Verschlüsselung</dt>
                     <dd>{smtpSecure}</dd>
                     <dt class="text-base-content/50">Benutzer</dt>
-                    <dd>{smtpUser || '—'}</dd>
+                    <dd>{smtpUser || '-'}</dd>
                     <dt class="text-base-content/50">Passwort</dt>
-                    <dd>{smtpPassword ? '••••••••' : '—'}</dd>
+                    <dd>{smtpPassword ? '••••••••' : '-'}</dd>
                     <dt class="text-base-content/50">Absender</dt>
                     <dd>
-                      {fromName || '—'}
+                      {fromName || '-'}
                       {#if fromAddress}
                         &lt;{fromAddress}&gt;
                       {/if}
@@ -1031,7 +1033,7 @@
                                   >geschlossen</span
                                 >
                               {:else}
-                                {r.opensAt} – {r.closesAt}
+                                {r.opensAt} - {r.closesAt}
                               {/if}
                             </td>
                           </tr>
@@ -1063,9 +1065,9 @@
                   class="text-base-content/80 mt-1 grid grid-cols-1 gap-x-4 gap-y-1 text-sm sm:grid-cols-[10rem_1fr]"
                 >
                   <dt class="text-base-content/50">Benutzername</dt>
-                  <dd>{adminUsername.trim().toLowerCase() || '—'}</dd>
+                  <dd>{adminUsername.trim().toLowerCase() || '-'}</dd>
                   <dt class="text-base-content/50">Anzeigename</dt>
-                  <dd>{adminName || '—'}</dd>
+                  <dd>{adminName || '-'}</dd>
                   <dt class="text-base-content/50">Status</dt>
                   <dd>
                     {#if adminCreated}

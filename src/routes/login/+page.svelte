@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from 'svelte'
   import { page } from '$app/state'
   import { authClient } from '$lib/client/auth-client'
   import { busy } from '$lib/stores/busy.svelte'
@@ -14,6 +15,25 @@
   $effect(() => {
     pageTitle.set('Anmelden')
     return () => pageTitle.reset()
+  })
+
+  /**
+   * Per-load background gradient. Full literal class strings so
+   * Tailwind's scanner picks them up; the variant is chosen client-side
+   * in `onMount` (never during SSR) to avoid a hydration mismatch, and
+   * fades in over the neutral base — no flash, no custom CSS.
+   */
+  const GRADIENTS = [
+    'bg-linear-to-br from-primary/20 via-base-200 to-accent/25',
+    'bg-linear-to-tr from-accent/20 via-base-200 to-primary/25',
+    'bg-linear-to-bl from-info/25 via-base-200 to-primary/20',
+    'bg-linear-to-r from-primary/15 via-accent/10 to-info/25',
+    'bg-linear-to-tl from-success/15 via-base-200 to-primary/25',
+    'bg-linear-to-b from-secondary/25 via-base-200 to-accent/20'
+  ]
+  let gradient = $state<string | null>(null)
+  onMount(() => {
+    gradient = GRADIENTS[Math.floor(Math.random() * GRADIENTS.length)]
   })
 
   let username = $state('')
@@ -84,77 +104,89 @@
   }
 </script>
 
-<div class="flex min-h-[60vh] items-center justify-center p-4">
-  <div class="card border-base-300 bg-base-100 w-full max-w-md border">
-    <div class="card-body">
-      <div class="flex items-center gap-3">
-        <img
-          src="/icons/icon-128.webp"
-          alt=""
-          width="44"
-          height="44"
-          class="rounded-xl"
-          loading="eager"
-          decoding="async"
-        />
-        <h1 class="card-title">Anmelden</h1>
-      </div>
-      <p class="text-base-content/70 text-sm">
-        Bitte melden Sie sich mit Ihrem Benutzernamen und Passwort an.
-      </p>
-      {#if reasonMessage}
-        <div class="alert alert-info mt-3 text-sm" role="status">
-          <span>{reasonMessage}</span>
+<div
+  class="bg-base-200 relative flex min-h-dvh items-center justify-center overflow-hidden p-4"
+>
+  <div
+    class="absolute inset-0 transition-opacity duration-700 {gradient ??
+      ''} {gradient ? 'opacity-100' : 'opacity-0'}"
+    aria-hidden="true"
+  ></div>
+  <div class="relative flex w-full max-w-md flex-col gap-4">
+    <div class="card border-base-300 bg-base-100 w-full border">
+      <div class="card-body">
+        <div class="flex items-center gap-3">
+          <img
+            src="/icons/icon-128.webp"
+            alt=""
+            width="44"
+            height="44"
+            class="rounded-xl"
+            loading="eager"
+            decoding="async"
+          />
+          <h1 class="card-title">Anmelden</h1>
         </div>
-      {/if}
-      <form class="mt-4 flex flex-col gap-3" onsubmit={handleSubmit}>
-        <FormField
-          label="Benutzername"
-          required
-          error={wasTouched('username') ? err('username') : null}
-        >
-          <input
-            type="text"
-            class={validationClasses(err('username'), wasTouched('username'))}
-            bind:value={username}
-            autocomplete="username"
-            required
-            minlength="3"
-            maxlength="64"
-            onblur={() => fv.markTouched('username')}
-          />
-        </FormField>
-        <FormField
-          label="Passwort"
-          required
-          error={wasTouched('password') ? err('password') : null}
-        >
-          <input
-            type="password"
-            class={validationClasses(err('password'), wasTouched('password'))}
-            bind:value={password}
-            autocomplete="current-password"
-            required
-            minlength="8"
-            onblur={() => fv.markTouched('password')}
-          />
-        </FormField>
-        {#if errorMessage}
-          <div class="alert alert-error text-sm" role="alert">
-            <span>{errorMessage}</span>
+        <p class="text-base-content/70 text-sm">
+          Bitte melden Sie sich mit Ihrem Benutzernamen und Passwort an.
+        </p>
+        {#if reasonMessage}
+          <div class="alert alert-info mt-3 text-sm" role="status">
+            <span>{reasonMessage}</span>
           </div>
         {/if}
-        <button
-          type="submit"
-          class="btn btn-primary mt-2"
-          disabled={busy.active || !fv.valid}
-        >
-          {#if busy.active}
-            <span class="loading loading-spinner loading-sm"></span>
+        <form class="mt-4 flex flex-col gap-3" onsubmit={handleSubmit}>
+          <FormField
+            label="Benutzername"
+            required
+            error={wasTouched('username') ? err('username') : null}
+          >
+            <input
+              type="text"
+              class={validationClasses(err('username'), wasTouched('username'))}
+              bind:value={username}
+              autocomplete="username"
+              required
+              minlength="3"
+              maxlength="64"
+              onblur={() => fv.markTouched('username')}
+            />
+          </FormField>
+          <FormField
+            label="Passwort"
+            required
+            error={wasTouched('password') ? err('password') : null}
+          >
+            <input
+              type="password"
+              class={validationClasses(err('password'), wasTouched('password'))}
+              bind:value={password}
+              autocomplete="current-password"
+              required
+              minlength="8"
+              onblur={() => fv.markTouched('password')}
+            />
+          </FormField>
+          {#if errorMessage}
+            <div class="alert alert-error text-sm" role="alert">
+              <span>{errorMessage}</span>
+            </div>
           {/if}
-          Anmelden
-        </button>
-      </form>
+          <button
+            type="submit"
+            class="btn btn-primary mt-2"
+            disabled={busy.active || !fv.valid}
+          >
+            {#if busy.active}
+              <span class="loading loading-spinner loading-sm"></span>
+            {/if}
+            Anmelden
+          </button>
+        </form>
+      </div>
     </div>
+    <p class="text-base-content/60 text-center text-xs">
+      TwinCarsManager · Version {__APP_VERSION__}
+    </p>
   </div>
 </div>

@@ -192,7 +192,7 @@
   }
 
   const fmtDate = (d: string | Date | null | undefined) => {
-    if (!d) return '—'
+    if (!d) return '-'
     const dt = typeof d === 'string' ? new Date(d) : d
     return dt.toLocaleDateString('de-DE', {
       day: '2-digit',
@@ -382,7 +382,7 @@
                       {/if}
                     </td>
                     <td class="text-base-content/70 text-sm">
-                      {r.description ?? '—'}
+                      {r.description ?? '-'}
                     </td>
                     <td>
                       <div class="flex flex-wrap items-center gap-1">

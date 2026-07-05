@@ -45,7 +45,7 @@
   let toDelete = $state<{ id: string; title: string } | null>(null)
 
   const fmt = (d: Date | string | null) =>
-    d ? new Date(d).toLocaleDateString('de-DE') : '—'
+    d ? new Date(d).toLocaleDateString('de-DE') : '-'
 
   const remove = async () => {
     if (!toDelete) return

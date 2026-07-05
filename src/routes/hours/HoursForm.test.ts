@@ -89,9 +89,10 @@ describe('HoursForm', () => {
     const form = container.querySelector('form') as HTMLFormElement
     await fireEvent.submit(form)
     expect(onSave).not.toHaveBeenCalled()
+    // The message shows in the alert and under the field.
     expect(
-      screen.getByText(/positive Stundenzahl eingeben/i)
-    ).toBeInTheDocument()
+      screen.getAllByText(/positive Stundenzahl eingeben/i).length
+    ).toBeGreaterThan(0)
   })
 
   it('rejects when hours exceeds 24', async () => {
@@ -114,7 +115,8 @@ describe('HoursForm', () => {
     const form = container.querySelector('form') as HTMLFormElement
     await fireEvent.submit(form)
     expect(onSave).not.toHaveBeenCalled()
-    expect(screen.getByText(/Maximal 24 Stunden/i)).toBeInTheDocument()
+    // The message shows in the alert and under the field.
+    expect(screen.getAllByText(/Maximal 24 Stunden/i).length).toBeGreaterThan(0)
   })
 
   it('renders the locked-employee field read-only and submits the locked id', async () => {
@@ -223,5 +225,43 @@ describe('HoursForm', () => {
     render(HoursForm, { props: { onSave: vi.fn(), onCancel } })
     await user.click(screen.getByRole('button', { name: /abbrechen/i }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(HoursForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText(/Bitte einen Mitarbeiter auswählen/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/Bitte eine Aufgabe eingeben/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the task error only after blur', async () => {
+    const { container } = render(HoursForm, {
+      props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
+    })
+    const taskInput = container.querySelector(
+      'input[maxlength="200"]'
+    ) as HTMLInputElement
+    expect(
+      screen.queryByText('Bitte eine Aufgabe eingeben.')
+    ).not.toBeInTheDocument()
+    await fireEvent.blur(taskInput)
+    expect(screen.getByText('Bitte eine Aufgabe eingeben.')).toBeInTheDocument()
+    expect(taskInput.className).toContain('input-error')
+  })
+
+  it('surfaces the employee error after a submit attempt', async () => {
+    const onSave = vi.fn()
+    const { container } = render(HoursForm, {
+      props: { onSave, initial: { task: 'Reinigung' } }
+    })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Bitte einen Mitarbeiter auswählen/i).length
+    ).toBeGreaterThan(0)
   })
 })

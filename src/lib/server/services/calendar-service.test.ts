@@ -223,7 +223,7 @@ describe('calendar-service', () => {
         '2026-06-19',
         '2026-06-20'
       ])
-      expect(closures[0].title).toMatch(/Betriebsschließung — Brückentag/)
+      expect(closures[0].title).toMatch(/Betriebsschließung - Brückentag/)
 
       const vacations = events.filter((e) => e.kind === 'employee_vacation')
       expect(vacations).toHaveLength(3)

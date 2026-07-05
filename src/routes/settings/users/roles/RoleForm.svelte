@@ -1,8 +1,29 @@
+<script lang="ts" module>
+  import { minLength, object, pipe, string, trim } from 'valibot'
+
+  /**
+   * Client-side schema mirroring the rule previously enforced ad hoc
+   * in `submit`: the role name needs at least 2 characters.
+   */
+  const roleSchema = object({
+    name: pipe(
+      string(),
+      trim(),
+      minLength(2, 'Bitte einen Rollennamen mit mindestens 2 Zeichen angeben.')
+    )
+  })
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import { Trash2 } from '@lucide/svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
+  import {
+    useFormValidation,
+    validationClasses
+  } from '$lib/utils/form-validation.svelte'
   import {
     MODULE_PERMISSIONS,
     WILDCARD_PERMISSION,
@@ -58,8 +79,17 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived(name.trim().length >= 2)
+  /**
+   * Validation handle for the Submit button gate and the per-field
+   * error display. The name error only surfaces once the field was
+   * touched (blur) or a submit was attempted.
+   */
+  const fv = useFormValidation(roleSchema, () => ({ name }))
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const markDirty = () => formDirty.set(true)
   $effect(() => () => formDirty.clear())
@@ -116,12 +146,17 @@
   const submit = async (e: Event) => {
     e.preventDefault()
     if (locked) return
-    errorMsg = null
-    const trimmedName = name.trim()
-    if (trimmedName.length < 2) {
-      errorMsg = 'Bitte einen Rollennamen mit mindestens 2 Zeichen angeben.'
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
       return
     }
+    errorMsg = null
+    const trimmedName = name.trim()
     const permissions = wildcard ? [WILDCARD_PERMISSION] : Array.from(selected)
     const trimmedDesc = description.trim()
     await onSave({
@@ -148,7 +183,7 @@
     {#if locked}
       <div class="alert alert-info">
         <span>
-          Die Administrator-Rolle ist systemgeschützt — Name und Berechtigungen
+          Die Administrator-Rolle ist systemgeschützt - Name und Berechtigungen
           können nicht geändert werden.
         </span>
       </div>
@@ -157,16 +192,19 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Stammdaten</legend>
       <div class="grid grid-cols-1 gap-3">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Name *</span>
+        <FormField
+          label="Name"
+          required
+          error={wasTouched('name') ? err('name') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('name'), wasTouched('name'))}
             maxlength="200"
-            required
             disabled={locked}
             bind:value={name}
+            onblur={() => fv.markTouched('name')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Beschreibung</span>
           <textarea
@@ -262,7 +300,7 @@
         <button
           type="submit"
           class="btn btn-primary"
-          disabled={busy.active || locked || !valid}
+          disabled={busy.active || locked || !fv.valid}
         >
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>

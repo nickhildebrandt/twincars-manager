@@ -62,6 +62,19 @@ const itemsPickerSchema = object({
   category: optional(picklist(['all', 'services', 'articles']))
 })
 
+/**
+ * Relation-aware vehicle picker input: an optional `customerId`
+ * narrows the results to that customer's vehicles. Used by the
+ * combined Kunde/Fahrzeug picker so choosing a customer first filters
+ * the vehicle list, while choosing a vehicle first reveals its holder.
+ */
+const customerVehiclePickerSchema = object({
+  q: optional(pipe(string(), trim(), maxLength(200))),
+  page: number(),
+  size: picklist([10, 25, 50, 100]),
+  customerId: optional(pipe(string(), trim(), maxLength(64)))
+})
+
 const buildResult = <T>(
   items: T[],
   total: number,
@@ -175,8 +188,90 @@ export const pickVehiclesRemote = query(
     ])
     const out = rows.map((r) => ({
       id: r.id,
-      label: `${r.plate ?? '—'} · ${[r.make, r.model].filter(Boolean).join(' ') || '—'}`
+      label: `${r.plate ?? '-'} · ${[r.make, r.model].filter(Boolean).join(' ') || '-'}`
     }))
+    return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
+  }
+)
+
+/**
+ * Relation-aware vehicle picker for the combined Kunde/Fahrzeug
+ * selection: every hit carries its holder (`customerId` +
+ * `customerLabel`) so choosing a vehicle can auto-fill the customer,
+ * and an optional `customerId` filter narrows the list to one
+ * customer's vehicles once the customer was chosen first.
+ *
+ * @group integration
+ * @module pickers
+ */
+export const pickCustomerVehiclesRemote = query(
+  customerVehiclePickerSchema,
+  async ({ q, page, size, customerId }) => {
+    requirePermission('vehicles')
+    const offset = (page - 1) * size
+    const filters = [eq(vehicles.archived, false)]
+    if (customerId) filters.push(eq(vehicles.customerId, customerId))
+    if (q) {
+      const term = `%${q}%`
+      const plateMatches = await db
+        .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+        .from(vehicleLicensePlateVersions)
+        .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+      const plateMatchIds = plateMatches.map((r) => r.vehicleId)
+      const baseSearch = or(
+        ilike(vehicles.vin, term),
+        ilike(vehicles.make, term),
+        ilike(vehicles.model, term),
+        ilike(customers.lastName, term),
+        ilike(customers.company, term)
+      )!
+      filters.push(
+        plateMatchIds.length > 0
+          ? or(baseSearch, inArray(vehicles.id, plateMatchIds))!
+          : baseSearch
+      )
+    }
+    const where = and(...filters)
+    const lp = latestPlateSubquery()
+    const [rows, totalRow] = await Promise.all([
+      db
+        .select({
+          id: vehicles.id,
+          plate: lp.licensePlate,
+          make: vehicles.make,
+          model: vehicles.model,
+          customerId: vehicles.customerId,
+          customerCompany: customers.company,
+          customerFirstName: customers.firstName,
+          customerLastName: customers.lastName,
+          customerNumber: customers.customerNumber
+        })
+        .from(vehicles)
+        .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+        .leftJoin(customers, eq(customers.id, vehicles.customerId))
+        .where(where)
+        .orderBy(asc(lp.licensePlate))
+        .limit(size)
+        .offset(offset),
+      db
+        .select({ value: count() })
+        .from(vehicles)
+        .leftJoin(customers, eq(customers.id, vehicles.customerId))
+        .where(where)
+    ])
+    const out = rows.map((r) => {
+      const holder =
+        r.customerCompany ||
+        `${r.customerFirstName ?? ''} ${r.customerLastName ?? ''}`.trim() ||
+        r.customerNumber ||
+        null
+      return {
+        id: r.id,
+        label: `${r.plate ?? '-'} · ${[r.make, r.model].filter(Boolean).join(' ') || '-'}${holder ? ` · ${holder}` : ''}`,
+        customerId: r.customerId,
+        customerLabel: holder
+      }
+    })
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
 )
@@ -273,7 +368,7 @@ export const pickItemsRemote = query(
     const out = await Promise.all(
       rows.map(async (r) => ({
         id: r.id,
-        label: `${r.articleNumber} — ${r.description}`,
+        label: `${r.articleNumber} - ${r.description}`,
         articleNumber: r.articleNumber,
         description: r.description,
         kind: r.kind,
@@ -353,7 +448,7 @@ export const pickInventoryVehiclesRemote = query(
         .where(where)
     ])
     const out = rows.map((r) => {
-      const makeModel = [r.make, r.model].filter(Boolean).join(' ') || '—'
+      const makeModel = [r.make, r.model].filter(Boolean).join(' ') || '-'
       const ident = r.plate ?? r.vin ?? ''
       return {
         id: r.id,

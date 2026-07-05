@@ -5,7 +5,6 @@ import {
   Car,
   Warehouse,
   CalendarClock,
-  Clock,
   CircleDot,
   Disc3,
   FileText,
@@ -21,7 +20,6 @@ import {
   Mail,
   Send,
   Newspaper,
-  Store,
   Settings,
   Database,
   Inbox
@@ -217,6 +215,11 @@ export const navigation: NavGroup[] = [
   {
     label: 'System',
     items: [
+      // Everything settings-shaped lives INSIDE /settings as tabs
+      // (incl. eBay + KFZ-Kaufmann-Import). The extra entries below
+      // exist only for users whose sole grant is a sub-permission
+      // (shipping / mailings / import) and who therefore cannot see
+      // the "Einstellungen" entry itself.
       {
         label: 'Einstellungen',
         href: '/settings',
@@ -230,18 +233,6 @@ export const navigation: NavGroup[] = [
         permission: 'shipping'
       },
       {
-        label: 'Öffnungszeiten',
-        href: '/settings/workshop-hours',
-        icon: Clock,
-        permission: 'settings'
-      },
-      {
-        label: 'eBay-Verbindung',
-        href: '/settings/ebay',
-        icon: Store,
-        permission: 'settings'
-      },
-      {
         label: 'Anfragen',
         href: '/settings/inquiries',
         icon: Inbox,
@@ -249,7 +240,7 @@ export const navigation: NavGroup[] = [
       },
       {
         label: 'Import (Kfz-Kaufmann)',
-        href: '/import',
+        href: '/settings/import',
         icon: Database,
         permission: 'import'
       }

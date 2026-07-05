@@ -4,12 +4,14 @@
     Search,
     X,
     Users,
+    Users2,
     Car,
     Package,
     FileText,
     Disc3,
     Warehouse,
-    Truck
+    Truck,
+    Newspaper
   } from '@lucide/svelte'
   import { globalSearchRemote } from '../../../routes/search.remote'
   import type {
@@ -37,7 +39,9 @@
     tires: [],
     tireStorage: [],
     suppliers: [],
-    documents: []
+    employees: [],
+    documents: [],
+    posts: []
   })
 
   let q = $state('')
@@ -92,10 +96,22 @@
         items: results.suppliers
       },
       {
+        key: 'employees' as const,
+        label: 'Mitarbeiter',
+        icon: Users2,
+        items: results.employees
+      },
+      {
         key: 'documents' as const,
         label: 'Belege',
         icon: FileText,
         items: results.documents
+      },
+      {
+        key: 'posts' as const,
+        label: 'Aktuelle Informationen',
+        icon: Newspaper,
+        items: results.posts
       }
     ].filter((b) => b.items.length > 0)
   )
@@ -126,6 +142,10 @@
         return `/tire-storage/${hit.id}`
       case 'suppliers':
         return `/suppliers/${hit.id}`
+      case 'employees':
+        return `/employees/${hit.id}`
+      case 'posts':
+        return `/posts/${hit.id}`
       case 'documents': {
         const t = hit.type ?? 'invoice'
         if (t === 'invoice' || t === 'credit_note') {
@@ -158,7 +178,9 @@
     }
     loading = true
     try {
-      const res = await globalSearchRemote({ q: term })
+      // `.run()` — awaiting the query object directly only works in a
+      // reactive context; inside this event-driven debounce it throws.
+      const res = await globalSearchRemote({ q: term }).run()
       results = res
       activeIndex = 0
     } finally {

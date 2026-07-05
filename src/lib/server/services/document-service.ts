@@ -387,7 +387,7 @@ export async function cancelInvoice(
   if (original.status === 'draft') {
     error(
       409,
-      'Entwürfe können direkt gelöscht werden — eine Stornierung ist nur für ausgestellte Rechnungen vorgesehen.'
+      'Entwürfe können direkt gelöscht werden - eine Stornierung ist nur für ausgestellte Rechnungen vorgesehen.'
     )
   }
 

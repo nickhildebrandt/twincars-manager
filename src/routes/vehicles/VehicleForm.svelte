@@ -1,3 +1,52 @@
+<script lang="ts" module>
+  import { check, minLength, object, optional, pipe, string } from 'valibot'
+
+  /**
+   * Client-side schema mirroring the business rules previously enforced
+   * ad hoc in `submit`: at least one of licensePlate / vin / make /
+   * model must be present (root-level check, surfaces as `_form`), and
+   * in `customer` mode a customer must be picked (per-field error).
+   */
+  const identifierMessage =
+    'Bitte mindestens Kennzeichen, FIN oder Marke/Modell angeben.'
+
+  const hasIdentifier = (v: {
+    make: string
+    model: string
+    licensePlate: string
+    vin: string
+  }) =>
+    Boolean(
+      v.licensePlate.trim() || v.vin.trim() || v.make.trim() || v.model.trim()
+    )
+
+  const identifierShape = {
+    make: string(),
+    model: string(),
+    licensePlate: string(),
+    vin: string()
+  }
+
+  const customerModeSchema = pipe(
+    object({
+      ...identifierShape,
+      customerId: pipe(string(), minLength(1, 'Bitte einen Kunden auswählen.'))
+    }),
+    // Inline param type: valibot's CheckAction is invariant in its
+    // input, so the callback must name the full object incl. customerId.
+    check(
+      (v: { customerId: string } & Parameters<typeof hasIdentifier>[0]) =>
+        hasIdentifier(v),
+      identifierMessage
+    )
+  )
+
+  const defaultModeSchema = pipe(
+    object({ ...identifierShape, customerId: optional(string()) }),
+    check(hasIdentifier, identifierMessage)
+  )
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { Vehicle } from '$lib/server/db/schema'
@@ -5,6 +54,7 @@
   import { formDirty } from '$lib/stores/form-dirty.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
+  import { useFormValidation } from '$lib/utils/form-validation.svelte'
   import { pickCustomersRemote } from '../pickers.remote'
 
   /**
@@ -72,20 +122,19 @@
   let errorMsg = $state<string | null>(null)
 
   /**
-   * Client-side validity gate for the Submit button. Mirrors the
-   * business rules enforced in `submit`:
-   *
-   *   - at least one of licensePlate / vin / make / model must be set
-   *   - in `customer` mode, a customer must be picked
+   * Validation handle for the Submit button gate and the per-field
+   * error display. Field errors only surface once the field was
+   * touched (blur / selection) or a submit was attempted.
    */
-  const valid = $derived.by(() => {
-    const hasIdentifier = Boolean(
-      licensePlate.trim() || vin.trim() || make.trim() || model.trim()
-    )
-    if (!hasIdentifier) return false
-    if (mode === 'customer' && !customerId) return false
-    return true
-  })
+  const fv = useFormValidation(
+    () => (mode === 'customer' ? customerModeSchema : defaultModeSchema),
+    () => ({ customerId, make, model, licensePlate, vin })
+  )
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const trimOrUndef = (v: string) => {
     const t = v.trim()
@@ -94,15 +143,16 @@
 
   const submit = async (e: Event) => {
     e.preventDefault()
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     errorMsg = null
-    if (!licensePlate.trim() && !vin.trim() && !make.trim() && !model.trim()) {
-      errorMsg = 'Bitte mindestens Kennzeichen, FIN oder Marke/Modell angeben.'
-      return
-    }
-    if (mode === 'customer' && !customerId) {
-      errorMsg = 'Bitte einen Kunden auswählen.'
-      return
-    }
     const resolvedCustomerId =
       mode === 'stock' ? undefined : customerId || undefined
     formDirty.clear()
@@ -152,19 +202,21 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Halter</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <div class="flex w-full flex-col gap-1 sm:col-span-2">
-            <span class="label-text">
-              Kunde{mode === 'customer' ? ' *' : ''}
-            </span>
+          <FormField
+            label="Kunde"
+            required={mode === 'customer'}
+            colSpan="sm:col-span-2"
+            error={wasTouched('customerId') ? err('customerId') : null}
+          >
             <SearchablePicker
               bind:value={customerId}
               bind:valueLabel={customerLabel}
-              placeholder="— Kunde wählen —"
+              placeholder="- Kunde wählen -"
               dialogTitle="Kunden auswählen"
               search={searchCustomers}
-              onSelect={() => {}}
+              onSelect={() => fv.markTouched('customerId')}
             />
-          </div>
+          </FormField>
         </div>
       </fieldset>
     {/if}
@@ -266,7 +318,7 @@
         </FormField>
         <FormField label="Kraftstoff">
           <select class="select select-bordered w-full" bind:value={fuelType}>
-            <option value="">—</option>
+            <option value="">-</option>
             <option>Benzin</option>
             <option>Diesel</option>
             <option>Elektro</option>
@@ -276,7 +328,7 @@
         </FormField>
         <FormField label="Getriebe">
           <select class="select select-bordered w-full" bind:value={gearbox}>
-            <option value="">—</option>
+            <option value="">-</option>
             <option>Schaltgetriebe</option>
             <option>Automatik</option>
           </select>
@@ -312,7 +364,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

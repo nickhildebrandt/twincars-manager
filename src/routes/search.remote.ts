@@ -39,9 +39,11 @@ export const globalSearchRemote = query(searchSchema, async ({ q }) => {
     tires: canTires ? result.tires : [],
     tireStorage: canTires ? result.tireStorage : [],
     suppliers: hasPermission(perms, 'suppliers') ? result.suppliers : [],
+    employees: hasPermission(perms, 'employees') ? result.employees : [],
     documents:
       hasPermission(perms, 'invoices') || hasPermission(perms, 'offers')
         ? result.documents
-        : []
+        : [],
+    posts: hasPermission(perms, 'posts') ? result.posts : []
   }
 })

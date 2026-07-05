@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -6,7 +6,9 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 /**
  * Component tests for VehicleForm — mode-based field visibility,
  * required-customer guard in customer mode, the "at least one of …"
- * identifier check, and trimmed-payload behaviour.
+ * identifier check, and trimmed-payload behaviour. Validation runs
+ * through the shared useFormValidation helper: errors surface only
+ * after a field was touched or a submit was attempted.
  *
  * @group component
  * @module VehicleForm
@@ -143,6 +145,40 @@ describe('VehicleForm', () => {
     render(VehicleForm, { props: { onSave: vi.fn(), onCancel } })
     await user.click(screen.getByRole('button', { name: /abbrechen/i }))
     expect(onCancel).toHaveBeenCalledTimes(1)
+  })
+
+  it('shows no validation errors on a pristine form', () => {
+    render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
+    expect(
+      screen.queryByText(/Bitte einen Kunden auswählen/i)
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByText(/Kennzeichen, FIN oder Marke\/Modell/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('surfaces the identifier rule after a submit attempt', async () => {
+    const onSave = vi.fn()
+    const { container } = render(VehicleForm, { props: { onSave } })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Kennzeichen, FIN oder Marke\/Modell/i).length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the per-field customer error after a submit attempt in customer mode', async () => {
+    const onSave = vi.fn()
+    const { container } = render(VehicleForm, {
+      props: { onSave, mode: 'customer', initial: { make: 'VW' } }
+    })
+    const form = container.querySelector('form') as HTMLFormElement
+    await fireEvent.submit(form)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Bitte einen Kunden auswählen/i).length
+    ).toBeGreaterThan(0)
   })
 
   it('pre-fills make/model from the initial prop', () => {

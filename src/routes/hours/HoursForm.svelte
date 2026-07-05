@@ -1,8 +1,65 @@
+<script lang="ts" module>
+  import {
+    check,
+    minLength,
+    object,
+    pipe,
+    string,
+    trim,
+    unknown
+  } from 'valibot'
+
+  /**
+   * Client-side schemas mirroring the rules previously enforced ad hoc
+   * in `submit`. One schema per link kind, because exactly one of
+   * documentId / customerId / task is required depending on the active
+   * radio selection.
+   */
+  const hoursBaseShape = {
+    employeeId: pipe(
+      string(),
+      minLength(1, 'Bitte einen Mitarbeiter auswählen.')
+    ),
+    date: pipe(string(), minLength(1, 'Bitte ein Datum eingeben.')),
+    hours: pipe(
+      unknown(),
+      check((v) => {
+        const n = Number(v)
+        return Number.isFinite(n) && n > 0
+      }, 'Bitte eine positive Stundenzahl eingeben.'),
+      check((v) => Number(v) <= 24, 'Maximal 24 Stunden pro Eintrag.')
+    )
+  }
+
+  const documentLinkSchema = object({
+    ...hoursBaseShape,
+    documentId: pipe(
+      string(),
+      minLength(1, 'Bitte einen Auftrag bzw. eine Rechnung auswählen.')
+    )
+  })
+
+  const customerLinkSchema = object({
+    ...hoursBaseShape,
+    customerId: pipe(string(), minLength(1, 'Bitte einen Kunden auswählen.'))
+  })
+
+  const taskLinkSchema = object({
+    ...hoursBaseShape,
+    task: pipe(string(), trim(), minLength(1, 'Bitte eine Aufgabe eingeben.'))
+  })
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import {
+    useFormValidation,
+    validationClasses
+  } from '$lib/utils/form-validation.svelte'
   import {
     pickCustomersRemote,
     pickDocumentsRemote,
@@ -82,16 +139,31 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (!employeeId) return false
-    if (!date) return false
-    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return false
-    if (linkKind === 'document' && !documentId) return false
-    if (linkKind === 'customer' && !customerId) return false
-    if (linkKind === 'task' && !task.trim()) return false
-    return true
-  })
+  /**
+   * Validation handle for the Submit button gate and the per-field
+   * error display. The active schema follows the selected link kind;
+   * field errors only surface once the field was touched (blur /
+   * selection) or a submit was attempted.
+   */
+  const fv = useFormValidation(
+    () =>
+      linkKind === 'document'
+        ? documentLinkSchema
+        : linkKind === 'customer'
+          ? customerLinkSchema
+          : taskLinkSchema,
+    () =>
+      linkKind === 'document'
+        ? { employeeId, date, hours, documentId }
+        : linkKind === 'customer'
+          ? { employeeId, date, hours, customerId }
+          : { employeeId, date, hours, task }
+  )
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
 
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
     pickEmployeesRemote({ ...params, size: params.size as 10 | 25 | 50 | 100 })
@@ -104,48 +176,27 @@
 
   const submit = async (e: Event) => {
     e.preventDefault()
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     errorMsg = null
-
-    if (!employeeId) {
-      errorMsg = 'Bitte einen Mitarbeiter auswählen.'
-      return
-    }
-    if (!date) {
-      errorMsg = 'Bitte ein Datum eingeben.'
-      return
-    }
-    if (!Number.isFinite(hours) || hours <= 0) {
-      errorMsg = 'Bitte eine positive Stundenzahl eingeben.'
-      return
-    }
-    if (hours > 24) {
-      errorMsg = 'Maximal 24 Stunden pro Eintrag.'
-      return
-    }
 
     let docOut: string | null = null
     let custOut: string | null = null
     let taskOut: string | undefined = undefined
 
     if (linkKind === 'document') {
-      if (!documentId) {
-        errorMsg = 'Bitte einen Auftrag bzw. eine Rechnung auswählen.'
-        return
-      }
       docOut = documentId
     } else if (linkKind === 'customer') {
-      if (!customerId) {
-        errorMsg = 'Bitte einen Kunden auswählen.'
-        return
-      }
       custOut = customerId
     } else {
-      const t = task.trim()
-      if (!t) {
-        errorMsg = 'Bitte eine Aufgabe eingeben.'
-        return
-      }
-      taskOut = t
+      taskOut = task.trim()
     }
 
     formDirty.clear()
@@ -178,8 +229,12 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Grunddaten</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="flex w-full flex-col gap-1 sm:col-span-2">
-          <span class="label-text">Mitarbeiter *</span>
+        <FormField
+          label="Mitarbeiter"
+          required
+          colSpan="sm:col-span-2"
+          error={wasTouched('employeeId') ? err('employeeId') : null}
+        >
           {#if lockedEmployee}
             <input
               class="input input-bordered w-full"
@@ -190,34 +245,42 @@
             <SearchablePicker
               bind:value={employeeId}
               bind:valueLabel={employeeLabel}
-              placeholder="— Mitarbeiter suchen und auswählen —"
+              placeholder="- Mitarbeiter suchen und auswählen -"
               dialogTitle="Mitarbeiter auswählen"
               search={searchEmployees}
-              onSelect={() => {}}
+              onSelect={() => fv.markTouched('employeeId')}
             />
           {/if}
-        </label>
+        </FormField>
 
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Datum *</span>
+        <FormField
+          label="Datum"
+          required
+          error={wasTouched('date') ? err('date') : null}
+        >
           <input
             type="date"
-            class="input input-bordered w-full"
+            class={validationClasses(err('date'), wasTouched('date'))}
             bind:value={date}
+            onblur={() => fv.markTouched('date')}
           />
-        </label>
+        </FormField>
 
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Stunden *</span>
+        <FormField
+          label="Stunden"
+          required
+          error={wasTouched('hours') ? err('hours') : null}
+        >
           <input
             type="number"
-            class="input input-bordered w-full"
+            class={validationClasses(err('hours'), wasTouched('hours'))}
             min="0.25"
             max="24"
             step="0.25"
             bind:value={hours}
+            onblur={() => fv.markTouched('hours')}
           />
-        </label>
+        </FormField>
       </div>
     </fieldset>
 
@@ -258,39 +321,49 @@
 
       <div class="mt-3">
         {#if linkKind === 'document'}
-          <label class="flex w-full flex-col gap-1">
-            <span class="label-text">Auftrag / Rechnung *</span>
+          <FormField
+            label="Auftrag / Rechnung"
+            required
+            error={wasTouched('documentId') ? err('documentId') : null}
+          >
             <SearchablePicker
               bind:value={documentId}
               bind:valueLabel={documentLabel}
-              placeholder="— Beleg suchen und auswählen —"
+              placeholder="- Beleg suchen und auswählen -"
               dialogTitle="Beleg auswählen"
               search={searchDocuments}
-              onSelect={() => {}}
+              onSelect={() => fv.markTouched('documentId')}
             />
-          </label>
+          </FormField>
         {:else if linkKind === 'customer'}
-          <label class="flex w-full flex-col gap-1">
-            <span class="label-text">Kunde *</span>
+          <FormField
+            label="Kunde"
+            required
+            error={wasTouched('customerId') ? err('customerId') : null}
+          >
             <SearchablePicker
               bind:value={customerId}
               bind:valueLabel={customerLabel}
-              placeholder="— Kunde suchen und auswählen —"
+              placeholder="- Kunde suchen und auswählen -"
               dialogTitle="Kunde auswählen"
               search={searchCustomers}
-              onSelect={() => {}}
+              onSelect={() => fv.markTouched('customerId')}
             />
-          </label>
+          </FormField>
         {:else}
-          <label class="flex w-full flex-col gap-1">
-            <span class="label-text">Aufgabe *</span>
+          <FormField
+            label="Aufgabe"
+            required
+            error={wasTouched('task') ? err('task') : null}
+          >
             <input
-              class="input input-bordered w-full"
+              class={validationClasses(err('task'), wasTouched('task'))}
               maxlength="200"
               placeholder="z. B. Werkstattorganisation"
               bind:value={task}
+              onblur={() => fv.markTouched('task')}
             />
-          </label>
+          </FormField>
         {/if}
       </div>
     </fieldset>
@@ -316,7 +389,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

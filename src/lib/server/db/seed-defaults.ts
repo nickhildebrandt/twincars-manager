@@ -40,7 +40,7 @@ Mit freundlichen Grüßen
   },
   {
     key: 'cost_estimate',
-    subject: 'Ihr Kostenvoranschlag {angebotNummer} – {fahrzeugKennzeichen}',
+    subject: 'Ihr Kostenvoranschlag {angebotNummer} - {fahrzeugKennzeichen}',
     body: `Sehr geehrte Damen und Herren,
 
 anbei erhalten Sie unseren Kostenvoranschlag {angebotNummer} für Ihr Fahrzeug {fahrzeugTyp} ({fahrzeugKennzeichen}).
@@ -87,7 +87,7 @@ Bitte überweisen Sie den offenen Betrag von {rechnungOffenerBetrag} auf das in 
 
 Sollte sich Ihre Zahlung mit dieser E-Mail überschnitten haben, betrachten Sie diese Erinnerung bitte als gegenstandslos. Bei Fragen melden Sie sich gern jederzeit bei uns.
 
-Vielen Dank — mit freundlichen Grüßen
+Vielen Dank und mit freundlichen Grüßen
 {firma}`
   },
   {
@@ -96,7 +96,7 @@ Vielen Dank — mit freundlichen Grüßen
     // greet the customer by first name when available; the mail
     // service falls back to "{kundeName}" when it isn't.
     key: 'tire_reminder',
-    subject: 'Termin für den Reifenwechsel buchen — {firma}',
+    subject: 'Termin für den Reifenwechsel buchen - {firma}',
     body: `Hallo {kundeVorname},
 
 die nächste Saison rückt näher. Wir möchten Sie freundlich daran erinnern, einen Termin für den Reifenwechsel bei uns zu buchen. Ihre eingelagerten Reifen sind bereit.

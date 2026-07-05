@@ -2,6 +2,7 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import { createOfferRemote } from '../offers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
@@ -10,8 +11,6 @@
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2 } from '@lucide/svelte'
   import {
-    pickCustomersRemote,
-    pickVehiclesRemote,
     pickItemsRemote,
     pickInventoryVehiclesRemote
   } from '../../pickers.remote'
@@ -71,16 +70,6 @@
       positions.some((p) => (p.description ?? '').trim().length > 0)
   )
 
-  const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-  const searchVehicles = (params: { q: string; page: number; size: number }) =>
-    pickVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
   const searchArticles = (params: { q: string; page: number; size: number }) =>
     pickItemsRemote({
       ...params,
@@ -338,28 +327,13 @@
               <option value="order_confirmation">Auftragsbestätigung</option>
             </select>
           </label>
-          <div class="flex w-full flex-col gap-1 sm:col-span-2">
-            <span class="label-text">Kunde</span>
-            <SearchablePicker
-              bind:value={customerId}
-              bind:valueLabel={customerLabel}
-              placeholder="— Kunde suchen und auswählen —"
-              dialogTitle="Kunden auswählen"
-              search={searchCustomers}
-              onSelect={() => {}}
-            />
-          </div>
-          <div class="flex w-full flex-col gap-1 sm:col-span-2">
-            <span class="label-text">Fahrzeug</span>
-            <SearchablePicker
-              bind:value={vehicleId}
-              bind:valueLabel={vehicleLabel}
-              placeholder="— optional —"
-              dialogTitle="Fahrzeug auswählen"
-              search={searchVehicles}
-              onSelect={() => {}}
-            />
-          </div>
+          <CustomerVehiclePicker
+            bind:customerId
+            bind:customerLabel
+            bind:vehicleId
+            bind:vehicleLabel
+            customerRequired
+          />
           <label class="flex w-full flex-col gap-1">
             <span class="label-text">Datum *</span>
             <input
@@ -456,7 +430,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Artikel auswählen —"
+                      placeholder="- Artikel auswählen -"
                       dialogTitle="Artikel auswählen"
                       search={searchArticles}
                       onSelect={(it) => {
@@ -471,7 +445,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Leistung auswählen —"
+                      placeholder="- Leistung auswählen -"
                       dialogTitle="Leistung auswählen"
                       search={searchServices}
                       onSelect={(it) => {
@@ -486,7 +460,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Fahrzeug aus Bestand —"
+                      placeholder="- Fahrzeug aus Bestand -"
                       dialogTitle="Fahrzeug auswählen"
                       search={searchInventoryVehicles}
                       onSelect={(it) => {

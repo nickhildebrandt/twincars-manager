@@ -54,7 +54,7 @@
       <dl class="grid grid-cols-3 gap-y-1 text-sm">
         <dt class="text-base-content/60">Mitarbeiter</dt>
         <dd class="col-span-2"
-          >{`${e.employeeFirstName} ${e.employeeLastName}`.trim() || '—'} · {e.employeeNumber}</dd
+          >{`${e.employeeFirstName} ${e.employeeLastName}`.trim() || '-'} · {e.employeeNumber}</dd
         >
         <dt class="text-base-content/60">Datum</dt>
         <dd class="col-span-2">{fmtDate(e.date)}</dd>
@@ -75,7 +75,7 @@
               {e.documentNumber}
             </a>
           {:else}
-            —
+            -
           {/if}
         </dd>
         <dt class="text-base-content/60">Kunde</dt>
@@ -85,11 +85,11 @@
               {e.customerName}
             </a>
           {:else}
-            {e.customerName ?? '—'}
+            {e.customerName ?? '-'}
           {/if}
         </dd>
         <dt class="text-base-content/60">Aufgabe</dt>
-        <dd class="col-span-2">{e.task ?? '—'}</dd>
+        <dd class="col-span-2">{e.task ?? '-'}</dd>
       </dl>
     </div>
   </div>

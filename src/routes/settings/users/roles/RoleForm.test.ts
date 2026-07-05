@@ -63,21 +63,39 @@ describe('RoleForm', () => {
   })
 
   it('rejects save when name is shorter than 2 characters', async () => {
-    const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(RoleForm, {
       props: { onSave, initial: { name: 'X' } }
     })
-    // The form has type=submit with HTML5 `required`. Fire submit
-    // directly to bypass jsdom's HTML5 validity check for empty name.
     const { fireEvent } = await import('@testing-library/svelte')
-    void user
     const form = container.querySelector('form') as HTMLFormElement
     await fireEvent.submit(form)
     expect(onSave).not.toHaveBeenCalled()
+    // The message shows in the alert and under the field.
+    expect(
+      screen.getAllByText(/Rollennamen mit mindestens 2 Zeichen/i).length
+    ).toBeGreaterThan(0)
+  })
+
+  it('keeps a pristine form free of error messages', () => {
+    render(RoleForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.queryByText(/Rollennamen mit mindestens 2 Zeichen/i)
+    ).not.toBeInTheDocument()
+  })
+
+  it('shows the name error only after blur', async () => {
+    const { fireEvent } = await import('@testing-library/svelte')
+    render(RoleForm, { props: { onSave: vi.fn(), initial: { name: 'X' } } })
+    const nameInput = screen.getByLabelText('Name *') as HTMLInputElement
+    expect(
+      screen.queryByText(/Rollennamen mit mindestens 2 Zeichen/i)
+    ).not.toBeInTheDocument()
+    await fireEvent.blur(nameInput)
     expect(
       screen.getByText(/Rollennamen mit mindestens 2 Zeichen/i)
     ).toBeInTheDocument()
+    expect(nameInput.className).toContain('input-error')
   })
 
   it('submits with wildcard when "Voller Zugriff" is checked', async () => {

@@ -13,7 +13,7 @@
     </div>
     <h3 class="card-title">In Vorbereitung</h3>
     <p class="text-base-content/70 max-w-md text-sm">
-      Dieses Modul ist im Aufbau. Datenmodell und Routen sind bereits angelegt —
+      Dieses Modul ist im Aufbau. Datenmodell und Routen sind bereits angelegt,
       die UI folgt schrittweise.
     </p>
     {#if features.length > 0}

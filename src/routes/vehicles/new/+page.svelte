@@ -20,7 +20,7 @@
 
 <PageHeader
   title="Neues Fahrzeug anlegen"
-  subtitle={'Kundenfahrzeug — Halter ist Pflicht. Für Verkaufsfahrzeuge ohne Halter siehe „Zu verkaufende Fahrzeuge“.'}
+  subtitle={'Kundenfahrzeug - Halter ist Pflicht. Für Verkaufsfahrzeuge ohne Halter siehe „Zu verkaufende Fahrzeuge“.'}
 />
 <VehicleForm
   mode="customer"

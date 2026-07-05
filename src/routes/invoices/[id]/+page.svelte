@@ -211,7 +211,7 @@
   }
 
   const fmtDate = (s: string | null | undefined) => {
-    if (!s) return '—'
+    if (!s) return '-'
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
@@ -514,7 +514,7 @@
         <dt class="text-base-content/60">Datum</dt>
         <dd class="text-right">{data.doc.issueDate}</dd>
         <dt class="text-base-content/60">Fällig</dt>
-        <dd class="text-right">{data.doc.dueDate ?? '—'}</dd>
+        <dd class="text-right">{data.doc.dueDate ?? '-'}</dd>
         <dt class="text-base-content/60">Netto</dt>
         <dd class="text-right font-mono"
           >{formatEuro(Number(data.doc.netTotal))}</dd
@@ -560,12 +560,12 @@
           <dd class="break-words sm:col-span-2">
             {c.company ||
               `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() ||
-              '—'}
+              '-'}
           </dd>
           <dt class="text-base-content/60">Telefon</dt>
-          <dd class="break-all sm:col-span-2">{c.phone ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{c.phone ?? '-'}</dd>
           <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="break-all sm:col-span-2">{c.email ?? '—'}</dd>
+          <dd class="break-all sm:col-span-2">{c.email ?? '-'}</dd>
         </dl>
       </div>
     </div>
@@ -587,23 +587,23 @@
         <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
           <dt class="text-base-content/60">Kennzeichen</dt>
           <dd class="font-mono break-all sm:col-span-2"
-            >{v.licensePlate ?? '—'}</dd
+            >{v.licensePlate ?? '-'}</dd
           >
           <dt class="text-base-content/60">Marke / Modell</dt>
           <dd class="break-words sm:col-span-2">
-            {[v.make, v.model].filter(Boolean).join(' ') || '—'}
+            {[v.make, v.model].filter(Boolean).join(' ') || '-'}
           </dd>
           <dt class="text-base-content/60">FIN</dt>
           <dd class="font-mono text-xs break-all sm:col-span-2"
-            >{v.vin ?? '—'}</dd
+            >{v.vin ?? '-'}</dd
           >
           <dt class="text-base-content/60">EZ</dt>
-          <dd class="sm:col-span-2">{v.firstRegistration ?? '—'}</dd>
+          <dd class="sm:col-span-2">{v.firstRegistration ?? '-'}</dd>
           <dt class="text-base-content/60">km-Stand</dt>
           <dd class="sm:col-span-2">
             {v.mileageKm
               ? Number(v.mileageKm).toLocaleString('de-DE') + ' km'
-              : '—'}
+              : '-'}
           </dd>
         </dl>
       </div>
@@ -628,7 +628,7 @@
           >
           <p class="text-base-content/60 text-sm">
             Vollständige Historie aller bisher zu dieser Rechnung versendeten
-            Erinnerungen. Es gibt keine Eskalation — derselbe freundliche Text
+            Erinnerungen. Es gibt keine Eskalation, derselbe freundliche Text
             geht in regelmäßigen Abständen erneut raus.
           </p>
         </div>
@@ -707,7 +707,7 @@
                       .filter(Boolean)
                       .join(' ') || t.employeeNumber}
                   </td>
-                  <td>{t.task ?? '—'}</td>
+                  <td>{t.task ?? '-'}</td>
                   <td class="text-right font-mono"
                     >{Number(t.hours).toFixed(2)}</td
                   >

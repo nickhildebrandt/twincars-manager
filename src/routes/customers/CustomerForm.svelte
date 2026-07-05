@@ -388,7 +388,7 @@
               bind:value={salutation}
               onblur={() => fv.markTouched('salutation')}
             >
-              <option value="">—</option>
+              <option value="">-</option>
               <option>Herr</option>
               <option>Frau</option>
               <option>Familie</option>

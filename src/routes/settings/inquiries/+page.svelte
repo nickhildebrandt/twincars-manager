@@ -70,7 +70,7 @@
   }
 
   const fmtDateTime = (d: Date | string | null | undefined): string => {
-    if (!d) return '—'
+    if (!d) return '-'
     const dt = typeof d === 'string' ? new Date(d) : d
     return dt.toLocaleString('de-DE', {
       day: '2-digit',
@@ -165,7 +165,7 @@
                 </td>
                 <td class="max-w-xs truncate">{inq.subject}</td>
                 <td class="text-xs">
-                  {inq.referenceType ?? '—'}
+                  {inq.referenceType ?? '-'}
                 </td>
                 <td>
                   <span class="badge {s.cls} badge-sm">{s.label}</span>

@@ -24,7 +24,9 @@ type SearchResult = {
   tires: Hit[]
   tireStorage: Hit[]
   suppliers: Hit[]
+  employees: Hit[]
   documents: Hit[]
+  posts: Hit[]
 }
 
 const emptyBuckets = (): SearchResult => ({
@@ -34,13 +36,17 @@ const emptyBuckets = (): SearchResult => ({
   tires: [],
   tireStorage: [],
   suppliers: [],
-  documents: []
+  employees: [],
+  documents: [],
+  posts: []
 })
 
 const searchMock = vi.fn<(args: { q: string }) => Promise<SearchResult>>()
 
 vi.mock('../../../routes/search.remote', () => ({
-  globalSearchRemote: (args: { q: string }) => searchMock(args)
+  // Mirrors the real remote-query shape: the component calls `.run()`
+  // (event-driven context), not a bare await on the query object.
+  globalSearchRemote: (args: { q: string }) => ({ run: () => searchMock(args) })
 }))
 
 import GlobalSearch from './GlobalSearch.svelte'
@@ -216,6 +222,44 @@ describe('GlobalSearch', () => {
     await screen.findByText('Reifen Großhandel GmbH')
     await user.click(screen.getByText('Reifen Großhandel GmbH'))
     expect(gotoMock).toHaveBeenCalledWith('/suppliers/l1')
+  })
+
+  it('clicking an employee hit navigates to /employees/[id]', async () => {
+    searchMock.mockResolvedValue({
+      ...emptyBuckets(),
+      employees: [{ id: 'e1', label: 'Max Schrauber', sublabel: 'P-001' }]
+    })
+    const user = userEvent.setup()
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByTestId('global-search-input')
+    await user.type(input, 'schrauber')
+    await screen.findByText('Max Schrauber')
+    // Section header carries the German module label.
+    expect(screen.getByText('Mitarbeiter')).toBeInTheDocument()
+    await user.click(screen.getByText('Max Schrauber'))
+    expect(gotoMock).toHaveBeenCalledWith('/employees/e1')
+  })
+
+  it('clicking a post hit navigates to /posts/[id]', async () => {
+    searchMock.mockResolvedValue({
+      ...emptyBuckets(),
+      posts: [
+        {
+          id: 'p1',
+          label: 'Neue Öffnungszeiten',
+          sublabel: 'Veröffentlicht · Ab sofort samstags geöffnet.'
+        }
+      ]
+    })
+    const user = userEvent.setup()
+    render(GlobalSearch, { props: { open: true } })
+    const input = screen.getByTestId('global-search-input')
+    await user.type(input, 'öffnungszeiten')
+    await screen.findByText('Neue Öffnungszeiten')
+    // Section header carries the German module label.
+    expect(screen.getByText('Aktuelle Informationen')).toBeInTheDocument()
+    await user.click(screen.getByText('Neue Öffnungszeiten'))
+    expect(gotoMock).toHaveBeenCalledWith('/posts/p1')
   })
 
   it('clicking the backdrop closes the modal', async () => {

@@ -28,7 +28,7 @@
     if (season === 'summer') return 'Sommer'
     if (season === 'winter') return 'Winter'
     if (season === 'allseason') return 'Ganzjahr'
-    return '—'
+    return '-'
   }
 
   const seasonBadge = (season: string | null): string => {
@@ -106,18 +106,18 @@
         >
         <dt class="text-base-content/60">Marke / Modell</dt>
         <dd class="break-words sm:col-span-2"
-          >{[entry.brand, entry.model].filter(Boolean).join(' ') || '—'}</dd
+          >{[entry.brand, entry.model].filter(Boolean).join(' ') || '-'}</dd
         >
         <dt class="text-base-content/60">Reifengröße</dt>
-        <dd class="break-words sm:col-span-2">{entry.size ?? '—'}</dd>
+        <dd class="break-words sm:col-span-2">{entry.size ?? '-'}</dd>
         <dt class="text-base-content/60">Profil</dt>
         <dd class="sm:col-span-2"
           >{entry.profileMm != null
             ? `${Number(entry.profileMm).toFixed(1)} mm`
-            : '—'}</dd
+            : '-'}</dd
         >
         <dt class="text-base-content/60">DOT-Jahr</dt>
-        <dd class="sm:col-span-2">{entry.dotYear ?? '—'}</dd>
+        <dd class="sm:col-span-2">{entry.dotYear ?? '-'}</dd>
         <dt class="text-base-content/60">Saison</dt>
         <dd class="sm:col-span-2">
           <span class="badge badge-sm {seasonBadge(entry.season)}">

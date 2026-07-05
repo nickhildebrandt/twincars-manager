@@ -205,7 +205,7 @@ export const listCalendarEvents = async (
           id: `clo-${e.id}-${dateIso}`,
           kind: 'business_closure',
           dateIso,
-          title: `Betriebsschließung — ${e.title}`,
+          title: `Betriebsschließung - ${e.title}`,
           sourceId: e.id
         })
       }
@@ -247,7 +247,7 @@ export const listCalendarEvents = async (
   }
   for (const v of huRows) {
     if (!v.nextHu) continue
-    const label = [v.make, v.model].filter(Boolean).join(' ') || v.plate || '—'
+    const label = [v.make, v.model].filter(Boolean).join(' ') || v.plate || '-'
     const plate = v.plate ? ` · ${v.plate}` : ''
     out.push({
       id: `hu-${v.id}`,
@@ -374,6 +374,61 @@ export async function getCalendarEntry(
     .where(eq(calendarEntries.id, id))
     .limit(1)
   return row ?? null
+}
+
+export type CalendarEntryWithLabels = CalendarEntry & {
+  customerLabel: string | null
+  vehicleLabel: string | null
+  employeeLabel: string | null
+}
+
+/**
+ * Single entry plus display labels for its linked customer, vehicle
+ * and employee — the edit form seeds its pickers from these so a
+ * pre-linked entity shows its name instead of an empty button.
+ */
+export async function getCalendarEntryWithLabels(
+  id: string
+): Promise<CalendarEntryWithLabels | null> {
+  const lp = latestPlateSubquery()
+  const [row] = await db
+    .select({
+      entry: calendarEntries,
+      customerCompany: customers.company,
+      customerFirstName: customers.firstName,
+      customerLastName: customers.lastName,
+      customerNumber: customers.customerNumber,
+      plate: lp.licensePlate,
+      vehicleMake: vehicles.make,
+      vehicleModel: vehicles.model,
+      employeeFirstName: employees.firstName,
+      employeeLastName: employees.lastName
+    })
+    .from(calendarEntries)
+    .leftJoin(customers, eq(calendarEntries.customerId, customers.id))
+    .leftJoin(vehicles, eq(calendarEntries.vehicleId, vehicles.id))
+    .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+    .leftJoin(employees, eq(calendarEntries.employeeId, employees.id))
+    .where(eq(calendarEntries.id, id))
+    .limit(1)
+  if (!row) return null
+
+  const customerLabel = row.entry.customerId
+    ? row.customerCompany ||
+      `${row.customerFirstName ?? ''} ${row.customerLastName ?? ''}`.trim() ||
+      row.customerNumber ||
+      null
+    : null
+  const makeModel = `${row.vehicleMake ?? ''} ${row.vehicleModel ?? ''}`.trim()
+  const vehicleLabel = row.entry.vehicleId
+    ? [row.plate, makeModel].filter(Boolean).join(' · ') || null
+    : null
+  const employeeLabel = row.entry.employeeId
+    ? `${row.employeeFirstName ?? ''} ${row.employeeLastName ?? ''}`.trim() ||
+      null
+    : null
+
+  return { ...row.entry, customerLabel, vehicleLabel, employeeLabel }
 }
 
 export async function updateCalendarEntry(

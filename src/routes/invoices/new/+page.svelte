@@ -3,6 +3,7 @@
   import { page as pageStore } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import { createInvoiceRemote } from '../invoices.remote'
   import { getInventoryVehicleRemote } from '../../inventory/inventory.remote'
   import { handleClientError } from '$lib/utils/client-error'
@@ -13,8 +14,6 @@
   import { formatEuro } from '$lib/utils/money'
   import { Plus, Trash2 } from '@lucide/svelte'
   import {
-    pickCustomersRemote,
-    pickVehiclesRemote,
     pickItemsRemote,
     pickInventoryVehiclesRemote
   } from '../../pickers.remote'
@@ -74,16 +73,6 @@
       positions.some((p) => (p.description ?? '').trim().length > 0)
   )
 
-  const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-  const searchVehicles = (params: { q: string; page: number; size: number }) =>
-    pickVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
   const searchArticles = (params: { q: string; page: number; size: number }) =>
     pickItemsRemote({
       ...params,
@@ -408,36 +397,18 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Empfänger und Konditionen</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="flex w-full flex-col gap-1 sm:col-span-2">
-            <span class="label-text">Kunde</span>
-            <SearchablePicker
-              bind:value={customerId}
-              bind:valueLabel={customerLabel}
-              placeholder="— Kunde suchen und auswählen —"
-              dialogTitle="Kunden auswählen"
-              search={searchCustomers}
-              onSelect={() => {}}
-            />
-          </div>
-          <div class="flex w-full flex-col gap-1">
-            <span class="label-text">
-              Fahrzeug{isStockSale ? ' *' : ''}
-            </span>
-            <SearchablePicker
-              bind:value={vehicleId}
-              bind:valueLabel={vehicleLabel}
-              placeholder={isStockSale ? '— Lagerfahrzeug —' : '— optional —'}
-              dialogTitle="Fahrzeug auswählen"
-              search={searchVehicles}
-              onSelect={() => {}}
-            />
-            {#if isStockSale}
-              <span class="text-base-content/60 text-xs">
-                Lagerfahrzeug aus dem Verkaufsbestand. Beim Bezahlen der
-                Rechnung wird es automatisch in die Kundenfahrzeuge übernommen.
-              </span>
-            {/if}
-          </div>
+          <CustomerVehiclePicker
+            bind:customerId
+            bind:customerLabel
+            bind:vehicleId
+            bind:vehicleLabel
+            customerRequired
+            vehicleRequired={isStockSale}
+            vehicleLocked={isStockSale}
+            vehicleHint={isStockSale
+              ? 'Lagerfahrzeug aus dem Verkaufsbestand. Beim Bezahlen der Rechnung wird es automatisch in die Kundenfahrzeuge übernommen.'
+              : undefined}
+          />
           <label class="flex w-full flex-col gap-1">
             <span class="label-text">Rechnungsdatum *</span>
             <input
@@ -553,7 +524,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Artikel auswählen —"
+                      placeholder="Artikel auswählen"
                       dialogTitle="Artikel auswählen"
                       search={searchArticles}
                       onSelect={(it) => {
@@ -568,7 +539,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Leistung auswählen —"
+                      placeholder="Leistung auswählen"
                       dialogTitle="Leistung auswählen"
                       search={searchServices}
                       onSelect={(it) => {
@@ -583,7 +554,7 @@
                     <SearchablePicker
                       bind:value={p.sourceRef}
                       bind:valueLabel={p.sourceLabel}
-                      placeholder="— Fahrzeug aus Bestand —"
+                      placeholder="Fahrzeug aus Bestand"
                       dialogTitle="Fahrzeug auswählen"
                       search={searchInventoryVehicles}
                       onSelect={(it) => {

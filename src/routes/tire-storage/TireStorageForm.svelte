@@ -1,11 +1,48 @@
+<script lang="ts" module>
+  import {
+    check,
+    minLength,
+    object,
+    picklist,
+    pipe,
+    string,
+    unknown
+  } from 'valibot'
+
+  /**
+   * Client-side schema mirroring the rules previously enforced ad hoc
+   * in `submit`: a customer and a season are required, the quantity
+   * must be between 1 and 20.
+   */
+  const tireStorageSchema = object({
+    customerId: pipe(string(), minLength(1, 'Bitte einen Kunden auswählen.')),
+    season: picklist(
+      ['summer', 'winter', 'allseason'],
+      'Bitte eine Saison wählen.'
+    ),
+    quantity: pipe(
+      unknown(),
+      check((v) => {
+        const n = Number(v)
+        return Number.isFinite(n) && n >= 1 && n <= 20
+      }, 'Stückzahl muss zwischen 1 und 20 liegen.')
+    )
+  })
+</script>
+
 <script lang="ts">
   import { untrack } from 'svelte'
   import type { TireStorage } from '$lib/server/db/schema'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
-  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
+  import FormField from '$lib/components/ui/FormField.svelte'
+  import {
+    useFormValidation,
+    validationClasses,
+    selectValidationClasses
+  } from '$lib/utils/form-validation.svelte'
   import { Trash2, ImagePlus } from '@lucide/svelte'
-  import { pickCustomersRemote, pickVehiclesRemote } from '../pickers.remote'
   import { toast } from '$lib/stores/toast.svelte'
 
   /**
@@ -76,14 +113,21 @@
   let errorMsg = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (!customerId) return false
-    if (!season) return false
-    const qty = Number(quantity)
-    if (!Number.isFinite(qty) || qty < 1 || qty > 20) return false
-    return true
-  })
+  /**
+   * Validation handle for the Submit button gate and the per-field
+   * error display. Field errors only surface once the field was
+   * touched (blur / selection) or a submit was attempted.
+   */
+  const fv = useFormValidation(tireStorageSchema, () => ({
+    customerId,
+    season,
+    quantity
+  }))
+
+  const err = (k: string): string | null =>
+    (fv.errors as Record<string, string | null>)[k] ?? null
+  const wasTouched = (k: string): boolean =>
+    (fv.touched as Record<string, boolean>)[k] === true
   /**
    * Drag-and-drop overlay state for the photo section. `dragDepth`
    * tracks nested dragenter events so crossing child boundaries
@@ -94,18 +138,6 @@
 
   const markDirty = () => formDirty.set(true)
   $effect(() => () => formDirty.clear())
-
-  const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-
-  const searchVehicles = (params: { q: string; page: number; size: number }) =>
-    pickVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
 
   const readDataUrl = (file: File): Promise<string> =>
     new Promise((resolve, reject) => {
@@ -219,20 +251,17 @@
 
   const submit = async (e: Event) => {
     e.preventDefault()
+    fv.markAllTouched()
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMsg =
+        errs._form ??
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     errorMsg = null
-    if (!customerId) {
-      errorMsg = 'Bitte einen Kunden auswählen.'
-      return
-    }
-    if (!season) {
-      errorMsg = 'Bitte eine Saison wählen.'
-      return
-    }
     const qty = numOrUndef(quantity) ?? 4
-    if (qty < 1 || qty > 20) {
-      errorMsg = 'Stückzahl muss zwischen 1 und 20 liegen.'
-      return
-    }
     formDirty.clear()
     await onSave({
       customerId,
@@ -282,28 +311,19 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Kunde / Fahrzeug</legend>
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Kunde *</span>
-          <SearchablePicker
-            bind:value={customerId}
-            bind:valueLabel={customerLabel}
-            placeholder="— Kunde suchen und auswählen —"
-            dialogTitle="Kunden auswählen"
-            search={searchCustomers}
-            onSelect={() => markDirty()}
-          />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Fahrzeug (optional)</span>
-          <SearchablePicker
-            bind:value={vehicleId}
-            bind:valueLabel={vehicleLabel}
-            placeholder="— Fahrzeug suchen und auswählen —"
-            dialogTitle="Fahrzeug auswählen"
-            search={searchVehicles}
-            onSelect={() => markDirty()}
-          />
-        </label>
+        <CustomerVehiclePicker
+          bind:customerId
+          bind:customerLabel
+          bind:vehicleId
+          bind:vehicleLabel
+          customerRequired
+          vehicleFieldLabel="Fahrzeug (optional)"
+          customerError={wasTouched('customerId') ? err('customerId') : null}
+          onChange={() => {
+            fv.markTouched('customerId')
+            markDirty()
+          }}
+        />
       </div>
     </fieldset>
 
@@ -335,15 +355,22 @@
             bind:value={size}
           />
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Saison *</span>
-          <select class="select select-bordered w-full" bind:value={season}>
-            <option value="">—</option>
+        <FormField
+          label="Saison"
+          required
+          error={wasTouched('season') ? err('season') : null}
+        >
+          <select
+            class={selectValidationClasses(err('season'), wasTouched('season'))}
+            bind:value={season}
+            onblur={() => fv.markTouched('season')}
+          >
+            <option value="">-</option>
             <option value="summer">Sommer</option>
             <option value="winter">Winter</option>
             <option value="allseason">Ganzjahr</option>
           </select>
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Profil (mm)</span>
           <input
@@ -366,17 +393,20 @@
             bind:value={dotYear}
           />
         </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Stückzahl</span>
+        <FormField
+          label="Stückzahl"
+          error={wasTouched('quantity') ? err('quantity') : null}
+        >
           <input
-            class="input input-bordered w-full"
+            class={validationClasses(err('quantity'), wasTouched('quantity'))}
             type="number"
             min="1"
             max="20"
             step="1"
             bind:value={quantity}
+            onblur={() => fv.markTouched('quantity')}
           />
-        </label>
+        </FormField>
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Eingelagert am</span>
           <input
@@ -505,7 +535,7 @@
       <button
         type="submit"
         class="btn btn-primary"
-        disabled={busy.active || !valid}
+        disabled={busy.active || !fv.valid}
       >
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>

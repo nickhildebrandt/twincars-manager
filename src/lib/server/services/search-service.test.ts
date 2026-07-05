@@ -21,7 +21,9 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   documents,
+  employees,
   items,
+  posts,
   suppliers,
   tireStorage,
   tires,
@@ -36,6 +38,8 @@ async function resetDb() {
   await db.delete(tireStorage)
   await db.delete(tires)
   await db.delete(suppliers)
+  await db.delete(employees)
+  await db.delete(posts)
   await db.delete(vehicleLicensePlateVersions)
   await db.delete(vehicles)
   await db.delete(customers)
@@ -199,6 +203,46 @@ async function seedSupplier(values: {
   return row.id
 }
 
+async function seedEmployee(values: {
+  personnelNumber: string
+  firstName: string
+  lastName: string
+  position?: string | null
+  archived?: boolean
+}): Promise<string> {
+  const [row] = await db
+    .insert(employees)
+    .values({
+      personnelNumber: values.personnelNumber,
+      firstName: values.firstName,
+      lastName: values.lastName,
+      position: values.position ?? null,
+      archived: values.archived ?? false
+    })
+    .returning({ id: employees.id })
+  return row.id
+}
+
+async function seedPost(values: {
+  title: string
+  slug: string
+  excerpt?: string | null
+  body?: string
+  published?: boolean
+}): Promise<string> {
+  const [row] = await db
+    .insert(posts)
+    .values({
+      title: values.title,
+      slug: values.slug,
+      excerpt: values.excerpt ?? null,
+      body: values.body ?? 'Inhalt',
+      published: values.published ?? false
+    })
+    .returning({ id: posts.id })
+  return row.id
+}
+
 describe('search-service · globalSearch', () => {
   beforeEach(async () => {
     await resetDb()
@@ -214,7 +258,9 @@ describe('search-service · globalSearch', () => {
       tires: [],
       tireStorage: [],
       suppliers: [],
-      documents: []
+      employees: [],
+      documents: [],
+      posts: []
     })
   })
 
@@ -227,7 +273,9 @@ describe('search-service · globalSearch', () => {
     expect(res.tires).toEqual([])
     expect(res.tireStorage).toEqual([])
     expect(res.suppliers).toEqual([])
+    expect(res.employees).toEqual([])
     expect(res.documents).toEqual([])
+    expect(res.posts).toEqual([])
   })
 
   it('finds customers by company / name / number / email', async () => {
@@ -324,7 +372,7 @@ describe('search-service · globalSearch', () => {
 
     const byNumber = await globalSearch('ART-0001')
     expect(byNumber.items.map((i) => i.id)).toEqual([filter])
-    expect(byNumber.items[0].label).toBe('ART-0001 — Ölfilter')
+    expect(byNumber.items[0].label).toBe('ART-0001 - Ölfilter')
 
     const byDesc = await globalSearch('Sommerreifen')
     expect(byDesc.items.map((i) => i.id)).toEqual([tire])
@@ -378,7 +426,9 @@ describe('search-service · globalSearch', () => {
     expect(res.tires).toEqual([])
     expect(res.tireStorage).toEqual([])
     expect(res.suppliers).toEqual([])
+    expect(res.employees).toEqual([])
     expect(res.documents).toEqual([])
+    expect(res.posts).toEqual([])
   })
 
   it('finds tires by article number / brand / model / EAN', async () => {
@@ -481,5 +531,65 @@ describe('search-service · globalSearch', () => {
 
     const archivedHit = await globalSearch('Alt Lieferant')
     expect(archivedHit.suppliers).toEqual([])
+  })
+
+  it('finds employees by first name / last name / personnel number; excludes archived', async () => {
+    const monteur = await seedEmployee({
+      personnelNumber: 'P-001',
+      firstName: 'Max',
+      lastName: 'Schrauber',
+      position: 'Kfz-Mechatroniker'
+    })
+    const meister = await seedEmployee({
+      personnelNumber: 'P-002',
+      firstName: 'Erika',
+      lastName: 'Meisterin'
+    })
+    await seedEmployee({
+      personnelNumber: 'P-099',
+      firstName: 'Alt',
+      lastName: 'Ehemalig',
+      archived: true
+    })
+
+    const byLastName = await globalSearch('Schrauber')
+    expect(byLastName.employees.map((e) => e.id)).toEqual([monteur])
+    expect(byLastName.employees[0].label).toBe('Max Schrauber')
+    expect(byLastName.employees[0].sublabel).toContain('P-001')
+    expect(byLastName.employees[0].sublabel).toContain('Kfz-Mechatroniker')
+
+    const byFirstName = await globalSearch('Erika')
+    expect(byFirstName.employees.map((e) => e.id)).toEqual([meister])
+
+    const byNumber = await globalSearch('P-002')
+    expect(byNumber.employees.map((e) => e.id)).toEqual([meister])
+
+    const archivedHit = await globalSearch('Ehemalig')
+    expect(archivedHit.employees).toEqual([])
+  })
+
+  it('finds posts by title or excerpt and flags drafts', async () => {
+    const published = await seedPost({
+      title: 'Neue Öffnungszeiten',
+      slug: 'neue-oeffnungszeiten',
+      excerpt: 'Ab sofort samstags geöffnet.',
+      published: true
+    })
+    const draft = await seedPost({
+      title: 'Winterreifen Aktion',
+      slug: 'winterreifen-aktion',
+      excerpt: 'Rabatt auf Einlagerung.',
+      published: false
+    })
+
+    const byTitle = await globalSearch('Öffnungszeiten')
+    expect(byTitle.posts.map((p) => p.id)).toEqual([published])
+    expect(byTitle.posts[0].label).toBe('Neue Öffnungszeiten')
+    expect(byTitle.posts[0].sublabel).toContain('Veröffentlicht')
+    expect(byTitle.posts[0].sublabel).toContain('Ab sofort samstags geöffnet.')
+
+    const byExcerpt = await globalSearch('Rabatt auf Einlagerung')
+    expect(byExcerpt.posts.map((p) => p.id)).toEqual([draft])
+    expect(byExcerpt.posts[0].sublabel).toContain('Entwurf')
   })
 })

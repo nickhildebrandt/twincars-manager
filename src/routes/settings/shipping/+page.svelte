@@ -128,7 +128,7 @@
                 <td class="text-right font-mono">
                   {s.freeAboveNet != null
                     ? formatEuro(Number(s.freeAboveNet))
-                    : '—'}
+                    : '-'}
                 </td>
                 <td>
                   {#if s.active}

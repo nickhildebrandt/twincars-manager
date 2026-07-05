@@ -58,7 +58,7 @@
   const canLogHours = $derived(hasAny('hours', 'hours:write_own'))
 
   const fmtDate = (s: string | null | undefined) => {
-    if (!s) return '—'
+    if (!s) return '-'
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
@@ -233,7 +233,7 @@
         <dt class="text-base-content/60">Datum</dt>
         <dd class="text-right">{data.doc.issueDate}</dd>
         <dt class="text-base-content/60">Gültig bis</dt>
-        <dd class="text-right">{data.doc.dueDate ?? '—'}</dd>
+        <dd class="text-right">{data.doc.dueDate ?? '-'}</dd>
         <dt class="text-base-content/60">Netto</dt>
         <dd class="text-right font-mono"
           >{formatEuro(Number(data.doc.netTotal))}</dd
@@ -310,7 +310,7 @@
                       .filter(Boolean)
                       .join(' ') || t.employeeNumber}
                   </td>
-                  <td>{t.task ?? '—'}</td>
+                  <td>{t.task ?? '-'}</td>
                   <td class="text-right font-mono"
                     >{Number(t.hours).toFixed(2)}</td
                   >

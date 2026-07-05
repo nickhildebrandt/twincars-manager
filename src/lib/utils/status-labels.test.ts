@@ -26,9 +26,9 @@ describe('documentStatusLabel', () => {
   })
 
   it('falls back to a dash for unknown / null statuses', () => {
-    expect(documentStatusLabel(null)).toBe('—')
-    expect(documentStatusLabel(undefined)).toBe('—')
-    expect(documentStatusLabel('foo')).toBe('—')
+    expect(documentStatusLabel(null)).toBe('-')
+    expect(documentStatusLabel(undefined)).toBe('-')
+    expect(documentStatusLabel('foo')).toBe('-')
   })
 
   it('never returns the original english string for known states', () => {

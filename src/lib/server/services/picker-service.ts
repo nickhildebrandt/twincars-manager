@@ -64,7 +64,7 @@ export async function itemPickers(): Promise<
   return Promise.all(
     rows.map(async (r) => ({
       id: r.id,
-      label: `${r.number} — ${r.description}`,
+      label: `${r.number} - ${r.description}`,
       unit: r.unit,
       unitPriceNet: (await getCurrentItemPrice(r.id))?.unitPriceNet ?? null
     }))

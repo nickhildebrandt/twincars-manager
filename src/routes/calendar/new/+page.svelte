@@ -2,17 +2,14 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Users2, ArrowRight } from '@lucide/svelte'
   import {
     createCalendarEntryRemote,
     findOverlappingAppointmentsRemote
   } from '../calendar.remote'
-  import {
-    pickCustomersRemote,
-    pickVehiclesRemote,
-    pickEmployeesRemote
-  } from '../../pickers.remote'
+  import { pickEmployeesRemote } from '../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -73,16 +70,6 @@
     return true
   })
 
-  const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-  const searchVehicles = (params: { q: string; page: number; size: number }) =>
-    pickVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
     pickEmployeesRemote({
       ...params,
@@ -111,7 +98,7 @@
         hour: '2-digit',
         minute: '2-digit'
       }).format(d)
-    return `${f(s)} – ${f(e)}`
+    return `${f(s)} bis ${f(e)}`
   }
 
   const overlapMessage = $derived.by(() => {
@@ -321,34 +308,17 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Verknüpfungen</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="flex w-full flex-col gap-1">
-            <span class="label-text">Kunde</span>
-            <SearchablePicker
-              bind:value={customerId}
-              bind:valueLabel={customerLabel}
-              placeholder="— wählen —"
-              dialogTitle="Kunden auswählen"
-              search={searchCustomers}
-              onSelect={() => {}}
-            />
-          </div>
-          <div class="flex w-full flex-col gap-1">
-            <span class="label-text">Fahrzeug</span>
-            <SearchablePicker
-              bind:value={vehicleId}
-              bind:valueLabel={vehicleLabel}
-              placeholder="— wählen —"
-              dialogTitle="Fahrzeug auswählen"
-              search={searchVehicles}
-              onSelect={() => {}}
-            />
-          </div>
+          <CustomerVehiclePicker
+            bind:customerId
+            bind:customerLabel
+            bind:vehicleId
+            bind:vehicleLabel
+          />
           <div class="flex w-full flex-col gap-1">
             <span class="label-text">Mitarbeiter</span>
             <SearchablePicker
               bind:value={employeeId}
               bind:valueLabel={employeeLabel}
-              placeholder="— wählen —"
               dialogTitle="Mitarbeiter auswählen"
               search={searchEmployees}
               onSelect={() => {}}
@@ -426,7 +396,7 @@
     <div class="font-medium">Urlaub oder Krankheit eintragen?</div>
     <div class="text-sm">
       Mitarbeiter-Abwesenheiten werden direkt im Mitarbeiter-Datenblatt gepflegt
-      — sie erscheinen anschließend automatisch im Kalender.
+      und erscheinen anschließend automatisch im Kalender.
     </div>
   </div>
   <a class="btn btn-sm gap-1" href="/employees">

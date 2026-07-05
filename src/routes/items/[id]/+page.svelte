@@ -94,7 +94,7 @@
           >{itemKindLabel(i.kind)}</dd
         >
         <dt class="text-base-content/60">Einheit</dt><dd class="sm:col-span-2"
-          >{i.unit ?? '—'}</dd
+          >{i.unit ?? '-'}</dd
         >
       </dl>
     </div>
@@ -111,7 +111,7 @@
           class="font-mono sm:col-span-2"
           >{i.purchasePriceNet
             ? formatEuro(Number(i.purchasePriceNet))
-            : '—'}</dd
+            : '-'}</dd
         >
         <dt class="text-base-content/60">Bestand</dt><dd class="sm:col-span-2"
           >{i.stockOnHand}</dd
@@ -133,7 +133,7 @@
       <div class="p-4 pb-2">
         <h3 class="card-title text-base">Preisverlauf</h3>
         <p class="text-base-content/60 text-sm">
-          Versionierte Stammpreise — Belegpositionen behalten ihren damals
+          Versionierte Stammpreise - Belegpositionen behalten ihren damals
           verwendeten Preis unabhängig davon.
         </p>
       </div>

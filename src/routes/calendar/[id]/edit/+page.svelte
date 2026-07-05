@@ -4,6 +4,7 @@
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Trash2 } from '@lucide/svelte'
   import {
@@ -12,11 +13,7 @@
     getCalendarEntryRemote,
     updateCalendarEntryRemote
   } from '../../calendar.remote'
-  import {
-    pickCustomersRemote,
-    pickVehiclesRemote,
-    pickEmployeesRemote
-  } from '../../../pickers.remote'
+  import { pickEmployeesRemote } from '../../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -52,8 +49,11 @@
         | 'completed'
         | 'cancelled',
       customerId: entry.customerId ?? '',
+      customerLabel: entry.customerLabel ?? '',
       vehicleId: entry.vehicleId ?? '',
+      vehicleLabel: entry.vehicleLabel ?? '',
       employeeId: entry.employeeId ?? '',
+      employeeLabel: entry.employeeLabel ?? '',
       notes: entry.notes ?? ''
     }
   })
@@ -64,11 +64,11 @@
   let endsAt = $state(init.endsAt)
   let status = $state(init.status)
   let customerId = $state(init.customerId)
-  let customerLabel = $state('')
+  let customerLabel = $state(init.customerLabel)
   let vehicleId = $state(init.vehicleId)
-  let vehicleLabel = $state('')
+  let vehicleLabel = $state(init.vehicleLabel)
   let employeeId = $state(init.employeeId)
-  let employeeLabel = $state('')
+  let employeeLabel = $state(init.employeeLabel)
   let notes = $state(init.notes)
 
   let errorMsg = $state<string | null>(null)
@@ -85,16 +85,6 @@
     return true
   })
 
-  const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-  const searchVehicles = (params: { q: string; page: number; size: number }) =>
-    pickVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
     pickEmployeesRemote({
       ...params,
@@ -121,7 +111,7 @@
         hour: '2-digit',
         minute: '2-digit'
       }).format(d)
-    return `${f(s)} – ${f(e)}`
+    return `${f(s)} - ${f(e)}`
   }
 
   const overlapMessage = $derived.by(() => {
@@ -343,34 +333,17 @@
       <fieldset class="fieldset">
         <legend class="fieldset-legend">Verknüpfungen</legend>
         <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
-          <div class="flex w-full flex-col gap-1">
-            <span class="label-text">Kunde</span>
-            <SearchablePicker
-              bind:value={customerId}
-              bind:valueLabel={customerLabel}
-              placeholder="— wählen —"
-              dialogTitle="Kunden auswählen"
-              search={searchCustomers}
-              onSelect={() => {}}
-            />
-          </div>
-          <div class="flex w-full flex-col gap-1">
-            <span class="label-text">Fahrzeug</span>
-            <SearchablePicker
-              bind:value={vehicleId}
-              bind:valueLabel={vehicleLabel}
-              placeholder="— wählen —"
-              dialogTitle="Fahrzeug auswählen"
-              search={searchVehicles}
-              onSelect={() => {}}
-            />
-          </div>
+          <CustomerVehiclePicker
+            bind:customerId
+            bind:customerLabel
+            bind:vehicleId
+            bind:vehicleLabel
+          />
           <div class="flex w-full flex-col gap-1">
             <span class="label-text">Mitarbeiter</span>
             <SearchablePicker
               bind:value={employeeId}
               bind:valueLabel={employeeLabel}
-              placeholder="— wählen —"
               dialogTitle="Mitarbeiter auswählen"
               search={searchEmployees}
               onSelect={() => {}}

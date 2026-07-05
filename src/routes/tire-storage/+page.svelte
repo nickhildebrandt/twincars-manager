@@ -46,7 +46,7 @@
     if (season === 'summer') return 'Sommer'
     if (season === 'winter') return 'Winter'
     if (season === 'allseason') return 'Ganzjahr'
-    return '—'
+    return '-'
   }
 
   const seasonBadge = (season: string | null): string => {
@@ -145,12 +145,12 @@
               >
                 <td class="font-mono text-xs font-medium">{e.storageNumber}</td>
                 <td>{e.customerLabel}</td>
-                <td>{[e.brand, e.model].filter(Boolean).join(' ') || '—'}</td>
-                <td>{e.size ?? '—'}</td>
+                <td>{[e.brand, e.model].filter(Boolean).join(' ') || '-'}</td>
+                <td>{e.size ?? '-'}</td>
                 <td class="text-right font-mono"
                   >{e.profileMm != null
                     ? Number(e.profileMm).toFixed(1)
-                    : '—'}</td
+                    : '-'}</td
                 >
                 <td>
                   <span class="badge badge-sm {seasonBadge(e.season)}">
@@ -159,7 +159,7 @@
                 </td>
                 <td>{e.storedAt}</td>
                 {#if activeTab === 'retrieved'}
-                  <td>{e.retrievedAt ?? '—'}</td>
+                  <td>{e.retrievedAt ?? '-'}</td>
                 {/if}
               </tr>
             {/each}

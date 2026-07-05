@@ -725,7 +725,7 @@ async function runImportSteps(
     supplierRows.push({
       id,
       legacySupplierNumber: clip(legacyNr, 50),
-      name: clip(trim(l['Firma']), 200) ?? '—',
+      name: clip(trim(l['Firma']), 200) ?? '-',
       contactPerson: clip(trim(l['Kontaktperson']), 100),
       street: clip(trim(l['Strasse']), 200),
       zip: clip(trim(l['PLZ']), 10),
@@ -939,7 +939,7 @@ async function runImportSteps(
       kind: mapArtToKind(trim(d['Art'])),
       itemId,
       articleNumber: trim(d['Artikelnummer']) ?? legacyArtNr,
-      description: trim(d['Artikelbeschreibung']) ?? '—',
+      description: trim(d['Artikelbeschreibung']) ?? '-',
       quantity: String(qty),
       unit: trim(d['Mengeneinheit']),
       unitPriceNet: String(rawPrice),
@@ -1185,7 +1185,7 @@ async function runImportSteps(
       kind: mapArtToKind(trim(d['Art'])),
       itemId,
       articleNumber: trim(d['Artikelnummer']) ?? legacyArtNr,
-      description: trim(d['Artikelbeschreibung']) ?? '—',
+      description: trim(d['Artikelbeschreibung']) ?? '-',
       quantity: String(qty),
       unit: trim(d['Mengeneinheit']),
       unitPriceNet: String(rawPrice),
@@ -1355,7 +1355,7 @@ async function runImportSteps(
         trim(rl['AluStahlLose']),
         trim(rl['Lagerort']) ? `Lagerort: ${trim(rl['Lagerort'])}` : null,
         depths.length > 0
-          ? `Profil VL/VR/HL/HR: ${['VL', 'VR', 'HL', 'HR'].map((k) => trim(rl[k]) ?? '–').join(' / ')} mm`
+          ? `Profil VL/VR/HL/HR: ${['VL', 'VR', 'HL', 'HR'].map((k) => trim(rl[k]) ?? '-').join(' / ')} mm`
           : null,
         dotCodes.length > 0 ? `DOT: ${dotCodes.join(', ')}` : null
       ]
@@ -1391,8 +1391,8 @@ async function runImportSteps(
     employeeRows.push({
       id: crypto.randomUUID(),
       personnelNumber: clip(trim(m['Kuerzel']) ?? `MA-${empCounter}`, 30)!,
-      firstName: clip(trim(m['Vorname']), 100) ?? '—',
-      lastName: clip(trim(m['Nachname']), 100) ?? '—',
+      firstName: clip(trim(m['Vorname']), 100) ?? '-',
+      lastName: clip(trim(m['Nachname']), 100) ?? '-',
       birthday: isoDate(m['Geboren'])
     })
     empCounter++

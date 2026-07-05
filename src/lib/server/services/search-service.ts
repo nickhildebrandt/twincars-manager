@@ -2,7 +2,9 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   documents,
+  employees,
   items,
+  posts,
   suppliers,
   tireStorage,
   tires,
@@ -37,7 +39,9 @@ export type GlobalSearchResult = {
   tires: SearchHit[]
   tireStorage: SearchHit[]
   suppliers: SearchHit[]
+  employees: SearchHit[]
   documents: SearchHit[]
+  posts: SearchHit[]
 }
 
 const empty = (): GlobalSearchResult => ({
@@ -47,7 +51,9 @@ const empty = (): GlobalSearchResult => ({
   tires: [],
   tireStorage: [],
   suppliers: [],
-  documents: []
+  employees: [],
+  documents: [],
+  posts: []
 })
 
 /**
@@ -94,7 +100,9 @@ export async function globalSearch(
     tireRows,
     tireStorageRows,
     supplierRows,
-    documentRows
+    employeeRows,
+    documentRows,
+    postRows
   ] = await Promise.all([
     searchCustomers(term, perBucket),
     searchVehicles(term, perBucket),
@@ -102,7 +110,9 @@ export async function globalSearch(
     searchTires(term, perBucket),
     searchTireStorage(term, perBucket),
     searchSuppliers(term, perBucket),
-    searchDocuments(term, perBucket)
+    searchEmployees(term, perBucket),
+    searchDocuments(term, perBucket),
+    searchPosts(term, perBucket)
   ])
   return {
     customers: customerRows,
@@ -111,7 +121,9 @@ export async function globalSearch(
     tires: tireRows,
     tireStorage: tireStorageRows,
     suppliers: supplierRows,
-    documents: documentRows
+    employees: employeeRows,
+    documents: documentRows,
+    posts: postRows
   }
 }
 
@@ -214,7 +226,7 @@ async function searchVehicles(
   }
 
   return rows.map((r) => {
-    const makeModel = [r.make, r.model].filter(Boolean).join(' ') || '—'
+    const makeModel = [r.make, r.model].filter(Boolean).join(' ') || '-'
     const plate = currentPlate.get(r.id) ?? null
     const subParts: string[] = []
     if (plate) subParts.push(plate)
@@ -241,7 +253,7 @@ async function searchItems(term: string, limit: number): Promise<SearchHit[]> {
     .limit(limit)
   return rows.map((r) => ({
     id: r.id,
-    label: `${r.articleNumber} — ${r.description}`,
+    label: `${r.articleNumber} - ${r.description}`,
     sublabel: r.kind === 'service' ? 'Leistung' : 'Artikel'
   }))
 }
@@ -377,6 +389,42 @@ async function searchSuppliers(
   })
 }
 
+async function searchEmployees(
+  term: string,
+  limit: number
+): Promise<SearchHit[]> {
+  const rows = await db
+    .select({
+      id: employees.id,
+      personnelNumber: employees.personnelNumber,
+      firstName: employees.firstName,
+      lastName: employees.lastName,
+      position: employees.position
+    })
+    .from(employees)
+    .where(
+      and(
+        eq(employees.archived, false),
+        or(
+          ilike(employees.firstName, term),
+          ilike(employees.lastName, term),
+          ilike(employees.personnelNumber, term)
+        )!
+      )
+    )
+    .orderBy(asc(employees.lastName), asc(employees.firstName))
+    .limit(limit)
+  return rows.map((r) => {
+    const subParts = [r.personnelNumber]
+    if (r.position) subParts.push(r.position)
+    return {
+      id: r.id,
+      label: `${r.firstName} ${r.lastName}`.trim(),
+      sublabel: subParts.join(' · ')
+    }
+  })
+}
+
 async function searchDocuments(
   term: string,
   limit: number
@@ -421,5 +469,24 @@ async function searchDocuments(
       sublabel: cust ?? undefined,
       type: r.type
     }
+  })
+}
+
+async function searchPosts(term: string, limit: number): Promise<SearchHit[]> {
+  const rows = await db
+    .select({
+      id: posts.id,
+      title: posts.title,
+      excerpt: posts.excerpt,
+      published: posts.published
+    })
+    .from(posts)
+    .where(or(ilike(posts.title, term), ilike(posts.excerpt, term))!)
+    .orderBy(desc(posts.createdAt))
+    .limit(limit)
+  return rows.map((r) => {
+    const subParts = [r.published ? 'Veröffentlicht' : 'Entwurf']
+    if (r.excerpt) subParts.push(r.excerpt)
+    return { id: r.id, label: r.title, sublabel: subParts.join(' · ') }
   })
 }
