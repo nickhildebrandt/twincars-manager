@@ -153,6 +153,84 @@ describe('hooks.server – rate limit on sign-in', () => {
   })
 })
 
+describe('hooks.server – rate limit on the public API', () => {
+  beforeEach(() => {
+    resetRateLimit()
+  })
+
+  afterEach(() => {
+    resetRateLimit()
+  })
+
+  const LIMIT = 180 // 120 steady + 60 burst per window
+
+  it('allows up to the limit per Bearer-token bucket, then 429s', async () => {
+    const mk = () =>
+      makeEvent('http://localhost/api/public/used-cars', {
+        method: 'GET',
+        headers: { authorization: 'Bearer secret-token-abcdef' },
+        xff: '20.20.20.20'
+      })
+    for (let i = 0; i < LIMIT; i++) {
+      const res = await handle({ event: mk(), resolve: resolveOk })
+      expect(res.status).toBe(200)
+    }
+    const denied = await handle({ event: mk(), resolve: resolveOk })
+    expect(denied.status).toBe(429)
+    expect(denied.headers.get('Retry-After')).toBeTruthy()
+    const body = (await denied.json()) as { message: string }
+    expect(body.message).toMatch(/Anfragen/i)
+  })
+
+  it('buckets by token, not by IP — a second token stays unaffected', async () => {
+    for (let i = 0; i < LIMIT; i++) {
+      await handle({
+        event: makeEvent('http://localhost/api/public/services', {
+          method: 'GET',
+          headers: { authorization: 'Bearer first-token-000000' },
+          xff: '21.21.21.21'
+        }),
+        resolve: resolveOk
+      })
+    }
+    const other = await handle({
+      event: makeEvent('http://localhost/api/public/services', {
+        method: 'GET',
+        headers: { authorization: 'Bearer other-token-111111' },
+        xff: '21.21.21.21'
+      }),
+      resolve: resolveOk
+    })
+    expect(other.status).toBe(200)
+  })
+
+  it('falls back to the client IP for requests without a Bearer header', async () => {
+    const mk = () =>
+      makeEvent('http://localhost/api/public/company', {
+        method: 'GET',
+        xff: '22.22.22.22'
+      })
+    for (let i = 0; i < LIMIT; i++) {
+      await handle({ event: mk(), resolve: resolveOk })
+    }
+    const denied = await handle({ event: mk(), resolve: resolveOk })
+    expect(denied.status).toBe(429)
+  })
+
+  it('does not throttle routes outside the public API namespace', async () => {
+    for (let i = 0; i < LIMIT + 10; i++) {
+      const res = await handle({
+        event: makeEvent('http://localhost/login', {
+          method: 'GET',
+          xff: '23.23.23.23'
+        }),
+        resolve: resolveOk
+      })
+      expect(res.status).toBe(200)
+    }
+  })
+})
+
 describe('hooks.server – resolveClientIp', () => {
   it('prefers the first entry of x-forwarded-for', () => {
     const event = makeEvent('http://localhost/x', {

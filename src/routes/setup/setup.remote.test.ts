@@ -87,8 +87,11 @@ import {
   createInitialAdmin,
   listWorkshopHoursForSetup,
   saveCompanyData,
+  saveSmtp,
   saveWorkshopHoursForSetup
 } from './setup.remote'
+import { smtpSettings } from '$lib/server/db/schema'
+import { decryptSecret, isEncryptedSecret } from '$lib/server/crypto'
 
 /** A fully-valid company payload (every server-required field present). */
 const validCompany = {
@@ -307,6 +310,41 @@ describe('setup.remote — saveCompanyData validation', () => {
     const { iban: _i, bic: _b, bankName: _n, ...withoutBank } = validCompany
     void [_i, _b, _n]
     await expect(saveCompanyData(withoutBank as never)).rejects.toThrow()
+  })
+})
+
+describe('setup.remote — saveSmtp secrets at rest', () => {
+  beforeEach(async () => {
+    await resetDb()
+    await db.delete(smtpSettings)
+    await seedFreshCompany()
+  })
+
+  const validSmtp = {
+    host: 'smtp.example.com',
+    port: '587',
+    secure: 'STARTTLS' as const,
+    username: 'mailer',
+    password: 'super-geheim!',
+    fromAddress: 'noreply@twincast.de',
+    fromName: 'TwinCast'
+  }
+
+  it('stores the SMTP password AES-256-GCM encrypted, never plaintext', async () => {
+    await saveSmtp(validSmtp)
+    const [row] = await db.select().from(smtpSettings)
+    expect(row.password).not.toBe('super-geheim!')
+    expect(isEncryptedSecret(row.password)).toBe(true)
+    expect(decryptSecret(row.password)).toBe('super-geheim!')
+  })
+
+  it('keeps the stored encrypted password when the input is empty', async () => {
+    await saveSmtp(validSmtp)
+    const [before] = await db.select().from(smtpSettings)
+    await saveSmtp({ ...validSmtp, password: '' })
+    const [after] = await db.select().from(smtpSettings)
+    expect(after.password).toBe(before.password)
+    expect(decryptSecret(after.password)).toBe('super-geheim!')
   })
 })
 

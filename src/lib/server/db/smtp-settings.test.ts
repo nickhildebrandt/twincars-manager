@@ -11,9 +11,12 @@ import { db } from '$lib/server/db/client'
 import { smtpSettings } from '$lib/server/db/schema'
 
 /**
- * Smoke tests for the `smtp_settings.password` column after dropping
- * the AES-GCM encryption indirection. The value persisted on write is
- * the value returned on read — no encrypt/decrypt step in between.
+ * Smoke tests for the `smtp_settings.password` column semantics: the
+ * column itself is an opaque string that round-trips untransformed.
+ * Encryption at rest happens one layer above — the setup/settings
+ * remotes write `encryptSecret(...)` output into this column and
+ * `mail-service` decrypts on use (see setup.remote.test.ts for the
+ * encrypted-at-rest assertions).
  *
  * @group integration
  * @module smtp-settings

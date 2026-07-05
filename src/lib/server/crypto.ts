@@ -31,7 +31,7 @@ function encryptionKey(): Buffer {
   const secret = readEnv('APP_ENCRYPTION_KEY') || readEnv('APP_SECRET')
   if (!secret) {
     throw new Error(
-      'Weder APP_ENCRYPTION_KEY noch APP_SECRET ist gesetzt — Verschlüsselung nicht möglich.'
+      'Weder APP_ENCRYPTION_KEY noch APP_SECRET ist gesetzt - Verschlüsselung nicht möglich.'
     )
   }
   return createHash('sha256').update(secret).digest()
@@ -52,6 +52,21 @@ export function encryptSecret(plain: string): string {
     tag.toString('base64'),
     ciphertext.toString('base64')
   ].join(':')
+}
+
+/** `true` when the value carries the `v1:iv:tag:data` wire format. */
+export function isEncryptedSecret(value: string): boolean {
+  return value.startsWith(`${VERSION}:`) && value.split(':').length === 4
+}
+
+/**
+ * Decrypt when the value is in the {@link encryptSecret} wire format,
+ * otherwise return it unchanged. Lets readers handle legacy plaintext
+ * rows (written before encryption-at-rest) without a data migration —
+ * the next save re-writes them encrypted.
+ */
+export function decryptSecretIfNeeded(stored: string): string {
+  return isEncryptedSecret(stored) ? decryptSecret(stored) : stored
 }
 
 /**

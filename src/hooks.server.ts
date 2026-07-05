@@ -17,6 +17,15 @@ import { rateLimit } from '$lib/server/rate-limit'
 const SIGNIN_RATE_PER_MINUTE = 10
 
 /**
+ * Public-API overload shield: steady-state requests per caller per
+ * minute plus a burst allowance. Generous enough for a website that
+ * renders car listings and booking slots, tight enough that a runaway
+ * client or scraper cannot saturate the single-replica container.
+ */
+const PUBLIC_API_RATE_PER_MINUTE = 120
+const PUBLIC_API_BURST = 60
+
+/**
  * Schema migrations are NOT run here. Production runs `node
  * scripts/migrate.js` once before the server boots (see
  * `Dockerfile` CMD) — by the time the SvelteKit handler accepts a
@@ -123,6 +132,41 @@ const rateLimitSignIn: Handle = async ({ event, resolve }) => {
 }
 
 /**
+ * Throttle the token-authenticated public REST API (and the eBay
+ * compliance endpoint) per caller. The bucket key prefers the Bearer
+ * token's first 8 chars — stable per third-party client, never the
+ * full secret — and falls back to the client IP for unauthenticated
+ * requests, so failed-auth floods are contained too.
+ */
+const rateLimitPublicApi: Handle = async ({ event, resolve }) => {
+  const { pathname } = event.url
+  if (
+    pathname.startsWith('/api/public/') ||
+    pathname.startsWith('/api/ebay/account-deletion')
+  ) {
+    const header = event.request.headers.get('authorization') ?? ''
+    const m = /^Bearer\s+(\S+)/i.exec(header.trim())
+    const bucket = m
+      ? `token:${m[1].slice(0, 8)}`
+      : `ip:${resolveClientIp(event)}`
+    const result = rateLimit(`public-api:${bucket}`, {
+      perMinute: PUBLIC_API_RATE_PER_MINUTE,
+      burst: PUBLIC_API_BURST
+    })
+    if (!result.allowed) {
+      return json(
+        { message: 'Zu viele Anfragen. Bitte reduzieren Sie die Aufrufrate.' },
+        {
+          status: 429,
+          headers: { 'Retry-After': String(result.retryAfter ?? 60) }
+        }
+      )
+    }
+  }
+  return resolve(event)
+}
+
+/**
  * Reject a sign-in attempt for a deactivated account *before* better-auth
  * validates credentials and mints a session. Returns a 403 with a curated
  * German message that the login form surfaces directly (it reads
@@ -188,19 +232,23 @@ export const handle: Handle = async ({ event, resolve }) => {
   await ensureSeeded()
   return rateLimitSignIn({
     event,
-    resolve: (e0) =>
-      blockDeactivatedSignIn({
-        event: e0,
-        resolve: (e1) =>
-          svelteKitHandler({
-            event: e1,
-            resolve: (e) =>
-              populateAuthLocals({
-                event: e,
-                resolve: (e2) => requireAuthHandle({ event: e2, resolve })
-              }),
-            auth,
-            building
+    resolve: (eA) =>
+      rateLimitPublicApi({
+        event: eA,
+        resolve: (e0) =>
+          blockDeactivatedSignIn({
+            event: e0,
+            resolve: (e1) =>
+              svelteKitHandler({
+                event: e1,
+                resolve: (e) =>
+                  populateAuthLocals({
+                    event: e,
+                    resolve: (e2) => requireAuthHandle({ event: e2, resolve })
+                  }),
+                auth,
+                building
+              })
           })
       })
   })

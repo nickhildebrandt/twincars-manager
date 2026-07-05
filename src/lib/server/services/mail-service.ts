@@ -33,6 +33,7 @@ import {
   type Customer
 } from '$lib/server/db/schema'
 import { getOrRenderDocumentPdf } from '$lib/server/services/pdf-service'
+import { decryptSecretIfNeeded } from '$lib/server/crypto'
 import { listCustomersForBroadcast } from '$lib/server/services/customer-service'
 import { getEffectiveLicensePlate } from '$lib/server/services/vehicle-service'
 
@@ -183,7 +184,7 @@ const htmlToPlainText = (html: string): string =>
  * variant are produced so the footer matches the body's format.
  */
 const UNSUBSCRIBE_TEXT =
-  '\n\n—\nKeine weiteren Informationen gewünscht? Antworten Sie auf diese ' +
+  '\n\n--\nKeine weiteren Informationen gewünscht? Antworten Sie auf diese ' +
   'E-Mail mit dem Betreff „Abbestellen".'
 
 const UNSUBSCRIBE_HTML =
@@ -205,7 +206,12 @@ const buildTransport = async (): Promise<Transporter> => {
     secure: s.secure === 'TLS',
     requireTLS: s.secure === 'STARTTLS',
     auth: s.username
-      ? { user: s.username, pass: s.password || undefined }
+      ? {
+          user: s.username,
+          // Stored encrypted (AES-256-GCM); legacy plaintext rows pass
+          // through unchanged until the next save re-encrypts them.
+          pass: s.password ? decryptSecretIfNeeded(s.password) : undefined
+        }
       : undefined
   })
 }
@@ -993,7 +999,7 @@ export const sendContactNotification = async (
   const destination = company?.email ?? ''
   if (!destination) {
     const message =
-      'Keine Empfänger-Adresse hinterlegt — bitte „E-Mail" in den Firmen-Einstellungen ausfüllen.'
+      'Keine Empfänger-Adresse hinterlegt - bitte „E-Mail" in den Firmen-Einstellungen ausfüllen.'
     return { ok: false, error: message }
   }
 

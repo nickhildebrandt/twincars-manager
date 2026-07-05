@@ -15,7 +15,12 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 // (which `vi.stubEnv` controls), then `$env/dynamic/private`.
 vi.mock('$env/dynamic/private', () => ({ env: {} }))
 
-import { encryptSecret, decryptSecret } from './crypto'
+import {
+  encryptSecret,
+  decryptSecret,
+  isEncryptedSecret,
+  decryptSecretIfNeeded
+} from './crypto'
 
 beforeEach(() => {
   vi.stubEnv('APP_ENCRYPTION_KEY', 'test-encryption-key-please-rotate')
@@ -83,5 +88,22 @@ describe('encryptSecret / decryptSecret', () => {
     const stored = encryptSecret('cross-key')
     vi.stubEnv('APP_ENCRYPTION_KEY', 'a-completely-different-key')
     expect(() => decryptSecret(stored)).toThrow()
+  })
+})
+
+describe('isEncryptedSecret / decryptSecretIfNeeded', () => {
+  it('recognizes the v1 wire format and rejects lookalikes', () => {
+    expect(isEncryptedSecret(encryptSecret('x'))).toBe(true)
+    expect(isEncryptedSecret('plaintext-password')).toBe(false)
+    expect(isEncryptedSecret('v1:only:three')).toBe(false)
+    expect(isEncryptedSecret('v2:a:b:c')).toBe(false)
+    expect(isEncryptedSecret('')).toBe(false)
+  })
+
+  it('decrypts encrypted values and passes legacy plaintext through', () => {
+    expect(decryptSecretIfNeeded(encryptSecret('smtp-pass'))).toBe('smtp-pass')
+    // Legacy row written before encryption-at-rest: returned unchanged.
+    expect(decryptSecretIfNeeded('legacy-plaintext')).toBe('legacy-plaintext')
+    expect(decryptSecretIfNeeded('')).toBe('')
   })
 })

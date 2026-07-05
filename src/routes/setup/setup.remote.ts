@@ -28,6 +28,7 @@ import {
 } from '$lib/server/db/schema'
 import { getSettings } from '$lib/server/services/settings-service'
 import { createUserWithCredential } from '$lib/server/auth-users'
+import { encryptSecret } from '$lib/server/crypto'
 import {
   listWorkshopHours,
   updateWorkshopHours
@@ -115,6 +116,10 @@ export const getSetupStatus = query(async () => {
  * @module setup
  */
 export const saveCompanyData = command(companyDataSchema, async (data) => {
+  // SECURITY: the wizard runs pre-login, so this command is reachable
+  // anonymously — it MUST go dead the moment setup completes, or any
+  // visitor could overwrite the company master data forever after.
+  await refuseAfterSetup()
   const settings = await getSettings()
   await db
     .update(companySettings)
@@ -144,14 +149,18 @@ export const saveCompanyData = command(companyDataSchema, async (data) => {
 })
 
 /**
- * Persist SMTP credentials. Password is stored as-is in the database
- * — see the setup notes for the deliberate decision to not encrypt
- * application data at rest.
+ * Persist SMTP credentials. The password is encrypted at rest
+ * (AES-256-GCM via `$lib/server/crypto`); `mail-service` decrypts it
+ * when building the transport.
  *
  * @group integration
  * @module setup
  */
 export const saveSmtp = command(smtpSchema, async (data) => {
+  // SECURITY: anonymously reachable pre-login by design — must refuse
+  // after setup, otherwise an attacker could repoint SMTP to their own
+  // server and intercept every outgoing mail.
+  await refuseAfterSetup()
   const portNum = Number(data.port)
   if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
     error(400, 'Ungültiger SMTP-Port.')
@@ -159,20 +168,19 @@ export const saveSmtp = command(smtpSchema, async (data) => {
   const rows = await db.select().from(smtpSettings).limit(1)
   const id = rows[0]?.id
   if (!id) {
-    await db
-      .insert(smtpSettings)
-      .values({
-        host: data.host,
-        port: portNum,
-        secure: data.secure,
-        username: data.username,
-        password: data.password,
-        fromAddress: data.fromAddress,
-        fromName: data.fromName,
-        replyTo: data.replyTo ?? null,
-        verified: false,
-        updatedAt: new Date()
-      })
+    await db.insert(smtpSettings).values({
+      host: data.host,
+      port: portNum,
+      secure: data.secure,
+      username: data.username,
+      // Encrypted at rest; mail-service decrypts when sending.
+      password: data.password ? encryptSecret(data.password) : '',
+      fromAddress: data.fromAddress,
+      fromName: data.fromName,
+      replyTo: data.replyTo ?? null,
+      verified: false,
+      updatedAt: new Date()
+    })
   } else {
     await db
       .update(smtpSettings)
@@ -181,7 +189,10 @@ export const saveSmtp = command(smtpSchema, async (data) => {
         port: portNum,
         secure: data.secure,
         username: data.username,
-        password: data.password ? data.password : rows[0].password,
+        // Empty input keeps the stored (already encrypted) password.
+        password: data.password
+          ? encryptSecret(data.password)
+          : rows[0].password,
         fromAddress: data.fromAddress,
         fromName: data.fromName,
         replyTo: data.replyTo ?? null,
@@ -349,6 +360,7 @@ export const saveWorkshopHoursForSetup = command(
  * "set up" state with an empty record.
  */
 export const completeSetup = command(async () => {
+  await refuseAfterSetup()
   const adminCount = await db.select({ id: users.id }).from(users).limit(1)
   if (adminCount.length === 0) {
     error(400, 'Bitte zuerst ein Administrator-Konto anlegen.')

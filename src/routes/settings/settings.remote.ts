@@ -33,6 +33,7 @@ import {
   optionalEmailSchema
 } from '$lib/server/db/validation'
 import { requirePermission } from '$lib/server/auth-guards'
+import { encryptSecret } from '$lib/server/crypto'
 
 const companyDataSchema = object({
   companyName: nameSchema,
@@ -337,20 +338,19 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
   const rows = await db.select().from(smtpSettings).limit(1)
   const id = rows[0]?.id
   if (!id) {
-    await db
-      .insert(smtpSettings)
-      .values({
-        host: data.host,
-        port,
-        secure: data.secure,
-        username: data.username,
-        password: data.password ?? '',
-        fromAddress: data.fromAddress,
-        fromName: data.fromName,
-        replyTo: data.replyTo ?? null,
-        verified: false,
-        updatedAt: new Date()
-      })
+    await db.insert(smtpSettings).values({
+      host: data.host,
+      port,
+      secure: data.secure,
+      username: data.username,
+      // Encrypted at rest (AES-256-GCM); mail-service decrypts on use.
+      password: data.password ? encryptSecret(data.password) : '',
+      fromAddress: data.fromAddress,
+      fromName: data.fromName,
+      replyTo: data.replyTo ?? null,
+      verified: false,
+      updatedAt: new Date()
+    })
   } else {
     await db
       .update(smtpSettings)
@@ -359,7 +359,10 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
         port,
         secure: data.secure,
         username: data.username,
-        password: data.password ? data.password : rows[0].password,
+        // Empty input keeps the stored (already encrypted) password.
+        password: data.password
+          ? encryptSecret(data.password)
+          : rows[0].password,
         fromAddress: data.fromAddress,
         fromName: data.fromName,
         replyTo: data.replyTo ?? null,

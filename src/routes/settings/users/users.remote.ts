@@ -343,6 +343,38 @@ export const updateUserRemote = command(
           error(400, 'Mindestens eine Rolle wurde nicht gefunden.')
         }
       }
+
+      // Last-admin lockout guard (mirrors delete/deactivate): if this
+      // user currently holds the wildcard and the NEW role set drops
+      // it, there must be at least one other wildcard holder left.
+      const newRolePerms =
+        roleIds.length > 0
+          ? await db
+              .select({ permission: rolePermissions.permission })
+              .from(rolePermissions)
+              .where(inArray(rolePermissions.roleId, roleIds))
+          : []
+      const keepsWildcard = newRolePerms.some(
+        (p) => p.permission === WILDCARD_PERMISSION
+      )
+      if (!keepsWildcard) {
+        const currentWildcard = await db
+          .selectDistinct({ userId: userRoles.userId })
+          .from(userRoles)
+          .innerJoin(
+            rolePermissions,
+            eq(rolePermissions.roleId, userRoles.roleId)
+          )
+          .where(eq(rolePermissions.permission, WILDCARD_PERMISSION))
+        const holders = currentWildcard.map((r) => r.userId)
+        if (holders.includes(id) && !holders.some((u) => u !== id)) {
+          error(
+            409,
+            'Dem letzten Administrator kann die Administrator-Rolle nicht entzogen werden.'
+          )
+        }
+      }
+
       await db.delete(userRoles).where(eq(userRoles.userId, id))
       if (roleIds.length > 0) {
         await db
@@ -544,11 +576,29 @@ export const updateRoleRemote = command(
     requirePermission('users')
 
     const [existing] = await db
-      .select({ id: roles.id })
+      .select({ id: roles.id, name: roles.name })
       .from(roles)
       .where(eq(roles.id, id))
       .limit(1)
     if (!existing) error(404, 'Rolle nicht gefunden.')
+
+    // Lockout guard (mirrors deleteRoleRemote): the built-in
+    // Administrator role can neither be renamed nor lose its wildcard
+    // — stripping `*` here would lock every admin out at once.
+    if (existing.name === 'Administrator') {
+      if (name !== undefined && name !== 'Administrator') {
+        error(409, 'Die Administrator-Rolle kann nicht umbenannt werden.')
+      }
+      if (
+        permissions !== undefined &&
+        !permissions.includes(WILDCARD_PERMISSION)
+      ) {
+        error(
+          409,
+          'Der Administrator-Rolle kann der Vollzugriff (*) nicht entzogen werden.'
+        )
+      }
+    }
 
     if (name !== undefined || description !== undefined) {
       const patch: { name?: string; description?: string | null } = {}
