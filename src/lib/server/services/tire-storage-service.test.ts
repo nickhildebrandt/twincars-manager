@@ -90,10 +90,12 @@ describe('tire-storage-service', () => {
       expect(second).toBe(`L-${currentYear}-0002`)
     })
 
-    it('falls back to the default template if no range row exists', async () => {
+    it('seeds the default range persistently if no row exists', async () => {
       await db.delete(numberRanges)
-      const num = await nextStorageNumber()
-      expect(num).toBe(`L-${currentYear}-0001`)
+      // The allocator inserts the seed-defaults row and keeps counting
+      // from it — the old fallback returned 0001 on every call.
+      expect(await nextStorageNumber()).toBe(`L-${currentYear}-0001`)
+      expect(await nextStorageNumber()).toBe(`L-${currentYear}-0002`)
     })
   })
 

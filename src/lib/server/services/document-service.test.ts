@@ -126,11 +126,12 @@ describe('document-service', () => {
       expect(second).toMatch(/^RE-\d{4}-0002$/)
     })
 
-    it('falls back to the default template when no range row exists', async () => {
+    it('seeds the seed-defaults row persistently when none exists', async () => {
       await db.delete(numberRanges).where(eq(numberRanges.kind, 'invoice'))
-      const rendered = await nextDocumentNumber('invoice')
-      // Default template `XX-{YYYY}-{NNNN}` from the service source.
-      expect(rendered).toMatch(/^XX-\d{4}-0001$/)
+      // The allocator inserts the same `{N}` row seedDefaults() would
+      // create and keeps counting from it — no repeated "1".
+      expect(await nextDocumentNumber('invoice')).toBe('1')
+      expect(await nextDocumentNumber('invoice')).toBe('2')
     })
   })
 

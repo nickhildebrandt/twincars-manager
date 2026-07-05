@@ -89,9 +89,11 @@ describe('customer-service', () => {
   })
 
   describe('nextCustomerNumber', () => {
-    it('falls back to the default template if no range exists', async () => {
-      const num = await nextCustomerNumber()
-      expect(num).toBe('KU-00001')
+    it('seeds the seed-defaults row persistently if no range exists', async () => {
+      // The allocator inserts the `{N}` row seedDefaults() would create
+      // and keeps counting from it — two calls yield distinct numbers.
+      expect(await nextCustomerNumber()).toBe('1')
+      expect(await nextCustomerNumber()).toBe('2')
     })
 
     it('renders the configured template and bumps nextValue', async () => {

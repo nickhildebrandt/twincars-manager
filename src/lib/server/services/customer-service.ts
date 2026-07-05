@@ -1,7 +1,6 @@
 import { db } from '$lib/server/db/client'
 import {
   customers,
-  numberRanges,
   type Customer,
   type NewCustomer
 } from '$lib/server/db/schema'
@@ -14,11 +13,10 @@ import {
   ilike,
   isNotNull,
   isNull,
-  or,
-  sql
+  or
 } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
-import { renderNumber } from '$lib/utils/numbering'
+import { allocateNumber } from './number-range-service'
 
 export type CustomerKindFilter = 'all' | 'private' | 'business' | 'ebay'
 
@@ -109,21 +107,12 @@ export async function listCustomers(
 }
 
 /**
- * Generate the next customer number from the configured range and bump it.
+ * Allocate the next customer number from the configured range. Atomic
+ * via {@link allocateNumber} — the counter is bumped and read in a
+ * single statement.
  */
 export async function nextCustomerNumber(): Promise<string> {
-  const [row] = await db
-    .select()
-    .from(numberRanges)
-    .where(eq(numberRanges.kind, 'customer'))
-    .limit(1)
-  const template = row?.formatTemplate ?? 'KU-{NNNNN}'
-  const next = row?.nextValue ?? 1
-  await db
-    .update(numberRanges)
-    .set({ nextValue: next + 1 })
-    .where(eq(numberRanges.kind, 'customer'))
-  return renderNumber(template, next)
+  return allocateNumber('customer')
 }
 
 /**
@@ -200,6 +189,3 @@ export async function listCustomersForBroadcast(): Promise<Customer[]> {
     )
     .orderBy(asc(customers.lastName), asc(customers.firstName))
 }
-
-// Re-exports for tests
-export { sql }

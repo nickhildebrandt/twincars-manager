@@ -14,7 +14,6 @@
  */
 import { db } from '$lib/server/db/client'
 import {
-  numberRanges,
   tirePhotos,
   tirePriceVersions,
   tires,
@@ -35,6 +34,7 @@ import {
   sql
 } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
+import { allocateNumber } from './number-range-service'
 
 type Tire = typeof tires.$inferSelect
 type NewTire = typeof tires.$inferInsert
@@ -133,32 +133,14 @@ export async function getTire(id: string): Promise<TireWithPrice | null> {
 /* ── Numbering ─────────────────────────────────────────────────────── */
 
 /**
- * Generate the next tire article number from the `number_ranges`
- * row keyed by `'tire'`. The seed migration writes a `{N}` template
+ * Allocate the next tire article number from the `number_ranges` row
+ * keyed by `'tire'`. The seed migration writes a `{N}` template
  * starting at 1, matching the plain-counter style of the invoice /
- * offer ranges.
+ * offer ranges; if the row is missing (older DB), the allocator seeds
+ * it with the same template. Atomic via {@link allocateNumber}.
  */
 export async function nextArticleNumber(): Promise<string> {
-  const [row] = await db
-    .select()
-    .from(numberRanges)
-    .where(eq(numberRanges.kind, 'tire'))
-    .limit(1)
-  const next = row?.nextValue ?? 1
-  if (row) {
-    await db
-      .update(numberRanges)
-      .set({ nextValue: next + 1 })
-      .where(eq(numberRanges.kind, 'tire'))
-  } else {
-    // Defensive: range row missing (older DB or test that resets
-    // number_ranges). Treat row count as the seed.
-    const [{ value }] = await db.select({ value: count() }).from(tires)
-    return String(Number(value) + 1)
-  }
-  // Tires use the bare `{N}` template — render inline to avoid pulling
-  // the heavier numbering util just for a counter.
-  return String(next)
+  return allocateNumber('tire')
 }
 
 /* ── Create / Update / Delete ──────────────────────────────────────── */

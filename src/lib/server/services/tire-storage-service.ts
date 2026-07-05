@@ -4,7 +4,7 @@
  * tires sitting on a shelf with a printed QR/storage number.
  *
  * Storage numbers (`L-{YYYY}-{NNNN}`) are auto-allocated from the
- * shared `number_ranges` table via {@link nextNumber}.
+ * shared `number_ranges` table via the atomic {@link allocateNumber}.
  */
 import { db } from '$lib/server/db/client'
 import {
@@ -15,7 +15,7 @@ import {
 } from '$lib/server/db/schema'
 import { and, count, desc, eq, ilike, isNotNull, isNull, or } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
-import { nextNumber } from '$lib/utils/numbering'
+import { allocateNumber } from './number-range-service'
 
 export type TireStorageListItem = TireStorage & {
   customerLabel: string
@@ -143,12 +143,12 @@ export async function getTireStorageIdByNumber(
 }
 
 /**
- * Generate the next storage number from the configured range and
- * bump the counter. Format defaults to `L-{YYYY}-{NNNN}` if the
- * range row is missing (the seed step always creates it).
+ * Allocate the next storage number from the configured range. Atomic
+ * via {@link allocateNumber}; if the range row is missing, it is
+ * seeded with the default `L-{YYYY}-{NNNN}` template.
  */
 export async function nextStorageNumber(): Promise<string> {
-  return nextNumber('tire_storage', 'L-{YYYY}-{NNNN}')
+  return allocateNumber('tire_storage')
 }
 
 /**

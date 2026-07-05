@@ -6,12 +6,11 @@ import {
   documentPayments,
   customers,
   vehicles,
-  numberRanges,
   type Document
 } from '$lib/server/db/schema'
 import { and, asc, count, desc, eq, ilike, ne, or, sum } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
-import { renderNumber } from '$lib/utils/numbering'
+import { allocateNumber } from './number-range-service'
 import { latestPlateSubquery } from './vehicle-service'
 
 type NewDocument = typeof documents.$inferInsert
@@ -144,21 +143,12 @@ export async function getDocument(
 }
 
 /**
- * Increment the next number for a given range and render a document number.
+ * Allocate + render the next document number for a given range kind.
+ * Thin wrapper over the atomic {@link allocateNumber} so callers keep
+ * a document-scoped name.
  */
 export async function nextDocumentNumber(kind: string): Promise<string> {
-  const [row] = await db
-    .select()
-    .from(numberRanges)
-    .where(eq(numberRanges.kind, kind))
-    .limit(1)
-  const template = row?.formatTemplate ?? 'XX-{YYYY}-{NNNN}'
-  const next = row?.nextValue ?? 1
-  await db
-    .update(numberRanges)
-    .set({ nextValue: next + 1 })
-    .where(eq(numberRanges.kind, kind))
-  return renderNumber(template, next)
+  return allocateNumber(kind)
 }
 
 const round2 = (v: number): number => Math.round(v * 100) / 100
@@ -392,8 +382,9 @@ export async function cancelInvoice(
   }
 
   // Allocate the next storno number BEFORE entering the transaction —
-  // `nextDocumentNumber` does its own update against `number_ranges`
-  // and reusing the helper keeps the format template consistent.
+  // `nextDocumentNumber` runs its own atomic update against
+  // `number_ranges` and reusing the helper keeps the format template
+  // consistent.
   const stornoNumber = await nextDocumentNumber('storno')
 
   const items = await db

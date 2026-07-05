@@ -121,6 +121,14 @@ describe('tire-service', () => {
       expect(await nextArticleNumber()).toBe('1')
       expect(await nextArticleNumber()).toBe('2')
     })
+
+    it('seeds the {N} range persistently when the row is missing', async () => {
+      await db.delete(numberRanges)
+      // Older DBs without migration 0022's seed row: the allocator
+      // creates it on first use and keeps counting from it.
+      expect(await nextArticleNumber()).toBe('1')
+      expect(await nextArticleNumber()).toBe('2')
+    })
   })
 
   describe('listTires + filters', () => {
