@@ -53,6 +53,7 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
+  import QuickCreateCustomerForm from '$lib/components/ui/QuickCreateCustomerForm.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
@@ -215,6 +216,18 @@
   $effect(() => () => formDirty.clear())
 </script>
 
+{#snippet customerCreateForm(props: {
+  initialQuery: string
+  onCreated: (item: { id: string; label: string }) => void
+  onCancel: () => void
+})}
+  <QuickCreateCustomerForm
+    initialQuery={props.initialQuery}
+    onCreated={props.onCreated}
+    onCancel={props.onCancel}
+  />
+{/snippet}
+
 <form
   onsubmit={submit}
   oninput={markDirty}
@@ -348,6 +361,8 @@
               dialogTitle="Kunde auswählen"
               search={searchCustomers}
               onSelect={() => fv.markTouched('customerId')}
+              createLabel="Neuen Kunden anlegen"
+              createForm={customerCreateForm}
             />
           </FormField>
         {:else}

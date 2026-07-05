@@ -42,6 +42,8 @@ const vehicleHits = [
 
 const pickCustomersMock = vi.fn()
 const pickVehiclesMock = vi.fn()
+const createCustomerMock = vi.fn()
+const createVehicleMock = vi.fn()
 
 vi.mock('../../../routes/pickers.remote', () => ({
   pickCustomersRemote: (args: PickParams) => ({
@@ -52,11 +54,22 @@ vi.mock('../../../routes/pickers.remote', () => ({
   })
 }))
 
+// The inline quick-create forms call the real create commands — mock the
+// two remote modules the same way pickers.remote is mocked above.
+vi.mock('../../../routes/customers/customers.remote', () => ({
+  createCustomerRemote: (args: unknown) => createCustomerMock(args)
+}))
+vi.mock('../../../routes/vehicles/vehicles.remote', () => ({
+  createVehicleRemote: (args: unknown) => createVehicleMock(args)
+}))
+
 import CustomerVehiclePicker from './CustomerVehiclePicker.svelte'
 
 beforeEach(() => {
   pickCustomersMock.mockReset()
   pickVehiclesMock.mockReset()
+  createCustomerMock.mockReset()
+  createVehicleMock.mockReset()
   pickCustomersMock.mockResolvedValue({
     items: customerHits,
     total: customerHits.length,
@@ -191,6 +204,89 @@ describe('CustomerVehiclePicker', () => {
     await user.click(await findRow(/Alpha GmbH/))
     expect(customerValue()).toBe('Alpha GmbH · Berlin')
     expect(vehicleValue()).toBe('Lagerfahrzeug BMW 320d')
+  })
+
+  it('creates a customer inline and selects it', async () => {
+    const user = userEvent.setup()
+    createCustomerMock.mockResolvedValue({
+      id: 'c9',
+      company: null,
+      firstName: 'Nora',
+      lastName: 'Neukund',
+      customerNumber: 'K-9',
+      city: null
+    })
+    render(CustomerVehiclePicker, { props: {} })
+
+    await user.click(triggers()[0])
+    await user.click(
+      screen.getByRole('button', { name: /Neuen Kunden anlegen/ })
+    )
+    // Quick-create form replaces the result list.
+    await user.type(screen.getByLabelText('Nachname'), 'Neukund')
+    await user.type(screen.getByLabelText('Vorname'), 'Nora')
+    await user.click(screen.getByRole('button', { name: 'Kunde anlegen' }))
+
+    await waitFor(() => expect(customerValue()).toBe('Nora Neukund'))
+    expect(createCustomerMock).toHaveBeenCalledWith({
+      lastName: 'Neukund',
+      firstName: 'Nora',
+      company: undefined,
+      phone: undefined
+    })
+  })
+
+  it('offers no vehicle creation without a customer and shows the hint', async () => {
+    const user = userEvent.setup()
+    pickVehiclesMock.mockResolvedValue({ items: [], total: 0, pageCount: 1 })
+    render(CustomerVehiclePicker, { props: {} })
+
+    await user.click(triggers()[1])
+    await waitFor(() => expect(pickVehiclesMock).toHaveBeenCalled())
+
+    expect(
+      screen.queryByRole('button', { name: /Neues Fahrzeug anlegen/ })
+    ).not.toBeInTheDocument()
+    expect(
+      await screen.findByText(
+        'Keine Treffer. Zuerst Kunden wählen, um ein neues Fahrzeug anzulegen.'
+      )
+    ).toBeInTheDocument()
+  })
+
+  it('creates a vehicle inline for the chosen customer and selects it', async () => {
+    const user = userEvent.setup()
+    createVehicleMock.mockResolvedValue({
+      id: 'v9',
+      licensePlate: 'HH-XY 9',
+      make: 'Opel',
+      model: 'Corsa'
+    })
+    render(CustomerVehiclePicker, { props: {} })
+
+    // Choose the customer first — only then is inline create offered.
+    await user.click(triggers()[0])
+    await user.click(await findRow(/Beta AG · Hamburg/))
+    expect(customerValue()).toBe('Beta AG · Hamburg')
+
+    await user.click(triggers()[1])
+    await user.click(
+      screen.getByRole('button', { name: /Neues Fahrzeug anlegen/ })
+    )
+    // The holder is shown read-only inside the quick-create form.
+    expect(screen.getByText(/Halter: Beta AG · Hamburg/)).toBeInTheDocument()
+
+    await user.type(screen.getByLabelText('Kennzeichen'), 'HH-XY 9')
+    await user.click(screen.getByRole('button', { name: 'Fahrzeug anlegen' }))
+
+    await waitFor(() => expect(vehicleValue()).toBe('HH-XY 9 · Opel Corsa'))
+    expect(customerValue()).toBe('Beta AG · Hamburg')
+    expect(createVehicleMock).toHaveBeenCalledWith({
+      customerId: 'c2',
+      licensePlate: 'HH-XY 9',
+      make: undefined,
+      model: undefined
+    })
   })
 
   it('renders required markers and the vehicle hint when configured', () => {

@@ -1,7 +1,20 @@
 <script lang="ts" generics="T extends { id: string; label: string }">
-  import { Search, X, ChevronDown } from '@lucide/svelte'
+  import type { Snippet } from 'svelte'
+  import { Search, X, ChevronDown, Plus } from '@lucide/svelte'
   import Pagination from './Pagination.svelte'
   import Loader from './Loader.svelte'
+
+  /**
+   * Render props handed to the optional inline quick-create form. The
+   * form calls `onCreated(item)` after a successful save — the item is
+   * then selected exactly like a clicked search hit — or `onCancel()`
+   * to return to search mode.
+   */
+  type CreateFormProps = {
+    initialQuery: string
+    onCreated: (item: T) => void
+    onCancel: () => void
+  }
 
   type Props = {
     value: string
@@ -17,6 +30,14 @@
     }) => Promise<{ items: T[]; total: number; pageCount: number }>
     onSelect: (item: T | null) => void
     disabled?: boolean
+    /**
+     * Label of the inline "create new" affordance. Only when BOTH
+     * `createLabel` and `createForm` are set does the dialog offer the
+     * quick-create flow.
+     */
+    createLabel?: string
+    /** Inline quick-create form rendered in place of the result list. */
+    createForm?: Snippet<[CreateFormProps]>
   }
 
   let {
@@ -27,7 +48,9 @@
     emptyText = 'Keine Treffer.',
     search,
     onSelect,
-    disabled = false
+    disabled = false,
+    createLabel,
+    createForm
   }: Props = $props()
 
   let dialog = $state<HTMLDialogElement | null>(null)
@@ -39,6 +62,14 @@
   let total = $state(0)
   let pageCount = $state(1)
   let loading = $state(false)
+
+  /**
+   * Dialog mode: `search` shows the result list, `create` swaps the
+   * scroll area for the inline quick-create form (search row and
+   * pagination hidden; the fixed modal height prevents layout jumps).
+   */
+  let mode = $state<'search' | 'create'>('search')
+  const canCreate = $derived(Boolean(createLabel && createForm))
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -57,6 +88,7 @@
   const open = () => {
     if (disabled) return
     page = 1
+    mode = 'search'
     dialog?.showModal()
     // Focus the search input after the dialog is shown — replaces the
     // accessibility-flagged `autofocus` attribute with explicit focus.
@@ -87,6 +119,23 @@
     value = ''
     valueLabel = ''
     onSelect(null)
+  }
+
+  const startCreate = () => {
+    mode = 'create'
+  }
+
+  /** A successful inline create behaves exactly like clicking a hit. */
+  const handleCreated = (item: T) => {
+    mode = 'search'
+    handleSelect(item)
+  }
+
+  /** Back to search mode: refocus the input and refresh the results. */
+  const cancelCreate = () => {
+    mode = 'search'
+    queueMicrotask(() => searchInput?.focus())
+    void runSearch()
   }
 </script>
 
@@ -139,62 +188,96 @@
         <X size={16} />
       </button>
     </header>
-    <div class="border-base-300 border-b px-4 py-3">
-      <label
-        class="input input-bordered input-sm flex w-full items-center gap-2"
-      >
-        <Search size={14} class="opacity-60" />
-        <input
-          bind:this={searchInput}
-          type="search"
-          class="grow"
-          placeholder="Suchen…"
-          value={q}
-          oninput={handleQuery}
-          maxlength="200"
-        />
-      </label>
-    </div>
-    <div class="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto">
-      {#if loading && items.length === 0}
-        <div class="flex h-full items-center justify-center">
-          <Loader />
-        </div>
-      {:else if items.length === 0}
-        <div
-          class="text-base-content/60 flex h-full items-center justify-center text-sm"
+    {#if mode === 'create' && createForm}
+      <div class="min-h-0 flex-1 overflow-y-auto">
+        {@render createForm({
+          initialQuery: q,
+          onCreated: handleCreated,
+          onCancel: cancelCreate
+        })}
+      </div>
+    {:else}
+      <div class="border-base-300 border-b px-4 py-3">
+        <label
+          class="input input-bordered input-sm flex w-full items-center gap-2"
         >
-          {emptyText}
-        </div>
-      {:else}
-        <ul class="divide-base-300 divide-y">
-          {#each items as item (item.id)}
-            <li>
+          <Search size={14} class="opacity-60" />
+          <input
+            bind:this={searchInput}
+            type="search"
+            class="grow"
+            placeholder="Suchen…"
+            value={q}
+            oninput={handleQuery}
+            maxlength="200"
+          />
+        </label>
+      </div>
+      <div class="min-h-0 flex-1 [scrollbar-gutter:stable] overflow-y-auto">
+        {#if loading && items.length === 0}
+          <div class="flex h-full items-center justify-center">
+            <Loader />
+          </div>
+        {:else if items.length === 0}
+          <div
+            class="flex h-full flex-col items-center justify-center gap-3 px-4"
+          >
+            <span class="text-base-content/60 text-center text-sm">
+              {emptyText}
+            </span>
+            {#if canCreate}
               <button
                 type="button"
-                class="hover:bg-base-200 flex w-full items-center justify-between px-4 py-3 text-left"
-                onclick={() => handleSelect(item)}
+                class="btn btn-ghost btn-sm"
+                onclick={startCreate}
               >
-                <span class="truncate">{item.label}</span>
-                {#if item.id === value}
-                  <span class="badge badge-primary badge-sm">ausgewählt</span>
-                {/if}
+                <Plus size={14} />
+                {createLabel}
               </button>
-            </li>
-          {/each}
-        </ul>
+            {/if}
+          </div>
+        {:else}
+          <ul class="divide-base-300 divide-y">
+            {#each items as item (item.id)}
+              <li>
+                <button
+                  type="button"
+                  class="hover:bg-base-200 flex w-full items-center justify-between px-4 py-3 text-left"
+                  onclick={() => handleSelect(item)}
+                >
+                  <span class="truncate">{item.label}</span>
+                  {#if item.id === value}
+                    <span class="badge badge-primary badge-sm">ausgewählt</span>
+                  {/if}
+                </button>
+              </li>
+            {/each}
+          </ul>
+        {/if}
+      </div>
+      {#if canCreate}
+        <div class="border-base-300 border-t px-4 py-2">
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm btn-block"
+            onclick={startCreate}
+          >
+            <Plus size={14} />
+            {createLabel}
+          </button>
+        </div>
       {/if}
-    </div>
-    <Pagination
-      {page}
-      {pageCount}
-      {total}
-      {size}
-      onPage={(p) => {
-        page = p
-        void runSearch()
-      }}
-    />
+      <Pagination
+        {page}
+        {pageCount}
+        {total}
+        {size}
+        onPage={(p) => {
+          page = p
+          void runSearch()
+        }}
+      />
+    {/if}
   </div>
   <button
     type="button"

@@ -17,6 +17,8 @@
    * contract identical to the two separate pickers it replaces.
    */
   import SearchablePicker from './SearchablePicker.svelte'
+  import QuickCreateCustomerForm from './QuickCreateCustomerForm.svelte'
+  import QuickCreateVehicleForm from './QuickCreateVehicleForm.svelte'
   import {
     pickCustomersRemote,
     pickCustomerVehiclesRemote
@@ -137,6 +139,32 @@
   }
 </script>
 
+{#snippet customerCreateForm(props: {
+  initialQuery: string
+  onCreated: (item: { id: string; label: string }) => void
+  onCancel: () => void
+})}
+  <QuickCreateCustomerForm
+    initialQuery={props.initialQuery}
+    onCreated={props.onCreated}
+    onCancel={props.onCancel}
+  />
+{/snippet}
+
+{#snippet vehicleCreateForm(props: {
+  initialQuery: string
+  onCreated: (item: VehicleHit) => void
+  onCancel: () => void
+})}
+  <QuickCreateVehicleForm
+    {customerId}
+    {customerLabel}
+    initialQuery={props.initialQuery}
+    onCreated={props.onCreated}
+    onCancel={props.onCancel}
+  />
+{/snippet}
+
 <!--
 	div + span instead of FormField: the picker contains its own dialog
 	with many buttons, and wrapping that in a <label> would both forward
@@ -155,6 +183,8 @@
     search={searchCustomers}
     onSelect={onCustomerSelect}
     {disabled}
+    createLabel="Neuen Kunden anlegen"
+    createForm={customerCreateForm}
   />
   {#if customerError}
     <span class="text-error text-sm">{customerError}</span>
@@ -174,9 +204,14 @@
     placeholder={customerId
       ? 'Fahrzeug dieses Kunden suchen'
       : 'Fahrzeug oder Halter suchen'}
+    emptyText={customerId
+      ? 'Keine Treffer.'
+      : 'Keine Treffer. Zuerst Kunden wählen, um ein neues Fahrzeug anzulegen.'}
     search={searchVehicles}
     onSelect={onVehicleSelect}
     disabled={disabled || vehicleLocked}
+    createLabel={customerId ? 'Neues Fahrzeug anlegen' : undefined}
+    createForm={customerId ? vehicleCreateForm : undefined}
   />
   {#if vehicleHint}
     <span class="text-base-content/60 text-xs">{vehicleHint}</span>

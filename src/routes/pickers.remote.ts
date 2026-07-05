@@ -19,7 +19,6 @@ import {
   vehicleSales,
   employees,
   items,
-  shippingOptions,
   suppliers,
   tires
 } from '$lib/server/db/schema'
@@ -38,6 +37,11 @@ import {
 } from 'drizzle-orm'
 import { getCurrentItemPrice } from '$lib/server/services/item-service'
 import { getCurrentTirePrice } from '$lib/server/services/tire-service'
+import {
+  customerDisplayName,
+  customerPickerLabel,
+  vehiclePickerLabel
+} from '$lib/utils/picker-labels'
 import {
   requireAnyPermission,
   requirePermission
@@ -132,7 +136,13 @@ export const pickCustomersRemote = query(
     ])
     const out = rows.map((r) => ({
       id: r.id,
-      label: `${r.company || `${r.firstName ?? ''} ${r.lastName ?? ''}`.trim() || r.number}${r.city ? ' · ' + r.city : ''}`
+      label: customerPickerLabel({
+        company: r.company,
+        firstName: r.firstName,
+        lastName: r.lastName,
+        customerNumber: r.number,
+        city: r.city
+      })
     }))
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
@@ -188,7 +198,11 @@ export const pickVehiclesRemote = query(
     ])
     const out = rows.map((r) => ({
       id: r.id,
-      label: `${r.plate ?? '-'} · ${[r.make, r.model].filter(Boolean).join(' ') || '-'}`
+      label: vehiclePickerLabel({
+        licensePlate: r.plate,
+        make: r.make,
+        model: r.model
+      })
     }))
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
@@ -260,14 +274,18 @@ export const pickCustomerVehiclesRemote = query(
         .where(where)
     ])
     const out = rows.map((r) => {
-      const holder =
-        r.customerCompany ||
-        `${r.customerFirstName ?? ''} ${r.customerLastName ?? ''}`.trim() ||
-        r.customerNumber ||
-        null
+      const holder = customerDisplayName({
+        company: r.customerCompany,
+        firstName: r.customerFirstName,
+        lastName: r.customerLastName,
+        customerNumber: r.customerNumber
+      })
       return {
         id: r.id,
-        label: `${r.plate ?? '-'} · ${[r.make, r.model].filter(Boolean).join(' ') || '-'}${holder ? ` · ${holder}` : ''}`,
+        label: vehiclePickerLabel(
+          { licensePlate: r.plate, make: r.make, model: r.model },
+          holder
+        ),
         customerId: r.customerId,
         customerLabel: holder
       }
@@ -462,58 +480,6 @@ export const pickInventoryVehiclesRemote = query(
         differentialTax: r.differentialTax
       }
     })
-    return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
-  }
-)
-
-/**
- * Paginated, searchable shipping-option picker. Returns only active
- * options so retired methods don't accidentally get linked from new
- * items. Label includes the net price in EUR for at-a-glance review.
- *
- * @group integration
- * @module pickers
- */
-export const pickShippingOptionsRemote = query(
-  pickerSchema,
-  async ({ q, page, size }) => {
-    requirePermission('shipping')
-    const offset = (page - 1) * size
-    const filters = [eq(shippingOptions.active, true)]
-    if (q) {
-      const term = `%${q}%`
-      filters.push(
-        or(
-          ilike(shippingOptions.name, term),
-          ilike(shippingOptions.description, term)
-        )!
-      )
-    }
-    const where = and(...filters)
-    const [rows, totalRow] = await Promise.all([
-      db
-        .select({
-          id: shippingOptions.id,
-          name: shippingOptions.name,
-          priceNet: shippingOptions.priceNet
-        })
-        .from(shippingOptions)
-        .where(where)
-        .orderBy(asc(shippingOptions.sortOrder), asc(shippingOptions.name))
-        .limit(size)
-        .offset(offset),
-      db.select({ value: count() }).from(shippingOptions).where(where)
-    ])
-    const fmtEur = new Intl.NumberFormat('de-DE', {
-      style: 'currency',
-      currency: 'EUR'
-    })
-    const out = rows.map((r) => ({
-      id: r.id,
-      label: `${r.name} (${fmtEur.format(Number(r.priceNet ?? 0))})`,
-      name: r.name,
-      priceNet: Number(r.priceNet ?? 0)
-    }))
     return buildResult(out, Number(totalRow[0]?.value ?? 0), page, size)
   }
 )

@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -12,16 +12,23 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * @module HoursForm
  */
 
+const createCustomerMock = vi.fn()
+
+// HoursForm awaits the picker queries directly (no `.run()`), so the
+// mocks must be plain promises resolving to an empty result page.
+const emptyPage = () =>
+  Promise.resolve({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
+
 vi.mock('../pickers.remote', () => ({
-  pickEmployeesRemote: () => ({
-    run: async () => ({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
-  }),
-  pickDocumentsRemote: () => ({
-    run: async () => ({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
-  }),
-  pickCustomersRemote: () => ({
-    run: async () => ({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
-  })
+  pickEmployeesRemote: () => emptyPage(),
+  pickDocumentsRemote: () => emptyPage(),
+  pickCustomersRemote: () => emptyPage()
+}))
+
+// The inline quick-create form inside the customer picker calls the real
+// customer create command — mock the remote module.
+vi.mock('../customers/customers.remote', () => ({
+  createCustomerRemote: (args: unknown) => createCustomerMock(args)
 }))
 
 import HoursForm from './HoursForm.svelte'
@@ -29,6 +36,7 @@ import { formDirty } from '$lib/stores/form-dirty.svelte'
 
 beforeEach(() => {
   formDirty.clear()
+  createCustomerMock.mockReset()
   // jsdom does not implement <dialog>; provide minimal stubs so the
   // SearchablePicker can mount.
   if (!HTMLDialogElement.prototype.showModal) {
@@ -181,6 +189,47 @@ describe('HoursForm', () => {
     await user.click(screen.getByRole('radio', { name: /^Kunde$/i }))
     expect(screen.queryByText('Aufgabe *')).not.toBeInTheDocument()
     expect(screen.getByText('Kunde *')).toBeInTheDocument()
+  })
+
+  it('creates a customer inline from the customer picker and selects it', async () => {
+    const user = userEvent.setup()
+    createCustomerMock.mockResolvedValue({
+      id: 'c9',
+      company: null,
+      firstName: 'Nora',
+      lastName: 'Neukund',
+      customerNumber: 'K-9',
+      city: 'Berlin'
+    })
+    render(HoursForm, {
+      props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
+    })
+
+    await user.click(screen.getByRole('radio', { name: /^Kunde$/i }))
+    // The trigger's accessible name is the FormField label ("Kunde *")
+    // — click the placeholder text inside it instead.
+    await user.click(screen.getByText('- Kunde suchen und auswählen -'))
+    // Several matches: the FormField <label> leaks the dialog text into
+    // the trigger's accessible name, and the affordance shows twice
+    // (footer + empty state). Click a real affordance button (class
+    // btn), not the trigger (class input).
+    const createBtn = screen
+      .getAllByRole('button', { name: /Neuen Kunden anlegen/ })
+      .find((b) => b.className.includes('btn'))
+    expect(createBtn).toBeTruthy()
+    await user.click(createBtn!)
+    await user.type(screen.getByLabelText('Nachname'), 'Neukund')
+    await user.click(screen.getByRole('button', { name: 'Kunde anlegen' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Nora Neukund · Berlin')).toBeInTheDocument()
+    )
+    expect(createCustomerMock).toHaveBeenCalledWith({
+      lastName: 'Neukund',
+      firstName: undefined,
+      company: undefined,
+      phone: undefined
+    })
   })
 
   it('marks dirty on first input and clears on submit', async () => {

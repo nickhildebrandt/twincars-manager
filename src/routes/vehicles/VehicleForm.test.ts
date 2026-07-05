@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/svelte'
+import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -14,10 +14,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
  * @module VehicleForm
  */
 
+const createCustomerMock = vi.fn()
+
 vi.mock('../pickers.remote', () => ({
   pickCustomersRemote: () => ({
     run: async () => ({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
   })
+}))
+
+// The inline quick-create form inside the Halter picker calls the real
+// customer create command — mock the remote module.
+vi.mock('../customers/customers.remote', () => ({
+  createCustomerRemote: (args: unknown) => createCustomerMock(args)
 }))
 
 import VehicleForm from './VehicleForm.svelte'
@@ -25,6 +33,7 @@ import { formDirty } from '$lib/stores/form-dirty.svelte'
 
 beforeEach(() => {
   formDirty.clear()
+  createCustomerMock.mockReset()
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
       this.setAttribute('open', '')
@@ -179,6 +188,44 @@ describe('VehicleForm', () => {
     expect(
       screen.getAllByText(/Bitte einen Kunden auswählen/i).length
     ).toBeGreaterThan(0)
+  })
+
+  it('creates a customer inline from the Halter picker and selects it', async () => {
+    const user = userEvent.setup()
+    createCustomerMock.mockResolvedValue({
+      id: 'c9',
+      company: 'Neu GmbH',
+      firstName: null,
+      lastName: null,
+      customerNumber: 'K-9',
+      city: 'Berlin'
+    })
+    render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
+
+    // The trigger's accessible name is the FormField label ("Kunde *")
+    // — click the placeholder text inside it instead.
+    await user.click(screen.getByText('- Kunde wählen -'))
+    // Several matches: the FormField <label> leaks the dialog text into
+    // the trigger's accessible name, and the affordance shows twice
+    // (footer + empty state). Click a real affordance button (class
+    // btn), not the trigger (class input).
+    const createBtn = screen
+      .getAllByRole('button', { name: /Neuen Kunden anlegen/ })
+      .find((b) => b.className.includes('btn'))
+    expect(createBtn).toBeTruthy()
+    await user.click(createBtn!)
+    await user.type(screen.getByLabelText('Firma'), 'Neu GmbH')
+    await user.click(screen.getByRole('button', { name: 'Kunde anlegen' }))
+
+    await waitFor(() =>
+      expect(screen.getByText('Neu GmbH · Berlin')).toBeInTheDocument()
+    )
+    expect(createCustomerMock).toHaveBeenCalledWith({
+      lastName: undefined,
+      firstName: undefined,
+      company: 'Neu GmbH',
+      phone: undefined
+    })
   })
 
   it('pre-fills make/model from the initial prop', () => {
