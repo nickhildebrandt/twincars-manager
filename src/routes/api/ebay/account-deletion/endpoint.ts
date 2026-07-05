@@ -102,6 +102,12 @@ export async function handleDeletionChallenge(
     readEnv('EBAY_DELETION_ENDPOINT_URL')?.trim() ||
     `${event.url.origin}${event.url.pathname}`
 
+  // Visible in journalctl — confirms when eBay (re)validates the
+  // subscription without needing proxy access logs.
+  console.info(
+    `[ebay] account-deletion challenge served (endpoint=${endpointUrl})`
+  )
+
   return json(
     {
       challengeResponse: computeChallengeResponse(

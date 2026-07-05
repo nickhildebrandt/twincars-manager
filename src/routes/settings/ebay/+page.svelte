@@ -1,7 +1,6 @@
 <script lang="ts">
-  import { untrack } from 'svelte'
-  import { page } from '$app/state'
-  import { goto } from '$app/navigation'
+  import { onMount } from 'svelte'
+  import { replaceState } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import {
@@ -26,26 +25,36 @@
 
   // Round-trip result from the OAuth callback redirect
   // (?connected=1 | ?error=declined|state|exchange).
-  const flag = untrack(() => {
-    const p = page.url.searchParams
-    if (p.has('connected')) return 'connected'
-    return p.get('error')
-  })
-  $effect(() => {
-    if (!flag) return
-    if (flag === 'connected') {
-      toast.success('eBay-Konto erfolgreich verbunden.')
-    } else if (flag === 'declined') {
-      toast.error('Die Verbindung wurde bei eBay abgelehnt.')
-    } else if (flag === 'state') {
-      toast.error(
-        'Die Anfrage war abgelaufen oder ungültig. Bitte erneut verbinden.'
-      )
-    } else {
-      toast.error('Der Token-Austausch mit eBay ist fehlgeschlagen.')
-    }
-    // Strip the flag so a reload doesn't re-toast.
-    goto('/settings/ebay', { replaceState: true, noScroll: true })
+  //
+  // Deliberately deferred + read from window.location, NOT from
+  // `$app/state`'s `page.url` and NOT via afterNavigate: async pages
+  // (top-level await) currently fail hydration app-wide and recover
+  // by client re-rendering — reading `page.url` at init makes it
+  // worse, and afterNavigate callbacks registered by the recovered
+  // component never fire (the initial navigation is already over).
+  // A deferred onMount handler runs in BOTH worlds: after clean
+  // hydration and after a hydration-recovery re-mount, when the
+  // router is initialised so replaceState is safe.
+  onMount(() => {
+    const timer = setTimeout(() => {
+      const params = new URLSearchParams(window.location.search)
+      const flag = params.has('connected') ? 'connected' : params.get('error')
+      if (!flag) return
+      if (flag === 'connected') {
+        toast.success('eBay-Konto erfolgreich verbunden.')
+      } else if (flag === 'declined') {
+        toast.error('Die Verbindung wurde bei eBay abgelehnt.')
+      } else if (flag === 'state') {
+        toast.error(
+          'Die Anfrage war abgelaufen oder ungültig. Bitte erneut verbinden.'
+        )
+      } else {
+        toast.error('Der Token-Austausch mit eBay ist fehlgeschlagen.')
+      }
+      // Strip the flag so a reload doesn't re-toast.
+      replaceState('/settings/ebay', {})
+    }, 150)
+    return () => clearTimeout(timer)
   })
 
   let confirmOpen = $state(false)
@@ -86,7 +95,7 @@
       </div>
 
       {#if !status.configured}
-        <div class="alert alert-warning text-sm">
+        <div class="alert alert-warning text-sm" role="alert">
           <CircleAlert size={16} />
           <span>
             Die eBay-Anbindung ist serverseitig noch nicht vollständig
@@ -97,7 +106,7 @@
           </span>
         </div>
       {:else if status.connected}
-        <div class="alert alert-success text-sm">
+        <div class="alert alert-success text-sm" role="status">
           <CircleCheck size={16} />
           <span>
             Verbunden{#if status.ebayUsername}
