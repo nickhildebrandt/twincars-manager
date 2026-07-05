@@ -33,7 +33,7 @@ import {
   optionalEmailSchema
 } from '$lib/server/db/validation'
 import { requirePermission } from '$lib/server/auth-guards'
-import { encryptSecret } from '$lib/server/crypto'
+import { upsertSmtpSettings } from '$lib/server/services/smtp-settings-service'
 
 const companyDataSchema = object({
   companyName: nameSchema,
@@ -327,7 +327,8 @@ export const resetMailTemplateRemote = command(
 )
 
 /**
- * Persist SMTP credentials. Password only updated if non-empty.
+ * Persist SMTP credentials. Password only updated if non-empty; the
+ * encrypt-and-upsert semantics live in `smtp-settings-service`.
  */
 export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
   requirePermission('settings')
@@ -335,41 +336,16 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
   if (!Number.isInteger(port) || port < 1 || port > 65535)
     error(400, 'Ungültiger SMTP-Port.')
 
-  const rows = await db.select().from(smtpSettings).limit(1)
-  const id = rows[0]?.id
-  if (!id) {
-    await db.insert(smtpSettings).values({
-      host: data.host,
-      port,
-      secure: data.secure,
-      username: data.username,
-      // Encrypted at rest (AES-256-GCM); mail-service decrypts on use.
-      password: data.password ? encryptSecret(data.password) : '',
-      fromAddress: data.fromAddress,
-      fromName: data.fromName,
-      replyTo: data.replyTo ?? null,
-      verified: false,
-      updatedAt: new Date()
-    })
-  } else {
-    await db
-      .update(smtpSettings)
-      .set({
-        host: data.host,
-        port,
-        secure: data.secure,
-        username: data.username,
-        // Empty input keeps the stored (already encrypted) password.
-        password: data.password
-          ? encryptSecret(data.password)
-          : rows[0].password,
-        fromAddress: data.fromAddress,
-        fromName: data.fromName,
-        replyTo: data.replyTo ?? null,
-        verified: false,
-        updatedAt: new Date()
-      })
-      .where(eq(smtpSettings.id, id))
-  }
+  await upsertSmtpSettings({
+    host: data.host,
+    port,
+    secure: data.secure,
+    username: data.username,
+    // Absent input behaves like empty: keep the stored password.
+    password: data.password ?? '',
+    fromAddress: data.fromAddress,
+    fromName: data.fromName,
+    replyTo: data.replyTo ?? null
+  })
   void getAllSettingsRemote().refresh()
 })

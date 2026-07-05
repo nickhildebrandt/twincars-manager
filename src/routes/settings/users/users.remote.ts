@@ -15,15 +15,6 @@ import {
   string,
   trim
 } from 'valibot'
-import { and, asc, count, desc, eq, ilike, inArray, ne, or } from 'drizzle-orm'
-import { db } from '$lib/server/db/client'
-import {
-  accounts,
-  rolePermissions,
-  roles,
-  userRoles,
-  users
-} from '$lib/server/db/schema'
 import { auth } from '$lib/server/auth'
 import {
   createUserWithCredential,
@@ -36,10 +27,33 @@ import {
 } from '$lib/server/auth-permissions'
 import { requirePermission } from '$lib/server/auth-guards'
 import { idSchema, nameSchema } from '$lib/server/db/validation'
+import {
+  allRoleIdsExist,
+  assignRolesToUser,
+  createRoleWithPermissions,
+  deleteRoleById,
+  deleteUserById,
+  getRoleById,
+  getUserWithRoleIds,
+  hasOtherWildcardHolder,
+  listRolesWithPermissions,
+  listUsersWithRoles,
+  listWildcardHolderIds,
+  replaceRolePermissions,
+  replaceUserRoles,
+  rolesGrantWildcard,
+  setUserCredentialPassword,
+  updateRoleFields,
+  updateUserActive,
+  updateUserName,
+  userExists
+} from '$lib/server/services/user-admin-service'
 
 /**
  * Remote functions for user + role management. Mounted under the
  * settings UI; every entry requires the `users` module permission.
+ * The Drizzle query work lives in `user-admin-service.ts` — this file
+ * keeps validation, guards and the curated German error decisions.
  *
  * @group integration
  * @module users
@@ -116,73 +130,7 @@ export const listUsersRemote = query(
   listUsersSchema,
   async ({ page, size, q }) => {
     requirePermission('users')
-    const offset = (page - 1) * size
-    const filters = q
-      ? [
-          or(
-            ilike(users.username, `%${q}%`),
-            ilike(users.name, `%${q}%`),
-            ilike(users.email, `%${q}%`)
-          )!
-        ]
-      : []
-    const where = filters.length > 0 ? and(...filters) : undefined
-
-    const [rows, totalRow] = await Promise.all([
-      db
-        .select({
-          id: users.id,
-          username: users.username,
-          name: users.name,
-          email: users.email,
-          active: users.active,
-          createdAt: users.createdAt
-        })
-        .from(users)
-        .where(where)
-        .orderBy(desc(users.createdAt))
-        .limit(size)
-        .offset(offset),
-      db.select({ value: count() }).from(users).where(where)
-    ])
-
-    const userIds = rows.map((r) => r.id)
-    const roleRows =
-      userIds.length === 0
-        ? []
-        : await db
-            .select({
-              userId: userRoles.userId,
-              id: roles.id,
-              name: roles.name
-            })
-            .from(userRoles)
-            .innerJoin(roles, eq(roles.id, userRoles.roleId))
-            .where(inArray(userRoles.userId, userIds))
-
-    const rolesByUser = new Map<string, Array<{ id: string; name: string }>>()
-    for (const r of roleRows) {
-      const list = rolesByUser.get(r.userId) ?? []
-      list.push({ id: r.id, name: r.name })
-      rolesByUser.set(r.userId, list)
-    }
-
-    const total = Number(totalRow[0]?.value ?? 0)
-    return {
-      items: rows.map((r) => ({
-        id: r.id,
-        username: r.username,
-        name: r.name,
-        email: r.email,
-        active: r.active,
-        roles: rolesByUser.get(r.id) ?? [],
-        createdAt: r.createdAt
-      })),
-      total,
-      page,
-      size,
-      pageCount: Math.max(1, Math.ceil(total / size))
-    }
+    return listUsersWithRoles({ page, size, q })
   }
 )
 
@@ -194,34 +142,9 @@ export const listUsersRemote = query(
  */
 export const getUserRemote = query(object({ id: idSchema }), async ({ id }) => {
   requirePermission('users')
-  const [row] = await db
-    .select({
-      id: users.id,
-      username: users.username,
-      name: users.name,
-      email: users.email,
-      active: users.active,
-      createdAt: users.createdAt
-    })
-    .from(users)
-    .where(eq(users.id, id))
-    .limit(1)
-  if (!row) error(404, 'Benutzer nicht gefunden.')
-
-  const roleRows = await db
-    .select({ roleId: userRoles.roleId })
-    .from(userRoles)
-    .where(eq(userRoles.userId, id))
-
-  return {
-    id: row.id,
-    username: row.username,
-    name: row.name,
-    email: row.email,
-    active: row.active,
-    createdAt: row.createdAt,
-    roleIds: roleRows.map((r) => r.roleId)
-  }
+  const user = await getUserWithRoleIds(id)
+  if (!user) error(404, 'Benutzer nicht gefunden.')
+  return user
 })
 
 const refreshUserLists = async (): Promise<void> => {
@@ -249,18 +172,10 @@ export const createUserRemote = command(
 
     if (roleIds.length > 0) {
       // Validate all role ids exist before inserting.
-      const existingRoles = await db
-        .select({ id: roles.id })
-        .from(roles)
-        .where(inArray(roles.id, roleIds))
-      if (existingRoles.length !== roleIds.length) {
+      if (!(await allRoleIdsExist(roleIds))) {
         error(400, 'Mindestens eine Rolle wurde nicht gefunden.')
       }
-
-      await db
-        .insert(userRoles)
-        .values(roleIds.map((roleId) => ({ userId, roleId })))
-        .onConflictDoNothing({ target: [userRoles.userId, userRoles.roleId] })
+      await assignRolesToUser(userId, roleIds)
     }
 
     await refreshUserLists()
@@ -285,18 +200,10 @@ export const updateUserRemote = command(
   async ({ id, name, password, roleIds }) => {
     requirePermission('users')
 
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, id))
-      .limit(1)
-    if (!existing) error(404, 'Benutzer nicht gefunden.')
+    if (!(await userExists(id))) error(404, 'Benutzer nicht gefunden.')
 
     if (name !== undefined) {
-      await db
-        .update(users)
-        .set({ name, updatedAt: new Date() })
-        .where(eq(users.id, id))
+      await updateUserName(id, name)
     }
 
     if (password !== undefined) {
@@ -308,65 +215,20 @@ export const updateUserRemote = command(
       // straight to the `credential` account row.
       const ctx = await auth.$context
       const passwordHash = await ctx.password.hash(password)
-      const credentialRows = await db
-        .select({ id: accounts.id })
-        .from(accounts)
-        .where(
-          and(eq(accounts.userId, id), eq(accounts.providerId, 'credential'))
-        )
-        .limit(1)
-      if (credentialRows[0]) {
-        await db
-          .update(accounts)
-          .set({ password: passwordHash, updatedAt: new Date() })
-          .where(eq(accounts.id, credentialRows[0].id))
-      } else {
-        await db
-          .insert(accounts)
-          .values({
-            id: crypto.randomUUID(),
-            userId: id,
-            accountId: id,
-            providerId: 'credential',
-            password: passwordHash
-          })
-      }
+      await setUserCredentialPassword(id, passwordHash)
     }
 
     if (roleIds !== undefined) {
-      if (roleIds.length > 0) {
-        const existingRoles = await db
-          .select({ id: roles.id })
-          .from(roles)
-          .where(inArray(roles.id, roleIds))
-        if (existingRoles.length !== roleIds.length) {
-          error(400, 'Mindestens eine Rolle wurde nicht gefunden.')
-        }
+      if (roleIds.length > 0 && !(await allRoleIdsExist(roleIds))) {
+        error(400, 'Mindestens eine Rolle wurde nicht gefunden.')
       }
 
       // Last-admin lockout guard (mirrors delete/deactivate): if this
       // user currently holds the wildcard and the NEW role set drops
       // it, there must be at least one other wildcard holder left.
-      const newRolePerms =
-        roleIds.length > 0
-          ? await db
-              .select({ permission: rolePermissions.permission })
-              .from(rolePermissions)
-              .where(inArray(rolePermissions.roleId, roleIds))
-          : []
-      const keepsWildcard = newRolePerms.some(
-        (p) => p.permission === WILDCARD_PERMISSION
-      )
+      const keepsWildcard = await rolesGrantWildcard(roleIds)
       if (!keepsWildcard) {
-        const currentWildcard = await db
-          .selectDistinct({ userId: userRoles.userId })
-          .from(userRoles)
-          .innerJoin(
-            rolePermissions,
-            eq(rolePermissions.roleId, userRoles.roleId)
-          )
-          .where(eq(rolePermissions.permission, WILDCARD_PERMISSION))
-        const holders = currentWildcard.map((r) => r.userId)
+        const holders = await listWildcardHolderIds()
         if (holders.includes(id) && !holders.some((u) => u !== id)) {
           error(
             409,
@@ -375,13 +237,7 @@ export const updateUserRemote = command(
         }
       }
 
-      await db.delete(userRoles).where(eq(userRoles.userId, id))
-      if (roleIds.length > 0) {
-        await db
-          .insert(userRoles)
-          .values(roleIds.map((roleId) => ({ userId: id, roleId })))
-          .onConflictDoNothing({ target: [userRoles.userId, userRoles.roleId] })
-      }
+      await replaceUserRoles(id, roleIds)
     }
 
     await Promise.all([getUserRemote({ id }).refresh(), refreshUserLists()])
@@ -401,36 +257,17 @@ export const deleteUserRemote = command(
   async ({ id }) => {
     requirePermission('users')
 
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, id))
-      .limit(1)
-    if (!existing) error(404, 'Benutzer nicht gefunden.')
+    if (!(await userExists(id))) error(404, 'Benutzer nicht gefunden.')
 
     const perms = await loadUserPermissions(id)
     if (perms.has(WILDCARD_PERMISSION)) {
-      // Count remaining admins (other users with the wildcard) by
-      // joining users → user_roles → role_permissions.
-      const otherAdmins = await db
-        .selectDistinct({ userId: userRoles.userId })
-        .from(userRoles)
-        .innerJoin(
-          rolePermissions,
-          eq(rolePermissions.roleId, userRoles.roleId)
-        )
-        .where(
-          and(
-            eq(rolePermissions.permission, WILDCARD_PERMISSION),
-            ne(userRoles.userId, id)
-          )
-        )
-      if (otherAdmins.length === 0) {
+      // Require another admin (other user with the wildcard) to remain.
+      if (!(await hasOtherWildcardHolder(id))) {
         error(409, 'Der letzte Administrator kann nicht gelöscht werden.')
       }
     }
 
-    await db.delete(users).where(eq(users.id, id))
+    await deleteUserById(id)
     await refreshUserLists()
   }
 )
@@ -450,39 +287,18 @@ export const setUserActiveRemote = command(
   async ({ id, active }) => {
     requirePermission('users')
 
-    const [existing] = await db
-      .select({ id: users.id })
-      .from(users)
-      .where(eq(users.id, id))
-      .limit(1)
-    if (!existing) error(404, 'Benutzer nicht gefunden.')
+    if (!(await userExists(id))) error(404, 'Benutzer nicht gefunden.')
 
     if (!active) {
       const perms = await loadUserPermissions(id)
       if (perms.has(WILDCARD_PERMISSION)) {
-        const otherAdmins = await db
-          .selectDistinct({ userId: userRoles.userId })
-          .from(userRoles)
-          .innerJoin(
-            rolePermissions,
-            eq(rolePermissions.roleId, userRoles.roleId)
-          )
-          .where(
-            and(
-              eq(rolePermissions.permission, WILDCARD_PERMISSION),
-              ne(userRoles.userId, id)
-            )
-          )
-        if (otherAdmins.length === 0) {
+        if (!(await hasOtherWildcardHolder(id))) {
           error(409, 'Der letzte Administrator kann nicht deaktiviert werden.')
         }
       }
     }
 
-    await db
-      .update(users)
-      .set({ active, updatedAt: new Date() })
-      .where(eq(users.id, id))
+    await updateUserActive(id, active)
 
     // Kill any open session so deactivation takes effect immediately.
     if (!active) await deleteUserSessions(id)
@@ -503,35 +319,7 @@ export const setUserActiveRemote = command(
  */
 export const listRolesRemote = query(async () => {
   requirePermission('users')
-  const roleRows = await db
-    .select({ id: roles.id, name: roles.name, description: roles.description })
-    .from(roles)
-    .orderBy(asc(roles.name))
-  if (roleRows.length === 0) return []
-  const permRows = await db
-    .select({
-      roleId: rolePermissions.roleId,
-      permission: rolePermissions.permission
-    })
-    .from(rolePermissions)
-    .where(
-      inArray(
-        rolePermissions.roleId,
-        roleRows.map((r) => r.id)
-      )
-    )
-  const permsByRole = new Map<string, string[]>()
-  for (const p of permRows) {
-    const list = permsByRole.get(p.roleId) ?? []
-    list.push(p.permission)
-    permsByRole.set(p.roleId, list)
-  }
-  return roleRows.map((r) => ({
-    id: r.id,
-    name: r.name,
-    description: r.description,
-    permissions: permsByRole.get(r.id) ?? []
-  }))
+  return listRolesWithPermissions()
 })
 
 /**
@@ -544,22 +332,14 @@ export const createRoleRemote = command(
   createRoleSchema,
   async ({ name, description, permissions }) => {
     requirePermission('users')
-    const [row] = await db
-      .insert(roles)
-      .values({ name, description: description ?? null })
-      .returning({ id: roles.id })
-    if (!row) error(500, 'Rolle konnte nicht angelegt werden.')
-    if (permissions.length > 0) {
-      const unique = Array.from(new Set(permissions))
-      await db
-        .insert(rolePermissions)
-        .values(unique.map((permission) => ({ roleId: row.id, permission })))
-        .onConflictDoNothing({
-          target: [rolePermissions.roleId, rolePermissions.permission]
-        })
-    }
+    const created = await createRoleWithPermissions({
+      name,
+      description,
+      permissions
+    })
+    if (!created) error(500, 'Rolle konnte nicht angelegt werden.')
     await listRolesRemote().refresh()
-    return { id: row.id }
+    return { id: created.id }
   }
 )
 
@@ -575,11 +355,7 @@ export const updateRoleRemote = command(
   async ({ id, name, description, permissions }) => {
     requirePermission('users')
 
-    const [existing] = await db
-      .select({ id: roles.id, name: roles.name })
-      .from(roles)
-      .where(eq(roles.id, id))
-      .limit(1)
+    const existing = await getRoleById(id)
     if (!existing) error(404, 'Rolle nicht gefunden.')
 
     // Lockout guard (mirrors deleteRoleRemote): the built-in
@@ -601,23 +377,11 @@ export const updateRoleRemote = command(
     }
 
     if (name !== undefined || description !== undefined) {
-      const patch: { name?: string; description?: string | null } = {}
-      if (name !== undefined) patch.name = name
-      if (description !== undefined) patch.description = description
-      await db.update(roles).set(patch).where(eq(roles.id, id))
+      await updateRoleFields(id, { name, description })
     }
 
     if (permissions !== undefined) {
-      await db.delete(rolePermissions).where(eq(rolePermissions.roleId, id))
-      if (permissions.length > 0) {
-        const unique = Array.from(new Set(permissions))
-        await db
-          .insert(rolePermissions)
-          .values(unique.map((permission) => ({ roleId: id, permission })))
-          .onConflictDoNothing({
-            target: [rolePermissions.roleId, rolePermissions.permission]
-          })
-      }
+      await replaceRolePermissions(id, permissions)
     }
 
     await listRolesRemote().refresh()
@@ -637,17 +401,13 @@ export const deleteRoleRemote = command(
   async ({ id }) => {
     requirePermission('users')
 
-    const [existing] = await db
-      .select({ id: roles.id, name: roles.name })
-      .from(roles)
-      .where(eq(roles.id, id))
-      .limit(1)
+    const existing = await getRoleById(id)
     if (!existing) error(404, 'Rolle nicht gefunden.')
     if (existing.name === ADMIN_ROLE_NAME) {
       error(409, 'Die Administrator-Rolle kann nicht gelöscht werden.')
     }
 
-    await db.delete(roles).where(eq(roles.id, id))
+    await deleteRoleById(id)
     await Promise.all([listRolesRemote().refresh(), refreshUserLists()])
   }
 )

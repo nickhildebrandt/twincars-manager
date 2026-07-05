@@ -13,10 +13,11 @@ import { smtpSettings } from '$lib/server/db/schema'
 /**
  * Smoke tests for the `smtp_settings.password` column semantics: the
  * column itself is an opaque string that round-trips untransformed.
- * Encryption at rest happens one layer above — the setup/settings
- * remotes write `encryptSecret(...)` output into this column and
- * `mail-service` decrypts on use (see setup.remote.test.ts for the
- * encrypted-at-rest assertions).
+ * Encryption at rest happens one layer above: the encryption upsert is
+ * centralized in `smtp-settings-service.ts` (`upsertSmtpSettings`
+ * writes `encryptSecret(...)` output into this column, used by both
+ * the setup and settings remotes) and `mail-service` decrypts on use
+ * (see setup.remote.test.ts for the encrypted-at-rest assertions).
  *
  * @group integration
  * @module smtp-settings

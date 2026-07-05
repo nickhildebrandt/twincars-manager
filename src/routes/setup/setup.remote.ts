@@ -19,16 +19,10 @@ import {
   maxLength
 } from 'valibot'
 import { db } from '$lib/server/db/client'
-import {
-  companySettings,
-  roles,
-  smtpSettings,
-  userRoles,
-  users
-} from '$lib/server/db/schema'
+import { companySettings, roles, userRoles, users } from '$lib/server/db/schema'
 import { getSettings } from '$lib/server/services/settings-service'
 import { createUserWithCredential } from '$lib/server/auth-users'
-import { encryptSecret } from '$lib/server/crypto'
+import { upsertSmtpSettings } from '$lib/server/services/smtp-settings-service'
 import {
   listWorkshopHours,
   updateWorkshopHours
@@ -150,8 +144,8 @@ export const saveCompanyData = command(companyDataSchema, async (data) => {
 
 /**
  * Persist SMTP credentials. The password is encrypted at rest
- * (AES-256-GCM via `$lib/server/crypto`); `mail-service` decrypts it
- * when building the transport.
+ * (AES-256-GCM, handled inside `smtp-settings-service`); `mail-service`
+ * decrypts it when building the transport.
  *
  * @group integration
  * @module setup
@@ -165,42 +159,16 @@ export const saveSmtp = command(smtpSchema, async (data) => {
   if (!Number.isInteger(portNum) || portNum < 1 || portNum > 65535) {
     error(400, 'Ungültiger SMTP-Port.')
   }
-  const rows = await db.select().from(smtpSettings).limit(1)
-  const id = rows[0]?.id
-  if (!id) {
-    await db.insert(smtpSettings).values({
-      host: data.host,
-      port: portNum,
-      secure: data.secure,
-      username: data.username,
-      // Encrypted at rest; mail-service decrypts when sending.
-      password: data.password ? encryptSecret(data.password) : '',
-      fromAddress: data.fromAddress,
-      fromName: data.fromName,
-      replyTo: data.replyTo ?? null,
-      verified: false,
-      updatedAt: new Date()
-    })
-  } else {
-    await db
-      .update(smtpSettings)
-      .set({
-        host: data.host,
-        port: portNum,
-        secure: data.secure,
-        username: data.username,
-        // Empty input keeps the stored (already encrypted) password.
-        password: data.password
-          ? encryptSecret(data.password)
-          : rows[0].password,
-        fromAddress: data.fromAddress,
-        fromName: data.fromName,
-        replyTo: data.replyTo ?? null,
-        verified: false,
-        updatedAt: new Date()
-      })
-      .where(eq(smtpSettings.id, id))
-  }
+  await upsertSmtpSettings({
+    host: data.host,
+    port: portNum,
+    secure: data.secure,
+    username: data.username,
+    password: data.password,
+    fromAddress: data.fromAddress,
+    fromName: data.fromName,
+    replyTo: data.replyTo ?? null
+  })
 })
 
 const adminSchema = object({
