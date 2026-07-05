@@ -33,22 +33,35 @@ const sw = self as unknown as ServiceWorkerGlobalScope
 const CACHE = `twincars-cache-${version}`
 const START_URL = '/'
 
-/** Build + static assets shipped with this deploy. */
-const ASSETS = [...build, ...files]
+/**
+ * Build + static assets shipped with this deploy. Defensive filter:
+ * anything that accidentally lands in `static/` from tooling (a stray
+ * `.svelte-kit/` sync output, a vitest cache under `node_modules/`)
+ * must never end up in the pre-cache list — a single 404 there would
+ * otherwise poison the install.
+ */
+const ASSETS = [
+  ...build,
+  ...files.filter(
+    (f) => !f.startsWith('/.svelte-kit/') && !f.startsWith('/node_modules/')
+  )
+]
 
 sw.addEventListener('install', (event) => {
   event.waitUntil(
     (async () => {
       const cache = await caches.open(CACHE)
-      await cache.addAll(ASSETS)
-      // Make sure the start URL is in the cache so the offline fallback
-      // has something to serve.
-      try {
-        await cache.add(START_URL)
-      } catch {
-        // Fine if the server isn't reachable during install — the
-        // network-first handler will populate the cache on first hit.
-      }
+      // Per-asset add instead of cache.addAll: addAll is all-or-nothing
+      // and a single unreachable asset would fail the whole install.
+      // Pre-caching is an optimisation — the network-first handler
+      // backfills anything missed here.
+      await Promise.all(
+        [...ASSETS, START_URL].map((asset) =>
+          cache.add(asset).catch(() => {
+            // Skip unreachable assets; never block installation.
+          })
+        )
+      )
       await sw.skipWaiting()
     })()
   )

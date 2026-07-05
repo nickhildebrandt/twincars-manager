@@ -13,7 +13,14 @@ import { describe, it, expect, beforeEach, vi, afterEach } from 'vitest'
 
 vi.mock('$service-worker', () => ({
   build: ['/_app/immutable/chunk-a.js', '/_app/immutable/chunk-b.js'],
-  files: ['/favicon.ico', '/icon.png'],
+  // Includes tooling junk that must be filtered out of the pre-cache
+  // list (stray `svelte-kit sync` output / vitest cache in static/).
+  files: [
+    '/favicon.ico',
+    '/icon.png',
+    '/.svelte-kit/ambient.d.ts',
+    '/node_modules/.vite/vitest/meta.json'
+  ],
   version: 'test-version-1',
   prerendered: []
 }))
@@ -141,22 +148,46 @@ describe('service-worker', () => {
     vi.unstubAllGlobals()
   })
 
-  it('caches build + static files on install', async () => {
+  it('caches build + static files on install (per-asset add)', async () => {
     const { handlers, cache } = await setup()
     await runInstall(handlers.install)
 
-    expect(cache.addAll).toHaveBeenCalledTimes(1)
-    const cached = cache.addAll.mock.calls[0][0] as string[]
-    expect(cached).toEqual(
+    const added = cache.add.mock.calls.map((c) => c[0])
+    expect(added).toEqual(
       expect.arrayContaining([
         '/_app/immutable/chunk-a.js',
         '/_app/immutable/chunk-b.js',
         '/favicon.ico',
-        '/icon.png'
+        '/icon.png',
+        // Start URL is seeded so the offline navigation fallback works.
+        '/'
       ])
     )
-    // Start URL is also seeded so the offline navigation fallback works.
-    expect(cache.add).toHaveBeenCalled()
+  })
+
+  it('filters tooling junk (.svelte-kit / node_modules) out of the pre-cache', async () => {
+    const { handlers, cache } = await setup()
+    await runInstall(handlers.install)
+
+    const added = cache.add.mock.calls.map((c) => c[0])
+    expect(added).not.toContain('/.svelte-kit/ambient.d.ts')
+    expect(added).not.toContain('/node_modules/.vite/vitest/meta.json')
+  })
+
+  it('completes installation even when individual assets are unreachable', async () => {
+    const { handlers, cache, skipWaiting } = await setup()
+    cache.add.mockImplementation(async (req: Request | string) => {
+      const key = typeof req === 'string' ? req : req.url
+      if (key === '/icon.png') throw new TypeError('Failed to fetch')
+      cache.store.set(key, new Response('asset', { status: 200 }))
+    })
+    await runInstall(handlers.install)
+
+    // The failing asset never blocks install — skipWaiting still runs
+    // and the remaining assets are cached.
+    expect(skipWaiting).toHaveBeenCalled()
+    expect(cache.store.has('/favicon.ico')).toBe(true)
+    expect(cache.store.has('/icon.png')).toBe(false)
   })
 
   it('calls skipWaiting after install', async () => {

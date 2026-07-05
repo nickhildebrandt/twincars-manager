@@ -47,3 +47,6 @@ tmp
 # SSH keys
 ssh/twincars-manager
 ssh/twincars-manager.pub
+# Tooling must never pollute static/ (would leak into the service-worker asset list)
+static/.svelte-kit/
+static/node_modules/

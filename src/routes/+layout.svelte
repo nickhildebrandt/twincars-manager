@@ -1,5 +1,7 @@
 <script lang="ts">
   import '../app.css'
+  import { onMount } from 'svelte'
+  import { dev } from '$app/environment'
   import { goto, beforeNavigate, afterNavigate } from '$app/navigation'
   import { page } from '$app/state'
   import AppShell from '$lib/components/layout/AppShell.svelte'
@@ -41,6 +43,25 @@
   afterNavigate(() => {
     endNavigation?.()
     endNavigation = null
+  })
+
+  /**
+   * Service-worker lifecycle (auto-registration is off, see
+   * svelte.config.js): register the PWA worker in production builds
+   * only. In dev, actively unregister anything that is still there —
+   * vite's ephemeral module URLs make a stale dev-registered worker
+   * throw "script evaluation" errors on the next visit, and this
+   * heals every browser that ever picked one up on a localhost port.
+   */
+  onMount(() => {
+    if (!('serviceWorker' in navigator)) return
+    if (dev) {
+      void navigator.serviceWorker
+        .getRegistrations()
+        .then((regs) => regs.forEach((r) => void r.unregister()))
+      return
+    }
+    void navigator.serviceWorker.register('/service-worker.js')
   })
 </script>
 
