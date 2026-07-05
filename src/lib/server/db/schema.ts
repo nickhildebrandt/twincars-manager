@@ -1100,36 +1100,6 @@ export const timeEntries = pgTable(
 )
 
 /* ────────────────────────────────────────────────────────────────────── */
-/* Shipping & online-shop plumbing                                        */
-/* ────────────────────────────────────────────────────────────────────── */
-
-export const shippingOptions = pgTable(
-  'shipping_options',
-  {
-    id: uuid('id').primaryKey().defaultRandom(),
-    name: varchar('name', { length: 150 }).notNull(),
-    description: text('description'),
-    priceNet: numeric('price_net', { precision: 12, scale: 2 })
-      .notNull()
-      .default('0.00'),
-    /**
-     * If the order net total reaches this threshold, shipping is free
-     * (the option is still selectable but shown with `0,00 €`).
-     */
-    freeAboveNet: numeric('free_above_net', { precision: 12, scale: 2 }),
-    active: boolean('active').notNull().default(true),
-    sortOrder: integer('sort_order').notNull().default(0),
-    createdAt: timestamp('created_at', { withTimezone: true })
-      .notNull()
-      .defaultNow(),
-    updatedAt: timestamp('updated_at', { withTimezone: true })
-      .notNull()
-      .defaultNow()
-  },
-  (t) => [index('shipping_options_active_idx').on(t.active)]
-)
-
-/* ────────────────────────────────────────────────────────────────────── */
 /* Reifenkatalog — dedicated tire SKU table                               */
 /* ────────────────────────────────────────────────────────────────────── */
 
@@ -1201,10 +1171,6 @@ export const tires = pgTable(
      * flag — retired tires are deleted from the catalog).
      */
     onlineSellable: boolean('online_sellable').notNull().default(false),
-    shippingOptionId: uuid('shipping_option_id').references(
-      () => shippingOptions.id,
-      { onDelete: 'set null' }
-    ),
     notes: text('notes'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -1708,8 +1674,6 @@ export type Role = typeof roles.$inferSelect
 export type NewRole = typeof roles.$inferInsert
 export type UserRole = typeof userRoles.$inferSelect
 export type RolePermission = typeof rolePermissions.$inferSelect
-export type ShippingOption = typeof shippingOptions.$inferSelect
-export type NewShippingOption = typeof shippingOptions.$inferInsert
 export type TireStorage = typeof tireStorage.$inferSelect
 export type NewTireStorage = typeof tireStorage.$inferInsert
 export type TireReminderLog = typeof tireReminderLog.$inferSelect

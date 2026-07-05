@@ -9,14 +9,18 @@
  *      false) by email; fill in name + delivery address on create.
  *   3. For every line item, look up the current tire price; compute
  *      lineTotalNet = qty × price.
- *   4. Look up the chosen shipping option; apply `freeAboveNet` when
- *      the net total reaches the threshold.
- *   5. Compute gross with `companySettings.defaultVatRate`.
- *   6. Insert a `documents` row (`type='invoice'`, `status='draft'`)
+ *   4. Compute gross with `companySettings.defaultVatRate`.
+ *   5. Insert a `documents` row (`type='invoice'`, `status='draft'`)
  *      plus `document_items` rows via the existing `createDocument`
  *      helper — that keeps numbering and PDF rendering centralized.
- *   7. Return id, number, totals and an estimatedDelivery of today + 7
+ *   6. Return id, number, totals and an estimatedDelivery of today + 7
  *      days as an ISO date string.
+ *
+ * Shipping options were removed from the product: the body schema no
+ * longer knows `shippingOptionId`, but `object()` strips unknown keys,
+ * so legacy storefront clients that still send it keep working. The
+ * response keeps a `shippingNet` field (always `0`, same JSON number
+ * wire type as before) so storefront JS reading it does not break.
  *
  * @group integration
  * @module public-api
@@ -60,7 +64,6 @@ import {
   nextCustomerNumber,
   createCustomer
 } from '$lib/server/services/customer-service'
-import { getShippingOption } from '$lib/server/services/shipping-option-service'
 import { getSettings } from '$lib/server/services/settings-service'
 
 const lineSchema = object({
@@ -84,11 +87,6 @@ const bodySchema = object({
   customerName: nameSchema,
   customerPhone: optional(phoneSchema),
   deliveryAddress: deliveryAddressSchema,
-  shippingOptionId: pipe(
-    string(),
-    trim(),
-    uuid('shippingOptionId must be a valid UUID.')
-  ),
   lines: pipe(array(lineSchema), minLength(1, 'lines must not be empty.')),
   notes: optional(notesSchema)
 })
@@ -98,7 +96,6 @@ type OrderInput = {
   customerName: string
   customerPhone?: string
   deliveryAddress: { street: string; zip: string; city: string }
-  shippingOptionId: string
   lines: Array<{ tireId: string; quantity: number }>
   notes?: string
 }
@@ -139,13 +136,6 @@ export async function handlePublicOrder(
       fail(400, `Invalid "${path}": ${first.message}`)
     }
     throw err
-  }
-
-  // Resolve shipping option early so a bogus id fails before we touch
-  // any other table.
-  const shipping = await getShippingOption(input.shippingOptionId)
-  if (!shipping || !shipping.active) {
-    fail(404, 'Shipping option not found.')
   }
 
   // Look up each referenced tire. Every line must resolve to an
@@ -217,15 +207,9 @@ export async function handlePublicOrder(
   const settings = await getSettings()
   const vatRate = Number(settings.defaultVatRate)
 
-  const linesNet = round2(
+  const totalNet = round2(
     resolved.reduce((acc, l) => acc + l.unitPriceNet * l.quantity, 0)
   )
-  const shippingNetRaw = Number(shipping.priceNet)
-  const freeAbove =
-    shipping.freeAboveNet == null ? null : Number(shipping.freeAboveNet)
-  const shippingNet =
-    freeAbove != null && linesNet >= freeAbove ? 0 : shippingNetRaw
-  const totalNet = round2(linesNet + shippingNet)
   const totalGross = round2(totalNet * (1 + vatRate / 100))
 
   const today = new Date().toISOString().slice(0, 10)
@@ -239,18 +223,6 @@ export async function handlePublicOrder(
     kind: 'article',
     articleNumber: l.articleNumber
   }))
-  if (shippingNet > 0) {
-    docItems.push({
-      description: `Versand: ${shipping.name}`,
-      quantity: 1,
-      unit: 'Pos.',
-      unitPriceNet: shippingNet,
-      discountPercent: 0,
-      taxRate: vatRate,
-      kind: 'service',
-      articleNumber: 'VERSAND'
-    })
-  }
 
   const created = await createDocument({
     type: 'invoice',
@@ -279,7 +251,10 @@ export async function handlePublicOrder(
     orderNumber: created.documentNumber,
     totalNet,
     totalGross,
-    shippingNet,
+    // Kept for wire compatibility after the shipping-options removal:
+    // always the JSON number `0` (previously a computed number), so
+    // storefront code that reads `data.shippingNet` keeps working.
+    shippingNet: 0,
     estimatedDelivery
   })
 }

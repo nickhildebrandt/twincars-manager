@@ -1,26 +1,16 @@
 import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
-import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 
 /**
  * Component tests for TireForm — covers the required-field guards,
  * the season picklist, the size-triple validation and the EU-label
  * single-letter check.
  *
- * The shipping-option picker is mocked so the jsdom environment can
- * mount the form without pulling server-only code through
- * `pickers.remote.ts`.
- *
  * @group component
  * @module TireForm
  */
-
-vi.mock('../pickers.remote', () => ({
-  pickShippingOptionsRemote: () => ({
-    run: async () => ({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
-  })
-}))
 
 import TireForm from './TireForm.svelte'
 
@@ -32,19 +22,6 @@ const validBase = {
   diameterInch: 16,
   season: 'Sommer' as const
 }
-
-beforeEach(() => {
-  if (!HTMLDialogElement.prototype.showModal) {
-    HTMLDialogElement.prototype.showModal = function () {
-      this.setAttribute('open', '')
-    }
-  }
-  if (!HTMLDialogElement.prototype.close) {
-    HTMLDialogElement.prototype.close = function () {
-      this.removeAttribute('open')
-    }
-  }
-})
 
 describe('TireForm', () => {
   it('renders the required field legends', () => {
@@ -131,12 +108,18 @@ describe('TireForm', () => {
     expect(onSave).not.toHaveBeenCalled()
   })
 
-  it('hides the shipping picker until "Online verkaufbar" is toggled on', async () => {
+  it('submits onlineSellable without any shipping data (module removed)', async () => {
     const user = userEvent.setup()
-    render(TireForm, { props: { onSave: vi.fn(), initial: validBase } })
+    const onSave = vi.fn()
+    render(TireForm, { props: { onSave, initial: validBase } })
     expect(screen.queryByText('Versandoption')).not.toBeInTheDocument()
     await user.click(screen.getByLabelText('Online verkaufbar'))
-    expect(screen.getByText('Versandoption')).toBeInTheDocument()
+    expect(screen.queryByText('Versandoption')).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const args = onSave.mock.calls[0][0]
+    expect(args.onlineSellable).toBe(true)
+    expect('shippingOptionId' in args).toBe(false)
   })
 
   it('round-trips the construction value', async () => {

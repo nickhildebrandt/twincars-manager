@@ -115,7 +115,6 @@
     settings: 'Einstellungen',
     users: 'Benutzer & Rollen',
     tires: 'Reifenlager',
-    shipping: 'Versand',
     posts: 'Aktuelle Informationen'
   }
 

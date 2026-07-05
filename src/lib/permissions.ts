@@ -42,7 +42,6 @@ export const MODULE_PERMISSIONS = {
   settings: ['settings'],
   users: ['users'],
   tires: ['tires'],
-  shipping: ['shipping'],
   posts: ['posts']
 } as const
 

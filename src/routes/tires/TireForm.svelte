@@ -46,7 +46,6 @@
     unitPriceNet?: number
     stockOnHand?: number
     onlineSellable?: boolean
-    shippingOptionId?: string | null
     notes?: string
   }
 
@@ -94,13 +93,11 @@
   import { untrack } from 'svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
-  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
   import {
     useFormValidation,
     validationClasses
   } from '$lib/utils/form-validation.svelte'
-  import { pickShippingOptionsRemote } from '../pickers.remote'
 
   type Tire = {
     articleNumber?: string | null
@@ -131,7 +128,6 @@
     unitPriceNet?: string | number | null
     stockOnHand?: number | null
     onlineSellable?: boolean | null
-    shippingOptionId?: string | null
     notes?: string | null
   }
 
@@ -182,8 +178,6 @@
   )
   let stockOnHand = $state<number | string>((init.stockOnHand as number) ?? 0)
   let onlineSellable = $state(Boolean(init.onlineSellable))
-  let shippingOptionId = $state(init.shippingOptionId ?? '')
-  let shippingOptionLabel = $state('')
   let notes = $state(init.notes ?? '')
 
   let errorMsg = $state<string | null>(null)
@@ -258,20 +252,12 @@
       unitPriceNet: n(unitPriceNet),
       stockOnHand: n(stockOnHand),
       onlineSellable,
-      shippingOptionId:
-        onlineSellable && shippingOptionId ? shippingOptionId : null,
       notes: u(notes)
     })
   }
 
   const markDirty = () => formDirty.set(true)
   $effect(() => () => formDirty.clear())
-
-  const searchShipping = (params: { q: string; page: number; size: number }) =>
-    pickShippingOptionsRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
 </script>
 
 <form
@@ -583,29 +569,14 @@
 
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Online-Shop</legend>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <label class="label cursor-pointer justify-start gap-3 sm:col-span-2">
-          <input
-            type="checkbox"
-            class="checkbox checkbox-primary"
-            bind:checked={onlineSellable}
-          />
-          <span>Online verkaufbar</span>
-        </label>
-        {#if onlineSellable}
-          <label class="flex w-full flex-col gap-1 sm:col-span-2">
-            <span class="label-text">Versandoption</span>
-            <SearchablePicker
-              bind:value={shippingOptionId}
-              bind:valueLabel={shippingOptionLabel}
-              placeholder="- Versandoption wählen -"
-              dialogTitle="Versandoption auswählen"
-              search={searchShipping}
-              onSelect={() => formDirty.set(true)}
-            />
-          </label>
-        {/if}
-      </div>
+      <label class="label cursor-pointer justify-start gap-3">
+        <input
+          type="checkbox"
+          class="checkbox checkbox-primary"
+          bind:checked={onlineSellable}
+        />
+        <span>Online verkaufbar</span>
+      </label>
     </fieldset>
 
     <fieldset class="fieldset">

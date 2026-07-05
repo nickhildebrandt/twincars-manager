@@ -26,8 +26,8 @@ import { itemPriceVersions, items } from '$lib/server/db/schema'
 /**
  * Integration tests for the item service. Since Migration 0022 the
  * `items` table is the Werkstattleistungen / Material catalogue only —
- * no JSONB attributes, no online-shop flag, no shipping link. Tires
- * have their own service module (`tire-service.ts`).
+ * no JSONB attributes, no online-shop flag. Tires have their own
+ * service module (`tire-service.ts`).
  *
  * @group integration
  * @module item-service

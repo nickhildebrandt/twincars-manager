@@ -37,7 +37,6 @@ import {
   items,
   numberRanges,
   publicHolidays,
-  shippingOptions,
   tirePhotos,
   tirePriceVersions,
   tires,
@@ -90,7 +89,6 @@ async function resetDb() {
   await db.delete(tires)
   await db.delete(itemPriceVersions)
   await db.delete(items)
-  await db.delete(shippingOptions)
   await db.delete(customers)
   await db.delete(companySettings)
   await db.delete(workshopHours)
@@ -268,15 +266,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         nextValue: 1
       })
     await db.insert(companySettings).values({ defaultVatRate: '19.00' })
-    const [ship] = await db
-      .insert(shippingOptions)
-      .values({
-        name: 'DHL',
-        priceNet: '5.90',
-        freeAboveNet: '100.00',
-        active: true
-      })
-      .returning({ id: shippingOptions.id })
     const [art] = await db
       .insert(tires)
       .values({
@@ -298,7 +287,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
         validFrom: '2020-01-01',
         unitPriceNet: '50.00'
       })
-    return { shippingId: ship.id, tireId: art.id }
+    return { tireId: art.id }
   }
 
   beforeEach(async () => {
@@ -306,7 +295,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects quantity = 0 with a curated 400', async () => {
-    const { shippingId, tireId } = await seedOrderable()
+    const { tireId } = await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -314,7 +303,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'q0@example.com',
         customerName: 'Q Zero',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ tireId, quantity: 0 }]
       })
     )
@@ -326,7 +314,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects negative quantity with a curated 400', async () => {
-    const { shippingId, tireId } = await seedOrderable()
+    const { tireId } = await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -334,7 +322,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'qneg@example.com',
         customerName: 'Q Neg',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ tireId, quantity: -5 }]
       })
     )
@@ -345,7 +332,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects absurdly large quantity (10_000_000) with a curated 400', async () => {
-    const { shippingId, tireId } = await seedOrderable()
+    const { tireId } = await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -353,7 +340,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'qmax@example.com',
         customerName: 'Q Max',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ tireId, quantity: 10_000_000 }]
       })
     )
@@ -365,7 +351,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects non-integer quantity (e.g. 1.5)', async () => {
-    const { shippingId, tireId } = await seedOrderable()
+    const { tireId } = await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -373,7 +359,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'qfrac@example.com',
         customerName: 'Q Frac',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ tireId, quantity: 1.5 }]
       })
     )
@@ -382,7 +367,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('accepts quantity = 1 (lower edge of the valid range)', async () => {
-    const { shippingId, tireId } = await seedOrderable()
+    const { tireId } = await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -390,7 +375,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'q1@example.com',
         customerName: 'Q One',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ tireId, quantity: 1 }]
       })
     )
@@ -399,7 +383,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects empty lines array', async () => {
-    const { shippingId } = await seedOrderable()
+    await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -407,7 +391,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'qempty@example.com',
         customerName: 'Q Empty',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: []
       })
     )
@@ -416,7 +399,7 @@ describe('POST /api/public/orders — quantity bounds', () => {
   })
 
   it('rejects when articleId is not a UUID (could carry an injection payload)', async () => {
-    const { shippingId } = await seedOrderable()
+    await seedOrderable()
     const token = await mintTestToken()
     const handler = publicApi(handlePublicOrder)
     const event = makeEvent(
@@ -424,7 +407,6 @@ describe('POST /api/public/orders — quantity bounds', () => {
         customerEmail: 'qbad@example.com',
         customerName: 'Q Bad',
         deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-        shippingOptionId: shippingId,
         lines: [{ articleId: SQLI_PAYLOAD, quantity: 1 }]
       })
     )

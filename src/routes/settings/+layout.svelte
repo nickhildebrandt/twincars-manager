@@ -40,7 +40,6 @@
       href: '/settings/workshop-hours',
       permission: 'settings'
     },
-    { label: 'Versand', href: '/settings/shipping', permission: 'shipping' },
     {
       label: 'Reifen-Erinnerungen',
       href: '/settings/tire-reminders',

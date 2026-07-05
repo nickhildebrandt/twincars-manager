@@ -218,19 +218,13 @@ export const navigation: NavGroup[] = [
       // Everything settings-shaped lives INSIDE /settings as tabs
       // (incl. eBay + KFZ-Kaufmann-Import). The extra entries below
       // exist only for users whose sole grant is a sub-permission
-      // (shipping / mailings / import) and who therefore cannot see
-      // the "Einstellungen" entry itself.
+      // (mailings / import) and who therefore cannot see the
+      // "Einstellungen" entry itself.
       {
         label: 'Einstellungen',
         href: '/settings',
         icon: Settings,
         permission: 'settings'
-      },
-      {
-        label: 'Versandoptionen',
-        href: '/settings/shipping',
-        icon: Truck,
-        permission: 'shipping'
       },
       {
         label: 'Anfragen',

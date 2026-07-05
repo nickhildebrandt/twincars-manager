@@ -69,7 +69,6 @@ import {
   numberRanges,
   posts,
   publicHolidays,
-  shippingOptions,
   tirePhotos,
   tirePriceVersions,
   tires,
@@ -94,7 +93,6 @@ const REMOVED_TOKEN = 'public-api-test-token-bbbbbbbbbbbbbbbb'
 import { publicApi } from '$lib/server/public-api'
 import { handlePublicServices } from './services/endpoint'
 import { handlePublicTires } from './tires/endpoint'
-import { handlePublicShippingOptions } from './shipping-options/endpoint'
 import { handlePublicUsedCars } from './used-cars/endpoint'
 import { handlePublicFreeSlots } from './free-slots/endpoint'
 import { handleBookAppointment } from './appointments/endpoint'
@@ -146,7 +144,6 @@ async function resetDb() {
   await db.delete(tires)
   await db.delete(itemPriceVersions)
   await db.delete(items)
-  await db.delete(shippingOptions)
   await db.delete(customers)
   await db.delete(companySettings)
   await db.delete(workshopHours)
@@ -308,10 +305,6 @@ describe('public-api endpoints', () => {
   describe('GET /api/public/tires', () => {
     it('returns only online-sellable tires with EU-label columns', async () => {
       const token = await mintTestToken()
-      const [shop] = await db
-        .insert(shippingOptions)
-        .values({ name: 'DHL', priceNet: '5.90' })
-        .returning({ id: shippingOptions.id })
       const [tire] = await db
         .insert(tires)
         .values({
@@ -325,8 +318,7 @@ describe('public-api endpoints', () => {
           loadIndex: '91',
           speedIndex: 'V',
           season: 'Sommer',
-          onlineSellable: true,
-          shippingOptionId: shop.id
+          onlineSellable: true
         })
         .returning({ id: tires.id })
       await db
@@ -360,7 +352,6 @@ describe('public-api endpoints', () => {
       const t = body.data.tires[0]
       expect(t.articleNumber).toBe('TIRE-1')
       expect(t.currentPriceNet).toBe(79.9)
-      expect(t.shippingOptionId).toBe(shop.id)
       expect(t.brand).toBe('Michelin')
       expect(t.sizeLabel).toBe('205/55R16')
       expect(t.width).toBe(205)
@@ -369,32 +360,6 @@ describe('public-api endpoints', () => {
       expect(t.season).toBe('Sommer')
       expect(t.speedIndex).toBe('V')
       expect(t.loadIndex).toBe('91')
-    })
-  })
-
-  describe('GET /api/public/shipping-options', () => {
-    it('returns only active options', async () => {
-      const token = await mintTestToken()
-      await db.insert(shippingOptions).values([
-        { name: 'Inactive', priceNet: '0', active: false, sortOrder: 5 },
-        {
-          name: 'Active A',
-          priceNet: '4.90',
-          freeAboveNet: '100.00',
-          active: true,
-          sortOrder: 10
-        },
-        { name: 'Active B', priceNet: '6.90', active: true, sortOrder: 20 }
-      ])
-      const handler = publicApi(handlePublicShippingOptions)
-      const event = makeEvent(authedGet('/api/public/shipping-options', token))
-      const res = await handler(event)
-      expect(res.status).toBe(200)
-      const body = await res.json()
-      expect(body.data.options).toHaveLength(2)
-      expect(body.data.options[0].name).toBe('Active A')
-      expect(body.data.options[0].freeAboveNet).toBe(100)
-      expect(body.data.options[1].name).toBe('Active B')
     })
   })
 
@@ -1241,15 +1206,6 @@ describe('public-api endpoints', () => {
           nextValue: 1
         })
       await db.insert(companySettings).values({ defaultVatRate: '19.00' })
-      const [ship] = await db
-        .insert(shippingOptions)
-        .values({
-          name: 'DHL',
-          priceNet: '5.90',
-          freeAboveNet: '100.00',
-          active: true
-        })
-        .returning({ id: shippingOptions.id })
       const [art] = await db
         .insert(tires)
         .values({
@@ -1271,7 +1227,7 @@ describe('public-api endpoints', () => {
           validFrom: '2020-01-01',
           unitPriceNet: '50.00'
         })
-      return { shippingId: ship.id, tireId: art.id }
+      return { tireId: art.id }
     }
 
     it('returns 401 without a Bearer token', async () => {
@@ -1295,8 +1251,8 @@ describe('public-api endpoints', () => {
       expect((await handler(event)).status).toBe(400)
     })
 
-    it('creates an order with shipping and returns totals', async () => {
-      const { shippingId, tireId } = await seedOrderable()
+    it('creates an order and returns totals (shippingNet always 0)', async () => {
+      const { tireId } = await seedOrderable()
       const token = await mintTestToken()
       const handler = publicApi(handlePublicOrder)
       const event = makeEvent(
@@ -1308,7 +1264,6 @@ describe('public-api endpoints', () => {
             zip: '10115',
             city: 'Berlin'
           },
-          shippingOptionId: shippingId,
           lines: [{ tireId, quantity: 1 }]
         })
       )
@@ -1317,9 +1272,11 @@ describe('public-api endpoints', () => {
       const body = await res.json()
       expect(body.data.orderId).toBeTruthy()
       expect(body.data.orderNumber).toMatch(/^RE-/)
-      expect(body.data.totalNet).toBe(55.9)
-      expect(body.data.shippingNet).toBe(5.9)
-      expect(body.data.totalGross).toBeGreaterThan(55.9)
+      expect(body.data.totalNet).toBe(50)
+      // Wire-compat field: always the JSON number 0 since the
+      // shipping-options removal.
+      expect(body.data.shippingNet).toBe(0)
+      expect(body.data.totalGross).toBe(59.5)
       expect(body.data.estimatedDelivery).toMatch(/^\d{4}-\d{2}-\d{2}$/)
       const allCustomers = await db.select().from(customers)
       expect(allCustomers).toHaveLength(1)
@@ -1328,48 +1285,36 @@ describe('public-api endpoints', () => {
       expect(allDocs).toHaveLength(1)
       expect(allDocs[0].type).toBe('invoice')
       expect(allDocs[0].status).toBe('draft')
+      // No 'Versand' line item is added anymore.
+      const allItems = await db.select().from(documentItems)
+      expect(allItems).toHaveLength(1)
+      expect(allItems[0].articleNumber).not.toBe('VERSAND')
     })
 
-    it('applies free-shipping threshold when net exceeds freeAboveNet', async () => {
-      const { shippingId, tireId } = await seedOrderable()
+    it('still accepts a legacy payload that includes shippingOptionId (unknown keys are stripped)', async () => {
+      const { tireId } = await seedOrderable()
       const token = await mintTestToken()
       const handler = publicApi(handlePublicOrder)
       const event = makeEvent(
         authedPost(token, {
-          customerEmail: 'buyer2@example.com',
-          customerName: 'Buyer Two',
+          customerEmail: 'legacy@example.com',
+          customerName: 'Legacy Client',
           deliveryAddress: {
             street: 'Hauptstr. 1',
             zip: '10115',
             city: 'Berlin'
           },
-          shippingOptionId: shippingId,
-          lines: [{ tireId, quantity: 5 }]
+          // Legacy storefront clients still send this key; the schema
+          // no longer knows it and must silently ignore it.
+          shippingOptionId: '00000000-0000-0000-0000-000000000000',
+          lines: [{ tireId, quantity: 2 }]
         })
       )
       const res = await handler(event)
       expect(res.status).toBe(200)
       const body = await res.json()
+      expect(body.data.totalNet).toBe(100)
       expect(body.data.shippingNet).toBe(0)
-      expect(body.data.totalNet).toBe(250)
-    })
-
-    it('returns 404 for an unknown shipping option', async () => {
-      await seedOrderable()
-      const token = await mintTestToken()
-      const handler = publicApi(handlePublicOrder)
-      const event = makeEvent(
-        authedPost(token, {
-          customerEmail: 'x@x.de',
-          customerName: 'X',
-          deliveryAddress: { street: 'a', zip: '1', city: 'B' },
-          shippingOptionId: '00000000-0000-0000-0000-000000000000',
-          lines: [
-            { tireId: '00000000-0000-0000-0000-000000000000', quantity: 1 }
-          ]
-        })
-      )
-      expect((await handler(event)).status).toBe(404)
     })
   })
 

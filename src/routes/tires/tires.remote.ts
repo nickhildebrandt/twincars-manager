@@ -6,7 +6,6 @@ import {
   maxValue,
   minLength,
   minValue,
-  nullable,
   number,
   object,
   optional,
@@ -103,7 +102,6 @@ const tireInputSchema = object({
   unitPriceNet: optional(number()),
   stockOnHand: optional(number()),
   onlineSellable: optional(boolean()),
-  shippingOptionId: optional(nullable(idSchema)),
   notes: optional(notesSchema)
 })
 

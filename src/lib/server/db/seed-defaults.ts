@@ -265,7 +265,7 @@ export async function seedDefaultWorkshopHours(): Promise<void> {
  * - "Werkstattleiter": every module except `settings` / `users`.
  * - "Mitarbeiter": the operational modules a workshop employee needs,
  *   with `hours:write_own` (self-service time logging) instead of full
- *   `hours`. No settings/users/employees/ledger/mailings/shipping/import.
+ *   `hours`. No settings/users/employees/ledger/mailings/import.
  *
  * Permissions stay in sync with the canonical `MODULE_PERMISSIONS`
  * table — a new module is auto-granted to Administrator via the

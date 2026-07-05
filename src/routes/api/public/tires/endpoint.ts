@@ -56,7 +56,6 @@ export type PublicTire = {
   evCertified: boolean
   currentPriceNet: number | null
   photos: Array<{ mime: string; url: string }>
-  shippingOptionId: string | null
 }
 
 const parseMaxPriceNet = (raw: string | null): number | undefined => {
@@ -100,8 +99,7 @@ export function toPublicTire(row: PublicTireRow): PublicTire {
     snowFlake: row.snowFlake,
     evCertified: row.evCertified,
     currentPriceNet: row.unitPriceNet == null ? null : Number(row.unitPriceNet),
-    photos: row.photos.map((p) => ({ mime: p.mime, url: p.data })),
-    shippingOptionId: row.shippingOptionId ?? null
+    photos: row.photos.map((p) => ({ mime: p.mime, url: p.data }))
   }
 }
 

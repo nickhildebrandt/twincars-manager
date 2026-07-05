@@ -225,6 +225,13 @@
       "when": 1782131718391,
       "tag": "0031_import_job_progress",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1782131718392,
+      "tag": "0032_remove_shipping",
+      "breakpoints": true
     }
   ]
 }

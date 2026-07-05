@@ -33,8 +33,7 @@ vi.mock('$lib/permissions', () => {
     import: ['import'],
     settings: ['settings'],
     users: ['users'],
-    tires: ['tires'],
-    shipping: ['shipping']
+    tires: ['tires']
   } as const
   return {
     WILDCARD_PERMISSION: '*',
