@@ -3,7 +3,7 @@
 Operator runbook for the Hetzner KVM hosting both the marketing website
 and the manager admin app behind Caddy + a self-hosted Podman registry.
 
-See [`docs/superpowers/specs/2026-05-26-hetzner-podman-deployment-design.md`](../docs/superpowers/specs/2026-05-26-hetzner-podman-deployment-design.md)
+See [`docs/archive/specs/2026-05-26-hetzner-podman-deployment-design.md`](../docs/archive/specs/2026-05-26-hetzner-podman-deployment-design.md)
 for the design rationale.
 
 ## Topology
