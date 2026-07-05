@@ -211,6 +211,13 @@
       "when": 1782131718389,
       "tag": "0029_posts",
       "breakpoints": true
+    },
+    {
+      "idx": 30,
+      "version": "7",
+      "when": 1782131718390,
+      "tag": "0030_ebay_credentials",
+      "breakpoints": true
     }
   ]
 }

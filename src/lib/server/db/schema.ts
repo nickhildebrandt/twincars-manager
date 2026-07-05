@@ -1366,6 +1366,45 @@ export const posts = pgTable(
 )
 
 /* ────────────────────────────────────────────────────────────────────── */
+/* eBay-Integration — OAuth-Verbindung des Verkäuferkontos                */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * OAuth connection to the workshop's eBay seller account. Single-row
+ * semantics (enforced in the service — connecting replaces any prior
+ * row): the app talks to exactly one seller account. `accessToken` and
+ * `refreshToken` are stored **encrypted** (AES-256-GCM via
+ * `$lib/server/crypto`, wire format `v1:iv:tag:data`), never plaintext
+ * — the refresh token is an ~18-month credential for the seller's
+ * account. `environment` records which eBay world the tokens belong to
+ * (`production` | `sandbox`); tokens never work across environments.
+ */
+export const ebayCredentials = pgTable('ebay_credentials', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  /** Seller display name, best-effort from the Identity API. */
+  ebayUsername: varchar('ebay_username', { length: 100 }),
+  accessToken: text('access_token'),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', {
+    withTimezone: true
+  }),
+  refreshToken: text('refresh_token').notNull(),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', {
+    withTimezone: true
+  }),
+  /** Space-separated scope URLs granted at consent time. */
+  scopes: text('scopes').notNull().default(''),
+  environment: varchar('environment', { length: 20 })
+    .notNull()
+    .default('production'),
+  connectedAt: timestamp('connected_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp('updated_at', { withTimezone: true })
+    .notNull()
+    .defaultNow()
+})
+
+/* ────────────────────────────────────────────────────────────────────── */
 /* Reifenlager — customer-owned tires kept on the workshop premises       */
 /* ────────────────────────────────────────────────────────────────────── */
 
@@ -1693,3 +1732,5 @@ export type CustomerInquiry = typeof customerInquiries.$inferSelect
 export type NewCustomerInquiry = typeof customerInquiries.$inferInsert
 export type Post = typeof posts.$inferSelect
 export type NewPost = typeof posts.$inferInsert
+export type EbayCredentials = typeof ebayCredentials.$inferSelect
+export type NewEbayCredentials = typeof ebayCredentials.$inferInsert

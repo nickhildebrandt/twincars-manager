@@ -12,6 +12,11 @@ import { createHash } from 'node:crypto'
  * @module ebay
  */
 
+// Neutralize the vite-loaded `.env` passthrough (the dev .env now
+// carries a real EBAY_VERIFICATION_TOKEN) — tests control everything
+// via `process.env`, which readEnv checks first.
+vi.mock('$env/dynamic/private', () => ({ env: {} }))
+
 import {
   computeChallengeResponse,
   handleDeletionChallenge,

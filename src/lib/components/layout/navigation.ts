@@ -21,6 +21,7 @@ import {
   Mail,
   Send,
   Newspaper,
+  Store,
   Settings,
   Database,
   Inbox
@@ -232,6 +233,12 @@ export const navigation: NavGroup[] = [
         label: 'Öffnungszeiten',
         href: '/settings/workshop-hours',
         icon: Clock,
+        permission: 'settings'
+      },
+      {
+        label: 'eBay-Verbindung',
+        href: '/settings/ebay',
+        icon: Store,
         permission: 'settings'
       },
       {
