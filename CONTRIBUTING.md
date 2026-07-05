@@ -23,22 +23,21 @@ wins**: align the code, do not weaken the guideline.
 
 ## 2. Tech stack (binding)
 
-| Layer            | Choice                                                     |
-| ---------------- | ---------------------------------------------------------- |
-| Framework        | **SvelteKit** (Svelte 5 + Runes)                           |
-| Language         | **TypeScript** — `.ts` / `.svelte` only                    |
-| Server transport | **Remote functions** (`*.remote.ts`) — `query` / `command` |
-| Validation       | **Valibot**                                                |
-| Database         | **PostgreSQL** + **Drizzle ORM**                           |
-| Styling          | **DaisyUI v5** + **Tailwind v4** (no custom CSS)           |
-| Icons            | **`@lucide/svelte`**                                       |
-| Charts           | **Chart.js**                                               |
-| PDF              | **pdf-lib** (create) + **pdfjs-dist** (preview)            |
-| Mail             | **nodemailer** (SMTP only)                                 |
-| Adapter          | **`@sveltejs/adapter-node`**                               |
-| Tests            | **Vitest** + **`@testing-library/svelte`**                 |
-| Format           | **Prettier** + **Husky** + **lint-staged**                 |
-| Package manager  | **pnpm** (via corepack, pinned in `packageManager`)        |
+| Layer            | Choice                                                              |
+| ---------------- | ------------------------------------------------------------------- |
+| Framework        | **SvelteKit** (Svelte 5 + Runes)                                    |
+| Language         | **TypeScript** — `.ts` / `.svelte` only                             |
+| Server transport | **Remote functions** (`*.remote.ts`) — `query` / `command`          |
+| Validation       | **Valibot**                                                         |
+| Database         | **PostgreSQL** + **Drizzle ORM**                                    |
+| Styling          | **DaisyUI v5** + **Tailwind v4** (no custom CSS)                    |
+| Icons            | **`@lucide/svelte`**                                                |
+| PDF              | **pdf-lib** (create) + browser-native viewer in an iframe (preview) |
+| Mail             | **nodemailer** (SMTP only)                                          |
+| Adapter          | **`@sveltejs/adapter-node`**                                        |
+| Tests            | **Vitest** + **`@testing-library/svelte`**                          |
+| Format           | **Prettier** + **Husky** + **lint-staged**                          |
+| Package manager  | **pnpm** (via corepack, pinned in `packageManager`)                 |
 
 Languages: **all code, comments, JSDoc, identifiers and commit messages are
 in English. The user-facing UI is in German.**
@@ -70,7 +69,7 @@ committed). Use `pnpm install`, `pnpm <script>`, `pnpm exec <bin>`.
 - Prefer small, single-purpose packages over framework kits.
 - Watch bundle size — every new dependency must justify the bytes it costs.
 - Do not reinvent something that already exists in DaisyUI / Tailwind /
-  date-fns / valibot / drizzle / etc.
+  valibot / drizzle / etc.
 
 ## 4. SvelteKit strategy
 
@@ -126,7 +125,7 @@ everything in it. There is **no** `:read` / `:write` / `:delete` split.
 - Canonical keys live in `src/lib/permissions.ts` (`MODULE_PERMISSIONS`):
   `customers`, `vehicles`, `suppliers`, `employees`, `items`, `offers`,
   `invoices`, `reminders`, `ledger`, `calendar`, `inventory`, `hours`,
-  `mailings`, `import`, `settings`, `users`, `tires`, `shipping`. The
+  `mailings`, `import`, `settings`, `users`, `tires`. The
   wildcard `*` grants everything (seeded "Administrator" role).
 - **The one exception is `hours:write_own`** — a self-service grant that
   lets an employee log only their **own** time entries. So `hours` has two

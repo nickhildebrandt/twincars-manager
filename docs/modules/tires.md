@@ -26,7 +26,6 @@ updated: 2026-07-05
   - `onlineSellable` is the single public/shop gate
     ([[adr-016-shop-refocus]]); `stockOnHand` kept for the future eBay
     sync ([[ebay]]).
-  - `shippingOptionId` links a shipping option for shop orders.
   - Document positions can back-link via `document_items.tireId`.
   - Retired tires are deleted, not flagged.
 - **Public surface**: `GET /api/public/tires` (+ `/[id]`)

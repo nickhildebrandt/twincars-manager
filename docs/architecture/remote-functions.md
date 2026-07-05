@@ -55,7 +55,7 @@ All are "third-party plumbing or external consumer", never convenience:
   `getCurrentUserRemote` returns `null` for anonymous callers).
 - **Pickers**: all entity-relation pickers live in
   `src/routes/pickers.remote.ts` (pickCustomers, pickVehicles,
-  pickEmployees, pickItems, pickInventoryVehicles, pickShippingOptions,
+  pickEmployees, pickItems, pickInventoryVehicles,
   pickSuppliers, pickDocuments, pickTires) and feed the shared
   `SearchablePicker` component. Never `<select>` for relationships.
   (Exception: `src/routes/invoices/new/pickers.remote.ts` exists for the

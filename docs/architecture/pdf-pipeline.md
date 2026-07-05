@@ -8,7 +8,8 @@ updated: 2026-07-05
 
 Generation and caching live in
 `src/lib/server/services/pdf-service.ts` (built on **pdf-lib**); viewing
-uses **pdfjs-dist** through `PdfViewer.svelte`. All PDF remotes are in the
+uses the browser's native PDF viewer via a Blob-URL iframe in
+`PdfViewer.svelte`. All PDF remotes are in the
 single global `src/routes/pdfs.remote.ts` (not per-module):
 `getDocumentPdfMetaRemote`, `getDocumentPdfBytesRemote`,
 `getReminderPdfMetaRemote`, `getReminderPdfBytesRemote`. List views may

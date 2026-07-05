@@ -35,23 +35,22 @@ Diese Anwendung verwaltet Kunden, Fahrzeuge, Angebote, Rechnungen, Mahnungen, Te
 
 ## Technologiestack
 
-| Bereich              | Wahl                                           | Warum                                          |
-| -------------------- | ---------------------------------------------- | ---------------------------------------------- |
-| Framework            | **SvelteKit** + Svelte 5 (Runes)               | Modern, schnell, klare Reaktivität             |
-| Server-Kommunikation | **Remote Functions** (`*.remote.ts`)           | Typed query/command + automatischer HTTP/Cache |
-| Validierung          | **Valibot**                                    | Modular, schnell, deutlich kleiner als Zod     |
-| Datenbank            | **PostgreSQL** + **Drizzle ORM** + Drizzle Kit | Saubere Migrationen, typsicher                 |
-| Styles               | **TailwindCSS v4** + **DaisyUI v5**            | Konsistentes Design-System, Theme-fähig        |
-| Icons                | **@lucide/svelte**                             | Modernes, einheitliches Icon-Set               |
-| Charts               | **Chart.js**                                   | Verbreitet, anpassbar (für Controlling-Modul)  |
-| PDF                  | **pdf-lib** + **pdfjs-dist**                   | PDF-Erzeugung und Vorschau im Browser          |
-| Mail                 | **nodemailer**                                 | Reiner SMTP-Versand                            |
-| Adapter              | **@sveltejs/adapter-node**                     | Plain Node-HTTP, einfach zu hosten             |
-| Tests                | **Vitest** + **@testing-library/svelte**       | Unit + Komponententest, Co-Lokation            |
-| Coverage             | **@vitest/coverage-v8**                        | Genaue Coverage-Reports                        |
-| Format / Hooks       | **Prettier** + **Husky** + **lint-staged**     | Pre-Commit-Hook formatiert automatisch         |
+| Bereich              | Wahl                                           | Warum                                                             |
+| -------------------- | ---------------------------------------------- | ----------------------------------------------------------------- |
+| Framework            | **SvelteKit** + Svelte 5 (Runes)               | Modern, schnell, klare Reaktivität                                |
+| Server-Kommunikation | **Remote Functions** (`*.remote.ts`)           | Typed query/command + automatischer HTTP/Cache                    |
+| Validierung          | **Valibot**                                    | Modular, schnell, deutlich kleiner als Zod                        |
+| Datenbank            | **PostgreSQL** + **Drizzle ORM** + Drizzle Kit | Saubere Migrationen, typsicher                                    |
+| Styles               | **TailwindCSS v4** + **DaisyUI v5**            | Konsistentes Design-System, Theme-fähig                           |
+| Icons                | **@lucide/svelte**                             | Modernes, einheitliches Icon-Set                                  |
+| PDF                  | **pdf-lib**                                    | PDF-Erzeugung; Vorschau über den nativen Browser-Viewer im iframe |
+| Mail                 | **nodemailer**                                 | Reiner SMTP-Versand                                               |
+| Adapter              | **@sveltejs/adapter-node**                     | Plain Node-HTTP, einfach zu hosten                                |
+| Tests                | **Vitest** + **@testing-library/svelte**       | Unit + Komponententest, Co-Lokation                               |
+| Coverage             | **@vitest/coverage-v8**                        | Genaue Coverage-Reports                                           |
+| Format / Hooks       | **Prettier** + **Husky** + **lint-staged**     | Pre-Commit-Hook formatiert automatisch                            |
 
-Weitere Hilfen: `date-fns`, `nanoid`, `file-type`, `ibantools`, `sanitize-filename`, `mime`.
+Weitere Hilfen: `csv-parse`, `nanoid`, `qrcode`.
 
 ## Voraussetzungen
 
@@ -367,7 +366,7 @@ Tabellen sind bereits angelegt (`vehicle_purchases`, `vehicle_listings`, `vehicl
 
 ### Controlling / Statistik
 
-Eigenes Modul mit **Chart.js**: KPI-Kacheln, Pflicht-Charts (Einnahmen/Ausgaben, Cashflow,
+Eigenes Modul: KPI-Kacheln, Pflicht-Charts (Einnahmen/Ausgaben, Cashflow,
 Kategorien, Top-Kunden/Lieferanten, Mahnstufen, Auftragsvolumen, Fahrzeugmargen, Auslastungs-Heatmap,
 Lohnaufwand, USt/Vorsteuer-Verlauf), Forecast mit What-if-Slider, Drill-Down, PDF-Bericht.
 
@@ -408,7 +407,7 @@ Bestätigung verlangt. Jeder Versand wird in `sent_messages` protokolliert.
 
 ## PDF-Erstellung und Vorschau
 
-`pdf-lib` für Erstellung, `pdfjs-dist` für In-App-Vorschau. Vorgesehene Typen:
+`pdf-lib` für Erstellung, Vorschau über den nativen PDF-Viewer des Browsers (Blob-URL im iframe). Vorgesehene Typen:
 
 - Rechnung, Kostenvoranschlag, Angebot, Auftragsbestätigung, Mahnung, Serienbrief
 - Verkaufsschild Fahrzeugbestand (1 Seite A4)
@@ -469,6 +468,7 @@ Die App selbst, der Migration-Runner und das Container-Image führen
 - Beispiel-Tests:
   - `src/lib/utils/money.test.ts` – Brutto/Netto/Rabatt/Format
   - `src/lib/utils/numbering.test.ts` – Nummernkreis-Renderer
+  - `src/lib/server/services/number-range-service.test.ts` – atomare Nummernkreis-Vergabe
   - `src/lib/utils/pagination.test.ts` – Clamp + Buttons
   - `src/lib/server/utils/crypto.test.ts` – AES-GCM Round-Trip
   - `src/routes/customers/CustomerForm.test.ts` – Komponententest mit user-event

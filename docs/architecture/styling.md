@@ -7,7 +7,7 @@ updated: 2026-07-05
 # Styling - DaisyUI v5 + Tailwind v4, no custom CSS
 
 Design language: flat, bordered, low-contrast. Single `corporate` theme,
-no dark mode. Icons from `@lucide/svelte` only. Charts: Chart.js.
+no dark mode. Icons from `@lucide/svelte` only.
 Confirm class names via the DaisyUI Blueprint MCP before writing markup.
 
 ## Hard rules

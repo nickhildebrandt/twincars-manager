@@ -61,8 +61,8 @@ approach): typed columns for size (width/aspectRatio/diameterInch),
 (`Sommer`|`Winter`|`Ganzjahres`), EAN, EU-label fields (fuelEfficiency,
 wetGrip, noiseClass/Db), flags (runFlat, reinforced, studdedWinter,
 mSMarking, snowFlake, evCertified), `stockOnHand`, `onlineSellable`
-(the only public/shop visibility gate - see [[adr-016-shop-refocus]]),
-`shippingOptionId`. Module: [[tires]].
+(the only public/shop visibility gate - see [[adr-016-shop-refocus]]).
+Module: [[tires]].
 
 ## Reifeneinlagerung (tire storage) - `tire_storage`
 
@@ -118,7 +118,6 @@ public surface in [[public-rest-api]].
   notification status (see [[public-rest-api]], [[settings]]).
 - `access_import_jobs` - import audit rows with live progress
   ([[kfz-kaufmann-import]]).
-- `shipping_options` - shop shipping plumbing ([[settings]]).
 - `tire_reminder_log` - idempotency log for seasonal tire mails.
 - `workshop_hours` - opening hours per weekday, drives free-slot booking.
 - `ebay_credentials` - encrypted OAuth tokens ([[ebay]]).

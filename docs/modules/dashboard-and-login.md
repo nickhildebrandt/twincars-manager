@@ -9,7 +9,7 @@ updated: 2026-07-05
 ## Dashboard `/`
 
 - `src/routes/+page.svelte` + `dashboard.remote.ts`:
-  `getDashboardKpis` (KPI tiles; Chart.js for charts) and
+  `getDashboardKpis` (KPI tiles) and
   `getUpcomingRemote` (upcoming HU/AU, appointments, etc.).
 - The "Start" nav item is the only entry visible without any module
   permission.

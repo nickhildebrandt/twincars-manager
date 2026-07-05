@@ -38,9 +38,6 @@ Service: `settings-service.ts`.
   (`import.remote.ts`: `runMdbImportRemote`, `getImportProgressRemote`
   polling the `access_import_jobs` progress bar); `import` permission.
   See [[import]] and [[kfz-kaufmann-import]].
-- `/settings/shipping` (+ `/new`) - shipping options
-  (`shipping.remote.ts`, `shipping` permission,
-  `shipping-option-service.ts`).
 - `/settings/workshop-hours` - opening hours per weekday
   (`workshop-hours.remote.ts`); drives public free slots.
 - `/settings/inquiries` - contact-form inquiries from the website with
@@ -51,13 +48,12 @@ Service: `settings-service.ts`.
 ## Tables
 
 `company_settings`, `smtp_settings`, `mail_templates`,
-`shipping_options`, `workshop_hours`, `customer_inquiries`, `users` /
+`workshop_hours`, `customer_inquiries`, `users` /
 `roles` / `role_permissions`, `ebay_credentials`, `access_import_jobs`.
 
 ## Tests
 
 `settings-service.test.ts`, `users.remote.test.ts`,
 `account.remote.test.ts`, `inquiries.remote.test.ts`,
-`ebay.remote.test.ts` + `ebay-page.test.ts`,
-`ShippingOptionForm.test.ts`, `RoleForm.test.ts`,
-`workshop-hours-service.test.ts`, `shipping-option-service.test.ts`.
+`ebay.remote.test.ts` + `ebay-page.test.ts`, `RoleForm.test.ts`,
+`workshop-hours-service.test.ts`.

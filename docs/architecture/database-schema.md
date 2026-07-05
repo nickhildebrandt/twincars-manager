@@ -22,7 +22,10 @@ migration chain is applied in the suite), so no live Postgres is needed.
 `reminderAutoEnabled`/`reminderDays1=3`/`reminderRecurEveryDays=14`,
 `smallBusinessExempt`, geoLat/Lon, logo inline), `smtp_settings`,
 `number_ranges` (kind unique: invoice, offer, cost_estimate,
-order_confirmation, reminder, customer, tire_storage, storno),
+order_confirmation, reminder, customer, tire_storage, storno; allocation
+is centralized in `number-range-service.ts` via an atomic
+`UPDATE ... RETURNING`, so no duplicate numbers under concurrency, and
+missing rows self-seed with the seed-defaults template),
 `mail_templates` (key unique, `isCustom` marks operator edits).
 
 ### Customers & vehicles
@@ -39,8 +42,8 @@ isMain, sortOrder), `vehicle_sales`.
 `items` (kind, purchasePriceNet, stockOnHand, `onlineBookable`; NO
 unit_price_net since 0008, NO discontinued/stockMin/stockMax since 0026 -
 [[adr-016-shop-refocus]]), `item_price_versions`, `suppliers`,
-`tires` (typed EU-label columns, `onlineSellable`, shippingOptionId),
-`tire_price_versions`, `tire_photos`, `shipping_options`.
+`tires` (typed EU-label columns, `onlineSellable`),
+`tire_price_versions`, `tire_photos`.
 
 ### Documents & billing
 

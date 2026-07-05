@@ -42,6 +42,8 @@ number range `ZE-{YYYY}-{NNNN}` - deliberately NOT in `documents`
 invoice/offer/KV/AB/customer (continuing the legacy sequence after an
 import - `next_value` is set to max(legacy)+1), `ZE-{YYYY}-{NNNN}` for
 reminders, `L-{YYYY}-{NNNN}` for tire storage, `S-{N}` for storno.
+Number allocation is race-safe via `number-range-service.ts` (atomic
+`UPDATE ... RETURNING`), the GoBD guarantee against duplicate numbers.
 `legacyDocumentNumber` keeps the original Kfz-Kaufmann number.
 
 ## Line items and totals

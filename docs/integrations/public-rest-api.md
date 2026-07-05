@@ -37,14 +37,18 @@ wrapped in `publicApi(...)` from `src/lib/server/public-api.ts`.
 | GET `/services`, GET `/services/[id]`   | `kind='service'` items; projection includes `onlineBookable`                                                                                                  |
 | GET `/free-slots`                       | bookable slots from `workshop_hours` minus closures; rejects non-bookable services                                                                            |
 | POST `/appointments`                    | online booking - REQUIRES a serviceId referencing an `onlineBookable` service (tire change); others get "arrange by phone" rejection; sends confirmation mail |
-| POST `/orders`                          | shop orders (tires + shipping option)                                                                                                                         |
+| POST `/orders`                          | shop orders (tires)                                                                                                                                           |
 | POST `/contact`                         | contact form → `customer_inquiries` row FIRST, then internal notification mail (SMTP outage never loses the inquiry; retry from `/settings/inquiries`)        |
 | GET `/company`                          | company card incl. geo coordinates for a map widget                                                                                                           |
-| GET `/shipping-options`                 | active shipping options                                                                                                                                       |
 | GET `/posts`, GET `/posts/[slug]`       | published news, paginated, newest first; drafts 404 ([[posts]])                                                                                               |
 
 Handlers delegate to `public-api-service.ts` (projections that never
 leak internal fields).
+
+Note: the `/orders` body no longer accepts `shippingOptionId` (unknown
+keys are silently stripped, so legacy clients keep working), and the
+response field `shippingNet` is always the JSON number `0` for wire
+compatibility.
 
 ## Testing convention
 

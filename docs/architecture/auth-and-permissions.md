@@ -48,7 +48,7 @@ Decision record: [[adr-002-per-module-permissions]].
   key per module: `customers`, `vehicles`, `suppliers`, `employees`,
   `items`, `offers`, `invoices`, `reminders`, `ledger`, `calendar`,
   `inventory`, `hours`, `mailings`, `import`, `settings`, `users`,
-  `tires`, `shipping`, `posts`. Wildcard `*` grants everything.
+  `tires`, `posts`. Wildcard `*` grants everything.
 - The ONE sub-key: `hours:write_own` - self-service time logging
   (employee sees/edits only own entries). `hours` = full/manager level.
 - Guards in `src/lib/server/auth-guards.ts`: `requireUser()`,
