@@ -1,24 +1,23 @@
 import { query } from '$app/server'
-import { maxLength, object, pipe, string, trim } from 'valibot'
+import { object } from 'valibot'
 import { requirePermission } from '$lib/server/auth-guards'
+import { dateStringSchema } from '$lib/server/db/validation'
 import { exportDatevCsv } from '$lib/server/services/datev-export-service'
 
 /**
  * DATEV Buchungsstapel-CSV-Export für den gewählten Zeitraum.
  *
- * Zieht alle Rechnungen (issueDate ∈ [from, to]) und Buchungen
- * (entryDate ∈ [from, to]) zusammen, mapt sie auf passende SKR03-nahe
- * Konten und liefert die CSV als base64 zurück. Der Aufrufer (Browser)
- * lädt die Datei direkt als `text/csv; charset=windows-1252` herunter.
+ * Pulls all booked invoices (issueDate in [from, to], status
+ * sent/paid/storno — drafts and cancelled drafts are excluded) plus
+ * ledger entries (entryDate in [from, to]), maps them onto SKR03-like
+ * accounts and returns the CSV as base64. The caller (browser)
+ * downloads it directly as `text/csv; charset=windows-1252`.
  *
  * @group integration
  * @module ledger
  */
 export const exportDatevRemote = query(
-  object({
-    from: pipe(string(), trim(), maxLength(10)),
-    to: pipe(string(), trim(), maxLength(10))
-  }),
+  object({ from: dateStringSchema, to: dateStringSchema }),
   async ({ from, to }) => {
     requirePermission('ledger')
     const csv = await exportDatevCsv({ from, to })

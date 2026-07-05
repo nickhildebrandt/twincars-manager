@@ -26,6 +26,7 @@
  * Referenz: https://xeinkauf.de/xrechnung/versionen-und-bundles/
  */
 
+import { error } from '@sveltejs/kit'
 import type { DocumentRenderInput } from './pdf-service'
 
 export type XRechnungInput = DocumentRenderInput
@@ -140,10 +141,14 @@ const supplierBlock = (input: XRechnungInput): string => {
   const lines: string[] = []
   lines.push('  <cac:AccountingSupplierParty>')
   lines.push('    <cac:Party>')
-  if (co.website)
-    lines.push(
-      `      <cbc:WebsiteURI>${escapeXml(co.website)}</cbc:WebsiteURI>`
-    )
+  // BT-34 Seller electronic address — mandatory since XRechnung 3.0.1.
+  // Scheme `EM` = electronic mail (EAS code list). Note: the UBL 2.1 XSD
+  // places EndpointID before PartyName/PostalAddress, so it must stay the
+  // first child here. (WebsiteURI is deliberately not emitted — it is not
+  // part of the EN 16931 data model and triggers UBL-CR warnings.)
+  lines.push(
+    `      <cbc:EndpointID schemeID="EM">${escapeXml(co.email)}</cbc:EndpointID>`
+  )
   lines.push('      <cac:PartyName>')
   lines.push(`        <cbc:Name>${escapeXml(name)}</cbc:Name>`)
   lines.push('      </cac:PartyName>')
@@ -156,6 +161,7 @@ const supplierBlock = (input: XRechnungInput): string => {
     })
   )
   if (co.vatId) {
+    // BT-31 Seller VAT identifier
     lines.push('      <cac:PartyTaxScheme>')
     lines.push(`        <cbc:CompanyID>${escapeXml(co.vatId)}</cbc:CompanyID>`)
     lines.push('        <cac:TaxScheme>')
@@ -163,22 +169,36 @@ const supplierBlock = (input: XRechnungInput): string => {
     lines.push('        </cac:TaxScheme>')
     lines.push('      </cac:PartyTaxScheme>')
   }
+  if (co.taxNumber) {
+    // BT-32 Seller tax registration identifier (deutsche Steuernummer).
+    // EN 16931 maps this to a second PartyTaxScheme with TaxScheme ID
+    // `FC` — it must NOT live in PartyLegalEntity/CompanyID (that is
+    // BT-30, the trade register number).
+    lines.push('      <cac:PartyTaxScheme>')
+    lines.push(
+      `        <cbc:CompanyID>${escapeXml(co.taxNumber)}</cbc:CompanyID>`
+    )
+    lines.push('        <cac:TaxScheme>')
+    lines.push('          <cbc:ID>FC</cbc:ID>')
+    lines.push('        </cac:TaxScheme>')
+    lines.push('      </cac:PartyTaxScheme>')
+  }
   lines.push('      <cac:PartyLegalEntity>')
   lines.push(
     `        <cbc:RegistrationName>${escapeXml(name)}</cbc:RegistrationName>`
   )
-  if (co.taxNumber)
-    lines.push(
-      `        <cbc:CompanyID>${escapeXml(co.taxNumber)}</cbc:CompanyID>`
-    )
   lines.push('      </cac:PartyLegalEntity>')
-  if (co.email) {
-    lines.push('      <cac:Contact>')
-    lines.push(
-      `        <cbc:ElectronicMail>${escapeXml(co.email)}</cbc:ElectronicMail>`
-    )
-    lines.push('      </cac:Contact>')
-  }
+  // BG-6 SELLER CONTACT — mandatory per BR-DE-2, with Name (BR-DE-5),
+  // Telephone (BR-DE-6) and ElectronicMail (BR-DE-7) all required.
+  lines.push('      <cac:Contact>')
+  lines.push(`        <cbc:Name>${escapeXml(co.owner || name)}</cbc:Name>`)
+  lines.push(
+    `        <cbc:Telephone>${escapeXml(co.phone || co.mobile)}</cbc:Telephone>`
+  )
+  lines.push(
+    `        <cbc:ElectronicMail>${escapeXml(co.email)}</cbc:ElectronicMail>`
+  )
+  lines.push('      </cac:Contact>')
   lines.push('    </cac:Party>')
   lines.push('  </cac:AccountingSupplierParty>')
   return lines.join('\n')
@@ -190,6 +210,10 @@ const customerBlock = (input: XRechnungInput): string => {
   const lines: string[] = []
   lines.push('  <cac:AccountingCustomerParty>')
   lines.push('    <cac:Party>')
+  // BT-49 Buyer electronic address — mandatory since XRechnung 3.0.1.
+  lines.push(
+    `      <cbc:EndpointID schemeID="EM">${escapeXml(cust?.email)}</cbc:EndpointID>`
+  )
   lines.push('      <cac:PartyName>')
   lines.push(`        <cbc:Name>${escapeXml(name)}</cbc:Name>`)
   lines.push('      </cac:PartyName>')
@@ -346,7 +370,6 @@ const taxTotalBlock = (input: XRechnungInput): string => {
 const monetaryTotalBlock = (input: XRechnungInput): string => {
   const isExempt = input.settings.smallBusinessExempt === true
   const net = Number(input.doc.netTotal ?? 0)
-  const tax = isExempt ? 0 : Number(input.doc.taxTotal ?? 0)
   const gross = isExempt ? net : Number(input.doc.grossTotal ?? 0)
   const lines: string[] = []
   lines.push('  <cac:LegalMonetaryTotal>')
@@ -362,9 +385,6 @@ const monetaryTotalBlock = (input: XRechnungInput): string => {
   lines.push(
     `    <cbc:PayableAmount currencyID="EUR">${fmtMoney(gross)}</cbc:PayableAmount>`
   )
-  // Use tax to keep linter happy in the rare future where we want to
-  // expose the explicit tax line at this scope.
-  void tax
   lines.push('  </cac:LegalMonetaryTotal>')
   return lines.join('\n')
 }
@@ -418,9 +438,55 @@ const invoiceLineBlock = (
 /* ------------------------------------------------------------------ */
 
 /**
+ * Fail fast (HTTP 400, curated German message) when master data that
+ * XRechnung/EN 16931 makes mandatory is missing. Doing this before any
+ * XML is built means the operator gets an actionable hint instead of a
+ * KoSIT validator rejection after download.
+ */
+const assertMandatoryMasterData = (input: XRechnungInput): void => {
+  const co = input.settings
+  if (!co.email) {
+    error(
+      400,
+      'XRechnung kann nicht erstellt werden: In den Firmeneinstellungen fehlt die E-Mail-Adresse.'
+    )
+  }
+  if (!co.phone && !co.mobile) {
+    error(
+      400,
+      'XRechnung kann nicht erstellt werden: In den Firmeneinstellungen fehlt eine Telefonnummer (Telefon oder Mobil).'
+    )
+  }
+  if (!co.iban) {
+    // BR-DE-1 requires PAYMENT INSTRUCTIONS, and BR-61 requires the
+    // payment account identifier for credit-transfer payment means.
+    error(
+      400,
+      'XRechnung kann nicht erstellt werden: In den Firmeneinstellungen fehlt die IBAN.'
+    )
+  }
+  if (!input.customer?.customerNumber) {
+    error(
+      400,
+      'XRechnung kann nicht erstellt werden: Der Rechnung ist kein Kunde mit Kundennummer zugeordnet.'
+    )
+  }
+  if (!input.customer.email) {
+    error(
+      400,
+      'XRechnung kann nicht erstellt werden: Beim Kunden fehlt die E-Mail-Adresse.'
+    )
+  }
+}
+
+/**
  * Render the given document as an XRechnung 3.0 UBL Invoice XML string.
  * The output is a complete XML document including the UTF-8 declaration
  * and the XRechnung `CustomizationID`.
+ *
+ * Throws `error(400, …)` with a German operator hint when mandatory
+ * master data (seller e-mail/phone/IBAN, buyer e-mail, customer number)
+ * is missing — see `assertMandatoryMasterData`.
  *
  * @param input Reuses the `DocumentRenderInput` shape that the PDF
  *              renderer takes — same loader, two output formats.
@@ -428,9 +494,13 @@ const invoiceLineBlock = (
  *              for the remote-function wire format.
  */
 export const renderXRechnungXml = (input: XRechnungInput): string => {
+  assertMandatoryMasterData(input)
   const isExempt = input.settings.smallBusinessExempt === true
+  // XRechnung 3.x specification identifier — since 3.0 the CIUS lives in
+  // the `xeinkauf.de` namespace (the old `urn:xoev-de:kosit:standard:…`
+  // value is rejected by the KoSIT validator).
   const customizationId =
-    'urn:cen.eu:en16931:2017#compliant#urn:xoev-de:kosit:standard:xrechnung_3.0'
+    'urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0'
   const profileId = 'urn:fdc:peppol.eu:2017:poacc:billing:01:1.0'
 
   const out: string[] = []
@@ -460,9 +530,19 @@ export const renderXRechnungXml = (input: XRechnungInput): string => {
   if (input.doc.notes)
     out.push(`  <cbc:Note>${escapeXml(input.doc.notes)}</cbc:Note>`)
   out.push('  <cbc:DocumentCurrencyCode>EUR</cbc:DocumentCurrencyCode>')
+  // BT-10 Buyer reference — mandatory per BR-DE-15. Public-sector buyers
+  // expect their Leitweg-ID here; we do not have a dedicated field for
+  // that yet (documented future schema addition), so the customer number
+  // serves as the reference for the B2B case.
+  out.push(
+    `  <cbc:BuyerReference>${escapeXml(input.customer?.customerNumber)}</cbc:BuyerReference>`
+  )
 
   out.push(supplierBlock(input))
   out.push(customerBlock(input))
+
+  // UBL 2.1 XSD sequence: PaymentMeans MUST precede PaymentTerms.
+  out.push(paymentMeansBlock(input))
 
   // Payment terms / due date hint
   if (input.doc.dueDate) {
@@ -473,7 +553,6 @@ export const renderXRechnungXml = (input: XRechnungInput): string => {
     out.push('  </cac:PaymentTerms>')
   }
 
-  out.push(paymentMeansBlock(input))
   out.push(taxTotalBlock(input))
   out.push(monetaryTotalBlock(input))
 

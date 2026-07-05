@@ -302,4 +302,171 @@ describe('renderXRechnungXml', () => {
     expect(xml).toContain('INGDDEFFXXX')
     expect(xml).toContain('<cbc:PaymentMeansCode>58</cbc:PaymentMeansCode>')
   })
+
+  it('pins the XRechnung 3.x CustomizationID (xeinkauf.de namespace)', () => {
+    const xml = renderXRechnungXml(baseInput())
+    expect(xml).toContain(
+      '<cbc:CustomizationID>urn:cen.eu:en16931:2017#compliant#urn:xeinkauf.de:kosit:xrechnung_3.0</cbc:CustomizationID>'
+    )
+    // The pre-3.0 xoev-de namespace must be gone.
+    expect(xml).not.toContain('urn:xoev-de')
+  })
+
+  it('orders PaymentMeans before PaymentTerms (UBL 2.1 XSD sequence)', () => {
+    const xml = renderXRechnungXml(baseInput())
+    const means = xml.indexOf('<cac:PaymentMeans>')
+    const terms = xml.indexOf('<cac:PaymentTerms>')
+    expect(means).toBeGreaterThan(-1)
+    expect(terms).toBeGreaterThan(-1)
+    expect(means).toBeLessThan(terms)
+  })
+
+  it('emits BuyerReference (BT-10) with the customer number directly after DocumentCurrencyCode', () => {
+    const xml = renderXRechnungXml(baseInput())
+    expect(xml).toContain('<cbc:BuyerReference>KU-00001</cbc:BuyerReference>')
+    const currency = xml.indexOf('<cbc:DocumentCurrencyCode>')
+    const buyerRef = xml.indexOf('<cbc:BuyerReference>')
+    const supplier = xml.indexOf('<cac:AccountingSupplierParty>')
+    expect(currency).toBeLessThan(buyerRef)
+    expect(buyerRef).toBeLessThan(supplier)
+  })
+
+  it('emits EndpointID (BT-34/BT-49) with scheme EM for both parties', () => {
+    const xml = renderXRechnungXml(baseInput())
+    expect(xml).toContain(
+      '<cbc:EndpointID schemeID="EM">info@mueller.example</cbc:EndpointID>'
+    )
+    expect(xml).toContain(
+      '<cbc:EndpointID schemeID="EM">max@mustermann.example</cbc:EndpointID>'
+    )
+    // EndpointID must precede PartyName inside each Party (XSD order).
+    const supplierParty = xml.slice(
+      xml.indexOf('<cac:AccountingSupplierParty>'),
+      xml.indexOf('</cac:AccountingSupplierParty>')
+    )
+    expect(supplierParty.indexOf('<cbc:EndpointID')).toBeLessThan(
+      supplierParty.indexOf('<cac:PartyName>')
+    )
+    const customerParty = xml.slice(
+      xml.indexOf('<cac:AccountingCustomerParty>'),
+      xml.indexOf('</cac:AccountingCustomerParty>')
+    )
+    expect(customerParty.indexOf('<cbc:EndpointID')).toBeLessThan(
+      customerParty.indexOf('<cac:PartyName>')
+    )
+  })
+
+  it('always emits the seller Contact (BG-6) with name, phone and mail', () => {
+    const xml = renderXRechnungXml(baseInput())
+    const supplierParty = xml.slice(
+      xml.indexOf('<cac:AccountingSupplierParty>'),
+      xml.indexOf('</cac:AccountingSupplierParty>')
+    )
+    // owner is null in the fixture → falls back to the company name.
+    expect(supplierParty).toContain(
+      '<cbc:Name>Werkstatt Müller GmbH</cbc:Name>'
+    )
+    expect(supplierParty).toContain('<cbc:Telephone>030/123</cbc:Telephone>')
+    expect(supplierParty).toContain(
+      '<cbc:ElectronicMail>info@mueller.example</cbc:ElectronicMail>'
+    )
+  })
+
+  it('prefers the owner name for the seller contact when set', () => {
+    const input = baseInput()
+    input.settings = {
+      ...input.settings,
+      owner: 'Hans Müller'
+    } as unknown as CompanySettings
+    const xml = renderXRechnungXml(input)
+    expect(xml).toContain('<cbc:Name>Hans Müller</cbc:Name>')
+  })
+
+  it('falls back to the mobile number for the seller contact phone', () => {
+    const input = baseInput()
+    input.settings = {
+      ...input.settings,
+      phone: null,
+      mobile: '0171/9999'
+    } as unknown as CompanySettings
+    const xml = renderXRechnungXml(input)
+    expect(xml).toContain('<cbc:Telephone>0171/9999</cbc:Telephone>')
+  })
+
+  it('maps the Steuernummer to a PartyTaxScheme with TaxScheme FC (BT-32)', () => {
+    const xml = renderXRechnungXml(baseInput())
+    const supplierParty = xml.slice(
+      xml.indexOf('<cac:AccountingSupplierParty>'),
+      xml.indexOf('</cac:AccountingSupplierParty>')
+    )
+    expect(supplierParty).toContain('<cbc:ID>FC</cbc:ID>')
+    expect(supplierParty).toContain(
+      '<cbc:CompanyID>99/123/45678</cbc:CompanyID>'
+    )
+    // The tax number must no longer live in PartyLegalEntity/CompanyID
+    // (that slot is BT-30, the trade register number).
+    const legalEntity = supplierParty.slice(
+      supplierParty.indexOf('<cac:PartyLegalEntity>'),
+      supplierParty.indexOf('</cac:PartyLegalEntity>')
+    )
+    expect(legalEntity).not.toContain('99/123/45678')
+    // The VAT PartyTaxScheme is kept alongside the FC one.
+    expect(supplierParty).toContain(
+      '<cbc:CompanyID>DE123456789</cbc:CompanyID>'
+    )
+    expect(supplierParty).toContain('<cbc:ID>VAT</cbc:ID>')
+  })
+})
+
+describe('renderXRechnungXml — mandatory master data', () => {
+  const expectError400 = (input: XRechnungInput, messagePart: string) => {
+    try {
+      renderXRechnungXml(input)
+      expect.unreachable('expected error(400) to be thrown')
+    } catch (e) {
+      const err = e as { status?: number; body?: { message?: string } }
+      expect(err.status).toBe(400)
+      expect(err.body?.message).toContain(messagePart)
+    }
+  }
+
+  it('rejects with 400 when the seller e-mail is missing', () => {
+    const input = baseInput()
+    input.settings = {
+      ...input.settings,
+      email: null
+    } as unknown as CompanySettings
+    expectError400(input, 'E-Mail-Adresse')
+  })
+
+  it('rejects with 400 when both seller phone and mobile are missing', () => {
+    const input = baseInput()
+    input.settings = {
+      ...input.settings,
+      phone: null,
+      mobile: null
+    } as unknown as CompanySettings
+    expectError400(input, 'Telefonnummer')
+  })
+
+  it('rejects with 400 when the seller IBAN is missing', () => {
+    const input = baseInput()
+    input.settings = {
+      ...input.settings,
+      iban: null
+    } as unknown as CompanySettings
+    expectError400(input, 'IBAN')
+  })
+
+  it('rejects with 400 when the customer is missing entirely', () => {
+    const input = baseInput()
+    input.customer = null
+    expectError400(input, 'Kunde')
+  })
+
+  it('rejects with 400 when the customer e-mail is missing', () => {
+    const input = baseInput()
+    input.customer = { ...baseCustomer, email: null } as unknown as Customer
+    expectError400(input, 'E-Mail-Adresse')
+  })
 })

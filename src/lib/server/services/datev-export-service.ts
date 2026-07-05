@@ -5,38 +5,41 @@
  * DATEV Rechnungswesen / Kanzlei-Rechnungswesen. Spec:
  * https://developer.datev.de/de/datev-apis/datev-rechnungswesen/dateischnittstelle-online-datev-format-csv/
  *
- * Structure (Version 7.0, still the supported interchange shape):
+ * Structure (EXTF header version 700, Buchungsstapel Formatversion 13):
  *
- *   Line 1: "EXTF";<format-version>;<header-id>;"Buchungsstapel";<schema-version>;
- *           <created-at>;...;<consultant-no>;<client-no>;...;<from>;<to>;...
- *   Line 2: Column-name header — semicolon-separated, in fixed order.
- *   Line 3..N: Buchungssätze — one row per posting. The columns we
- *              actually populate are:
+ *   Line 1: EXTF header — exactly 31 semicolon-separated fields
+ *           ("EXTF";700;21;"Buchungsstapel";13;<created-at>;...;
+ *           <consultant-no>;<client-no>;...;<from>;<to>;... plus
+ *           trailing empty fields up to 31).
+ *   Line 2: Column-name header — the full 125-field Buchungsstapel
+ *           column set of Formatversion 13, in fixed order.
+ *   Line 3..N: Buchungssätze — one row per posting, always padded to
+ *              125 semicolon-separated cells. The columns we actually
+ *              populate are:
  *                 Umsatz (Soll/Haben-Betrag), Soll-/Haben-Kennzeichen
- *                 (S/H), WKZ Umsatz (EUR), Konto, Gegenkonto, BU-Schlüssel
- *                 (leer), Belegdatum (DDMM), Belegfeld 1 (Beleg-Nr.),
- *                 Buchungstext.
- *              Alle übrigen Spalten bleiben leer aber sind als
- *              Semikolon-Platzhalter da, damit der Header zur Zeile passt.
+ *                 (S/H), WKZ Umsatz (EUR), Konto, Gegenkonto,
+ *                 BU-Schlüssel (empty), Belegdatum (DDMM),
+ *                 Belegfeld 1 (document number), Buchungstext.
+ *              All other cells stay empty but are present as semicolon
+ *              placeholders so every row matches the header width.
  *
- * Encoding: DATEV verlangt CP1252 (Windows-1252). Wir bauen die Datei
- * im Speicher als JS-String und konvertieren am Ende auf einen
- * `Buffer` mit CP1252-Bytes; der Aufrufer kodiert für die Wire ggf.
- * base64 darüber. Der Rückgabewert ist ein *Latin-1-String*: jeder
- * `charCodeAt(i)` ist exakt das CP1252-Byte.
+ * Encoding: DATEV requires CP1252 (Windows-1252). We build the file in
+ * memory as a JS string and convert it at the end into a "Latin-1
+ * string": every `charCodeAt(i)` is exactly the CP1252 byte. The
+ * caller wraps it in `Buffer.from(s, 'latin1')` and base64-encodes it
+ * for the wire.
  *
- * Konten-Mapping (SKR03-orientiert, minimaler Default):
- *   - Verkaufs-Rechnungen          → Konto 8400 (Erlöse 19% USt), Gegen
- *                                    1400 (Debitor Sammel)
- *   - Ledger-Einnahmen ohne Kat.   → wie Rechnungen
- *   - Ledger-Ausgaben (Material)   → Konto 3400, Gegen 1600 (Kassen-/
- *                                    Bank-Sammel)
- *   - Ledger-Ausgaben (sonstige)   → Konto 4980, Gegen 1600
- * Der Steuerberater korrigiert die Konten ohnehin nach SKR; die hier
- * gewählten Defaults sind nur sinnvolle Anhaltswerte.
+ * Account mapping (SKR03-oriented, minimal default):
+ *   - sales invoices               → Konto 8400 (Erlöse 19% USt),
+ *                                    Gegenkonto 1400 (Debitor Sammel)
+ *   - ledger income w/o category   → like invoices
+ *   - ledger expenses (material)   → Konto 3400, Gegenkonto 1600
+ *   - ledger expenses (other)      → Konto 4980, Gegenkonto 1600
+ * The Steuerberater corrects the accounts on import anyway; the
+ * defaults here only aim to be sensible starting points.
  */
 
-import { and, asc, gte, lte } from 'drizzle-orm'
+import { and, asc, eq, gte, inArray, lte } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
   documents,
@@ -151,22 +154,44 @@ const csvText = (s: string | null | undefined): string => {
   return `"${escaped}"`
 }
 
+/**
+ * Sanitize a Buchungstext for DATEV: line breaks and semicolons would
+ * break the CSV row structure, so they are collapsed into spaces; the
+ * spec caps the field at 60 characters.
+ */
+export const sanitizeBookingText = (s: string | null | undefined): string => {
+  if (!s) return ''
+  return s
+    .replace(/[\r\n;]+/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 60)
+}
+
+/**
+ * Sanitize Belegfeld 1 (receipt / document number). The DATEV spec
+ * allows only digits, letters and the special characters $ % & * + - /
+ * with a maximum length of 36. Everything else is dropped.
+ */
+export const sanitizeBelegfeld = (s: string | null | undefined): string => {
+  if (!s) return ''
+  return s.replace(/[^0-9A-Za-z$%&*+\-/]/g, '').slice(0, 36)
+}
+
 /* ------------------------------------------------------------------ */
 /* Header                                                             */
 /* ------------------------------------------------------------------ */
 
 /**
- * DATEV Buchungsstapel-Spalten (Format 7.0). Wir geben nur eine kuratierte
- * Teilmenge effektiv aus; alle übrigen Spalten bleiben leer, sind aber
- * im Header aufgeführt, damit Spaltenzahl exakt mit dem Stapel
- * übereinstimmt.
- *
- * Reihenfolge entspricht der offiziellen DATEV-Spec (Auszug der ersten
- * 27 Spalten, die für eine einfache Buchung relevant sind). Wir
- * verzichten auf die 100+ optionalen Anlage-Spalten, weil sie für die
- * grundlegende Buchhaltungs-Übergabe nicht erforderlich sind.
+ * DATEV Buchungsstapel columns, Formatversion 13 — the full 125-field
+ * set. DATEV Rechnungswesen validates that the column header and every
+ * data row carry exactly this column count, so we must list all fields
+ * even though we only populate a small subset. Field names follow the
+ * official spec; the one field the spec marks as reserved is emitted
+ * as "Leerfeld".
  */
-const COLUMN_HEADER = [
+const COLUMN_HEADER: string[] = [
+  // 1-20
   'Umsatz (ohne Soll/Haben-Kz)',
   'Soll/Haben-Kennzeichen',
   'WKZ Umsatz',
@@ -187,19 +212,82 @@ const COLUMN_HEADER = [
   'Sachverhalt',
   'Zinssperre',
   'Beleglink',
-  'Beleginfo - Art 1',
-  'Beleginfo - Inhalt 1',
+  // 21-36: Beleginfo pairs 1..8
+  ...Array.from({ length: 8 }, (_, i) => [
+    `Beleginfo - Art ${i + 1}`,
+    `Beleginfo - Inhalt ${i + 1}`
+  ]).flat(),
+  // 37-41
   'KOST1 - Kostenstelle',
   'KOST2 - Kostenstelle',
   'KOST-Menge',
   'EU-Land u. UStID (Bestimmung)',
-  'EU-Steuersatz (Bestimmung)'
+  'EU-Steuersatz (Bestimmung)',
+  // 42-47
+  'Abw. Versteuerungsart',
+  'Sachverhalt L+L',
+  'Funktionsergänzung L+L',
+  'BU 49 Hauptfunktionstyp',
+  'BU 49 Hauptfunktionsnummer',
+  'BU 49 Funktionsergänzung',
+  // 48-87: Zusatzinformation pairs 1..20
+  ...Array.from({ length: 20 }, (_, i) => [
+    `Zusatzinformation - Art ${i + 1}`,
+    `Zusatzinformation - Inhalt ${i + 1}`
+  ]).flat(),
+  // 88-102
+  'Stück',
+  'Gewicht',
+  'Zahlweise',
+  'Forderungsart',
+  'Veranlagungsjahr',
+  'Zugeordnete Fälligkeit',
+  'Skontotyp',
+  'Auftragsnummer',
+  'Buchungstyp',
+  'USt-Schlüssel (Anzahlungen)',
+  'EU-Land (Anzahlungen)',
+  'Sachverhalt L+L (Anzahlungen)',
+  'EU-Steuersatz (Anzahlungen)',
+  'Erlöskonto (Anzahlungen)',
+  'Herkunft-Kz',
+  // 103: reserved in Formatversion 13
+  'Leerfeld',
+  // 104-114
+  'KOST-Datum',
+  'SEPA-Mandatsreferenz',
+  'Skontosperre',
+  'Gesellschaftername',
+  'Beteiligtennummer',
+  'Identifikationsnummer',
+  'Zeichnernummer',
+  'Postensperre bis',
+  'Bezeichnung SoBil-Sachverhalt',
+  'Kennzeichen SoBil-Buchung',
+  'Festschreibung',
+  // 115-125
+  'Leistungsdatum',
+  'Datum Zuord. Steuerperiode',
+  'Fälligkeit',
+  'Generalumkehr (GU)',
+  'Steuersatz',
+  'Land',
+  'Abrechnungsreferenz',
+  'BVV-Position',
+  'EU-Land u. UStID (Ursprung)',
+  'EU-Steuersatz (Ursprung)',
+  'Abw. Skontokonto'
 ]
 
+/** Number of fields the EXTF header line must carry (header version 5). */
+const EXTF_HEADER_FIELD_COUNT = 31
+
 /**
- * EXTF/DTVF header line. Format 7.0, schema "Buchungsstapel"
- * (Format-Kategorie 21). Many of the slots are metadata — DATEV reads
- * the consultant/client number from columns 11/12 of the first line.
+ * EXTF/DTVF header line. Header version 700, data category 21
+ * ("Buchungsstapel"), Formatversion 13 — the combination current DATEV
+ * Rechnungswesen releases accept. DATEV reads the consultant/client
+ * number from fields 11/12. The line must carry exactly 31
+ * semicolon-separated fields; the unused trailing ones stay empty.
  */
 const buildExtfHeader = (params: {
   from: string
@@ -215,35 +303,36 @@ const buildExtfHeader = (params: {
       .slice(0, 14) + '000'
   const yyyy = params.from.slice(0, 4)
   const wjBegin = `${yyyy}0101`
-  // Columns per DATEV spec, semicolon-separated:
+  // Fields per DATEV spec, semicolon-separated:
   //  1 "EXTF"
-  //  2 Version (e.g. 700)
-  //  3 Datenkategorie (21 = Buchungsstapel)
+  //  2 header version (700)
+  //  3 data category (21 = Buchungsstapel)
   //  4 "Buchungsstapel"
-  //  5 Format-Version (7)
-  //  6 Erzeugt am (YYYYMMDDHHMMSSmmm)
-  //  7 importiert (leer)
-  //  8 Herkunft ("RE" generisch)
-  //  9 Exportiert von (max 25)
-  // 10 Importiert von (leer)
-  // 11 Beraternummer
-  // 12 Mandantennummer
-  // 13 WJ-Beginn
-  // 14 Sachkontenlänge (4)
-  // 15 Datum von (YYYYMMDD)
-  // 16 Datum bis (YYYYMMDD)
-  // 17 Bezeichnung
-  // 18 Diktatkürzel ("")
-  // 19 Buchungstyp (1 = Finanzbuchführung)
-  // 20 Rechnungslegungszweck (0)
+  //  5 Formatversion (13 for the 700 header)
+  //  6 created at (YYYYMMDDHHMMSSmmm)
+  //  7 imported (empty, reserved)
+  //  8 origin ("RE" generic)
+  //  9 exported by (max 25)
+  // 10 imported by (empty, reserved)
+  // 11 consultant number
+  // 12 client number
+  // 13 fiscal-year begin (YYYYMMDD)
+  // 14 G/L account length (4)
+  // 15 date from (YYYYMMDD)
+  // 16 date to (YYYYMMDD)
+  // 17 description
+  // 18 dictation shorthand (empty)
+  // 19 posting type (1 = Finanzbuchführung)
+  // 20 accounting purpose (0)
   // 21 Festschreibung (1)
-  // 22 WKZ (EUR)
+  // 22 currency (EUR)
+  // 23-31 reserved / unused (empty)
   const cols: string[] = [
     csvText('EXTF'),
     '700',
     '21',
     csvText('Buchungsstapel'),
-    '7',
+    '13',
     createdAt,
     '',
     csvText('RE'),
@@ -255,13 +344,14 @@ const buildExtfHeader = (params: {
     '4',
     fmtDateCompact(params.from),
     fmtDateCompact(params.to),
-    csvText(`TwinCars ${params.from}–${params.to}`),
+    csvText(`TwinCars ${params.from}-${params.to}`),
     '',
     '1',
     '0',
     '1',
     csvText('EUR')
   ]
+  while (cols.length < EXTF_HEADER_FIELD_COUNT) cols.push('')
   return cols.join(';')
 }
 
@@ -290,8 +380,8 @@ const renderRow = (r: Row): string => {
   cells[6] = csvText(r.konto) // Konto
   cells[7] = csvText(r.gegenkonto) // Gegenkonto
   cells[9] = fmtDateDdmm(r.date) // Belegdatum (DDMM)
-  cells[10] = csvText(r.beleg) // Belegfeld 1
-  cells[13] = csvText(r.text) // Buchungstext
+  cells[10] = csvText(sanitizeBelegfeld(r.beleg)) // Belegfeld 1
+  cells[13] = csvText(sanitizeBookingText(r.text)) // Buchungstext
   return cells.join(';')
 }
 
@@ -371,11 +461,19 @@ export type DatevExportParams = {
 }
 
 /**
+ * Invoice statuses that represent real, booked revenue. Drafts
+ * (`created`) and voided drafts (`cancelled`) never reach the
+ * Steuerberater — exporting them would book revenue that does not
+ * exist.
+ */
+const EXPORTED_INVOICE_STATUSES = ['sent', 'paid', 'storno'] as const
+
+/**
  * Render the DATEV Buchungsstapel CSV for the given date range.
  *
  * Pulls
- *   - every invoice with `issueDate` in `[from, to]`, posted as
- *     `Erlöse → Debitor`
+ *   - every invoice with `issueDate` in `[from, to]` and status
+ *     `sent` / `paid` / `storno`, posted as `Erlöse → Debitor`
  *   - every ledger entry with `entryDate` in `[from, to]`, posted with
  *     the category-derived account pair
  *
@@ -395,11 +493,17 @@ export const exportDatevCsv = async (
         documentNumber: documents.documentNumber,
         issueDate: documents.issueDate,
         grossTotal: documents.grossTotal,
-        type: documents.type,
         status: documents.status
       })
       .from(documents)
-      .where(and(gte(documents.issueDate, from), lte(documents.issueDate, to)))
+      .where(
+        and(
+          eq(documents.type, 'invoice'),
+          inArray(documents.status, [...EXPORTED_INVOICE_STATUSES]),
+          gte(documents.issueDate, from),
+          lte(documents.issueDate, to)
+        )
+      )
       .orderBy(asc(documents.issueDate)),
     db
       .select()
@@ -420,24 +524,21 @@ export const exportDatevCsv = async (
   const rows: Row[] = []
 
   for (const inv of invoiceRows) {
-    if (inv.type !== 'invoice') continue
     const accounts = accountsForCategory('income', 'Erlöse')
     const isStorno = inv.status === 'storno'
-    // GoBD/UStG-Storno: eine Stornorechnung verbucht den Erlös vom
-    // Debitor zurück. DATEV-Konvention für eine Gegenbuchung: Soll und
-    // Haben werden vertauscht, Beträge bleiben positiv. Wir nehmen
-    // hier den Absolutbetrag (Storno-`grossTotal` ist im Datenmodell
-    // negativ) und setzen `soHa = 'S'` plus Konto↔Gegenkonto
-    // gespiegelt. Quelle: DATEV-Format CSV 7.0, Abschnitt
-    // "Erlösminderung / Storno-Beleg".
-    // Beleg-Text macht den Storno-Bezug explizit, damit der
-    // Steuerberater im Import sofort sieht, dass es sich nicht um
-    // einen neuen Umsatz handelt.
+    // Storno (reversal): the revenue is booked back by flipping ONLY
+    // the Soll/Haben-Kennzeichen from 'H' to 'S' while Konto and
+    // Gegenkonto stay exactly as on the original invoice. Flipping S/H
+    // AND swapping the accounts would negate twice and post the same
+    // revenue again instead of reversing it. Amounts are always
+    // positive (the storno `grossTotal` is negative in the data model,
+    // so we take the absolute value). The Buchungstext makes the
+    // storno explicit so the Steuerberater sees it is a correction.
     rows.push({
       amount: Math.abs(Number(inv.grossTotal ?? 0)),
       soHa: isStorno ? 'S' : 'H',
-      konto: isStorno ? accounts.gegenkonto : accounts.konto,
-      gegenkonto: isStorno ? accounts.konto : accounts.gegenkonto,
+      konto: accounts.konto,
+      gegenkonto: accounts.gegenkonto,
       date: inv.issueDate,
       beleg: inv.documentNumber,
       text: isStorno

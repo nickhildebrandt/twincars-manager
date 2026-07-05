@@ -84,10 +84,52 @@ describe('exportDatevCsv', () => {
     })
     const csv = await exportDatevCsv({ from: '2026-01-01', to: '2026-12-31' })
     const firstLine = csv.split('\r\n')[0]
-    expect(firstLine.startsWith('"EXTF";700;21;"Buchungsstapel";7;')).toBe(true)
+    // Header version 700 requires Buchungsstapel Formatversion 13.
+    expect(firstLine.startsWith('"EXTF";700;21;"Buchungsstapel";13;')).toBe(
+      true
+    )
     // Buchungsstapel header carries the WJ-Beginn 20260101 and date range.
     expect(firstLine).toContain('20260101')
     expect(firstLine).toContain('20260101;20261231')
+  })
+
+  it('pads the EXTF header line to exactly 31 fields', async () => {
+    await seedInvoice({
+      documentNumber: 'RE-2026-0001',
+      issueDate: '2026-03-15',
+      grossTotal: '119.00'
+    })
+    const csv = await exportDatevCsv({ from: '2026-01-01', to: '2026-12-31' })
+    const firstLine = csv.split('\r\n')[0]
+    // No field content contains semicolons, so a plain split is exact.
+    expect(firstLine.split(';').length).toBe(31)
+  })
+
+  it('emits 125 column-header fields and pads every row to 125 cells', async () => {
+    await seedInvoice({
+      documentNumber: 'RE-2026-0001',
+      issueDate: '2026-03-15',
+      grossTotal: '119.00'
+    })
+    await seedLedger({
+      direction: 'expense',
+      entryDate: '2026-03-16',
+      amountGross: '12.34',
+      description: 'Werkstattmaterial',
+      entryNumber: 'L-001'
+    })
+    const csv = await exportDatevCsv({ from: '2026-01-01', to: '2026-12-31' })
+    const lines = csv.split('\r\n').filter((l) => l.length > 0)
+    const columnHeader = lines[1]
+    expect(columnHeader.split(';').length).toBe(125)
+    // First fields carry the official DATEV names.
+    expect(columnHeader.startsWith('"Umsatz (ohne Soll/Haben-Kz)";')).toBe(true)
+    // Every data row must match the header width exactly.
+    const dataRows = lines.slice(2)
+    expect(dataRows.length).toBe(2)
+    for (const row of dataRows) {
+      expect(row.split(';').length).toBe(125)
+    }
   })
 
   it('emits one row per invoice that falls into the range', async () => {
@@ -107,6 +149,48 @@ describe('exportDatevCsv', () => {
     expect(lines.length).toBe(4)
     expect(csv).toContain('"RE-2026-0001"')
     expect(csv).toContain('"RE-2026-0002"')
+  })
+
+  it('exports only booked invoices: sent/paid/storno, never created/cancelled', async () => {
+    await seedInvoice({
+      documentNumber: 'RE-DRAFT',
+      issueDate: '2026-05-01',
+      grossTotal: '100.00',
+      status: 'created'
+    })
+    await seedInvoice({
+      documentNumber: 'RE-VOID',
+      issueDate: '2026-05-02',
+      grossTotal: '100.00',
+      status: 'cancelled'
+    })
+    await seedInvoice({
+      documentNumber: 'RE-SENT',
+      issueDate: '2026-05-03',
+      grossTotal: '100.00',
+      status: 'sent'
+    })
+    await seedInvoice({
+      documentNumber: 'RE-PAID',
+      issueDate: '2026-05-04',
+      grossTotal: '100.00',
+      status: 'paid'
+    })
+    await seedInvoice({
+      documentNumber: 'ST-1',
+      issueDate: '2026-05-05',
+      grossTotal: '-100.00',
+      status: 'storno'
+    })
+    const csv = await exportDatevCsv({ from: '2026-05-01', to: '2026-05-31' })
+    expect(csv).not.toContain('RE-DRAFT')
+    expect(csv).not.toContain('RE-VOID')
+    expect(csv).toContain('"RE-SENT"')
+    expect(csv).toContain('"RE-PAID"')
+    expect(csv).toContain('"ST-1"')
+    const lines = csv.split('\r\n').filter((l) => l.length > 0)
+    // header line + column-header line + 3 booked invoices = 5 lines
+    expect(lines.length).toBe(5)
   })
 
   it('emits one row per ledger entry in range', async () => {
@@ -161,8 +245,8 @@ describe('exportDatevCsv', () => {
     })
     const csv = await exportDatevCsv({ from: '2026-01-01', to: '2026-12-31' })
     expect(csv).toContain('"RE-IN-RANGE"')
-    expect(csv).not.toContain('"RE-TOO-EARLY"')
-    expect(csv).not.toContain('"RE-TOO-LATE"')
+    expect(csv).not.toContain('RE-TOO-EARLY')
+    expect(csv).not.toContain('RE-TOO-LATE')
     expect(csv).not.toContain('Außerhalb früh')
     expect(csv).not.toContain('Außerhalb spät')
   })
@@ -217,15 +301,14 @@ describe('exportDatevCsv', () => {
     expect(row.split(';')[9]).toBe('0703')
   })
 
-  it('writes a storno row as a positive Gegenbuchung (S/H swapped)', async () => {
-    // Storno-Beleg: gleicher Schlüsselbeleg-Aufbau wie eine reguläre
-    // Rechnung, aber `status='storno'` und negativer `grossTotal`. Der
-    // Export muss
-    //   - den Betrag positiv (Absolutwert) schreiben,
-    //   - das Soll/Haben-Kennzeichen von 'H' auf 'S' kippen,
-    //   - Konto + Gegenkonto vertauschen (Erlös-Konto landet in der
-    //     Gegenkonto-Spalte; Debitor-Konto landet in der Konto-Spalte),
-    //   - den Buchungstext mit "Storno" qualifizieren.
+  it('books a storno by flipping only the S/H indicator (no account swap)', async () => {
+    // A storno reverses the original posting. In the DATEV format that
+    // means: Konto and Gegenkonto stay exactly as on the original
+    // invoice and ONLY the Soll/Haben-Kennzeichen flips from 'H' to
+    // 'S'. Flipping S/H and swapping the accounts at the same time
+    // would negate twice and book the revenue a second time instead of
+    // reversing it. The amount is written as the absolute value (the
+    // storno `grossTotal` is negative in the data model).
     await seedInvoice({
       documentNumber: 'RE-2026-0001',
       issueDate: '2026-03-15',
@@ -242,20 +325,75 @@ describe('exportDatevCsv', () => {
     const regularRow = lines.find((l) => l.includes('"RE-2026-0001"')) ?? ''
     const stornoRow = lines.find((l) => l.includes('"S-1"')) ?? ''
     expect(stornoRow.length).toBeGreaterThan(0)
-    // Amount is positive (absolute).
-    const stornoCells = stornoRow.split(';')
-    expect(stornoCells[0]).toBe('119,00')
-    // Soll/Haben switched: reguläre Rechnung 'H', Storno 'S'.
-    expect(regularRow.split(';')[1]).toBe('"H"')
-    expect(stornoCells[1]).toBe('"S"')
-    // Konto + Gegenkonto vertauscht — vergleichen wir die beiden Rows
-    // direkt: das Konto des Storno ist das Gegenkonto der Rechnung.
     const regularCells = regularRow.split(';')
-    expect(stornoCells[6]).toBe(regularCells[7])
-    expect(stornoCells[7]).toBe(regularCells[6])
-    // Buchungstext erwähnt "Storno" damit der Steuerberater sofort
-    // erkennt, dass es sich um eine Korrektur handelt.
+    const stornoCells = stornoRow.split(';')
+    // Amount is positive (absolute).
+    expect(stornoCells[0]).toBe('119,00')
+    // Soll/Haben flipped: regular invoice 'H', storno 'S'.
+    expect(regularCells[1]).toBe('"H"')
+    expect(stornoCells[1]).toBe('"S"')
+    // Konto and Gegenkonto are IDENTICAL to the regular invoice.
+    expect(stornoCells[6]).toBe(regularCells[6])
+    expect(stornoCells[7]).toBe(regularCells[7])
+    // Buchungstext mentions "Storno" so the Steuerberater immediately
+    // sees this is a correction, not new revenue.
     expect(stornoRow).toContain('Storno')
+  })
+
+  it('sanitizes Buchungstext: no line breaks, no semicolons, max 60 chars', async () => {
+    const description =
+      'Zeile eins; mit Semikolon\r\nZeile zwei\n' + 'x'.repeat(80)
+    expect(description.length).toBeGreaterThan(100)
+    await seedLedger({
+      direction: 'expense',
+      entryDate: '2026-06-10',
+      amountGross: '42.00',
+      description,
+      entryNumber: 'L-100'
+    })
+    const csv = await exportDatevCsv({ from: '2026-06-01', to: '2026-06-30' })
+    const lines = csv.split('\r\n').filter((l) => l.length > 0)
+    // The multiline description must not have produced extra lines.
+    expect(lines.length).toBe(3)
+    const row = lines[2]
+    const cells = row.split(';')
+    // Row structure survives the hostile description intact.
+    expect(cells.length).toBe(125)
+    const text = cells[13]
+    expect(text.startsWith('"')).toBe(true)
+    expect(text.endsWith('"')).toBe(true)
+    const inner = text.slice(1, -1)
+    expect(inner.length).toBeLessThanOrEqual(60)
+    expect(inner).not.toContain(';')
+    expect(inner).not.toContain('\r')
+    expect(inner).not.toContain('\n')
+    expect(inner.startsWith('Zeile eins mit Semikolon Zeile zwei')).toBe(true)
+  })
+
+  it('sanitizes Belegfeld 1: allowed charset only, max 36 chars', async () => {
+    await seedLedger({
+      direction: 'expense',
+      entryDate: '2026-06-11',
+      amountGross: '10.00',
+      description: 'Charset',
+      entryNumber: 'RE 2026/0001#ÄÖÜ (Test) $%&*+-'
+    })
+    await seedLedger({
+      direction: 'expense',
+      entryDate: '2026-06-12',
+      amountGross: '11.00',
+      description: 'Laenge',
+      entryNumber: '1'.repeat(45)
+    })
+    const csv = await exportDatevCsv({ from: '2026-06-01', to: '2026-06-30' })
+    const lines = csv.split('\r\n')
+    const charsetRow = lines.find((l) => l.includes('"Charset"')) ?? ''
+    const lengthRow = lines.find((l) => l.includes('"Laenge"')) ?? ''
+    // Spaces, '#', umlauts and parentheses are dropped; letters,
+    // digits and $ % & * + - / survive.
+    expect(charsetRow.split(';')[10]).toBe('"RE2026/0001Test$%&*+-"')
+    // Overlong numbers are capped at 36 characters.
+    expect(lengthRow.split(';')[10]).toBe(`"${'1'.repeat(36)}"`)
   })
 
   it('handles umlauts (CP1252 byte mapping survives round-trip)', async () => {
