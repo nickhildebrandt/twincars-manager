@@ -78,6 +78,12 @@ committed). Use `pnpm install`, `pnpm <script>`, `pnpm exec <bin>`.
   REST endpoints, no `+page.server.ts` actions, no `+server.ts` handlers,
   no `use:enhance` shortcuts. The experimental flag is on
   (`kit.experimental.remoteFunctions = true`); we treat it as the default.
+  Documented `+server.ts` exceptions (third-party plumbing / external
+  consumers only): the better-auth catch-all (`/api/auth/[...all]`), the
+  Bearer-token public REST API (`/api/public/*`), and the eBay
+  marketplace-account-deletion compliance endpoint
+  (`/api/ebay/account-deletion` — eBay's servers call it directly with a
+  challenge handshake; configured via `EBAY_VERIFICATION_TOKEN`).
 - **No legacy load patterns.** Do not use `+layout.server.ts` /
   `+page.server.ts` to ship data into pages. Anything the server provides
   goes through a remote `query()`.

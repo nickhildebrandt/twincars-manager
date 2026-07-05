@@ -25,7 +25,23 @@
 tc.ts13.de {
 	encode zstd gzip
 	import security_headers
-	reverse_proxy localhost:3001
+
+	# eBay marketplace-account-deletion compliance endpoint. eBay's
+	# validator is only evidenced to work against the default HTTPS
+	# port (443) — the manager itself listens behind :5443 — so this
+	# one path is routed from the website vhost to the manager
+	# container. The manager's EBAY_DELETION_ENDPOINT_URL env must
+	# match this public URL exactly (the challenge hash includes the
+	# URL string).
+	handle /api/ebay/account-deletion* {
+		reverse_proxy localhost:3000 {
+			header_up X-Forwarded-Proto https
+		}
+	}
+
+	handle {
+		reverse_proxy localhost:3001
+	}
 }
 
 # Manager admin app on the same hostname, different port (same cert).

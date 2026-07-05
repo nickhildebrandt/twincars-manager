@@ -53,6 +53,10 @@ const PUBLIC_PREFIXES = [
   '/login',
   '/api/auth',
   '/api/public',
+  // eBay compliance endpoint — eBay's servers call it directly
+  // (challenge handshake + account-deletion notifications). Narrow on
+  // purpose: only this one path, not a whole /api/ebay namespace.
+  '/api/ebay/account-deletion',
   '/setup',
   '/_app',
   '/favicon'

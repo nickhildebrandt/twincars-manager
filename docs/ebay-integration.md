@@ -1,8 +1,80 @@
-# eBay Integration for Tires — Deferred Implementation Spec
+# eBay Integration for Tires — Implementation Spec
 
-**Status: NOT IMPLEMENTED.** Deferred by decision on 2026-06-22 until eBay
-developer credentials are available. This document is the build spec for a
-later work package. Nothing in the codebase implements any of this yet.
+**Status: IN PROGRESS (started 2026-06-23).** Production keyset exists
+(`NickHild-Twincars-PRD-…`). Phase 0 (marketplace-account-deletion
+compliance endpoint — the production-keyset activation gate) is
+implemented at `/api/ebay/account-deletion`. OAuth connect + sync are the
+next phases.
+
+## Phase 0 — Compliance / keyset activation (implemented)
+
+eBay blocks a new production keyset entirely ("Non Compliant", no API or
+OAuth calls possible) until the app either subscribes to **Marketplace
+Account Deletion notifications** or claims a no-data-persistence
+exemption. Because this app will persist users' OAuth tokens and listing
+data, the exemption does not apply — the endpoint is mandatory.
+
+Facts confirmed against official docs (2026-06):
+
+- Challenge: eBay sends `GET <endpoint>?challenge_code=…`; the response
+  must be `200`, `Content-Type: application/json`, body
+  `{"challengeResponse": hex(sha256(challengeCode + verificationToken +
+endpointURL))}` — concatenated in exactly that order, hex not base64,
+  no BOM.
+- Verification token: 32–80 chars, `[A-Za-z0-9_-]` only.
+- Notifications: `POST` JSON (`metadata.topic =
+MARKETPLACE_ACCOUNT_DELETION`, `notification.data.username/userId/
+eiasToken`), must be acknowledged immediately with 200/201/202/204.
+  24 h unacknowledged → endpoint marked down + alert email; 30 days
+  unfixed → developer non-compliant.
+- The registered URL must be HTTPS, no localhost/internal IP, no query
+  string; **only port 443 is evidenced to work** (docs are silent on
+  ports; community reports with custom ports failed). The OAuth
+  accept/decline URLs, by contrast, explicitly allow any SSL port
+  (eBay KB 612).
+- Signature validation of `X-EBAY-SIGNATURE` (ECDSA via Notification API
+  `getPublicKey`) is recommended but not the compliance gate — wire it
+  when the token store lands and real data deletion happens.
+
+Deployment shape: the manager listens behind `tc.ts13.de:5443`, so the
+endpoint is exposed on the **website vhost (port 443)** and routed to the
+manager container by Caddy (`handle /api/ebay/account-deletion*` →
+`localhost:3000`). Env on the manager:
+
+```
+EBAY_VERIFICATION_TOKEN=<32–80 chars, also entered in the portal>
+EBAY_DELETION_ENDPOINT_URL=https://tc.ts13.de/api/ebay/account-deletion
+```
+
+Portal steps (Alerts & Notifications → Production → Marketplace Account
+Deletion): enter alert email, the endpoint URL above, and the same
+verification token → Save. eBay fires the challenge immediately; on
+success the keyset becomes compliant/active.
+
+## Phase 1 — OAuth connect (next)
+
+Portal prerequisite: create the production **RuName** under Application
+Keys → "User Tokens" → "Get a Token from eBay via Your Application" →
+add a Redirect URL with display title, privacy-policy URL (public
+HTTPS), auth-accepted URL (`https://tc.ts13.de:5443/api/ebay/oauth/callback`
+— any SSL port allowed), auth-declined URL. Needed in env afterwards:
+`EBAY_CLIENT_ID`, `EBAY_CERT_ID` (client secret), `EBAY_RU_NAME`.
+
+Flow facts (confirmed 2026-06): consent URL
+`https://auth.ebay.com/oauth2/authorize?client_id=…&redirect_uri=<RuName>
+&response_type=code&scope=…&state=…&locale=de-DE`; the accepted URL
+receives `code` (single-use, ~5 min) + `state`. Token exchange: `POST
+https://api.ebay.com/identity/v1/oauth2/token` with
+`Basic base64(client_id:cert_id)`, `grant_type=authorization_code`.
+Access token 2 h; refresh token ~18 months (no new refresh token on
+refresh; auto-revoked if the seller changes username/password). Scope
+`https://api.ebay.com/oauth/api_scope/sell.inventory` covers the entire
+Inventory API read+write+publish surface.
+
+Note for the initial import: listings created outside the Inventory API
+(eBay web UI) are NOT returned by it — read them via the Trading API
+(`GetMyeBaySelling`, same user token in the `X-EBAY-API-IAF-TOKEN`
+header, no scopes) or migrate them with `bulkMigrateListing`.
 
 ## Goal
 
@@ -16,10 +88,17 @@ checkout/payment for the webshop.
 
 ## Scope
 
-- **In:** OAuth connect (skippable in setup, completable in settings),
-  one-time import of existing eBay listings, ongoing local→eBay sync of
-  tires (create/update/price/images/stock), reliable inventory sync,
-  surfacing the eBay offer URL on each tire for the website API.
+- **In:** OAuth connect (completable in settings), one-time import of
+  existing eBay listings, ongoing **bidirectional** sync of tires
+  (create/update/price/images/stock): local changes push to eBay, and
+  eBay-side changes (sales reducing quantity, edits, ended listings)
+  flow back — via Platform Notifications where available plus periodic
+  reconciliation polling (there is no in-process scheduler; polling is
+  operator-triggered / external-cron like the reminder jobs). Conflict
+  rule to be decided in the Phase-2 design (requirement updated
+  2026-06-23: user asked for two-way sync, superseding the earlier
+  "local is leading after import" simplification). Surfacing the eBay
+  offer URL on each tire for the website API.
 - **Out:** used-car eBay listing (future, separate), own checkout/payment,
   eBay Kleinanzeigen.
 
