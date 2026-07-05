@@ -194,36 +194,42 @@ describe('setup wizard', () => {
     expect(order).not.toContain('Import')
   })
 
-  it('shows the concrete validation error inline while the primary button is disabled', async () => {
+  it('shows no error on a pristine step; the first Weiter click surfaces it', async () => {
     const user = userEvent.setup()
     await renderWizard()
     await clickPrimary(user) // 1 → 2 (Firmendaten, pristine)
 
-    // The exact reason is shown — not just a greyed-out button.
+    // Pristine step 2: no nagging, button stays clickable.
+    expect(screen.queryByRole('alert')).toBeNull()
+    const weiter = screen.getByRole('button', { name: /^Weiter/i })
+    expect(weiter).not.toBeDisabled()
+
+    // First submit attempt surfaces the concrete reason…
+    await user.click(weiter)
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent('Bitte Firmenname eingeben.')
-    expect(screen.getByRole('button', { name: /^Weiter/i })).toBeDisabled()
 
-    // It updates live as the user fixes fields (next missing field).
+    // …and it live-updates to the next missing field while typing.
     await fillByLabel(user, 'Firmenname', 'TwinCars GmbH')
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Bitte Straße eingeben.'
     )
   })
 
-  it('flags a space in the admin username with a concrete error (regression)', async () => {
+  it('flags a space in the admin username after the first submit attempt (regression)', async () => {
     const user = userEvent.setup()
     await renderWizard()
     await advanceToAdmin(user)
     await fillByLabel(user, 'Benutzername', 'mein admin')
+    // No feedback before the first submit attempt on this step.
+    expect(screen.queryByRole('alert')).toBeNull()
+    await user.click(screen.getByRole('button', { name: /Konto anlegen/i }))
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/keine Leerzeichen/i)
-    expect(
-      screen.getByRole('button', { name: /Konto anlegen/i })
-    ).toBeDisabled()
+    expect(createInitialAdminMock).not.toHaveBeenCalled()
   })
 
-  it('keeps the Administrator step primary action disabled until all four fields are valid, then calls createInitialAdmin', async () => {
+  it('blocks invalid Administrator submits and calls createInitialAdmin once valid', async () => {
     const user = userEvent.setup()
     await renderWizard()
     await advanceToAdmin(user)
@@ -235,13 +241,16 @@ describe('setup wizard', () => {
     const submit = screen.getByRole('button', {
       name: /Konto anlegen/i
     }) as HTMLButtonElement
-    expect(submit).toBeDisabled()
+    // Clickable while invalid — the click surfaces the error instead.
+    expect(submit).not.toBeDisabled()
+    await user.click(submit)
+    expect(await screen.findByRole('alert')).toBeInTheDocument()
+    expect(createInitialAdminMock).not.toHaveBeenCalled()
 
     await fillByLabel(user, 'Benutzername', 'admin')
     await fillByLabel(user, 'Anzeigename', 'Administrator')
     await fillByLabel(user, 'Passwort \\*', 'longenoughpw')
     await fillByLabel(user, 'Passwort wiederholen', 'longenoughpw')
-    expect(submit).not.toBeDisabled()
     await user.click(submit)
 
     expect(createInitialAdminMock).toHaveBeenCalledWith({

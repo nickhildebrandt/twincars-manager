@@ -1046,6 +1046,10 @@ export const accessImportJobs = pgTable('access_import_jobs', {
     .defaultNow(),
   finishedAt: timestamp('finished_at', { withTimezone: true }),
   status: varchar('status', { length: 20 }).notNull().default('running'),
+  /** 0–100, updated live during the run so the UI can poll a bar. */
+  progress: integer('progress').notNull().default(0),
+  /** Short German label of the current step ("PDFs erzeugen …"). */
+  progressLabel: varchar('progress_label', { length: 200 }),
   tablesProcessed: integer('tables_processed').notNull().default(0),
   rowsImported: integer('rows_imported').notNull().default(0),
   rowsSkipped: integer('rows_skipped').notNull().default(0),

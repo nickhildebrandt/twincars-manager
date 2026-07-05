@@ -1,7 +1,7 @@
 <script lang="ts">
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
-  import { runMdbImportRemote } from './import.remote'
+  import { runMdbImportRemote, getImportProgressRemote } from './import.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { busy } from '$lib/stores/busy.svelte'
   import { toast } from '$lib/stores/toast.svelte'
@@ -14,6 +14,43 @@
   let confirmOpen = $state(false)
   let resultOpen = $state(false)
   let summary = $state<Summary | null>(null)
+
+  /**
+   * Live progress of a running (real) import. The command call blocks
+   * until the import finishes, so a poller reads the job row the
+   * server updates step by step (percent + German step label). Dry
+   * runs are quick and create no job row — no bar for them.
+   */
+  let liveProgress = $state<{ pct: number; label: string } | null>(null)
+  let pollTimer: ReturnType<typeof setInterval> | null = null
+
+  const startProgressPolling = () => {
+    const startedAtClient = Date.now()
+    liveProgress = { pct: 0, label: 'Import wird gestartet …' }
+    pollTimer = setInterval(async () => {
+      try {
+        const q = getImportProgressRemote()
+        await q.refresh()
+        const job = q.current ?? (await q)
+        if (!job) return
+        // Only trust jobs started after this click (stale rows from
+        // earlier runs would otherwise flash 100 %).
+        if (new Date(job.startedAt).getTime() < startedAtClient - 60_000) return
+        liveProgress = {
+          pct: job.progress,
+          label: job.progressLabel ?? 'Import läuft …'
+        }
+      } catch {
+        // Transient polling errors are irrelevant — next tick retries.
+      }
+    }, 1000)
+  }
+  const stopProgressPolling = () => {
+    if (pollTimer) clearInterval(pollTimer)
+    pollTimer = null
+    liveProgress = null
+  }
+  $effect(() => () => stopProgressPolling())
 
   const onPicked = (e: Event) => {
     const f = (e.target as HTMLInputElement).files?.[0]
@@ -44,6 +81,7 @@
     confirmOpen = false
     try {
       const dataUrl = await readAsDataUrl(pickedFile)
+      if (!dryRun) startProgressPolling()
       const res = await busy.run(() =>
         runMdbImportRemote({ fileBase64: dataUrl, dryRun })
       )
@@ -58,6 +96,8 @@
         err,
         dryRun ? 'Vorschau fehlgeschlagen' : 'Import fehlgeschlagen'
       )
+    } finally {
+      stopProgressPolling()
     }
   }
 
@@ -112,6 +152,24 @@
           <span class="text-base-content/60">
             ({(pickedFile.size / (1024 * 1024)).toFixed(1)} MB)
           </span>
+        </div>
+      {/if}
+
+      {#if liveProgress}
+        <div
+          class="border-base-300 bg-base-200 rounded border p-4"
+          role="status"
+          aria-live="polite"
+        >
+          <div class="mb-2 flex items-center justify-between text-sm">
+            <span class="font-medium">{liveProgress.label}</span>
+            <span class="font-mono">{Math.round(liveProgress.pct)} %</span>
+          </div>
+          <progress
+            class="progress progress-primary w-full"
+            value={liveProgress.pct}
+            max="100"
+          ></progress>
         </div>
       {/if}
 

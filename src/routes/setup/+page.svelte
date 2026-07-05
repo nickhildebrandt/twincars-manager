@@ -199,12 +199,17 @@
   }
 
   /**
-   * Whether the step the user is currently looking at is complete enough
-   * to enable the primary action. Used to gate "Weiter" / "Setup
-   * abschließen". The previous-buttons are not gated.
+   * Validation UX: a pristine step never shows errors and never greys
+   * the primary action — only after the user first presses "Weiter" on
+   * that step is its error shown (and it then live-updates while they
+   * fix the fields). Per-step tracking so going back to an already
+   * attempted step keeps its feedback.
    */
+  let attemptedSteps = $state<number[]>([])
   const currentError = $derived(validateStep(step))
-  const stepValid = $derived(currentError === null)
+  const showError = $derived(
+    attemptedSteps.includes(step) && currentError !== null
+  )
 
   /**
    * Persist data that belongs to the step that's being left. Each block
@@ -282,11 +287,12 @@
   }
 
   const next = async () => {
-    const err = validateStep(step)
-    if (err) {
-      toast.error(err)
-      return
+    // First submit attempt on this step: from now on its validation
+    // error is shown inline (and live-updates while the user types).
+    if (!attemptedSteps.includes(step)) {
+      attemptedSteps = [...attemptedSteps, step]
     }
+    if (validateStep(step) !== null) return
     const ok = await persistLeavingStep(step)
     if (!ok) return
     step = Math.min(totalSteps, step + 1)
@@ -1079,12 +1085,14 @@
         {/if}
 
         <!--
-          Inline validation feedback: whenever the step is incomplete /
-          invalid the primary button is disabled AND the exact reason is
-          shown here, live, so the user never faces a greyed-out button
-          without knowing why (e.g. a space in the admin username).
+          Inline validation feedback: shown only after the user first
+          pressed "Weiter" on this step — a pristine form never nags.
+          From the first attempt on, the exact reason live-updates while
+          the user fixes the fields (e.g. a space in the admin
+          username). The primary button stays clickable so pressing it
+          is what surfaces the feedback.
         -->
-        {#if currentError && !busy.active}
+        {#if showError && !busy.active}
           <div class="alert alert-error mt-4 py-2 text-sm" role="alert">
             <span>{currentError}</span>
           </div>
@@ -1102,7 +1110,7 @@
             <button
               class="btn btn-primary"
               onclick={next}
-              disabled={busy.active || !stepValid}
+              disabled={busy.active}
             >
               {#if busy.active}
                 <span class="loading loading-spinner loading-sm"></span>

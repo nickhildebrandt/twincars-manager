@@ -1,5 +1,4 @@
 <script lang="ts">
-  import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import { authClient } from '$lib/client/auth-client'
   import { busy } from '$lib/stores/busy.svelte'
@@ -67,7 +66,17 @@
             'Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.'
           return
         }
-        await goto(redirectTo, { invalidateAll: true, replaceState: true })
+        // FULL document load, not a client-side goto: the async root
+        // layout resolved its user/permission context while anonymous;
+        // a client navigation keeps that stale state (empty sidebar,
+        // "half-rendered" app until a manual reload). A document load
+        // re-runs the layout server-side with the fresh session.
+        // Open-redirect guard: only same-origin path targets.
+        const target =
+          redirectTo.startsWith('/') && !redirectTo.startsWith('//')
+            ? redirectTo
+            : '/'
+        window.location.href = target
       })
     } catch (err) {
       handleClientError(err, 'Anmeldung fehlgeschlagen.')

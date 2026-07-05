@@ -465,7 +465,7 @@ async function runImport(
   // wipe, no inserts, no PDF rendering — the DB is left untouched and the
   // returned counts/skip report show exactly what a real run WOULD do.
   if (dryRun) {
-    await runImportSteps(mdbPath, summary, recordSkip, true)
+    await runImportSteps(mdbPath, summary, recordSkip, true, async () => {})
     return summary
   }
 
@@ -474,11 +474,24 @@ async function runImport(
   // mid-run failure. (§15: the import must never fail silently.)
   const [job] = await db
     .insert(accessImportJobs)
-    .values({ status: 'running' })
+    .values({ status: 'running', progressLabel: 'Datei wird gelesen …' })
     .returning({ id: accessImportJobs.id })
 
+  // Live progress for the UI's polling bar. Writes are throttled to
+  // actual percentage changes so the PDF loop doesn't hammer the DB.
+  let lastPct = -1
+  const onProgress = async (pct: number, label: string): Promise<void> => {
+    const clamped = Math.max(0, Math.min(99, Math.round(pct)))
+    if (clamped === lastPct) return
+    lastPct = clamped
+    await db
+      .update(accessImportJobs)
+      .set({ progress: clamped, progressLabel: label })
+      .where(eq(accessImportJobs.id, job.id))
+  }
+
   try {
-    await runImportSteps(mdbPath, summary, recordSkip, false)
+    await runImportSteps(mdbPath, summary, recordSkip, false, onProgress)
   } catch (err) {
     await db
       .update(accessImportJobs)
@@ -510,6 +523,8 @@ async function runImport(
     .set({
       status: 'completed',
       finishedAt: new Date(),
+      progress: 100,
+      progressLabel: 'Abgeschlossen',
       tablesProcessed: 13,
       rowsImported,
       rowsSkipped: summary.skippedTotal,
@@ -523,7 +538,8 @@ async function runImportSteps(
   mdbPath: string,
   summary: ImportSummary,
   recordSkip: (table: string, legacyKey: string | null, reason: string) => void,
-  dryRun: boolean
+  dryRun: boolean,
+  onProgress: (pct: number, label: string) => Promise<void>
 ): Promise<void> {
   // All persistence flows through this closure so a dry run computes the
   // same row arrays (and therefore the same counts + skip report) without
@@ -570,7 +586,9 @@ async function runImportSteps(
 
   // 2. Erst jetzt wipen — alle Tabellen sind erfolgreich gelesen, die MDB
   //    ist also gültig. Im Dry-Run wird nie gewipt.
+  await onProgress(10, 'Tabellen gelesen')
   if (!dryRun) await wipeData()
+  await onProgress(12, 'Alte Daten geleert')
 
   /* — 3. Kunden — */
   type CustomerInsert = typeof customers.$inferInsert
@@ -623,6 +641,7 @@ async function runImportSteps(
     await db.insert(customers).values(chunk)
   })
   summary.customers = customerRows.length
+  await onProgress(16, 'Kunden importiert')
 
   /* — 4. Fahrzeuge (Autos) — alle als Kunden-Fahrzeuge — */
   type VehicleInsert = typeof vehicles.$inferInsert
@@ -689,6 +708,7 @@ async function runImportSteps(
     await db.insert(vehicleLicensePlateVersions).values(chunk)
   })
   summary.vehicles = vehicleRows.length
+  await onProgress(20, 'Fahrzeuge importiert')
 
   /* — 5. Lieferanten — */
   type SupplierInsert = typeof suppliers.$inferInsert
@@ -725,6 +745,7 @@ async function runImportSteps(
     await db.insert(suppliers).values(chunk)
   })
   summary.suppliers = supplierRows.length
+  await onProgress(22, 'Lieferanten importiert')
 
   /* — 6. Artikel + Preisversionen — */
   type ItemInsert = typeof items.$inferInsert
@@ -767,6 +788,7 @@ async function runImportSteps(
     await db.insert(itemPriceVersions).values(chunk)
   })
   summary.items = itemRows.length
+  await onProgress(26, 'Artikel importiert')
 
   /* — 7. Rechnungen — */
   type DocInsert = typeof documents.$inferInsert
@@ -857,13 +879,19 @@ async function runImportSteps(
           .join(' ') || null
     })
   }
-  await insertRows(invoiceDocRows, async (chunk) => {
-    await db.insert(documents).values(chunk)
-  })
+  // NOTE: invoice document rows are inserted AFTER the line items are
+  // parsed (below) — ~73 % of legacy invoices carry NO header total
+  // (`RgGesamtbetrag` empty/0) and the real amount only exists in the
+  // line items, so zero-total headers are backfilled from the line
+  // sums first. Line items themselves are inserted after the documents
+  // (FK on document_id).
   summary.invoices = invoiceDocRows.length
 
   /* — 8. Rechnungs-Positionen — */
   const invoiceItemRows: DocItemInsert[] = []
+  /** Per-document line sums for backfilling zero-total headers. */
+  const lineNetByDoc = new Map<string, number>()
+  const lineGrossByDoc = new Map<string, number>()
   // pos pro documentId aufzählen — Legacy `pos` ist global, wir wollen 1..n je Beleg.
   const posCounters = new Map<string, number>()
   for (const d of rechnungDetails) {
@@ -920,11 +948,36 @@ async function runImportSteps(
       lineTotalNet: String(lineNet),
       lineTotalGross: String(lineGross)
     })
+    lineNetByDoc.set(documentId, (lineNetByDoc.get(documentId) ?? 0) + lineNet)
+    lineGrossByDoc.set(
+      documentId,
+      (lineGrossByDoc.get(documentId) ?? 0) + lineGross
+    )
   }
+
+  // Backfill: legacy invoices without a header total get their document
+  // totals from the summed line items — otherwise 73 % of imported
+  // invoices would read 0,00 €. Header totals that ARE present win.
+  for (const row of invoiceDocRows) {
+    if (Number(row.grossTotal) !== 0) continue
+    const net = lineNetByDoc.get(row.id as string)
+    if (net == null || net === 0) continue
+    const gross = lineGrossByDoc.get(row.id as string) ?? net
+    const netR = Math.round(net * 100) / 100
+    const grossR = Math.round(gross * 100) / 100
+    row.netTotal = String(netR)
+    row.grossTotal = String(grossR)
+    row.taxTotal = String(Math.round((grossR - netR) * 100) / 100)
+  }
+
+  await insertRows(invoiceDocRows, async (chunk) => {
+    await db.insert(documents).values(chunk)
+  })
   await insertRows(invoiceItemRows, async (chunk) => {
     await db.insert(documentItems).values(chunk)
   })
   summary.invoiceItems = invoiceItemRows.length
+  await onProgress(34, 'Rechnungen importiert')
 
   /* — 9. Teilzahlungen — Spaltennamen aus dem MDB-Export sind
        `RGNR` / `Betrag` / `Bezahldatum` / `BezahlArt` (mit
@@ -972,6 +1025,7 @@ async function runImportSteps(
     await db.insert(documentPayments).values(chunk)
   })
   summary.invoicePayments = paymentRows.length
+  await onProgress(36, 'Zahlungen importiert')
 
   /* — 10. Angebote (Offer / KV / AB) — */
   const offerIdByLegacyNr = new Map<string, string>()
@@ -1031,14 +1085,16 @@ async function runImportSteps(
           .join(' ') || null
     })
   }
-  await insertRows(offerDocRows, async (chunk) => {
-    await db.insert(documents).values(chunk)
-  })
+  // Offer document rows are inserted after their line items are parsed
+  // (same zero-header backfill as invoices — a share of legacy offers
+  // carries no `AgGesamtbetrag` and the amount only exists in lines).
   summary.offers = offerDocRows.length
 
   /* — 11. Angebot-Positionen — */
   const offerItemRows: DocItemInsert[] = []
   const offerPosCounters = new Map<string, number>()
+  const offerLineNetByDoc = new Map<string, number>()
+  const offerLineGrossByDoc = new Map<string, number>()
 
   // Positionen ohne (auflösbare) Angebotsnummer werden NICHT verworfen —
   // sie werden unter einem einzigen generierten „Sammel-Angebot"
@@ -1112,6 +1168,15 @@ async function runImportSteps(
     if (documentId === orphanOfferId) {
       orphanNet = Math.round((orphanNet + lineNet) * 100) / 100
       orphanGross = Math.round((orphanGross + lineGross) * 100) / 100
+    } else {
+      offerLineNetByDoc.set(
+        documentId,
+        (offerLineNetByDoc.get(documentId) ?? 0) + lineNet
+      )
+      offerLineGrossByDoc.set(
+        documentId,
+        (offerLineGrossByDoc.get(documentId) ?? 0) + lineGross
+      )
     }
     offerItemRows.push({
       id: crypto.randomUUID(),
@@ -1130,6 +1195,23 @@ async function runImportSteps(
       lineTotalGross: String(lineGross)
     })
   }
+  // Zero-header backfill für Angebote (Header-Summen gewinnen, wenn
+  // vorhanden), dann Dokumente VOR ihren Positionen einfügen (FK).
+  for (const row of offerDocRows) {
+    if (Number(row.grossTotal) !== 0) continue
+    const net = offerLineNetByDoc.get(row.id as string)
+    if (net == null || net === 0) continue
+    const gross = offerLineGrossByDoc.get(row.id as string) ?? net
+    const netR = Math.round(net * 100) / 100
+    const grossR = Math.round(gross * 100) / 100
+    row.netTotal = String(netR)
+    row.grossTotal = String(grossR)
+    row.taxTotal = String(Math.round((grossR - netR) * 100) / 100)
+  }
+  await insertRows(offerDocRows, async (chunk) => {
+    await db.insert(documents).values(chunk)
+  })
+
   // Sammel-Angebot (falls Waisen-Positionen existieren) VOR seinen
   // Positionen einfügen — die Positionen referenzieren es per FK.
   if (orphanOfferRows.length > 0) {
@@ -1147,6 +1229,7 @@ async function runImportSteps(
     await db.insert(documentItems).values(chunk)
   })
   summary.offerItems = offerItemRows.length
+  await onProgress(40, 'Angebote importiert')
 
   /* — 12. Zahlungserinnerungen (Legacy: „Mahnungen") — */
   type ReminderInsert = typeof reminders.$inferInsert
@@ -1196,6 +1279,7 @@ async function runImportSteps(
     await db.insert(reminders).values(chunk)
   })
   summary.reminders = reminderRows.length
+  await onProgress(42, 'Mahnungen importiert')
 
   /* — 12b. Reifeneinlagerungen (Legacy: „reifenlager") —
    *
@@ -1297,6 +1381,7 @@ async function runImportSteps(
     await db.insert(tireStorage).values(chunk)
   })
   summary.tireStorage = tireStorageRows.length
+  await onProgress(44, 'Reifenlager importiert')
 
   /* — 12c. Mitarbeiter — */
   type EmployeeInsert = typeof employees.$inferInsert
@@ -1316,6 +1401,7 @@ async function runImportSteps(
     await db.insert(employees).values(chunk)
   })
   summary.employees = employeeRows.length
+  await onProgress(46, 'Mitarbeiter importiert')
 
   /* — 12d. Termine → Kalendereinträge (kind=appointment) —
    *
@@ -1385,6 +1471,7 @@ async function runImportSteps(
     await db.insert(calendarEntries).values(chunk)
   })
   summary.appointments = calendarRows.length
+  await onProgress(48, 'Termine importiert')
 
   /* — 13. Number-Ranges auf Legacy-Max+1 setzen — */
   const maxCustomer = customerRows.reduce(
@@ -1444,6 +1531,21 @@ async function runImportSteps(
   const { renderAndPersistDocumentPdf, renderAndPersistReminderPdf } =
     await import('./pdf-service')
 
+  // The PDF pre-render dominates the wall-clock time of a large import,
+  // so the 50–99 % progress band is mapped proportionally onto it.
+  // `onProgress` throttles to whole-percent changes, so calling it per
+  // finished PDF costs at most ~50 DB writes for the whole band.
+  const totalPdf = allDocIds.length + reminderRows.length
+  let donePdf = 0
+  const pdfTick = async (): Promise<void> => {
+    donePdf += 1
+    await onProgress(
+      50 + (totalPdf > 0 ? (donePdf / totalPdf) * 49 : 49),
+      `PDFs erzeugen (${donePdf}/${totalPdf}) …`
+    )
+  }
+  await onProgress(50, `PDFs erzeugen (0/${totalPdf}) …`)
+
   const PARALLEL = 8
   let cursor = 0
   const work = async () => {
@@ -1456,6 +1558,7 @@ async function runImportSteps(
         summary.skipped.pdfRenders += 1
         console.error('[import] PDF-Render fehlgeschlagen', allDocIds[idx], err)
       }
+      await pdfTick()
     }
   }
   await Promise.all(Array.from({ length: PARALLEL }, work))
@@ -1468,5 +1571,6 @@ async function runImportSteps(
       summary.skipped.pdfRenders += 1
       console.error('[import] Mahnungs-PDF-Render fehlgeschlagen', r.id, err)
     }
+    await pdfTick()
   }
 }

@@ -1,7 +1,10 @@
-import { command } from '$app/server'
+import { command, query } from '$app/server'
 import { error } from '@sveltejs/kit'
 import { boolean, maxLength, object, optional, pipe, string } from 'valibot'
+import { desc } from 'drizzle-orm'
 import { requirePermission } from '$lib/server/auth-guards'
+import { db } from '$lib/server/db/client'
+import { accessImportJobs } from '$lib/server/db/schema'
 import { importMdb } from '$lib/server/services/import-service'
 
 /**
@@ -43,3 +46,29 @@ export const runMdbImportRemote = command(
     return importMdb(buffer, { dryRun: dryRun ?? false })
   }
 )
+
+/**
+ * Live status of the newest import job — polled by the import page
+ * while the (long-running) import command is in flight so the UI can
+ * render a percentage bar plus the current step label. Dry runs create
+ * no job row and therefore never appear here.
+ *
+ * @group integration
+ * @module import
+ */
+export const getImportProgressRemote = query(async () => {
+  requirePermission('import')
+  const [job] = await db
+    .select({
+      id: accessImportJobs.id,
+      status: accessImportJobs.status,
+      progress: accessImportJobs.progress,
+      progressLabel: accessImportJobs.progressLabel,
+      startedAt: accessImportJobs.startedAt,
+      finishedAt: accessImportJobs.finishedAt
+    })
+    .from(accessImportJobs)
+    .orderBy(desc(accessImportJobs.startedAt))
+    .limit(1)
+  return job ?? null
+})

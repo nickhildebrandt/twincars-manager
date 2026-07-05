@@ -49,6 +49,8 @@ vi.mock('node:child_process', async (importOriginal) => {
 import { db } from '$lib/server/db/client'
 import {
   customers,
+  documentItems,
+  documents,
   items,
   vehicleLicensePlateVersions,
   vehicles
@@ -218,6 +220,8 @@ describe('import-service · full pipeline (mocked mdb-export)', () => {
     csvByTable = {}
     // The real run wipes before inserting; the dry run does not. Clear
     // FK-safe so back-to-back tests start from an empty business set.
+    await db.delete(documentItems)
+    await db.delete(documents)
     await db.delete(vehicleLicensePlateVersions)
     await db.delete(vehicles)
     await db.delete(items)
@@ -278,6 +282,64 @@ describe('import-service · full pipeline (mocked mdb-export)', () => {
     const itemRows = await db.select().from(items)
     expect(itemRows).toHaveLength(1)
     expect(itemRows[0].kind).toBe('service')
+  })
+
+  it('backfills zero-header invoice totals from the line items (73% of legacy rows)', async () => {
+    csvByTable = {
+      Kunden: ['Kunden-Nr;Firma', '1001;Müller GmbH'].join('\n'),
+      Rechnungen: [
+        'Rechnungsnummer;Kunden-Nr;Rechnungsdatum;MWSteuer;Inkl;RgGesamtbetrag;Status;Bezahldatum',
+        // Header total PRESENT → header wins, even with items.
+        '20080001;1001;2008-08-29 00:00:00;19;0;100;Bezahlt;2008-08-29 00:00:00',
+        // Header total EMPTY → totals must come from the line items.
+        '20080002;1001;2008-09-05 00:00:00;19;0;0;Bezahlt;2008-09-05 00:00:00'
+      ].join('\n'),
+      RechnungDetails: [
+        'pos;Rechnungsnummer;Artikel-Nr;Anzahl;Einzelpreis;Mengeneinheit;Artikelbeschreibung;Art;Artikelnummer;Rabatt',
+        // Belongs to the header-total invoice — must NOT override it.
+        '1;20080001;0;1;42;Stk;Egal;Material;;',
+        // Zero-header invoice: 2×10 net + 1×30 with 10% Rabatt = 47 net.
+        '1;20080002;0;2;10;Stk;Öl;Material;;',
+        '2;20080002;0;1;30;Stk;Filter;Material;;10'
+      ].join('\n')
+    }
+    const summary = await importMdb(Buffer.from('fake-mdb'))
+    expect(summary.invoices).toBe(2)
+    expect(summary.invoiceItems).toBe(3)
+
+    const docs = await db.select().from(documents)
+    const withHeader = docs.find((d) => d.documentNumber === '20080001')!
+    const zeroHeader = docs.find((d) => d.documentNumber === '20080002')!
+
+    // Header total wins (net=100, 19% → gross 119) despite the 42€ line.
+    expect(Number(withHeader.netTotal)).toBe(100)
+    expect(Number(withHeader.grossTotal)).toBe(119)
+
+    // Zero header → derived: net 47, gross 2×10×1.19 + 27×1.19 = 55.93.
+    expect(Number(zeroHeader.netTotal)).toBe(47)
+    expect(Number(zeroHeader.grossTotal)).toBeCloseTo(55.93, 2)
+    expect(Number(zeroHeader.taxTotal)).toBeCloseTo(8.93, 2)
+  })
+
+  it('backfills zero-header offer totals from the line items', async () => {
+    csvByTable = {
+      Kunden: ['Kunden-Nr;Firma', '1001;Müller GmbH'].join('\n'),
+      Angebote: [
+        'Angebotsnummer;Kunden-Nr;Angebotsdatum;MWSteuer;Inkl;AgGesamtbetrag;Status;Formulartyp',
+        '5001;1001;2009-01-10 00:00:00;19;0;0;;Angebot'
+      ].join('\n'),
+      AngebotDetails: [
+        'pos;Angebotsnummer;Artikel-Nr;Anzahl;Einzelpreis;Mengeneinheit;Artikelbeschreibung;Art;Artikelnummer;Rabatt',
+        '1;5001;0;4;25;Stk;Reifen;Material;;'
+      ].join('\n')
+    }
+    const summary = await importMdb(Buffer.from('fake-mdb'))
+    expect(summary.offers).toBe(1)
+
+    const [offer] = await db.select().from(documents)
+    expect(offer.type).toBe('offer')
+    expect(Number(offer.netTotal)).toBe(100)
+    expect(Number(offer.grossTotal)).toBe(119)
   })
 
   it('dry run computes the same counts but writes nothing', async () => {

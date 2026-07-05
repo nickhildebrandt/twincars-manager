@@ -100,7 +100,10 @@
     try {
       await busy.run(async () => {
         await authClient.signOut()
-        await goto('/login', { invalidateAll: true, replaceState: true })
+        // Full document load (mirror of the login flow): drops the
+        // authenticated layout state entirely instead of leaving a
+        // stale shell behind a client-side navigation.
+        window.location.href = '/login'
       })
     } catch (err) {
       handleClientError(err, 'Abmeldung fehlgeschlagen.')
@@ -124,10 +127,7 @@
           // Network outage: still surface the login screen so the
           // workstation isn't left with privileged UI on screen.
         }
-        await goto('/login?reason=idle', {
-          invalidateAll: true,
-          replaceState: true
-        })
+        window.location.href = '/login?reason=idle'
       }
     })
   })
