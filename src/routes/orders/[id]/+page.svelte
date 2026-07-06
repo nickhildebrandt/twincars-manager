@@ -86,9 +86,9 @@
         )
       : '-'
 
-  /** Planned placement: date plus optional `HH:MM` start time. */
+  /** Planned placement: date plus optional "ab HH:MM Uhr" start time. */
   const fmtScheduled = (dateIso: string | null, time: string | null): string =>
-    dateIso ? `${fmtDate(dateIso)}${time ? `, ${time} Uhr` : ''}` : '-'
+    dateIso ? `${fmtDate(dateIso)}${time ? ` ab ${time} Uhr` : ''}` : '-'
 
   const fmtAmount = (v: string | number | null): string =>
     Number(v ?? 0).toLocaleString('de-DE', {
@@ -327,14 +327,28 @@
   let completeOpen = $state(false)
   let issueDate = $state(todayIso())
   let paymentMethod = $state<'' | PaymentMethod>('')
+  let completeError = $state<string | null>(null)
 
+  /** Rule 1.1: the button is always clickable — validate on click. */
   const openCompleteDialog = () => {
+    if (items.length === 0) {
+      toast.error(
+        'Bitte mindestens eine Position erfassen, bevor der Auftrag abgerechnet wird.'
+      )
+      return
+    }
     issueDate = todayIso()
     paymentMethod = ''
+    completeError = null
     completeOpen = true
   }
 
   const complete = async () => {
+    if (!issueDate) {
+      completeError = 'Bitte ein Rechnungsdatum angeben.'
+      return
+    }
+    completeError = null
     try {
       const result = await busy.run(() =>
         completeWorkOrderRemote({
@@ -833,7 +847,7 @@
             type="button"
             class="btn btn-primary"
             onclick={openCompleteDialog}
-            disabled={busy.active || items.length === 0}
+            disabled={busy.active}
           >
             <Receipt size={16} />
             Abschließen &amp; Rechnung erstellen
@@ -853,6 +867,11 @@
         {items.length === 1 ? 'Position' : 'Positionen'} wird die Rechnung erstellt.
         Der Auftrag wird danach schreibgeschützt.
       </p>
+      {#if completeError}
+        <div class="alert alert-error mb-3">
+          <span>{completeError}</span>
+        </div>
+      {/if}
       <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Rechnungsdatum *</span>
@@ -888,7 +907,7 @@
           type="button"
           class="btn btn-primary"
           onclick={complete}
-          disabled={busy.active || !issueDate}
+          disabled={busy.active}
         >
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>

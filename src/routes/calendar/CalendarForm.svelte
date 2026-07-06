@@ -25,6 +25,7 @@
 
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte'
+  import { goto } from '$app/navigation'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
@@ -32,6 +33,7 @@
   import { pickEmployeesRemote } from '../pickers.remote'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { creationFlow, currentUrl } from '$lib/stores/creation-flow.svelte'
 
   /**
    * Shared calendar-entry form used by `/calendar/new` and
@@ -138,23 +140,111 @@
     }
   })
 
-  let kind = $state<'appointment' | 'closure'>(init.kind)
-  let title = $state(init.title)
-  let allDay = $state(init.allDay)
-  let startsAt = $state(init.startsAt)
-  let endsAt = $state(init.endsAt)
-  let dateFrom = $state(init.dateFrom)
-  let dateTo = $state(init.dateTo)
-  let status = $state(init.status)
-  let customerId = $state(init.customerId)
-  let customerLabel = $state(init.customerLabel)
-  let vehicleId = $state(init.vehicleId)
-  let vehicleLabel = $state(init.vehicleLabel)
-  let employeeId = $state(init.employeeId)
-  let employeeLabel = $state(init.employeeLabel)
-  let notes = $state(init.notes)
+  /**
+   * JSON-serializable snapshot of every form field — pushed into the
+   * creation-flow store when the user jumps to a full-page create and
+   * restored (below) when they come back. `returnUrl` distinguishes
+   * `/calendar/new` from `/calendar/[id]/edit`, so both pages share
+   * this host wiring.
+   */
+  type Draft = {
+    kind: 'appointment' | 'closure'
+    title: string
+    allDay: boolean
+    startsAt: string
+    endsAt: string
+    dateFrom: string
+    dateTo: string
+    status: 'scheduled' | 'completed' | 'cancelled'
+    customerId: string
+    customerLabel: string
+    vehicleId: string
+    vehicleLabel: string
+    employeeId: string
+    employeeLabel: string
+    notes: string
+  }
+
+  // Returning from a full-page create? Consume the pending return for
+  // THIS page exactly once — its draft wins over `initial`.
+  const pending = untrack(() => creationFlow.pendingReturnFor(currentUrl()))
+  const draft = (pending?.draft ?? null) as Draft | null
+
+  let kind = $state<'appointment' | 'closure'>(draft?.kind ?? init.kind)
+  let title = $state(draft?.title ?? init.title)
+  let allDay = $state(draft?.allDay ?? init.allDay)
+  let startsAt = $state(draft?.startsAt ?? init.startsAt)
+  let endsAt = $state(draft?.endsAt ?? init.endsAt)
+  let dateFrom = $state(draft?.dateFrom ?? init.dateFrom)
+  let dateTo = $state(draft?.dateTo ?? init.dateTo)
+  let status = $state(draft?.status ?? init.status)
+  let customerId = $state(draft?.customerId ?? init.customerId)
+  let customerLabel = $state(draft?.customerLabel ?? init.customerLabel)
+  let vehicleId = $state(draft?.vehicleId ?? init.vehicleId)
+  let vehicleLabel = $state(draft?.vehicleLabel ?? init.vehicleLabel)
+  let employeeId = $state(draft?.employeeId ?? init.employeeId)
+  let employeeLabel = $state(draft?.employeeLabel ?? init.employeeLabel)
+  let notes = $state(draft?.notes ?? init.notes)
+
+  // A successful create auto-selects the new entity in the picker
+  // that started the flow.
+  if (pending?.result) {
+    if (pending.originField === 'customerId') {
+      customerId = pending.result.id
+      customerLabel = pending.result.label
+    } else if (pending.originField === 'vehicleId') {
+      vehicleId = pending.result.id
+      vehicleLabel = pending.result.label
+    }
+  }
+  // A restored draft is unsaved user input — re-arm the leave guard.
+  if (draft) untrack(() => formDirty.set(true))
 
   let errorMsg = $state<string | null>(null)
+
+  const buildDraft = (): Draft => ({
+    kind,
+    title,
+    allDay,
+    startsAt,
+    endsAt,
+    dateFrom,
+    dateTo,
+    status,
+    customerId,
+    customerLabel,
+    vehicleId,
+    vehicleLabel,
+    employeeId,
+    employeeLabel,
+    notes
+  })
+
+  // Cycle guard: no create for an entity type already being created
+  // somewhere in the active chain.
+  const canCreateCustomer = $derived(
+    !creationFlow.activeEntities().has('customer')
+  )
+  const canCreateVehicle = $derived(
+    !creationFlow.activeEntities().has('vehicle')
+  )
+
+  const startCreate = (
+    entity: 'customer' | 'vehicle',
+    originField: string,
+    target: string
+  ) => {
+    creationFlow.start({
+      entity,
+      returnUrl: currentUrl(),
+      originField,
+      draft: buildDraft(),
+      createdAt: Date.now()
+    })
+    // The draft carries the input — silence the unsaved-changes guard.
+    formDirty.clear()
+    goto(target)
+  }
 
   /** Submit button validity gate — mirrors the rules in `submit`. */
   const valid = $derived.by(() => {
@@ -404,6 +494,13 @@
             bind:customerLabel
             bind:vehicleId
             bind:vehicleLabel
+            onChange={markDirty}
+            onCreateCustomer={canCreateCustomer
+              ? () => startCreate('customer', 'customerId', '/customers/new')
+              : undefined}
+            onCreateVehicle={canCreateVehicle
+              ? () => startCreate('vehicle', 'vehicleId', '/vehicles/new')
+              : undefined}
           />
           <div class="flex w-full flex-col gap-1">
             <span class="label-text">Mitarbeiter</span>

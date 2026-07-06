@@ -357,6 +357,7 @@ describe('calendar-service', () => {
       expect(wo[0].title).toBe('Bremsen erneuern')
       expect(wo[0].customerId).toBe(customer.id)
       expect(wo[0].vehicleId).toBe(vehicleId)
+      expect(wo[0].done).toBe(false)
       // Timed order → startsAt carries the local wall-clock start.
       expect(wo[0].startsAt).toEqual(new Date('2026-06-18T09:00:00'))
     })
@@ -377,7 +378,7 @@ describe('calendar-service', () => {
       expect(wo[0].startsAt).toBeNull()
     })
 
-    it('skips work orders that are done, unscheduled or out of range', async () => {
+    it('keeps done orders visible with done=true; skips unscheduled or out of range', async () => {
       await db.insert(workOrders).values([
         {
           orderNumber: 'AU-2026-0001',
@@ -398,11 +399,28 @@ describe('calendar-service', () => {
           title: 'Ausserhalb',
           status: 'open',
           scheduledDate: '2026-07-18'
+        },
+        {
+          orderNumber: 'AU-2026-0004',
+          title: 'Laufend',
+          status: 'in_progress',
+          scheduledDate: '2026-06-19'
         }
       ])
 
       const events = await listCalendarEvents('2026-06-16', '2026-06-20')
-      expect(events.filter((e) => e.kind === 'work_order')).toHaveLength(0)
+      const wo = events.filter((e) => e.kind === 'work_order')
+      // Completed orders render as history; unscheduled and
+      // out-of-range rows stay invisible.
+      expect(wo.map((e) => e.title).sort()).toEqual([
+        'Abgeschlossen',
+        'Laufend'
+      ])
+      const doneEvent = wo.find((e) => e.title === 'Abgeschlossen')
+      expect(doneEvent?.done).toBe(true)
+      expect(doneEvent?.dateIso).toBe('2026-06-18')
+      const activeEvent = wo.find((e) => e.title === 'Laufend')
+      expect(activeEvent?.done).toBe(false)
     })
 
     it('renders Termin-born orders as work_order and hides the source Termin', async () => {

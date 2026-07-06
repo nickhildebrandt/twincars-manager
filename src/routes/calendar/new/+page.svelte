@@ -2,7 +2,7 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import CalendarForm, { type CalendarFormValues } from '../CalendarForm.svelte'
-  import { Users2, ArrowRight } from '@lucide/svelte'
+  import { Users2, ArrowRight, ClipboardList } from '@lucide/svelte'
   import { createCalendarEntryRemote } from '../calendar.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
@@ -29,6 +29,23 @@
 </script>
 
 <PageHeader title="Neuer Eintrag" back="/calendar" />
+
+<!-- Hint card: workshop jobs belong into the orders module, not here. -->
+<div class="alert alert-info alert-vertical sm:alert-horizontal mb-4">
+  <ClipboardList size={20} />
+  <div>
+    <div class="font-medium">Werkstattarbeit geplant?</div>
+    <div class="text-sm">
+      Werkstattaufträge werden als Auftrag angelegt. Geplante Aufträge
+      erscheinen automatisch im Kalender und erzeugen beim Abschluss die
+      Rechnung.
+    </div>
+  </div>
+  <a class="btn btn-sm gap-1" href="/orders/new">
+    Neuer Auftrag
+    <ArrowRight size={14} />
+  </a>
+</div>
 
 <CalendarForm mode="new" onSave={save} onCancel={() => goto('/calendar')} />
 

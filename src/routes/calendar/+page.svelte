@@ -2,7 +2,12 @@
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import { ChevronLeft, ChevronRight, Plus } from '@lucide/svelte'
+  import {
+    ChevronLeft,
+    ChevronRight,
+    ClipboardList,
+    Plus
+  } from '@lucide/svelte'
   import { listCalendarEventsRemote } from './calendar.remote'
   import { handleClientError } from '$lib/utils/client-error'
 
@@ -110,8 +115,8 @@
     return map
   })
 
-  const eventClass = (kind: string): string => {
-    switch (kind) {
+  const eventClass = (ev: { kind: string; done?: boolean }): string => {
+    switch (ev.kind) {
       case 'public_holiday':
         return 'bg-error/10 text-error'
       case 'business_closure':
@@ -125,7 +130,10 @@
       case 'hu_due':
         return 'bg-warning/15 text-warning'
       case 'work_order':
-        return 'bg-secondary/10 text-secondary'
+        // Completed orders stay visible as history, but muted.
+        return ev.done
+          ? 'bg-secondary/5 text-base-content/50 line-through'
+          : 'bg-secondary/10 text-secondary'
       default:
         return 'bg-primary/10 text-primary'
     }
@@ -186,9 +194,9 @@
   characters.
 -->
 <div class="flex flex-col gap-4">
-  <!-- Toolbar: month nav (left) + month label (right) -->
+  <!-- Toolbar: month nav + order shortcut (left), month label (right) -->
   <div class="card border-base-300 bg-base-100 border">
-    <div class="card-body flex flex-row items-center gap-2 p-3">
+    <div class="card-body flex flex-row flex-wrap items-center gap-2 p-3">
       <div class="join">
         <button class="btn btn-sm join-item" onclick={prev} aria-label="Zurück">
           <ChevronLeft size={14} />
@@ -198,6 +206,11 @@
           <ChevronRight size={14} />
         </button>
       </div>
+      <!-- Werkstattarbeiten werden als Auftrag angelegt, nicht als Termin. -->
+      <a href="/orders/new" class="btn btn-sm gap-1">
+        <ClipboardList size={14} />
+        Neuer Auftrag
+      </a>
       <h2 class="ms-auto text-lg font-semibold">
         {monthLabel(viewMonth)}
         {viewYear}
@@ -237,7 +250,7 @@
                   <button
                     type="button"
                     class="cursor-pointer truncate rounded px-1 py-0.5 text-left transition-opacity hover:opacity-80 {eventClass(
-                      ev.kind
+                      ev
                     )}"
                     onclick={() => goto(target)}
                     title={ev.title}
@@ -246,7 +259,7 @@
                   </button>
                 {:else}
                   <span
-                    class="truncate rounded px-1 py-0.5 {eventClass(ev.kind)}"
+                    class="truncate rounded px-1 py-0.5 {eventClass(ev)}"
                     title={ev.title}
                   >
                     {ev.title}
@@ -287,7 +300,7 @@
                 <button
                   type="button"
                   class="cursor-pointer rounded px-2 py-1 text-left text-sm break-words transition-opacity hover:opacity-80 {eventClass(
-                    ev.kind
+                    ev
                   )}"
                   onclick={() => goto(target)}
                 >
@@ -295,9 +308,7 @@
                 </button>
               {:else}
                 <span
-                  class="rounded px-2 py-1 text-sm break-words {eventClass(
-                    ev.kind
-                  )}"
+                  class="rounded px-2 py-1 text-sm break-words {eventClass(ev)}"
                 >
                   {ev.title}
                 </span>

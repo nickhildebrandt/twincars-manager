@@ -415,9 +415,26 @@ const replaceAssignees = async (
   }
 }
 
+/**
+ * Binding rule: an order needs a customer OR a vehicle (both are
+ * allowed, neither is not). Enforced on create and against the
+ * effective post-patch state on update. Termin-born orders
+ * ({@link createWorkOrderFromAppointment}) inherit whatever links the
+ * Termin carries and are deliberately not gated here.
+ */
+const requireCustomerOrVehicle = (
+  customerId: string | null | undefined,
+  vehicleId: string | null | undefined
+): void => {
+  if (!customerId && !vehicleId) {
+    error(400, 'Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen.')
+  }
+}
+
 export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<WorkOrder> {
+  requireCustomerOrVehicle(input.customerId, input.vehicleId)
   const orderNumber = await allocateNumber('work_order')
   const scheduledDate = input.scheduledDate ?? null
   const [created] = await db
@@ -522,6 +539,12 @@ export async function updateWorkOrder(
   patch: UpdateWorkOrderInput
 ): Promise<WorkOrder> {
   const { assigneeIds, ...fields } = patch
+  const current = await requireOrder(id)
+  // The effective post-patch state must still carry customer OR vehicle.
+  requireCustomerOrVehicle(
+    fields.customerId !== undefined ? fields.customerId : current.customerId,
+    fields.vehicleId !== undefined ? fields.vehicleId : current.vehicleId
+  )
   // Clearing the date clears the time with it — a start time without
   // a date is meaningless.
   if (fields.scheduledDate === null) fields.scheduledTime = null
@@ -530,9 +553,6 @@ export async function updateWorkOrder(
     .set({ ...fields, updatedAt: new Date() })
     .where(eq(workOrders.id, id))
     .returning()
-  if (!updated) {
-    error(404, 'Auftrag nicht gefunden.')
-  }
   if (assigneeIds) {
     await replaceAssignees(id, assigneeIds)
   }
@@ -712,7 +732,12 @@ export async function addWorkOrderItem(
     .limit(1)
   const nextPosition = (last?.position ?? 0) + 1
 
-  const hours = input.hours == null ? null : String(input.hours)
+  // Hours exist only on labor rows — a material row silently drops
+  // whatever hours value arrives (belt and braces for the UI rule).
+  const hours =
+    input.kind === 'material' || input.hours == null
+      ? null
+      : String(input.hours)
   const [created] = await db
     .insert(workOrderItems)
     .values({
@@ -764,8 +789,13 @@ export async function updateWorkOrderItem(
     fields.hours = patch.hours == null ? null : String(patch.hours)
   if (patch.doneAt !== undefined) fields.doneAt = patch.doneAt
 
-  // Keep quantity mirroring hours for labor rows.
+  // Keep quantity mirroring hours for labor rows; material rows never
+  // carry hours (an incoming value — or a kind switch to material —
+  // clears the column).
   const effectiveKind = fields.kind ?? current.kind
+  if (effectiveKind === 'material') {
+    fields.hours = null
+  }
   const effectiveHours =
     fields.hours !== undefined ? fields.hours : current.hours
   if (
@@ -839,10 +869,13 @@ const addDaysIso = (iso: string, days: number): string => {
  * hours so the utilization reports count them as billable.
  *
  * Mapping: labor rows become `kind: 'service'` positions with
- * `quantity = hours`, unit `Std.` and the labor item as backlink;
- * material rows keep their snapshot price and inherit kind +
- * article number from their catalog item when linked (`kind:
- * 'article'` for free-text material). Tax rate = company default.
+ * `quantity = hours`, unit `Std.` and the labor item as backlink; a
+ * labor row with an employee appends "(ausgeführt von <Name>)" to the
+ * position text — a snapshot resolved at completion time, immune to
+ * later employee master-data edits. Material rows keep their snapshot
+ * price and inherit kind + article number from their catalog item when
+ * linked (`kind: 'article'` for free-text material). Tax rate =
+ * company default.
  */
 export async function completeWorkOrder(
   id: string,
@@ -888,12 +921,42 @@ export async function completeWorkOrder(
       : []
   const catalogById = new Map(catalogRows.map((r) => [r.id, r]))
 
+  // Employee snapshot: labor positions carry the executing employee's
+  // name in the invoice text, resolved NOW — later master-data edits
+  // (renames, deletions) can never alter the billed document.
+  const employeeIds = [
+    ...new Set(
+      orderItems
+        .filter((it) => it.kind === 'labor' && it.employeeId !== null)
+        .map((it) => it.employeeId as string)
+    )
+  ]
+  const employeeRows =
+    employeeIds.length > 0
+      ? await db
+          .select({
+            id: employees.id,
+            firstName: employees.firstName,
+            lastName: employees.lastName
+          })
+          .from(employees)
+          .where(inArray(employees.id, employeeIds))
+      : []
+  const employeeNameById = new Map(
+    employeeRows.map((r) => [r.id, `${r.firstName} ${r.lastName}`.trim()])
+  )
+
   const invoiceItems: DocumentInputItem[] = orderItems.map((it) => {
     if (it.kind === 'labor') {
       const laborItemId = it.itemId ?? settings.laborItemId ?? undefined
       const laborCatalog = it.itemId ? catalogById.get(it.itemId) : undefined
+      const executedBy = it.employeeId
+        ? employeeNameById.get(it.employeeId)
+        : undefined
       return {
-        description: it.description,
+        description: executedBy
+          ? `${it.description} (ausgeführt von ${executedBy})`
+          : it.description,
         quantity: Number(it.hours ?? it.quantity),
         unit: 'Std.',
         unitPriceNet: Number(it.unitPriceNet),

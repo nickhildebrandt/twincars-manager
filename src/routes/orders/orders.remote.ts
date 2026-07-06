@@ -278,22 +278,43 @@ export const getWorkOrderIdForAppointmentRemote = query(
 /* ── Refresh helpers ────────────────────────────────────────────────── */
 
 /**
- * Refresh the Kanban board plus every list instance the client
- * requested via `.updates(listWorkOrdersRemote)` (capped at 4 to bound
- * DoS risk) — the standard single-flight refresh for order mutations.
+ * Refresh every board / list instance the client requested via
+ * `.updates(...)` (capped at 4 each to bound DoS risk) — the standard
+ * single-flight refresh for order mutations.
+ *
+ * `requested(...)` is essential here: it re-runs the queries under the
+ * client's own cache keys (filters included). A server-side
+ * `kanbanBoardRemote({}).refresh()` would refresh a DIFFERENT cache key
+ * than the client's `{q: undefined, employeeId: undefined}` instance —
+ * the fresh data would never reach the board and optimistic moves
+ * would snap back once their override is released.
  */
 const refreshBoardAndLists = async (): Promise<void> => {
   await Promise.all([
-    kanbanBoardRemote({}).refresh(),
+    requested(kanbanBoardRemote, 4).refreshAll(),
     requested(listWorkOrdersRemote, 4).refreshAll()
   ])
+}
+
+/**
+ * Curated 400 for the binding rule "an order needs a customer OR a
+ * vehicle" (both are allowed, neither is not).
+ */
+const requireCustomerOrVehicle = (
+  customerId: string | null | undefined,
+  vehicleId: string | null | undefined
+): void => {
+  if (!customerId && !vehicleId) {
+    error(400, 'Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen.')
+  }
 }
 
 /* ── Order mutations ────────────────────────────────────────────────── */
 
 /**
  * Create a new work order (allocates an AU number, links customer /
- * vehicle / assignees).
+ * vehicle / assignees). Rejects orders without a customer AND without
+ * a vehicle — at least one link is required.
  *
  * @group integration
  * @module orders
@@ -302,6 +323,7 @@ export const createWorkOrderRemote = command(
   workOrderInputSchema,
   async (input) => {
     requirePermission('orders')
+    requireCustomerOrVehicle(input.customerId, input.vehicleId)
     const order = await createWorkOrder({
       title: input.title,
       description: input.description ?? null,
@@ -336,6 +358,9 @@ export const createWorkOrderFromAppointmentRemote = command(
 
 /**
  * Update a work order's master data and/or replace its assignee set.
+ * A patch that would leave the order without both customer and vehicle
+ * is rejected (the service also enforces this against the effective
+ * post-patch state; this is the explicit-both-null fast path).
  *
  * @group integration
  * @module orders
@@ -344,6 +369,9 @@ export const updateWorkOrderRemote = command(
   object({ id: idSchema, values: workOrderPatchSchema }),
   async ({ id, values }) => {
     requirePermission('orders')
+    if (values.customerId === null && values.vehicleId === null) {
+      requireCustomerOrVehicle(null, null)
+    }
     const order = await updateWorkOrder(id, values)
     await Promise.all([
       getWorkOrderRemote({ id }).refresh(),

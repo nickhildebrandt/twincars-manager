@@ -4,22 +4,24 @@ import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
- * Component tests for WorkOrderForm — pristine render without errors,
- * the required-title rule (button gate + submit-attempt message) and
- * the assignee checkbox toggle feeding `assigneeIds`.
+ * Component tests for WorkOrderForm — pristine render, the
+ * always-enabled submit button (rule 1.1) with click-time German
+ * errors, the customer-OR-vehicle link rule, the auto-composed title,
+ * the date-gated time input and the assignee multi-picker round-trip.
  *
  * @group component
  * @module WorkOrderForm
  */
 
-// The embedded CustomerVehiclePicker calls the picker remotes — mock
-// them (and the quick-create commands they can reach) with empty pages.
+// The embedded pickers call the picker remotes — mock them (and the
+// quick-create commands they can reach) with empty pages.
 const emptyPage = () =>
   Promise.resolve({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
 
 vi.mock('../pickers.remote', () => ({
   pickCustomersRemote: () => ({ run: () => emptyPage() }),
-  pickCustomerVehiclesRemote: () => ({ run: () => emptyPage() })
+  pickCustomerVehiclesRemote: () => ({ run: () => emptyPage() }),
+  pickEmployeesRemote: () => ({ run: () => emptyPage() })
 }))
 vi.mock('../customers/customers.remote', () => ({
   createCustomerRemote: vi.fn()
@@ -28,16 +30,19 @@ vi.mock('../vehicles/vehicles.remote', () => ({ createVehicleRemote: vi.fn() }))
 
 import WorkOrderForm from './WorkOrderForm.svelte'
 import { formDirty } from '$lib/stores/form-dirty.svelte'
+import { creationFlow } from '$lib/stores/creation-flow.svelte'
 
-const employees = [
-  { id: 'emp-1', label: 'Max Schrauber · P-001' },
-  { id: 'emp-2', label: 'Erika Werk · P-002' }
-]
+const LINK_ERROR = 'Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen.'
+
+const titleInput = (container: HTMLElement): HTMLInputElement =>
+  container.querySelector('input[maxlength="200"]') as HTMLInputElement
 
 beforeEach(() => {
   formDirty.clear()
+  creationFlow.reset()
+  window.sessionStorage.clear()
   // jsdom does not implement <dialog>; provide minimal stubs so the
-  // SearchablePicker can mount.
+  // pickers can mount.
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
       this.setAttribute('open', '')
@@ -52,9 +57,7 @@ beforeEach(() => {
 
 describe('WorkOrderForm', () => {
   it('renders pristine without any error highlight or message', () => {
-    const { container } = render(WorkOrderForm, {
-      props: { employees, onSave: vi.fn() }
-    })
+    const { container } = render(WorkOrderForm, { props: { onSave: vi.fn() } })
     expect(screen.getByText('Titel *')).toBeInTheDocument()
     expect(screen.getByText('Beschreibung')).toBeInTheDocument()
     expect(screen.getByText('Zugewiesene Mitarbeiter')).toBeInTheDocument()
@@ -63,81 +66,151 @@ describe('WorkOrderForm', () => {
     expect(container.querySelector('.alert-error')).toBeNull()
   })
 
-  it('starts with Speichern disabled while the title is empty', () => {
-    render(WorkOrderForm, { props: { employees, onSave: vi.fn() } })
-    expect(screen.getByRole('button', { name: /speichern/i })).toBeDisabled()
+  it('keeps Speichern enabled even while the form is invalid (rule 1.1)', () => {
+    render(WorkOrderForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
+  })
+
+  it('shows the link rule error on submit without customer or vehicle', async () => {
+    const onSave = vi.fn()
+    const { container } = render(WorkOrderForm, {
+      props: { initial: { title: 'Inspektion' }, onSave }
+    })
+    await fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.getAllByText(LINK_ERROR).length).toBeGreaterThan(0)
   })
 
   it('surfaces the required-title message on a submit attempt', async () => {
     const onSave = vi.fn()
-    const { container } = render(WorkOrderForm, {
-      props: { employees, onSave }
-    })
-    const form = container.querySelector('form') as HTMLFormElement
-    await fireEvent.submit(form)
+    const { container } = render(WorkOrderForm, { props: { onSave } })
+    await fireEvent.submit(container.querySelector('form') as HTMLFormElement)
     expect(onSave).not.toHaveBeenCalled()
     expect(
       screen.getAllByText('Der Titel darf nicht leer sein.').length
     ).toBeGreaterThan(0)
   })
 
-  it('enables Speichern once a title is entered and saves trimmed values', async () => {
+  it('saves with only a vehicle linked (customer optional)', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
-    const { container } = render(WorkOrderForm, {
-      props: { employees, onSave }
-    })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-
-    const titleInput = container.querySelector(
-      'input[maxlength="200"]'
-    ) as HTMLInputElement
-    await user.type(titleInput, '  Bremsen erneuern  ')
-    expect(btn).not.toBeDisabled()
-
-    await user.click(btn)
-    expect(onSave).toHaveBeenCalledTimes(1)
-    const payload = onSave.mock.calls[0][0]
-    expect(payload.title).toBe('Bremsen erneuern')
-    expect(payload.assigneeIds).toEqual([])
-  })
-
-  it('toggles assignees through the checkbox list', async () => {
-    const user = userEvent.setup()
-    const onSave = vi.fn()
-    render(WorkOrderForm, {
-      props: { employees, initial: { title: 'Inspektion' }, onSave }
-    })
-
-    await user.click(screen.getByRole('checkbox', { name: /Max Schrauber/i }))
-    await user.click(screen.getByRole('checkbox', { name: /Erika Werk/i }))
-    // Toggle Max off again — only Erika stays selected.
-    await user.click(screen.getByRole('checkbox', { name: /Max Schrauber/i }))
-
-    await user.click(screen.getByRole('button', { name: /speichern/i }))
-    expect(onSave).toHaveBeenCalledTimes(1)
-    expect(onSave.mock.calls[0][0].assigneeIds).toEqual(['emp-2'])
-  })
-
-  it('pre-checks assignees from initial values', () => {
     render(WorkOrderForm, {
       props: {
-        employees,
-        initial: { title: 'Inspektion', assigneeIds: ['emp-2'] },
+        initial: {
+          title: 'Bremsen erneuern',
+          vehicleId: 'veh-1',
+          vehicleLabel: 'B-XY 123 · VW Golf'
+        },
+        onSave
+      }
+    })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const payload = onSave.mock.calls[0][0]
+    expect(payload.vehicleId).toBe('veh-1')
+    expect(payload.customerId).toBeUndefined()
+  })
+
+  it('auto-composes the title from vehicle and customer labels', () => {
+    const { container } = render(WorkOrderForm, {
+      props: {
+        initial: {
+          customerId: 'cust-1',
+          customerLabel: 'Müller · Berlin',
+          vehicleId: 'veh-1',
+          vehicleLabel: 'B-AA 100 · VW Golf VII · Müller'
+        },
         onSave: vi.fn()
       }
     })
-    expect(screen.getByRole('checkbox', { name: /Erika Werk/i })).toBeChecked()
-    expect(
-      screen.getByRole('checkbox', { name: /Max Schrauber/i })
-    ).not.toBeChecked()
+    expect(titleInput(container).value).toBe('VW Golf VII · B-AA 100 · Müller')
   })
 
-  it('shows the empty-roster hint when no employees exist', () => {
-    render(WorkOrderForm, { props: { employees: [], onSave: vi.fn() } })
-    expect(screen.getByText(/Keine Mitarbeiter angelegt/)).toBeInTheDocument()
+  it('stops auto-composing once the user types and resumes when cleared', async () => {
+    const user = userEvent.setup()
+    const { container } = render(WorkOrderForm, {
+      props: {
+        initial: {
+          customerId: 'cust-1',
+          customerLabel: 'Müller · Berlin',
+          vehicleId: 'veh-1',
+          vehicleLabel: 'B-AA 100 · VW Golf VII · Müller'
+        },
+        onSave: vi.fn()
+      }
+    })
+    const input = titleInput(container)
+    expect(input.value).toBe('VW Golf VII · B-AA 100 · Müller')
+
+    // Manual input arms manual mode; the field stays as typed.
+    await user.clear(input)
+    expect(input.value).toBe('')
+    await user.type(input, 'Eigener Titel')
+    expect(input.value).toBe('Eigener Titel')
+
+    // Clearing completely re-arms auto mode — the next picker change
+    // recomposes (here: clearing the vehicle leaves the customer).
+    await user.clear(input)
+    const clearButtons = screen.getAllByRole('button', {
+      name: 'Auswahl entfernen'
+    })
+    await user.click(clearButtons[1])
+    expect(input.value).toBe('Müller')
+  })
+
+  it('keeps an initial title untouched (edit mode)', () => {
+    const { container } = render(WorkOrderForm, {
+      props: {
+        initial: {
+          title: 'Handgeschrieben',
+          vehicleId: 'veh-1',
+          vehicleLabel: 'B-AA 100 · VW Golf VII'
+        },
+        onSave: vi.fn()
+      }
+    })
+    expect(titleInput(container).value).toBe('Handgeschrieben')
+  })
+
+  it('disables the time input until a date is set', async () => {
+    const { container } = render(WorkOrderForm, { props: { onSave: vi.fn() } })
+    const timeInput = container.querySelector(
+      'input[type="time"]'
+    ) as HTMLInputElement
+    const dateInput = container.querySelector(
+      'input[type="date"]'
+    ) as HTMLInputElement
+    expect(timeInput).toBeDisabled()
+    await fireEvent.input(dateInput, { target: { value: '2026-07-10' } })
+    expect(timeInput).not.toBeDisabled()
+  })
+
+  it('round-trips initial assignees through the multi-picker', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(WorkOrderForm, {
+      props: {
+        initial: {
+          title: 'Inspektion',
+          customerId: 'cust-1',
+          customerLabel: 'Mustermann GmbH',
+          assignees: [
+            { id: 'emp-1', label: 'Max Schrauber · P-001' },
+            { id: 'emp-2', label: 'Erika Werk · P-002' }
+          ]
+        },
+        onSave
+      }
+    })
+    // The trigger shows the joined labels for up to two selections.
+    expect(
+      screen.getByText('Max Schrauber · P-001, Erika Werk · P-002')
+    ).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].assigneeIds).toEqual(['emp-1', 'emp-2'])
   })
 })

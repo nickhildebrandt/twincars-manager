@@ -10,7 +10,6 @@
     getWorkOrderRemote,
     updateWorkOrderRemote
   } from '../../orders.remote'
-  import { pickEmployeesRemote } from '../../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -18,10 +17,7 @@
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the form values, hydration reuses cache. */
-  const [detail, employeesPage] = await Promise.all([
-    getWorkOrderRemote({ id }),
-    pickEmployeesRemote({ page: 1, size: 100 })
-  ])
+  const detail = await getWorkOrderRemote({ id })
 
   const handleSave = async (values: WorkOrderFormValues) => {
     try {
@@ -63,9 +59,8 @@
     vehicleLabel: detail.vehicleLabel,
     scheduledDate: detail.order.scheduledDate,
     scheduledTime: detail.order.scheduledTime,
-    assigneeIds: detail.assignees.map((a) => a.id)
+    assignees: detail.assignees
   }}
-  employees={employeesPage.items}
   onSave={handleSave}
   onCancel={() => goto(`/orders/${id}`)}
 />

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import { page as pageStore } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
@@ -15,6 +16,7 @@
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { creationFlow, currentUrl } from '$lib/stores/creation-flow.svelte'
   import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
 
   const today = new Date().toISOString().slice(0, 10)
@@ -22,27 +24,104 @@
   due.setDate(due.getDate() + 14)
   const dueIso = due.toISOString().slice(0, 10)
 
-  let customerId = $state('')
-  let customerLabel = $state('')
-  let vehicleId = $state('')
-  let vehicleLabel = $state('')
-  let issueDate = $state(today)
-  let dueDate = $state(dueIso)
-  let serviceDate = $state(today)
-  let paymentMethod = $state<PaymentMethod>('Überweisung')
-  let header = $state('')
-  let footer = $state('')
-  let notes = $state('')
+  /**
+   * JSON-serializable snapshot of the whole form (header fields +
+   * positions) — pushed into the creation-flow store when the user
+   * jumps to a full-page customer/vehicle create and restored when
+   * they come back.
+   */
+  type Draft = {
+    customerId: string
+    customerLabel: string
+    vehicleId: string
+    vehicleLabel: string
+    issueDate: string
+    dueDate: string
+    serviceDate: string
+    paymentMethod: PaymentMethod
+    header: string
+    footer: string
+    notes: string
+    positions: Position[]
+  }
 
-  let positions = $state<Position[]>([blankPosition()])
+  // Returning from a full-page create? Consume the pending return for
+  // THIS page (incl. a possible ?vehicleId=… search string) once.
+  const pending = untrack(() => creationFlow.pendingReturnFor(currentUrl()))
+  const draft = (pending?.draft ?? null) as Draft | null
+
+  let customerId = $state(draft?.customerId ?? '')
+  let customerLabel = $state(draft?.customerLabel ?? '')
+  let vehicleId = $state(draft?.vehicleId ?? '')
+  let vehicleLabel = $state(draft?.vehicleLabel ?? '')
+  let issueDate = $state(draft?.issueDate ?? today)
+  let dueDate = $state(draft?.dueDate ?? dueIso)
+  let serviceDate = $state(draft?.serviceDate ?? today)
+  let paymentMethod = $state<PaymentMethod>(
+    draft?.paymentMethod ?? 'Überweisung'
+  )
+  let header = $state(draft?.header ?? '')
+  let footer = $state(draft?.footer ?? '')
+  let notes = $state(draft?.notes ?? '')
+
+  let positions = $state<Position[]>(draft?.positions ?? [blankPosition()])
+
+  // A successful create auto-selects the new entity in the picker
+  // that started the flow.
+  if (pending?.result) {
+    if (pending.originField === 'customerId') {
+      customerId = pending.result.id
+      customerLabel = pending.result.label
+    } else if (pending.originField === 'vehicleId') {
+      vehicleId = pending.result.id
+      vehicleLabel = pending.result.label
+    }
+  }
+  // A restored draft is unsaved user input — re-arm the leave guard.
+  if (draft) untrack(() => formDirty.set(true))
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived(
-    Boolean(customerId) &&
-      positions.some((p) => (p.description ?? '').trim().length > 0)
+  const buildDraft = (): Draft => ({
+    customerId,
+    customerLabel,
+    vehicleId,
+    vehicleLabel,
+    issueDate,
+    dueDate,
+    serviceDate,
+    paymentMethod,
+    header,
+    footer,
+    notes,
+    positions: positions.map((p) => ({ ...p }))
+  })
+
+  // Cycle guard: no create for an entity type already being created
+  // somewhere in the active chain.
+  const canCreateCustomer = $derived(
+    !creationFlow.activeEntities().has('customer')
   )
+  const canCreateVehicle = $derived(
+    !creationFlow.activeEntities().has('vehicle')
+  )
+
+  const startCreate = (
+    entity: 'customer' | 'vehicle',
+    originField: string,
+    target: string
+  ) => {
+    creationFlow.start({
+      entity,
+      returnUrl: currentUrl(),
+      originField,
+      draft: buildDraft(),
+      createdAt: Date.now()
+    })
+    // The draft carries the input — silence the unsaved-changes guard.
+    formDirty.clear()
+    goto(target)
+  }
 
   const preloadVehicleId = pageStore.url.searchParams.get('vehicleId')
   const preloadQuery = $derived(
@@ -59,7 +138,9 @@
    * Voraussetzung für `transferStockVehicleOnPayment`.
    */
   const isStockSale = $derived(!!preloadVehicleId)
-  let preloaded = $state(false)
+  // A restored draft already contains the stock-vehicle position —
+  // never append it a second time.
+  let preloaded = $state(draft !== null)
   $effect(() => {
     if (preloaded) return
     const data = preloadQuery?.current
@@ -120,9 +201,14 @@
     goto(`/invoices/${created.id}`, { replaceState: true })
   }
 
+  /** Rule 1.1: never disable Submit for invalid input — check here. */
   const submit = async (e: Event) => {
     e.preventDefault()
     errorMsg = null
+    if (!customerId) {
+      errorMsg = 'Bitte einen Kunden auswählen.'
+      return
+    }
     const cleaned = positions
       .map((p) => cleanPosition(p))
       .filter((p) => p.description !== '')
@@ -204,6 +290,12 @@
             vehicleLocked={isStockSale}
             vehicleHint={isStockSale
               ? 'Lagerfahrzeug aus dem Verkaufsbestand. Beim Bezahlen der Rechnung wird es automatisch in die Kundenfahrzeuge übernommen.'
+              : undefined}
+            onCreateCustomer={canCreateCustomer
+              ? () => startCreate('customer', 'customerId', '/customers/new')
+              : undefined}
+            onCreateVehicle={canCreateVehicle
+              ? () => startCreate('vehicle', 'vehicleId', '/vehicles/new')
               : undefined}
           />
           <label class="flex w-full flex-col gap-1">
@@ -287,11 +379,7 @@
     >
       Abbrechen
     </button>
-    <button
-      type="submit"
-      class="btn btn-primary"
-      disabled={busy.active || !valid}
-    >
+    <button type="submit" class="btn btn-primary" disabled={busy.active}>
       {#if busy.active}
         <span class="loading loading-spinner loading-sm"></span>
       {/if}

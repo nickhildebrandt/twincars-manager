@@ -108,7 +108,8 @@ import {
   getWorkOrderRemote,
   kanbanBoardRemote,
   listWorkOrdersRemote,
-  moveWorkOrderStatusRemote
+  moveWorkOrderStatusRemote,
+  updateWorkOrderRemote
 } from './orders.remote'
 
 const YEAR = new Date().getFullYear()
@@ -294,9 +295,42 @@ describe('orders.remote — board & CRUD', () => {
     expect(await getLaborRateRemote()).toBeNull()
   })
 
+  it('rejects orders without customer AND vehicle with a curated 400', async () => {
+    await expectHttpError(
+      () => createWorkOrderRemote({ title: 'Ohne Zuordnung' }),
+      400,
+      /Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen/
+    )
+  })
+
+  it('rejects an update clearing both customer and vehicle with 400', async () => {
+    const customerId = await seedCustomer()
+    const order = await createWorkOrderRemote({ title: 'Job', customerId })
+    await expectHttpError(
+      () =>
+        updateWorkOrderRemote({
+          id: order.id,
+          values: { customerId: null, vehicleId: null }
+        }),
+      400,
+      /Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen/
+    )
+    // Clearing the only remaining link is refused by the service too.
+    await expectHttpError(
+      () =>
+        updateWorkOrderRemote({ id: order.id, values: { customerId: null } }),
+      400,
+      /Bitte mindestens einen Kunden oder ein Fahrzeug zuordnen/
+    )
+  })
+
   it('listWorkOrdersRemote filters by status', async () => {
-    const a = await createWorkOrderRemote({ title: 'Offen bleibt' })
-    const b = await createWorkOrderRemote({ title: 'Geht in Arbeit' })
+    const customerId = await seedCustomer()
+    const a = await createWorkOrderRemote({ title: 'Offen bleibt', customerId })
+    const b = await createWorkOrderRemote({
+      title: 'Geht in Arbeit',
+      customerId
+    })
     await moveWorkOrderStatusRemote({ id: b.id, status: 'in_progress' })
 
     const open = await listWorkOrdersRemote({
@@ -319,7 +353,10 @@ describe('orders.remote — status moves', () => {
   })
 
   it('moves open -> in_progress and back', async () => {
-    const order = await createWorkOrderRemote({ title: 'Job' })
+    const order = await createWorkOrderRemote({
+      title: 'Job',
+      customerId: await seedCustomer()
+    })
     const moved = await moveWorkOrderStatusRemote({
       id: order.id,
       status: 'in_progress'
@@ -331,7 +368,10 @@ describe('orders.remote — status moves', () => {
   })
 
   it('rejects "done" at the schema level — completion is a separate flow', async () => {
-    const order = await createWorkOrderRemote({ title: 'Job' })
+    const order = await createWorkOrderRemote({
+      title: 'Job',
+      customerId: await seedCustomer()
+    })
     await expect(
       moveWorkOrderStatusRemote({
         id: order.id,
@@ -431,7 +471,10 @@ describe('orders.remote — items & completion', () => {
   })
 
   it('rejects an empty item description with the German message', async () => {
-    const order = await createWorkOrderRemote({ title: 'Job' })
+    const order = await createWorkOrderRemote({
+      title: 'Job',
+      customerId: await seedCustomer()
+    })
     await expect(
       addWorkOrderItemRemote({
         workOrderId: order.id,
@@ -447,7 +490,10 @@ describe('orders.remote — items & completion', () => {
   })
 
   it('409s when completing an order without items', async () => {
-    const order = await createWorkOrderRemote({ title: 'Leer' })
+    const order = await createWorkOrderRemote({
+      title: 'Leer',
+      customerId: await seedCustomer()
+    })
     await expectHttpError(
       () => completeWorkOrderRemote({ id: order.id, issueDate: '2026-07-06' }),
       409,

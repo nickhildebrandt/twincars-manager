@@ -26,21 +26,42 @@
   const onQueryInput = (e: Event) => {
     q = (e.target as HTMLInputElement).value
     if (qTimer) clearTimeout(qTimer)
-    qTimer = setTimeout(() => (qDebounced = q), 250)
+    qTimer = setTimeout(() => {
+      // Snapshot the currently shown board BEFORE the args change so
+      // the table never blanks while the filtered query loads
+      // (stale-while-revalidate).
+      lastResult = board
+      qDebounced = q
+    }, 250)
   }
 
-  const query = $derived(
-    kanbanBoardRemote({
-      q: qDebounced || undefined,
-      employeeId: employeeId || undefined
-    })
-  )
-  const initial = await untrack(() => query)
-  let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
+  // Only set filter keys carry into the arg object — `{}` and
+  // `{q: undefined}` serialize to different remote-cache keys, and the
+  // single-flight refresh must hit the exact instance this page holds.
+  const boardArgs = $derived({
+    ...(qDebounced ? { q: qDebounced } : {}),
+    ...(employeeId ? { employeeId } : {})
   })
-  const board = $derived(query.current ?? lastResult)
+  const initial = await untrack(() => kanbanBoardRemote(boardArgs))
+  let lastResult = $state<typeof initial>(initial)
+
+  /**
+   * The rendered board. `kanbanBoardRemote(...)` is deliberately
+   * re-called on EVERY evaluation (never memoized in its own
+   * `$derived` and never pre-read during init): a remote-query proxy
+   * only holds its cache entry for the lifetime of the effect run
+   * that created it. A memoized instance loses the entry as soon as
+   * that run is torn down — `current` then stays `undefined` forever
+   * and single-flight refreshes / optimistic overrides land on a
+   * throwaway entry nothing renders (cards only moved after a full
+   * reload). Re-calling per read re-acquires the entry and re-tracks
+   * the resource, so refreshes, overrides and filter changes all
+   * re-render. `lastResult` covers the load window after a filter
+   * change (stale-while-revalidate).
+   */
+  const board = $derived.by(
+    () => kanbanBoardRemote(boardArgs).current ?? lastResult
+  )
 
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
     pickEmployeesRemote({
@@ -62,13 +83,15 @@
   const cardsOf = (key: ColumnKey): Card[] => board[key]
 
   /** Optimistic column move — the card jumps immediately, the same
-   * response carries the authoritative board refresh. */
+   * response carries the authoritative board refresh. The override is
+   * registered on the shared cache entry (same `boardArgs` key) the
+   * live subscription above holds. */
   const move = async (card: Card, to: MovableStatus) => {
     if (card.status === to) return
     try {
       await busy.run(() =>
         moveWorkOrderStatusRemote({ id: card.id, status: to }).updates(
-          query.withOverride((current) => {
+          kanbanBoardRemote(boardArgs).withOverride((current) => {
             const next = {
               open: current.open.filter((c) => c.id !== card.id),
               in_progress: current.in_progress.filter((c) => c.id !== card.id),

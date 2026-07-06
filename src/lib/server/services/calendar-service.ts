@@ -69,6 +69,11 @@ export type CalendarEvent = {
   employeeId?: string | null
   customerId?: string | null
   vehicleId?: string | null
+  /**
+   * `work_order` events only: `true` once the order is completed —
+   * the chip stays visible as history but renders muted.
+   */
+  done?: boolean
 }
 
 const dateToIso = (d: Date): string => d.toISOString().slice(0, 10)
@@ -89,14 +94,16 @@ const expandDays = (fromIso: string, toIsoStr: string): string[] => {
  * Pull every event that overlaps `[fromIso, toIso]`. Sources:
  * `calendar_entries` (split into appointment / closure rows by `kind`),
  * `employee_absences` (vacation / sick / other), `public_holidays`,
- * HU due dates derived from `vehicles`, and scheduled `work_orders`
- * (not yet done). Scheduled orders ALWAYS render as `work_order`
- * events — including Termin-born ones; to avoid double rendering, an
- * appointment with a linked work order is excluded from the
- * appointment source (the order chip replaces it and stays visually
- * distinct). Filtering by employee narrows the calendar entries (those
- * that link to that employee), the absences (their owner) and the work
- * orders (those the employee is assigned to).
+ * HU due dates derived from `vehicles`, and scheduled `work_orders`.
+ * Scheduled orders ALWAYS render as `work_order` events regardless of
+ * status — completed ones stay visible as history and carry
+ * `done: true` so the grid can mute them. Termin-born orders are
+ * included too; to avoid double rendering, an appointment with a
+ * linked work order is excluded from the appointment source (the order
+ * chip replaces it and stays visually distinct). Filtering by employee
+ * narrows the calendar entries (those that link to that employee), the
+ * absences (their owner) and the work orders (those the employee is
+ * assigned to).
  */
 export const listCalendarEvents = async (
   fromIso: string,
@@ -189,13 +196,15 @@ export const listCalendarEvents = async (
             )
           )
       })(),
-      // Aufträge: every scheduled, not-yet-done order — Termin-born
+      // Aufträge: every scheduled order regardless of status —
+      // completed ones stay visible as (muted) history, Termin-born
       // ones included (their source appointment is excluded above).
       // NULL scheduled_date rows fall out of the range comparison.
       db
         .select({
           id: workOrders.id,
           title: workOrders.title,
+          status: workOrders.status,
           scheduledDate: workOrders.scheduledDate,
           scheduledTime: workOrders.scheduledTime,
           customerId: workOrders.customerId,
@@ -206,7 +215,6 @@ export const listCalendarEvents = async (
           and(
             gte(workOrders.scheduledDate, fromIso),
             lte(workOrders.scheduledDate, toIso),
-            ne(workOrders.status, 'done'),
             employeeId
               ? inArray(
                   workOrders.id,
@@ -326,7 +334,8 @@ export const listCalendarEvents = async (
         : null,
       sourceId: wo.id,
       customerId: wo.customerId,
-      vehicleId: wo.vehicleId
+      vehicleId: wo.vehicleId,
+      done: wo.status === 'done'
     })
   }
   return out
