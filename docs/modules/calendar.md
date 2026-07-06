@@ -1,7 +1,7 @@
 ---
 title: Module - calendar (Kalender)
 tags: [module, calendar]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # calendar - "Kalender"
@@ -29,7 +29,16 @@ updated: 2026-07-05
   `endsAt >= startsAt`.
 - **Event kinds emitted to the grid**: `appointment`,
   `business_closure`, `public_holiday`, `employee_vacation`,
-  `employee_sick`, `employee_other`.
+  `employee_sick`, `employee_other`, `hu_due`, `work_order`.
+- **Work-order source** (the sixth derived source): scheduled work
+  orders (`scheduledAt` in range, `appointmentId IS NULL` - orders
+  created FROM a Termin are already visible as that Termin - and
+  `status != 'done'`) appear with a `bg-secondary/10 text-secondary`
+  badge and click through to `/orders/[id]`; the source honors the
+  month view's employee filter (assignees). See [[orders]].
+- **Appointment ↔ order**: the appointment edit page offers "Auftrag
+  erstellen" (`createWorkOrderFromAppointmentRemote`, one order per
+  Termin) and turns into a "Zum Auftrag" link once the order exists.
 - **Public booking**: appointments can also be created by the website
   through `POST /api/public/appointments` (tire-change services only,
   free slots from `workshop_hours` minus closures) - [[public-rest-api]].

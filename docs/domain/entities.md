@@ -1,7 +1,7 @@
 ---
 title: Entity map
 tags: [domain, entities, schema]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # Entity map
@@ -89,6 +89,19 @@ Single table discriminated by `kind`: `appointment` (customer/vehicle/
 employee links, status) | `closure` (Betriebsschließung, forced allDay).
 See [[adr-011-unified-calendar-entries]]. Module: [[calendar]].
 
+## Auftrag (work order) - `work_orders` + `work_order_assignees` + `work_order_items`
+
+Workshop job from intake to invoice. `orderNumber` (unique, number range
+`work_order`, `AU-{YYYY}-{NNNN}`), title, status `open` | `in_progress` |
+`done` (Kanban), optional customer/vehicle links, `appointmentId`
+backlink to the source Termin (one order per Termin), `invoiceId` set on
+completion, `scheduledAt` for calendar placement. Assignees are m:n to
+`employees`. Work items (`labor` | `material`) snapshot their net price
+at entry time ([[adr-007-price-snapshots-and-versions]]); labor items
+with employee + hours write through to `time_entries` ([[hours]]).
+Completion creates the invoice from the items via the shared document
+pipeline ([[invoices]]). Module: [[orders]].
+
 ## Buchhaltung - `ledger_entries` + `ledger_categories` + `recurring_entries`
 
 Income/expense ledger with categories (seeded), recurring templates and
@@ -110,10 +123,12 @@ public surface in [[public-rest-api]].
 ## Supporting entities
 
 - `company_settings` - single-row app settings incl. `setupCompleted`
-  gate ([[setup]]), reminder defaults, geo coordinates, logo.
+  gate ([[setup]]), reminder defaults, geo coordinates, logo,
+  `laborItemId` (the "Arbeitszeit" item behind the workshop labor rate).
 - `smtp_settings`, `mail_templates`, `sent_messages` - [[smtp-mail]], [[sent]].
 - `number_ranges` - `invoice`, `offer`, `cost_estimate`,
-  `order_confirmation`, `reminder`, `customer`, `tire_storage`, `storno`.
+  `order_confirmation`, `reminder`, `customer`, `tire_storage`, `storno`,
+  `work_order`.
 - `customer_inquiries` - public contact-form submissions with internal
   notification status (see [[public-rest-api]], [[settings]]).
 - `access_import_jobs` - import audit rows with live progress

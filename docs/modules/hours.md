@@ -1,7 +1,7 @@
 ---
 title: Module - hours (Stundenerfassung)
 tags: [module, hours, time-tracking]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # hours - "Stunden" (time tracking)
@@ -25,8 +25,18 @@ updated: 2026-07-05
   `hours:write_own` so self-service users see it.
 - **Services**: `time-entry-service.ts`, `workshop-hours-service.ts`.
 - **Tables**: `time_entries` (numeric `hours`, e.g. 1.50 = 1h30m -
-  effort, not punch-clock; optional documentId/customerId), `employees`,
-  `workshop_hours`.
+  effort, not punch-clock; optional documentId/customerId, plus
+  workOrderId/workOrderItemId back-links for order write-through rows),
+  `employees`, `workshop_hours`.
+- **Work-order integration** ([[orders]]): the list shows an "Auftrag"
+  column and accepts a `workOrderId` deep-link filter
+  (`/hours?workOrderId=<uuid>`). Entries written through from a work
+  order (workOrderItemId set) are read-only here - mutations 409 with
+  "Dieser Eintrag stammt aus einem Auftrag und wird dort gepflegt." and
+  are edited at the order instead. Utilization/monthly reports include
+  order hours unchanged; they count as billable once the order is
+  completed (completion back-fills `time_entries.document_id` with the
+  generated invoice).
 - **Tests**: `time-entry-service.test.ts`,
   `workshop-hours-service.test.ts`, `hours.remote.test.ts` (permission
   scoping), `HoursForm.test.ts`.

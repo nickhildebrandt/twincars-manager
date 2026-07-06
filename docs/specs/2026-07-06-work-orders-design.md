@@ -139,3 +139,18 @@ change (history preserved).
 [[../modules/calendar]] · [[../modules/invoices]] ·
 [[../modules/hours]] · [[../architecture/database-schema]] ·
 [[../decisions/adr-007-price-snapshots-and-versions]]
+
+## Implementation notes (2026-07-06)
+
+Implemented as specced. Addenda beyond the design above:
+
+- The Kanban board query accepts optional `q` / `employeeId` filters,
+  applied server-side (`q` matches order number, title, customer last
+  name or company; `employeeId` narrows via an assignee subquery).
+- The calendar `work_order` source honors the month view's employee
+  filter (same assignee-subquery semantics as the board filter).
+- The labor invoice-position backlink falls back to
+  `company_settings.labor_item_id` when the work item carries no
+  catalog item of its own.
+- The completion modal carries `issueDate` plus an optional Zahlungsart
+  (`paymentMethod`), passed through to `createDocument`.

@@ -1,14 +1,14 @@
 ---
 title: Database schema overview
 tags: [architecture, database, drizzle, postgres]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # Database schema overview
 
 PostgreSQL (>= 14 dev, 18-alpine in prod) + Drizzle ORM. Single schema file
-`src/lib/server/db/schema.ts`; migrations in `drizzle/` (0000..0031 as of
-2026-07-05). Migrations run OUTSIDE the request lifecycle: `scripts/migrate.js`
+`src/lib/server/db/schema.ts`; migrations in `drizzle/` (0000..0033 as of
+2026-07-06). Migrations run OUTSIDE the request lifecycle: `scripts/migrate.js`
 before `node build` (Dockerfile CMD), `pnpm db:migrate` in dev. Hand-edit
 generated SQL to be idempotent (`IF NOT EXISTS`, `DO $$ ... EXCEPTION`
 blocks) per `CONTRIBUTING.md` §17. Tests run against **pg-mem** (the whole
@@ -20,12 +20,15 @@ migration chain is applied in the suite), so no live Postgres is needed.
 
 `company_settings` (single row; `setupCompleted` gate, reminder defaults
 `reminderAutoEnabled`/`reminderDays1=3`/`reminderRecurEveryDays=14`,
-`smallBusinessExempt`, geoLat/Lon, logo inline), `smtp_settings`,
+`smallBusinessExempt`, geoLat/Lon, logo inline, `laborItemId` FK items -
+the designated "Arbeitszeit" item whose current price version is the
+workshop labor rate, [[orders]]), `smtp_settings`,
 `number_ranges` (kind unique: invoice, offer, cost_estimate,
-order_confirmation, reminder, customer, tire_storage, storno; allocation
-is centralized in `number-range-service.ts` via an atomic
-`UPDATE ... RETURNING`, so no duplicate numbers under concurrency, and
-missing rows self-seed with the seed-defaults template),
+order_confirmation, reminder, customer, tire_storage, storno,
+work_order; allocation is centralized in `number-range-service.ts` via
+an atomic `UPDATE ... RETURNING`, so no duplicate numbers under
+concurrency, and missing rows self-seed with the seed-defaults
+template),
 `mail_templates` (key unique, `isCustom` marks operator edits).
 
 ### Customers & vehicles
@@ -56,8 +59,23 @@ optional itemId/tireId back-links), `document_payments`, `document_pdfs`
 ### People & time
 
 `employees`, `employee_salary_versions`, `employee_absences`,
-`time_entries` (hours as numeric effort), `workshop_hours` (weekday PK
-0=Sunday..6=Saturday, opensAt/closesAt/closed).
+`time_entries` (hours as numeric effort; `workOrderId` SET NULL +
+`workOrderItemId` CASCADE back-links for order write-through rows,
+[[hours]]), `workshop_hours` (weekday PK 0=Sunday..6=Saturday,
+opensAt/closesAt/closed).
+
+### Work orders
+
+`work_orders` (orderNumber unique from the `work_order` range, status
+open|in_progress|done, optional customer/vehicle, `appointmentId`
+unique partial - one order per Termin, `invoiceId` set on completion,
+`scheduledAt` for calendar placement), `work_order_assignees`
+(composite PK order+employee), `work_order_items` (kind
+labor|material, snapshot `unitPriceNet`, optional item/employee
+back-links, hours for labor rows) - [[orders]]. Migration 0033 wraps
+its two partial unique indexes in `DO $$` blocks purely so the pg-mem
+test harness strips them (pg-mem mis-answers `IS NULL` queries through
+partial indexes); production DDL is unaffected.
 
 ### Calendar
 
@@ -112,4 +130,5 @@ strings, wildcard `*`).
 0024 simplified reminders · 0025 API-token table dropped (env-based,
 [[adr-010-api-tokens-in-env]]) · 0026 shop refocus drop stock fields ·
 0027 users.active · 0028 items.onlineBookable · 0029 posts ·
-0030 ebay_credentials · 0031 import job progress.
+0030 ebay_credentials · 0031 import job progress · 0032 shipping module
+removed · 0033 work orders (Aufträge) + labor rate.

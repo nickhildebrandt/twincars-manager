@@ -1,7 +1,7 @@
 ---
 title: Module - settings (Einstellungen)
 tags: [module, settings]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # settings - "Einstellungen"
@@ -15,15 +15,20 @@ grant is a sub-permission. Verify current tab layout in
 ## `/settings` (tabbed page, `?tab=` mirrored in URL)
 
 Tabs: **Firmendaten** (company data incl. geo coordinates, §19 UStG
-flag, logo), **Mailvorlagen** (mail templates with `{platzhalter}`,
+flag, logo, and the "Stundensatz" fieldset - the workshop labor rate,
+i.e. the current price of the designated "Arbeitszeit" item used by
+[[orders]]), **Mailvorlagen** (mail templates with `{platzhalter}`,
 reset-to-default), **Zahlungserinnerung** (reminderDays1 /
 reminderRecurEveryDays / auto toggle), **SMTP** (connection +
 verification). Remote `settings.remote.ts`: `getAllSettingsRemote`,
 `updateCompanyRemote`, `updateReminderSettingsRemote`,
 `updateLogoRemote`, `removeLogoRemote`, `listMailTemplatesRemote`,
 `updateMailTemplateRemote`, `resetMailTemplateRemote`,
-`updateSmtpRemote`. Guard `requirePermission('settings')`.
-Service: `settings-service.ts`.
+`updateSmtpRemote`, `getLaborRateSettingRemote`,
+`updateLaborRateRemote` (each rate change writes a NEW
+`item_price_versions` row so history and existing snapshots stay
+intact - [[adr-007-price-snapshots-and-versions]]). Guard
+`requirePermission('settings')`. Service: `settings-service.ts`.
 
 ## Sub-pages
 
@@ -53,7 +58,8 @@ Service: `settings-service.ts`.
 
 ## Tests
 
-`settings-service.test.ts`, `users.remote.test.ts`,
+`settings-service.test.ts`, `settings.remote.test.ts` (labor rate),
+`users.remote.test.ts`,
 `account.remote.test.ts`, `inquiries.remote.test.ts`,
 `ebay.remote.test.ts` + `ebay-page.test.ts`, `RoleForm.test.ts`,
 `workshop-hours-service.test.ts`.
