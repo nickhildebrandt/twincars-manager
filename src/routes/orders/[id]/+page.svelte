@@ -499,7 +499,8 @@
           Noch keine Positionen erfasst.
         </div>
       {:else}
-        <div class="overflow-x-auto">
+        <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+        <div class="hidden overflow-x-auto lg:block">
           <table class="table">
             <thead>
               <tr>
@@ -582,6 +583,68 @@
             </tfoot>
           </table>
         </div>
+        <!-- Phone / small tablet: stacked list of the same positions. -->
+        <ul class="divide-base-300 divide-y lg:hidden">
+          {#each items as it (it.id)}
+            <li class="flex items-start gap-2 px-4 py-3">
+              <div class="flex min-w-0 flex-1 flex-col gap-0.5">
+                <span class="text-sm font-medium break-words">
+                  {it.description}
+                </span>
+                <span class="text-base-content/60 text-xs">
+                  {it.kind === 'labor' ? 'Arbeitszeit' : 'Material'}
+                  · {fmtDate(it.doneAt)}
+                </span>
+                <span class="font-mono text-xs">
+                  {#if it.kind === 'labor'}
+                    {fmtAmount(it.hours ?? it.quantity)} Std. x {formatEuro(
+                      Number(it.unitPriceNet)
+                    )} = {formatEuro(rowTotal(it))}
+                  {:else}
+                    {fmtAmount(it.quantity)}
+                    {it.unit ?? 'Stk'} x {formatEuro(Number(it.unitPriceNet))} =
+                    {formatEuro(rowTotal(it))}
+                  {/if}
+                </span>
+                {#if it.employeeId}
+                  <span class="text-base-content/70 text-xs">
+                    {employeeLabelById.get(it.employeeId) ?? '-'}
+                  </span>
+                {/if}
+              </div>
+              {#if !isDone}
+                <div class="flex shrink-0 gap-1">
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs"
+                    title="Position bearbeiten"
+                    aria-label="Position bearbeiten"
+                    onclick={() => startEditItem(it)}
+                    disabled={busy.active}
+                  >
+                    <Pencil size={14} />
+                  </button>
+                  <button
+                    type="button"
+                    class="btn btn-ghost btn-xs text-error"
+                    title="Position löschen"
+                    aria-label="Position löschen"
+                    onclick={() => askDeleteItem(it.id)}
+                    disabled={busy.active}
+                  >
+                    <Trash2 size={14} />
+                  </button>
+                </div>
+              {/if}
+            </li>
+          {/each}
+          <li
+            class="flex items-center justify-end gap-3 px-4 py-3 font-semibold"
+          >
+            <span class="text-sm">Summe (netto)</span>
+            <span class="font-mono text-sm">{formatEuro(netTotal)}</span>
+          </li>
+        </ul>
       {/if}
 
       {#if !isDone}

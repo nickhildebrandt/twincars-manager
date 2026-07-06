@@ -93,7 +93,7 @@
 </script>
 
 <PageHeader
-  title="Offene Rechnungen & Zahlungserinnerungen"
+  title="Zahlungserinnerungen"
   subtitle="OP-Liste mit automatisch berechneten Verzugstagen - eine einzige freundliche Erinnerung wird wiederholt versendet."
   primaryAction={{
     label: 'Fällige jetzt versenden',
@@ -132,19 +132,20 @@
         description="Alle Rechnungen sind bezahlt."
       />
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table, hidden below lg. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
               <th>Rechnungsnr.</th>
-              <th>Datum</th>
+              <th class="hidden lg:table-cell">Datum</th>
               <th>Fällig</th>
               <th>Kunde</th>
-              <th class="text-right">Brutto</th>
+              <th class="hidden text-right xl:table-cell">Brutto</th>
               <th class="text-right">Offen</th>
               <th>Verzug</th>
               <th class="text-right">Erinnerungen</th>
-              <th>Zuletzt am</th>
+              <th class="hidden xl:table-cell">Zuletzt am</th>
               <th class="text-right">Aktion</th>
             </tr>
           </thead>
@@ -156,10 +157,12 @@
               >
                 <td class="font-mono text-xs font-medium">{i.documentNumber}</td
                 >
-                <td>{fmt(i.issueDate)}</td>
+                <td class="hidden lg:table-cell">{fmt(i.issueDate)}</td>
                 <td>{fmt(i.dueDate)}</td>
                 <td>{i.customerName ?? ''}</td>
-                <td class="text-right font-mono">{formatEuro(i.grossTotal)}</td>
+                <td class="hidden text-right font-mono xl:table-cell"
+                  >{formatEuro(i.grossTotal)}</td
+                >
                 <td class="text-right font-mono font-semibold"
                   >{formatEuro(i.openAmount)}</td
                 >
@@ -179,19 +182,20 @@
                     </span>
                   {/if}
                 </td>
-                <td>{fmt(i.lastReminderDate)}</td>
+                <td class="hidden xl:table-cell">{fmt(i.lastReminderDate)}</td>
                 <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end">
                     <button
                       type="button"
                       class="btn btn-sm btn-primary gap-1"
                       disabled={busy.active}
+                      title={i.reminderCount === 0
+                        ? 'Zahlungserinnerung senden'
+                        : 'Zahlungserinnerung erneut senden'}
                       onclick={() => sendReminder(i.id)}
                     >
                       <BellPlus size={14} />
-                      {i.reminderCount === 0
-                        ? 'Zahlungserinnerung'
-                        : 'Erneut senden'}
+                      Senden
                     </button>
                   </div>
                 </td>
@@ -200,6 +204,56 @@
           </tbody>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as i (i.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/invoices/${i.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate font-mono text-xs font-medium">
+                {i.documentNumber}
+              </span>
+              {#if i.customerName}
+                <span class="text-base-content/70 truncate text-xs">
+                  {i.customerName}
+                </span>
+              {/if}
+              <span
+                class="text-base-content/70 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+              >
+                <span>Fällig {fmt(i.dueDate)}</span>
+                {#if i.overdueDays > 0}
+                  <span class="text-error">{i.overdueDays} Tage Verzug</span>
+                {/if}
+                {#if i.reminderCount > 0}
+                  <span class="badge badge-xs badge-info">
+                    {i.reminderCount}×
+                  </span>
+                {/if}
+              </span>
+              <span class="font-mono text-sm font-semibold">
+                {formatEuro(i.openAmount)} offen
+              </span>
+            </a>
+            <div class="flex shrink-0 items-start">
+              <button
+                type="button"
+                class="btn btn-sm btn-primary gap-1"
+                disabled={busy.active}
+                title={i.reminderCount === 0
+                  ? 'Zahlungserinnerung senden'
+                  : 'Zahlungserinnerung erneut senden'}
+                onclick={() => sendReminder(i.id)}
+              >
+                <BellPlus size={14} />
+                Senden
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
     {/if}
   </div>
 </div>
@@ -213,7 +267,8 @@
           Vollständige Historie aller bisher versendeten Zahlungserinnerungen.
         </p>
       </div>
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table, hidden below lg. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -258,6 +313,40 @@
           </tbody>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each reminders as r (r.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/reminders/${r.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate font-mono text-xs font-medium">
+                {r.documentNumber}
+              </span>
+              {#if r.customerName}
+                <span class="text-base-content/70 truncate text-xs">
+                  {r.customerName}
+                </span>
+              {/if}
+              <span
+                class="text-base-content/70 mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs"
+              >
+                <span class="badge badge-xs badge-info">
+                  {r.level}. Erinnerung
+                </span>
+                <span>zu <span class="font-mono">{r.invoiceNumber}</span></span>
+                <span>Zahlbar bis {fmt(r.dueDate)}</span>
+              </span>
+            </a>
+            <div class="flex shrink-0 items-start">
+              <a class="btn btn-sm btn-ghost gap-1" href={`/reminders/${r.id}`}>
+                <FileText size={14} /> Details
+              </a>
+            </div>
+          </li>
+        {/each}
+      </ul>
     </div>
   </div>
 {/if}

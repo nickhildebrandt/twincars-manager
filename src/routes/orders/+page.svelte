@@ -153,6 +153,7 @@
         bind:valueLabel={employeeLabel}
         placeholder="Alle Mitarbeiter"
         dialogTitle="Mitarbeiter filtern"
+        triggerSize="sm"
         search={searchEmployees}
         onSelect={() => {}}
       />

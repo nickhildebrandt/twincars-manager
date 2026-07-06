@@ -131,6 +131,26 @@
     }
   }
 
+  /**
+   * Agenda variant (below `lg`): only the in-month days that actually
+   * carry events, in order — the 7-column grid is unusable at phone
+   * widths (chips truncate to 2-3 characters).
+   */
+  const agendaDays = $derived(
+    gridDays.filter(
+      (d) => d.inMonth && (eventsByDay.get(d.iso) ?? []).length > 0
+    )
+  )
+
+  const fmtAgendaDay = (iso: string): string =>
+    new Intl.DateTimeFormat('de-DE', {
+      weekday: 'long',
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric',
+      timeZone: 'UTC'
+    }).format(new Date(`${iso}T00:00:00Z`))
+
   const prev = () => {
     if (viewMonth === 1) {
       viewMonth = 12
@@ -159,13 +179,13 @@
 />
 
 <!--
-  Vollhöhen-Layout: das umschließende `flex flex-col h-full` lässt
-  die Grid-Karte den gesamten Rest unterhalb der Toolbar einnehmen.
-  Die Tageszellen tragen `min-h-0`, sonst würden sie ihre intrinsische
-  Mindesthöhe nicht aufgeben können — das Grid ist dann nicht mehr
-  vertikal flexibel.
+  Two variants share the same query and month navigation: the
+  7-column month grid from `lg` upwards (auto row heights, each day
+  clamped to three chips + "+N weitere") and a compact agenda list
+  below `lg`, where the grid cells would truncate every chip to a few
+  characters.
 -->
-<div class="flex h-full flex-col gap-4">
+<div class="flex flex-col gap-4">
   <!-- Toolbar: month nav (left) + month label (right) -->
   <div class="card border-base-300 bg-base-100 border">
     <div class="card-body flex flex-row items-center gap-2 p-3">
@@ -185,11 +205,11 @@
     </div>
   </div>
 
-  <!-- Month grid füllt verbleibende Höhe -->
+  <!-- Month grid (>= lg): auto row heights, max. 3 chips per day -->
   <div
-    class="card border-base-300 bg-base-100 flex min-h-0 flex-1 overflow-hidden border"
+    class="card border-base-300 bg-base-100 hidden overflow-hidden border lg:block"
   >
-    <div class="card-body flex h-full flex-col p-0">
+    <div class="card-body p-0">
       <div
         class="border-base-300 text-base-content/60 grid grid-cols-7 border-b text-xs font-semibold"
       >
@@ -197,19 +217,21 @@
           <div class="px-2 py-2 text-center">{d}</div>
         {/each}
       </div>
-      <div class="grid min-h-0 flex-1 grid-cols-7 grid-rows-6 overflow-auto">
+      <div class="grid grid-cols-7">
         {#each gridDays as day, i (day.iso + i)}
           {@const dayEvents = eventsByDay.get(day.iso) ?? []}
+          {@const visible = dayEvents.slice(0, 3)}
+          {@const overflow = dayEvents.slice(3)}
           <div
-            class="border-base-300 flex min-h-0 flex-col overflow-hidden border-r border-b p-1 text-xs"
+            class="border-base-300 flex min-h-24 flex-col border-r border-b p-1 text-xs"
             class:bg-base-200={!day.inMonth}
             class:opacity-60={!day.inMonth}
           >
             <div class="text-base-content/60 mb-1 text-[11px] font-medium">
               {Number(day.iso.slice(8, 10))}
             </div>
-            <div class="flex min-h-0 flex-1 flex-col gap-0.5 overflow-y-auto">
-              {#each dayEvents as ev (ev.id)}
+            <div class="flex flex-col gap-0.5">
+              {#each visible as ev (ev.id)}
                 {@const target = eventTarget(ev)}
                 {#if target}
                   <button
@@ -231,10 +253,59 @@
                   </span>
                 {/if}
               {/each}
+              {#if overflow.length > 0}
+                <span
+                  class="text-base-content/60 px-1 text-xs font-medium"
+                  title={overflow.map((ev) => ev.title).join('\n')}
+                >
+                  +{overflow.length} weitere
+                </span>
+              {/if}
             </div>
           </div>
         {/each}
       </div>
+    </div>
+  </div>
+
+  <!-- Agenda list (< lg): one section per day with events -->
+  <div class="card border-base-300 bg-base-100 border lg:hidden">
+    <div class="card-body gap-4 p-3">
+      {#if agendaDays.length === 0}
+        <p class="text-base-content/60 text-sm">
+          Keine Einträge in diesem Monat.
+        </p>
+      {:else}
+        {#each agendaDays as day (day.iso)}
+          <section class="flex flex-col gap-1">
+            <h3 class="text-base-content/60 text-xs font-semibold">
+              {fmtAgendaDay(day.iso)}
+            </h3>
+            {#each eventsByDay.get(day.iso) ?? [] as ev (ev.id)}
+              {@const target = eventTarget(ev)}
+              {#if target}
+                <button
+                  type="button"
+                  class="cursor-pointer rounded px-2 py-1 text-left text-sm break-words transition-opacity hover:opacity-80 {eventClass(
+                    ev.kind
+                  )}"
+                  onclick={() => goto(target)}
+                >
+                  {ev.title}
+                </button>
+              {:else}
+                <span
+                  class="rounded px-2 py-1 text-sm break-words {eventClass(
+                    ev.kind
+                  )}"
+                >
+                  {ev.title}
+                </span>
+              {/if}
+            {/each}
+          </section>
+        {/each}
+      {/if}
     </div>
   </div>
 </div>

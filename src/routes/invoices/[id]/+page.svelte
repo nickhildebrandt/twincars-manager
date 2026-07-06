@@ -450,8 +450,8 @@
               <th>#</th>
               <th>Beschreibung</th>
               <th class="text-right">Menge</th>
-              <th class="text-right">Einzelpreis</th>
-              <th class="text-right">MwSt</th>
+              <th class="hidden text-right sm:table-cell">Einzelpreis</th>
+              <th class="hidden text-right sm:table-cell">MwSt</th>
               <th class="text-right">Brutto</th>
             </tr>
           </thead>
@@ -486,10 +486,12 @@
                   {Number(it.quantity)}
                   {it.unit ?? ''}
                 </td>
-                <td class="text-right font-mono">
+                <td class="hidden text-right font-mono sm:table-cell">
                   {formatEuro(Number(it.unitPriceNet))}
                 </td>
-                <td class="text-right">{Number(it.taxRate)} %</td>
+                <td class="hidden text-right sm:table-cell"
+                  >{Number(it.taxRate)} %</td
+                >
                 <td class="text-right font-mono">
                   {formatEuro(Number(it.lineTotalGross))}
                 </td>

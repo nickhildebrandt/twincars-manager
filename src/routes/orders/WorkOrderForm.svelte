@@ -174,7 +174,7 @@
 
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Verknüpfungen</legend>
-      <div class="grid grid-cols-1 gap-3 sm:grid-cols-3">
+      <div class="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
         <CustomerVehiclePicker
           bind:customerId
           bind:customerLabel

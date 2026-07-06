@@ -2,8 +2,13 @@
   import { goto } from '$app/navigation'
   import { page as pageStore } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
+  import PositionsEditor, {
+    applyVehicleToPosition,
+    blankPosition,
+    cleanPosition,
+    type Position
+  } from '../PositionsEditor.svelte'
   import { createInvoiceRemote } from '../invoices.remote'
   import { getInventoryVehicleRemote } from '../../inventory/inventory.remote'
   import { handleClientError } from '$lib/utils/client-error'
@@ -11,27 +16,6 @@
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
   import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
-  import { formatEuro } from '$lib/utils/money'
-  import { Plus, Trash2 } from '@lucide/svelte'
-  import {
-    pickItemsRemote,
-    pickInventoryVehiclesRemote
-  } from '../../pickers.remote'
-
-  type PositionSource = 'free' | 'article' | 'service' | 'vehicle'
-  type Position = {
-    description: string
-    quantity: number | string
-    unit: string
-    unitPriceNet: number | string
-    discountPercent: number | string
-    taxRate: number | string
-    source: PositionSource
-    sourceRef: string
-    sourceLabel: string
-    kind: string
-    articleNumber?: string
-  }
 
   const today = new Date().toISOString().slice(0, 10)
   const due = new Date()
@@ -50,19 +34,6 @@
   let footer = $state('')
   let notes = $state('')
 
-  const blankPosition = (): Position => ({
-    description: '',
-    quantity: 1,
-    unit: 'Stk',
-    unitPriceNet: 0,
-    discountPercent: 0,
-    taxRate: 19,
-    source: 'free',
-    sourceRef: '',
-    sourceLabel: '',
-    kind: 'article'
-  })
-
   let positions = $state<Position[]>([blankPosition()])
 
   let errorMsg = $state<string | null>(null)
@@ -72,168 +43,6 @@
     Boolean(customerId) &&
       positions.some((p) => (p.description ?? '').trim().length > 0)
   )
-
-  const searchArticles = (params: { q: string; page: number; size: number }) =>
-    pickItemsRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100,
-      category: 'articles'
-    }).run()
-  const searchServices = (params: { q: string; page: number; size: number }) =>
-    pickItemsRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100,
-      category: 'services'
-    }).run()
-  const searchInventoryVehicles = (params: {
-    q: string
-    page: number
-    size: number
-  }) =>
-    pickInventoryVehiclesRemote({
-      ...params,
-      size: params.size as 10 | 25 | 50 | 100
-    }).run()
-
-  const round2 = (v: number) => Math.round(v * 100) / 100
-  const totals = $derived.by(() => {
-    let net = 0
-    let tax = 0
-    positions.forEach((p) => {
-      const qty = Number(p.quantity) || 0
-      const price = Number(p.unitPriceNet) || 0
-      const disc = Number(p.discountPercent) || 0
-      const t = Number(p.taxRate) || 0
-      const lineNet = round2(qty * price * (1 - disc / 100))
-      net = round2(net + lineNet)
-      tax = round2(tax + lineNet * (t / 100))
-    })
-    return { net, tax, gross: round2(net + tax) }
-  })
-
-  const addPosition = () => {
-    positions = [...positions, blankPosition()]
-  }
-
-  /**
-   * Setzt einen Item-Treffer aus dem Picker in die angegebene Zeile —
-   * füllt Beschreibung, Einheit und Standardpreis und setzt die
-   * Quelle abhängig vom Item-`kind`.
-   */
-  const fillItemRow = (
-    idx: number,
-    item: {
-      id: string
-      label: string
-      articleNumber: string
-      description: string
-      kind: string
-      unit: string
-      unitPriceNet: number
-    }
-  ) => {
-    const next = [...positions]
-    const source: PositionSource =
-      item.kind === 'service' ? 'service' : 'article'
-    next[idx] = {
-      ...next[idx],
-      description: item.description,
-      unit: item.unit || next[idx].unit,
-      unitPriceNet: item.unitPriceNet,
-      source,
-      sourceRef: item.id,
-      sourceLabel: item.label,
-      kind: item.kind,
-      articleNumber: item.articleNumber
-    }
-    positions = next
-  }
-
-  const fillVehicleRow = (
-    idx: number,
-    v: {
-      id: string
-      label: string
-      plate: string | null
-      vin: string | null
-      make: string | null
-      model: string | null
-      firstRegistration: string | null
-      salesPriceGross: number
-      differentialTax: boolean
-    }
-  ) => {
-    const lines = [
-      [v.make, v.model].filter(Boolean).join(' '),
-      v.plate ? `Kennz.: ${v.plate}` : '',
-      v.vin ? `FIN: ${v.vin}` : '',
-      v.firstRegistration ? `EZ: ${v.firstRegistration}` : ''
-    ].filter(Boolean)
-    const description = `Fahrzeug ${lines.join(' · ')}`
-    const taxRate = v.differentialTax ? 0 : 19
-    const priceNet = v.differentialTax
-      ? v.salesPriceGross
-      : Math.round((v.salesPriceGross / 1.19) * 100) / 100
-    const next = [...positions]
-    next[idx] = {
-      ...next[idx],
-      description,
-      unit: 'Stk',
-      unitPriceNet: priceNet,
-      taxRate,
-      source: 'vehicle',
-      sourceRef: v.id,
-      sourceLabel:
-        [v.make, v.model].filter(Boolean).join(' ') || (v.plate ?? ''),
-      kind: 'vehicle'
-    }
-    positions = next
-  }
-
-  /**
-   * Behält Beschreibung etc. mehrheitlich und reset nur das, was die
-   * neue Quelle bedingt — der User wechselt z.B. von "Frei" auf
-   * "Artikel" und wählt dann ein Datensatz aus.
-   */
-  const onSourceChange = (idx: number, next: PositionSource) => {
-    const arr = [...positions]
-    arr[idx] = {
-      ...arr[idx],
-      source: next,
-      sourceRef: '',
-      sourceLabel: '',
-      articleNumber: undefined,
-      kind:
-        next === 'vehicle'
-          ? 'vehicle'
-          : next === 'service'
-            ? 'service'
-            : 'article'
-    }
-    if (next === 'free') {
-      // Für eine freie Position lassen wir die Beschreibung, damit der
-      // Nutzer nicht alles erneut tippen muss, wenn er nur die Quelle
-      // umstellt.
-    } else {
-      arr[idx].description = ''
-      arr[idx].unitPriceNet = 0
-    }
-    positions = arr
-  }
-
-  /**
-   * Hinweis-Backwards-Kompatibilität: in älteren Bestandsrechnungen
-   * gab es nur "frei | item | vehicle". Neue Eingaben liefern stets
-   * 'service' oder 'article' — daher mappt der Server
-   * (`document_items.kind`) ohnehin auf das gleiche Feld. Diese
-   * Hilfsfunktion bestimmt nur das Quelle-Label fürs UI.
-   */
-  const removePosition = (idx: number) => {
-    positions = positions.filter((_, i) => i !== idx)
-  }
-
-  // (sourceLabel-Helper für Badges entfernt — wir verwenden die
-  //  4-Werte-Auswahl direkt im Dropdown.)
 
   const preloadVehicleId = pageStore.url.searchParams.get('vehicleId')
   const preloadQuery = $derived(
@@ -256,17 +65,18 @@
     const data = preloadQuery?.current
     if (!data) return
     preloaded = true
-    positions = positions.filter(
-      (p) => p.description.trim() !== '' || p.source !== 'free'
-    )
-    // Hänge eine leere Zeile an und befülle sie direkt mit dem
-    // Lagerfahrzeug — `fillVehicleRow` arbeitet per Index.
-    positions = [...positions, blankPosition()]
-    fillVehicleRow(positions.length - 1, {
-      ...data,
-      differentialTax: data.differentialTax ?? false,
-      label: [data.make, data.model].filter(Boolean).join(' ')
-    })
+    // Drop untouched blank rows and append the stock vehicle as a
+    // pre-filled position.
+    positions = [
+      ...positions.filter(
+        (p) => p.description.trim() !== '' || p.source !== 'free'
+      ),
+      applyVehicleToPosition(blankPosition(), {
+        ...data,
+        differentialTax: data.differentialTax ?? false,
+        label: [data.make, data.model].filter(Boolean).join(' ')
+      })
+    ]
     // Fahrzeug oben am Dokument vorbelegen — sonst kann
     // `transferStockVehicleOnPayment` das Fahrzeug bei Zahlung nicht
     // umschreiben, weil `documents.vehicle_id` leer wäre.
@@ -288,19 +98,6 @@
   let zeroOpen = $state(false)
   let zeroRows = $state<{ description: string; reason: string }[]>([])
   let pendingItems = $state<Array<ReturnType<typeof cleanPosition>>>([])
-
-  function cleanPosition(p: Position) {
-    return {
-      description: p.description.trim(),
-      quantity: Number(p.quantity) || 0,
-      unit: p.unit,
-      unitPriceNet: Number(p.unitPriceNet) || 0,
-      discountPercent: Number(p.discountPercent) || 0,
-      taxRate: Number(p.taxRate) || 19,
-      kind: p.kind,
-      articleNumber: p.articleNumber || undefined
-    }
-  }
 
   const persistInvoice = async (
     cleaned: Array<ReturnType<typeof cleanPosition>>
@@ -450,200 +247,10 @@
     </div>
   </div>
 
-  <div class="card border-base-300 bg-base-100 border">
-    <div class="card-body gap-3">
-      <div class="flex flex-wrap items-center justify-between gap-2">
-        <h3 class="card-title text-base">Positionen</h3>
-        <button
-          type="button"
-          class="btn btn-sm gap-2"
-          onclick={addPosition}
-          data-testid="add-position"
-        >
-          <Plus size={14} /> Position hinzufügen
-        </button>
-      </div>
-      <div class="overflow-x-auto">
-        <table class="table-sm table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th class="w-32">Quelle</th>
-              <th>Beschreibung</th>
-              <th class="w-20 text-right">Menge</th>
-              <th class="w-20">Einheit</th>
-              <th class="w-28 text-right">Einzelpreis</th>
-              <th class="w-20 text-right">Rabatt %</th>
-              <th class="w-20 text-right">MwSt %</th>
-              <th class="w-12"></th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each positions as p, idx (idx)}
-              <tr>
-                <td class="text-base-content/60">{idx + 1}</td>
-                <td>
-                  <select
-                    class="select select-bordered select-sm w-full"
-                    value={p.source}
-                    onchange={(e) =>
-                      onSourceChange(
-                        idx,
-                        (e.target as HTMLSelectElement).value as PositionSource
-                      )}
-                    aria-label="Quelle"
-                  >
-                    <option value="free">Frei</option>
-                    <option value="article">Artikel</option>
-                    <option value="service">Leistung</option>
-                    <option value="vehicle">Fahrzeug</option>
-                  </select>
-                  {#if p.source !== 'free' && p.articleNumber}
-                    <div
-                      class="text-base-content/60 mt-0.5 font-mono text-[10px]"
-                    >
-                      {p.articleNumber}
-                    </div>
-                  {/if}
-                </td>
-                <td>
-                  {#if p.source === 'free'}
-                    <input
-                      class="input input-bordered input-sm w-full"
-                      maxlength="500"
-                      bind:value={p.description}
-                      placeholder="z. B. Sonderposition"
-                    />
-                  {:else if p.sourceRef}
-                    <input
-                      class="input input-bordered input-sm w-full"
-                      maxlength="500"
-                      bind:value={p.description}
-                    />
-                  {:else if p.source === 'article'}
-                    <SearchablePicker
-                      bind:value={p.sourceRef}
-                      bind:valueLabel={p.sourceLabel}
-                      placeholder="Artikel auswählen"
-                      dialogTitle="Artikel auswählen"
-                      search={searchArticles}
-                      onSelect={(it) => {
-                        if (it)
-                          fillItemRow(
-                            idx,
-                            it as Parameters<typeof fillItemRow>[1]
-                          )
-                      }}
-                    />
-                  {:else if p.source === 'service'}
-                    <SearchablePicker
-                      bind:value={p.sourceRef}
-                      bind:valueLabel={p.sourceLabel}
-                      placeholder="Leistung auswählen"
-                      dialogTitle="Leistung auswählen"
-                      search={searchServices}
-                      onSelect={(it) => {
-                        if (it)
-                          fillItemRow(
-                            idx,
-                            it as Parameters<typeof fillItemRow>[1]
-                          )
-                      }}
-                    />
-                  {:else}
-                    <SearchablePicker
-                      bind:value={p.sourceRef}
-                      bind:valueLabel={p.sourceLabel}
-                      placeholder="Fahrzeug aus Bestand"
-                      dialogTitle="Fahrzeug auswählen"
-                      search={searchInventoryVehicles}
-                      onSelect={(it) => {
-                        if (it)
-                          fillVehicleRow(
-                            idx,
-                            it as Parameters<typeof fillVehicleRow>[1]
-                          )
-                      }}
-                    />
-                  {/if}
-                </td>
-                <td>
-                  <input
-                    class="input input-bordered input-sm w-full text-right"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={p.quantity}
-                  />
-                </td>
-                <td>
-                  <input
-                    class="input input-bordered input-sm w-full"
-                    maxlength="20"
-                    bind:value={p.unit}
-                  />
-                </td>
-                <td>
-                  <input
-                    class="input input-bordered input-sm w-full text-right"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    bind:value={p.unitPriceNet}
-                  />
-                </td>
-                <td>
-                  <input
-                    class="input input-bordered input-sm w-full text-right"
-                    type="number"
-                    step="0.01"
-                    min="0"
-                    max="100"
-                    bind:value={p.discountPercent}
-                  />
-                </td>
-                <td>
-                  <select
-                    class="select select-bordered select-sm w-full text-right"
-                    bind:value={p.taxRate}
-                  >
-                    <option value={19}>19</option>
-                    <option value={7}>7</option>
-                    <option value={0}>0</option>
-                  </select>
-                </td>
-                <td>
-                  <button
-                    type="button"
-                    class="btn btn-ghost btn-sm btn-square text-error"
-                    onclick={() => removePosition(idx)}
-                    aria-label="Position löschen"
-                  >
-                    <Trash2 size={14} />
-                  </button>
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-        </table>
-      </div>
-
-      <div class="border-base-300 flex justify-end border-t pt-3 text-sm">
-        <dl class="grid w-64 grid-cols-[auto_1fr] gap-x-3 gap-y-1">
-          <dt class="text-base-content/60">Netto</dt>
-          <dd class="text-right font-mono">{formatEuro(totals.net)}</dd>
-          <dt class="text-base-content/60">MwSt</dt>
-          <dd class="text-right font-mono">{formatEuro(totals.tax)}</dd>
-          <dt class="border-base-300 border-t pt-1 font-semibold">Brutto</dt>
-          <dd
-            class="border-base-300 border-t pt-1 text-right font-mono font-semibold"
-          >
-            {formatEuro(totals.gross)}
-          </dd>
-        </dl>
-      </div>
-    </div>
-  </div>
+  <PositionsEditor
+    bind:positions
+    descriptionPlaceholder="z. B. Sonderposition"
+  />
 
   <div class="card border-base-300 bg-base-100 border">
     <div class="card-body gap-3">

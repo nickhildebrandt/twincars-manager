@@ -49,7 +49,7 @@
     >
       <span class="text-base-content/60 text-sm">Zeitraum:</span>
       <select
-        class="select select-sm select-bordered w-full"
+        class="select select-sm select-bordered w-full sm:w-56"
         bind:value={period}
       >
         <option value="this_month">Dieser Monat</option>
@@ -87,7 +87,8 @@
     {#if rows.length === 0}
       <EmptyState icon={BookOpen} title="Keine Rechnungen im Zeitraum" />
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table, hidden below lg. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -139,6 +140,38 @@
           </tfoot>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list with a Summe footer row. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each rows as r (r.id)}
+          <li>
+            <a
+              href={`/invoices/${r.id}`}
+              class="hover:bg-base-200 flex min-w-0 flex-col gap-0.5 p-3"
+            >
+              <span class="truncate font-mono text-xs font-medium">
+                {r.documentNumber}
+              </span>
+              <span class="text-base-content/70 truncate text-xs">
+                {[r.issueDate, r.customerName].filter(Boolean).join(' · ')}
+              </span>
+              <span class="mt-0.5 flex flex-wrap items-center gap-2">
+                <span class="badge badge-sm {documentStatusBadge(r.status)}">
+                  {documentStatusLabel(r.status)}
+                </span>
+                <span class="font-mono text-sm font-semibold">
+                  {formatEuro(Number(r.grossTotal))}
+                </span>
+              </span>
+            </a>
+          </li>
+        {/each}
+        <li
+          class="bg-base-200/30 flex items-center justify-between p-3 font-semibold"
+        >
+          <span>Summe</span>
+          <span class="font-mono">{formatEuro(totals.gross)}</span>
+        </li>
+      </ul>
     {/if}
   </div>
 </div>
