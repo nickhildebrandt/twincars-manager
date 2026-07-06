@@ -3,9 +3,22 @@
   import Pagination from './Pagination.svelte'
   import Loader from './Loader.svelte'
 
+  /**
+   * Multi-select variant of SearchablePicker: same dialog (server-side
+   * search + pagination, optional header create affordance), but rows
+   * carry checkboxes and the selection is kept across pages. The
+   * dialog is transactional — "Übernehmen (N)" writes the selection
+   * back to the bindable props, "Abbrechen" / backdrop discards it.
+   */
   type Props = {
-    value: string
-    valueLabel?: string
+    /** Selected ids. Bindable. */
+    values?: string[]
+    /**
+     * id -> label of the selected entries (drives the trigger text).
+     * Accepts a Map or an entry array; the component always writes a
+     * Map back. Bindable.
+     */
+    valueLabels?: Map<string, string> | Array<[string, string]>
     placeholder?: string
     dialogTitle?: string
     emptyText?: string
@@ -15,35 +28,25 @@
       page: number
       size: number
     }) => Promise<{ items: T[]; total: number; pageCount: number }>
-    onSelect: (item: T | null) => void
+    /** Fires after "Übernehmen" or the trigger clear with the new ids. */
+    onChange?: (values: string[]) => void
     disabled?: boolean
-    /**
-     * Trigger height variant. 'sm' matches `input-sm` neighbours in
-     * compact filter toolbars; default is the full-size form input.
-     */
+    /** Trigger height variant, mirrors SearchablePicker. */
     triggerSize?: 'sm' | 'md'
-    /**
-     * Label of the "Neu anlegen" affordance shown exactly once in the
-     * dialog header, next to the close button. Only when BOTH
-     * `createLabel` and `onCreateNew` are set is the button rendered.
-     */
+    /** Header "Neu anlegen" label — rendered only with onCreateNew. */
     createLabel?: string
-    /**
-     * Navigates to the entity's regular full-page creation flow (the
-     * host wires `creationFlow.start(...)` + `goto(...)`). The dialog
-     * closes before the callback fires.
-     */
+    /** Full-page creation flow hook, mirrors SearchablePicker. */
     onCreateNew?: () => void
   }
 
   let {
-    value = $bindable(''),
-    valueLabel = $bindable(''),
+    values = $bindable([]),
+    valueLabels = $bindable(new Map<string, string>()),
     placeholder = 'Bitte wählen',
     dialogTitle = 'Auswählen',
     emptyText = 'Keine passenden Einträge gefunden.',
     search,
-    onSelect,
+    onChange,
     disabled = false,
     triggerSize = 'md',
     createLabel,
@@ -60,7 +63,27 @@
   let pageCount = $state(1)
   let loading = $state(false)
 
+  /**
+   * Working copy of the selection while the dialog is open. Seeded
+   * from the bound props on open, written back only on "Übernehmen" —
+   * reassigned on every toggle so Svelte tracks the change.
+   */
+  let selection = $state(new Map<string, string>())
+
   const canCreate = $derived(Boolean(createLabel && onCreateNew))
+
+  const labelMap = $derived(
+    valueLabels instanceof Map ? valueLabels : new Map(valueLabels)
+  )
+
+  /** Trigger text: placeholder, joined labels (≤ 2) or "N ausgewählt". */
+  const triggerText = $derived(
+    values.length === 0
+      ? placeholder
+      : values.length > 2
+        ? `${values.length} ausgewählt`
+        : values.map((id) => labelMap.get(id) ?? id).join(', ')
+  )
 
   let searchTimer: ReturnType<typeof setTimeout> | null = null
 
@@ -79,9 +102,8 @@
   const open = () => {
     if (disabled) return
     page = 1
+    selection = new Map(values.map((id) => [id, labelMap.get(id) ?? id]))
     dialog?.showModal()
-    // Focus the search input after the dialog is shown — replaces the
-    // accessibility-flagged `autofocus` attribute with explicit focus.
     queueMicrotask(() => searchInput?.focus())
     void runSearch()
   }
@@ -97,18 +119,25 @@
     searchTimer = setTimeout(() => void runSearch(), 250)
   }
 
-  const handleSelect = (item: T) => {
-    value = item.id
-    valueLabel = item.label
-    onSelect(item)
+  const toggle = (item: T) => {
+    const next = new Map(selection)
+    if (next.has(item.id)) next.delete(item.id)
+    else next.set(item.id, item.label)
+    selection = next
+  }
+
+  const apply = () => {
+    values = [...selection.keys()]
+    valueLabels = new Map(selection)
+    onChange?.(values)
     close()
   }
 
   const handleClear = (e: Event) => {
     e.stopPropagation()
-    value = ''
-    valueLabel = ''
-    onSelect(null)
+    values = []
+    valueLabels = new Map()
+    onChange?.([])
   }
 
   /** Keyboard activation for the span[role=button] clear affordance. */
@@ -126,13 +155,10 @@
 </script>
 
 <!--
-	Trigger anatomy: the outer element stays a real <button> (it must
-	remain the first labelable descendant when a host wraps the picker
-	in a FormField <label> — a non-labelable trigger would forward label
-	clicks into the dialog's buttons). The clear "X" therefore cannot be
-	a nested <button> (invalid HTML); it is a span[role=button] with its
-	own keyboard handling. Both icons sit in one flex group flush right —
-	no absolute positioning, no reserved padding.
+	Trigger anatomy mirrors SearchablePicker: a real <button> (first
+	labelable descendant inside FormField <label> hosts), the clear "X"
+	as span[role=button] with its own keyboard handling, both icons in
+	one flex group flush right.
 -->
 <button
   type="button"
@@ -144,14 +170,14 @@
   onclick={open}
 >
   <span
-    class={value
+    class={values.length > 0
       ? 'text-base-content truncate'
       : 'text-base-content/50 truncate'}
   >
-    {value ? valueLabel : placeholder}
+    {triggerText}
   </span>
   <span class="flex shrink-0 items-center gap-1">
-    {#if value && !disabled}
+    {#if values.length > 0 && !disabled}
       <span
         role="button"
         tabindex="0"
@@ -168,10 +194,7 @@
 </button>
 
 <dialog bind:this={dialog} class="modal">
-  <!--
-		Stable dialog dimensions: fixed width, fixed height — independent of how
-		many results are loaded. The list area scrolls inside.
-	-->
+  <!-- Stable dialog dimensions, identical to SearchablePicker. -->
   <div
     class="modal-box flex h-[80dvh] max-h-[640px] w-full max-w-2xl flex-col p-0"
   >
@@ -231,16 +254,17 @@
         <ul class="divide-base-300 divide-y">
           {#each items as item (item.id)}
             <li>
-              <button
-                type="button"
-                class="hover:bg-base-200 flex w-full items-center justify-between px-4 py-3 text-left"
-                onclick={() => handleSelect(item)}
+              <label
+                class="hover:bg-base-200 flex w-full cursor-pointer items-center gap-3 px-4 py-3"
               >
+                <input
+                  type="checkbox"
+                  class="checkbox checkbox-sm"
+                  checked={selection.has(item.id)}
+                  onchange={() => toggle(item)}
+                />
                 <span class="truncate">{item.label}</span>
-                {#if item.id === value}
-                  <span class="badge badge-primary badge-sm">ausgewählt</span>
-                {/if}
-              </button>
+              </label>
             </li>
           {/each}
         </ul>
@@ -256,6 +280,16 @@
         void runSearch()
       }}
     />
+    <div
+      class="border-base-300 flex items-center justify-end gap-2 border-t px-4 py-3"
+    >
+      <button type="button" class="btn btn-ghost" onclick={close}>
+        Abbrechen
+      </button>
+      <button type="button" class="btn btn-primary" onclick={apply}>
+        Übernehmen ({selection.size})
+      </button>
+    </div>
   </div>
   <button
     type="button"

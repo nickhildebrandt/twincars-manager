@@ -52,11 +52,12 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
-  import QuickCreateCustomerForm from '$lib/components/ui/QuickCreateCustomerForm.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { creationFlow, currentUrl } from '$lib/stores/creation-flow.svelte'
   import {
     useFormValidation,
     validationClasses
@@ -118,27 +119,97 @@
 
   const todayIso = (): string => new Date().toISOString().slice(0, 10)
 
-  let employeeId = $state(lockedSnapshot?.id ?? init.employeeId ?? '')
-  let employeeLabel = $state(lockedSnapshot?.label ?? init.employeeLabel ?? '')
-  let date = $state(init.date ?? todayIso())
-  let hours = $state<number>(init.hours != null ? Number(init.hours) : 1)
+  /**
+   * JSON-serializable snapshot of every form field — pushed into the
+   * creation-flow store when the user jumps to a full-page create and
+   * restored (below) when they come back.
+   */
+  type Draft = {
+    employeeId: string
+    employeeLabel: string
+    date: string
+    hours: number
+    linkKind: LinkKind
+    documentId: string
+    documentLabel: string
+    customerId: string
+    customerLabel: string
+    task: string
+    note: string
+  }
 
-  // Initial link kind: derive from whichever field is set.
-  const initialLink: LinkKind = init.documentId
-    ? 'document'
-    : init.customerId
-      ? 'customer'
-      : 'task'
+  // Returning from a full-page create? Consume the pending return for
+  // THIS page exactly once — its draft wins over `initial`.
+  const pending = untrack(() => creationFlow.pendingReturnFor(currentUrl()))
+  const draft = (pending?.draft ?? null) as Draft | null
+
+  let employeeId = $state(
+    lockedSnapshot?.id ?? draft?.employeeId ?? init.employeeId ?? ''
+  )
+  let employeeLabel = $state(
+    lockedSnapshot?.label ?? draft?.employeeLabel ?? init.employeeLabel ?? ''
+  )
+  let date = $state(draft?.date ?? init.date ?? todayIso())
+  let hours = $state<number>(
+    draft?.hours ?? (init.hours != null ? Number(init.hours) : 1)
+  )
+
+  // Initial link kind: restored draft wins, else derive from whichever
+  // field is set.
+  const initialLink: LinkKind =
+    draft?.linkKind ??
+    (init.documentId ? 'document' : init.customerId ? 'customer' : 'task')
   let linkKind = $state<LinkKind>(initialLink)
 
-  let documentId = $state(init.documentId ?? '')
-  let documentLabel = $state(init.documentLabel ?? '')
-  let customerId = $state(init.customerId ?? '')
-  let customerLabel = $state(init.customerLabel ?? '')
-  let task = $state(init.task ?? '')
-  let note = $state(init.note ?? '')
+  let documentId = $state(draft?.documentId ?? init.documentId ?? '')
+  let documentLabel = $state(draft?.documentLabel ?? init.documentLabel ?? '')
+  let customerId = $state(draft?.customerId ?? init.customerId ?? '')
+  let customerLabel = $state(draft?.customerLabel ?? init.customerLabel ?? '')
+  let task = $state(draft?.task ?? init.task ?? '')
+  let note = $state(draft?.note ?? init.note ?? '')
+
+  // A successful create auto-selects the new entity in the picker
+  // that started the flow.
+  if (pending?.result && pending.originField === 'customerId') {
+    customerId = pending.result.id
+    customerLabel = pending.result.label
+  }
+  // A restored draft is unsaved user input — re-arm the leave guard.
+  if (draft) untrack(() => formDirty.set(true))
 
   let errorMsg = $state<string | null>(null)
+
+  const buildDraft = (): Draft => ({
+    employeeId,
+    employeeLabel,
+    date,
+    hours,
+    linkKind,
+    documentId,
+    documentLabel,
+    customerId,
+    customerLabel,
+    task,
+    note
+  })
+
+  /** Cycle guard: no customer create while one is already in flight. */
+  const canCreateCustomer = $derived(
+    !creationFlow.activeEntities().has('customer')
+  )
+
+  const startCustomerCreate = () => {
+    creationFlow.start({
+      entity: 'customer',
+      returnUrl: currentUrl(),
+      originField: 'customerId',
+      draft: buildDraft(),
+      createdAt: Date.now()
+    })
+    // The draft carries the input — silence the unsaved-changes guard.
+    formDirty.clear()
+    goto('/customers/new')
+  }
 
   /**
    * Validation handle for the Submit button gate and the per-field
@@ -215,18 +286,6 @@
   const markDirty = () => formDirty.set(true)
   $effect(() => () => formDirty.clear())
 </script>
-
-{#snippet customerCreateForm(props: {
-  initialQuery: string
-  onCreated: (item: { id: string; label: string }) => void
-  onCancel: () => void
-})}
-  <QuickCreateCustomerForm
-    initialQuery={props.initialQuery}
-    onCreated={props.onCreated}
-    onCancel={props.onCancel}
-  />
-{/snippet}
 
 <form
   onsubmit={submit}
@@ -361,8 +420,10 @@
               dialogTitle="Kunde auswählen"
               search={searchCustomers}
               onSelect={() => fv.markTouched('customerId')}
-              createLabel="Neuen Kunden anlegen"
-              createForm={customerCreateForm}
+              createLabel={canCreateCustomer
+                ? 'Neuen Kunden anlegen'
+                : undefined}
+              onCreateNew={canCreateCustomer ? startCustomerCreate : undefined}
             />
           </FormField>
         {:else}

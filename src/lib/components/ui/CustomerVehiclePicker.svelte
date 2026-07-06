@@ -15,10 +15,14 @@
    *
    * Bindable `customerId`/`vehicleId` (+ labels) keep the parent-page
    * contract identical to the two separate pickers it replaces.
+   *
+   * Creation stays flow-agnostic: the picker only forwards the
+   * optional `onCreateCustomer` / `onCreateVehicle` callbacks to the
+   * dialogs' header "Neu anlegen" buttons — parents wire the
+   * creation-flow store and navigation. Vehicle creation is offered
+   * only once a customer is chosen (holderless creation is forbidden).
    */
   import SearchablePicker from './SearchablePicker.svelte'
-  import QuickCreateCustomerForm from './QuickCreateCustomerForm.svelte'
-  import QuickCreateVehicleForm from './QuickCreateVehicleForm.svelte'
   import {
     pickCustomersRemote,
     pickCustomerVehiclesRemote
@@ -52,6 +56,13 @@
     customerError?: string | null
     /** Fires after any selection change (pick, auto-fill, clear). */
     onChange?: () => void
+    /** Starts the full-page customer creation flow (parent-wired). */
+    onCreateCustomer?: () => void
+    /**
+     * Starts the full-page vehicle creation flow (parent-wired).
+     * Only offered once a customer is chosen.
+     */
+    onCreateVehicle?: () => void
     disabled?: boolean
     /** Width modifier applied to both field wrappers (e.g. col-spans). */
     colSpan?: string
@@ -70,6 +81,8 @@
     vehicleHint,
     customerError = null,
     onChange,
+    onCreateCustomer,
+    onCreateVehicle,
     disabled = false,
     colSpan
   }: Props = $props()
@@ -137,33 +150,10 @@
     }
     onChange?.()
   }
+
+  /** Vehicle creation needs a holder — only offered with a customer. */
+  const canCreateVehicle = $derived(Boolean(customerId && onCreateVehicle))
 </script>
-
-{#snippet customerCreateForm(props: {
-  initialQuery: string
-  onCreated: (item: { id: string; label: string }) => void
-  onCancel: () => void
-})}
-  <QuickCreateCustomerForm
-    initialQuery={props.initialQuery}
-    onCreated={props.onCreated}
-    onCancel={props.onCancel}
-  />
-{/snippet}
-
-{#snippet vehicleCreateForm(props: {
-  initialQuery: string
-  onCreated: (item: VehicleHit) => void
-  onCancel: () => void
-})}
-  <QuickCreateVehicleForm
-    {customerId}
-    {customerLabel}
-    initialQuery={props.initialQuery}
-    onCreated={props.onCreated}
-    onCancel={props.onCancel}
-  />
-{/snippet}
 
 <!--
 	div + span instead of FormField: the picker contains its own dialog
@@ -183,8 +173,8 @@
     search={searchCustomers}
     onSelect={onCustomerSelect}
     {disabled}
-    createLabel="Neuen Kunden anlegen"
-    createForm={customerCreateForm}
+    createLabel={onCreateCustomer ? 'Neuen Kunden anlegen' : undefined}
+    onCreateNew={onCreateCustomer}
   />
   {#if customerError}
     <span class="text-error text-sm">{customerError}</span>
@@ -205,13 +195,13 @@
       ? 'Fahrzeug dieses Kunden suchen'
       : 'Fahrzeug oder Halter suchen'}
     emptyText={customerId
-      ? 'Keine Treffer.'
-      : 'Keine Treffer. Zuerst Kunden wählen, um ein neues Fahrzeug anzulegen.'}
+      ? 'Keine passenden Einträge gefunden.'
+      : 'Keine passenden Einträge gefunden. Zuerst Kunden wählen, um ein neues Fahrzeug anzulegen.'}
     search={searchVehicles}
     onSelect={onVehicleSelect}
     disabled={disabled || vehicleLocked}
-    createLabel={customerId ? 'Neues Fahrzeug anlegen' : undefined}
-    createForm={customerId ? vehicleCreateForm : undefined}
+    createLabel={canCreateVehicle ? 'Neues Fahrzeug anlegen' : undefined}
+    onCreateNew={canCreateVehicle ? onCreateVehicle : undefined}
   />
   {#if vehicleHint}
     <span class="text-base-content/60 text-xs">{vehicleHint}</span>

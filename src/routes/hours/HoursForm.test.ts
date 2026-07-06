@@ -1,18 +1,19 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 /**
  * Component tests for HoursForm — required employee + date + hours,
- * link-kind branching (document / customer / task), max-hours guard
- * and locked-employee read-only path.
+ * link-kind branching (document / customer / task), max-hours guard,
+ * locked-employee read-only path, and the full-page customer-creation
+ * flow (draft snapshot, restore, auto-select).
  *
  * @group component
  * @module HoursForm
  */
 
-const createCustomerMock = vi.fn()
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }))
 
 // HoursForm awaits the picker queries directly (no `.run()`), so the
 // mocks must be plain promises resolving to an empty result page.
@@ -25,18 +26,18 @@ vi.mock('../pickers.remote', () => ({
   pickCustomersRemote: () => emptyPage()
 }))
 
-// The inline quick-create form inside the customer picker calls the real
-// customer create command — mock the remote module.
-vi.mock('../customers/customers.remote', () => ({
-  createCustomerRemote: (args: unknown) => createCustomerMock(args)
-}))
-
+import { goto } from '$app/navigation'
 import HoursForm from './HoursForm.svelte'
 import { formDirty } from '$lib/stores/form-dirty.svelte'
+import { creationFlow } from '$lib/stores/creation-flow.svelte'
 
 beforeEach(() => {
   formDirty.clear()
-  createCustomerMock.mockReset()
+  window.sessionStorage.clear()
+  // Detach the creationFlow.start spies of previous tests.
+  vi.restoreAllMocks()
+  creationFlow.reset()
+  vi.mocked(goto).mockReset()
   // jsdom does not implement <dialog>; provide minimal stubs so the
   // SearchablePicker can mount.
   if (!HTMLDialogElement.prototype.showModal) {
@@ -191,45 +192,79 @@ describe('HoursForm', () => {
     expect(screen.getByText('Kunde *')).toBeInTheDocument()
   })
 
-  it('creates a customer inline from the customer picker and selects it', async () => {
+  it('starts the customer flow with a draft that round-trips and auto-selects the result', async () => {
     const user = userEvent.setup()
-    createCustomerMock.mockResolvedValue({
-      id: 'c9',
-      company: null,
-      firstName: 'Nora',
-      lastName: 'Neukund',
-      customerNumber: 'K-9',
-      city: 'Berlin'
-    })
-    render(HoursForm, {
+    const startSpy = vi.spyOn(creationFlow, 'start')
+    const first = render(HoursForm, {
       props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
     })
 
+    // Fill some state so the draft has real content to restore.
+    const note = first.container.querySelector(
+      'textarea'
+    ) as HTMLTextAreaElement
+    await user.type(note, 'Bremsen geprüft')
     await user.click(screen.getByRole('radio', { name: /^Kunde$/i }))
-    // The trigger's accessible name is the FormField label ("Kunde *")
-    // — click the placeholder text inside it instead.
+
+    // Open the customer picker and hit the header "Neu anlegen" button.
+    // The FormField <label> leaks the dialog text into the trigger's
+    // accessible name — filter for the real affordance (class btn).
     await user.click(screen.getByText('- Kunde suchen und auswählen -'))
-    // Several matches: the FormField <label> leaks the dialog text into
-    // the trigger's accessible name, and the affordance shows twice
-    // (footer + empty state). Click a real affordance button (class
-    // btn), not the trigger (class input).
     const createBtn = screen
       .getAllByRole('button', { name: /Neuen Kunden anlegen/ })
       .find((b) => b.className.includes('btn'))
     expect(createBtn).toBeTruthy()
     await user.click(createBtn!)
-    await user.type(screen.getByLabelText('Nachname'), 'Neukund')
-    await user.click(screen.getByRole('button', { name: 'Kunde anlegen' }))
 
-    await waitFor(() =>
-      expect(screen.getByText('Nora Neukund · Berlin')).toBeInTheDocument()
-    )
-    expect(createCustomerMock).toHaveBeenCalledWith({
-      lastName: 'Neukund',
-      firstName: undefined,
-      company: undefined,
-      phone: undefined
+    // The flow frame carries a serializable draft of the whole form.
+    expect(startSpy).toHaveBeenCalledTimes(1)
+    const frame = startSpy.mock.calls[0][0]
+    expect(frame.entity).toBe('customer')
+    expect(frame.originField).toBe('customerId')
+    const draft = frame.draft as Record<string, unknown>
+    expect(draft.note).toBe('Bremsen geprüft')
+    expect(draft.linkKind).toBe('customer')
+    expect(JSON.parse(JSON.stringify(draft))).toEqual(draft)
+    expect(goto).toHaveBeenCalledWith('/customers/new')
+    // Drafted input must not trip the unsaved-changes guard mid-flow.
+    expect(formDirty.dirty).toBe(false)
+
+    // Simulate the leaf: create succeeds, back to this page.
+    first.unmount()
+    creationFlow.finish({ id: 'c9', label: 'Nora Neukund · Berlin' })
+
+    render(HoursForm, {
+      props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
     })
+    // Draft restored: link kind customer, note text, and the created
+    // customer auto-selected in the picker.
+    expect(screen.getByText('Kunde *')).toBeInTheDocument()
+    const noteRestored = document.querySelector(
+      'textarea'
+    ) as HTMLTextAreaElement
+    expect(noteRestored.value).toBe('Bremsen geprüft')
+    expect(screen.getByText('Nora Neukund · Berlin')).toBeInTheDocument()
+    expect(formDirty.dirty).toBe(true)
+  })
+
+  it('hides the create option while a customer is already being created in the chain', async () => {
+    const user = userEvent.setup()
+    creationFlow.start({
+      entity: 'customer',
+      returnUrl: '/somewhere/else',
+      originField: 'customerId',
+      draft: {},
+      createdAt: Date.now()
+    })
+    render(HoursForm, {
+      props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
+    })
+    await user.click(screen.getByRole('radio', { name: /^Kunde$/i }))
+    await user.click(screen.getByText('- Kunde suchen und auswählen -'))
+    const affordances = screen
+      .queryAllByRole('button', { name: /Neuen Kunden anlegen/ })
+      .filter((b) => b.className.includes('btn'))
+    expect(affordances).toHaveLength(0)
   })
 
   it('marks dirty on first input and clears on submit', async () => {

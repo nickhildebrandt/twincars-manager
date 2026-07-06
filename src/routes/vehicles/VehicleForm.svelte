@@ -49,11 +49,12 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
   import type { Vehicle } from '$lib/server/db/schema'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { creationFlow, currentUrl } from '$lib/stores/creation-flow.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
-  import QuickCreateCustomerForm from '$lib/components/ui/QuickCreateCustomerForm.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
   import { useFormValidation } from '$lib/utils/form-validation.svelte'
   import { pickCustomersRemote } from '../pickers.remote'
@@ -107,25 +108,108 @@
 
   const init = untrack(() => ({ ...initial }))
 
-  let customerId = $state(init.customerId ?? '')
-  let customerLabel = $state(init.customerLabel ?? '')
-  let make = $state(init.make ?? '')
-  let model = $state(init.model ?? '')
-  let licensePlate = $state(init.licensePlate ?? '')
-  let vin = $state(init.vin ?? '')
-  let firstRegistration = $state(init.firstRegistration ?? '')
-  let mileageKm = $state<number | string>(init.mileageKm ?? '')
-  let nextHu = $state(init.nextHu ?? '')
-  let hsn = $state(init.hsn ?? '')
-  let tsn = $state(init.tsn ?? '')
-  let displacementCcm = $state<number | string>(init.displacementCcm ?? '')
-  let powerKw = $state<number | string>(init.powerKw ?? '')
-  let fuelType = $state(init.fuelType ?? '')
-  let gearbox = $state(init.gearbox ?? '')
-  let bodyType = $state(init.bodyType ?? '')
-  let notes = $state(init.notes ?? '')
+  /**
+   * JSON-serializable snapshot of every form field — pushed into the
+   * creation-flow store when the user jumps to a full-page create and
+   * restored (below) when they come back.
+   */
+  type Draft = {
+    customerId: string
+    customerLabel: string
+    make: string
+    model: string
+    licensePlate: string
+    vin: string
+    firstRegistration: string
+    mileageKm: number | string
+    nextHu: string
+    hsn: string
+    tsn: string
+    displacementCcm: number | string
+    powerKw: number | string
+    fuelType: string
+    gearbox: string
+    bodyType: string
+    notes: string
+  }
+
+  // Returning from a full-page create? Consume the pending return for
+  // THIS page exactly once — its draft wins over `initial`.
+  const pending = untrack(() => creationFlow.pendingReturnFor(currentUrl()))
+  const draft = (pending?.draft ?? null) as Draft | null
+
+  let customerId = $state(draft?.customerId ?? init.customerId ?? '')
+  let customerLabel = $state(draft?.customerLabel ?? init.customerLabel ?? '')
+  let make = $state(draft?.make ?? init.make ?? '')
+  let model = $state(draft?.model ?? init.model ?? '')
+  let licensePlate = $state(draft?.licensePlate ?? init.licensePlate ?? '')
+  let vin = $state(draft?.vin ?? init.vin ?? '')
+  let firstRegistration = $state(
+    draft?.firstRegistration ?? init.firstRegistration ?? ''
+  )
+  let mileageKm = $state<number | string>(
+    draft?.mileageKm ?? init.mileageKm ?? ''
+  )
+  let nextHu = $state(draft?.nextHu ?? init.nextHu ?? '')
+  let hsn = $state(draft?.hsn ?? init.hsn ?? '')
+  let tsn = $state(draft?.tsn ?? init.tsn ?? '')
+  let displacementCcm = $state<number | string>(
+    draft?.displacementCcm ?? init.displacementCcm ?? ''
+  )
+  let powerKw = $state<number | string>(draft?.powerKw ?? init.powerKw ?? '')
+  let fuelType = $state(draft?.fuelType ?? init.fuelType ?? '')
+  let gearbox = $state(draft?.gearbox ?? init.gearbox ?? '')
+  let bodyType = $state(draft?.bodyType ?? init.bodyType ?? '')
+  let notes = $state(draft?.notes ?? init.notes ?? '')
+
+  // A successful create auto-selects the new entity in the picker
+  // that started the flow.
+  if (pending?.result && pending.originField === 'customerId') {
+    customerId = pending.result.id
+    customerLabel = pending.result.label
+  }
+  // A restored draft is unsaved user input — re-arm the leave guard.
+  if (draft) untrack(() => formDirty.set(true))
 
   let errorMsg = $state<string | null>(null)
+
+  const buildDraft = (): Draft => ({
+    customerId,
+    customerLabel,
+    make,
+    model,
+    licensePlate,
+    vin,
+    firstRegistration,
+    mileageKm,
+    nextHu,
+    hsn,
+    tsn,
+    displacementCcm,
+    powerKw,
+    fuelType,
+    gearbox,
+    bodyType,
+    notes
+  })
+
+  /** Cycle guard: no customer create while one is already in flight. */
+  const canCreateCustomer = $derived(
+    !creationFlow.activeEntities().has('customer')
+  )
+
+  const startCustomerCreate = () => {
+    creationFlow.start({
+      entity: 'customer',
+      returnUrl: currentUrl(),
+      originField: 'customerId',
+      draft: buildDraft(),
+      createdAt: Date.now()
+    })
+    // The draft carries the input — silence the unsaved-changes guard.
+    formDirty.clear()
+    goto('/customers/new')
+  }
 
   /**
    * Validation handle for the Submit button gate and the per-field
@@ -193,18 +277,6 @@
     }).run()
 </script>
 
-{#snippet customerCreateForm(props: {
-  initialQuery: string
-  onCreated: (item: { id: string; label: string }) => void
-  onCancel: () => void
-})}
-  <QuickCreateCustomerForm
-    initialQuery={props.initialQuery}
-    onCreated={props.onCreated}
-    onCancel={props.onCancel}
-  />
-{/snippet}
-
 <form
   onsubmit={submit}
   oninput={markDirty}
@@ -233,8 +305,10 @@
               dialogTitle="Kunden auswählen"
               search={searchCustomers}
               onSelect={() => fv.markTouched('customerId')}
-              createLabel="Neuen Kunden anlegen"
-              createForm={customerCreateForm}
+              createLabel={canCreateCustomer
+                ? 'Neuen Kunden anlegen'
+                : undefined}
+              onCreateNew={canCreateCustomer ? startCustomerCreate : undefined}
             />
           </FormField>
         </div>

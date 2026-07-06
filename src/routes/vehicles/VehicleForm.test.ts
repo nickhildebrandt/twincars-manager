@@ -1,4 +1,4 @@
-import { fireEvent, render, screen, waitFor } from '@testing-library/svelte'
+import { fireEvent, render, screen } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -6,15 +6,17 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 /**
  * Component tests for VehicleForm — mode-based field visibility,
  * required-customer guard in customer mode, the "at least one of …"
- * identifier check, and trimmed-payload behaviour. Validation runs
- * through the shared useFormValidation helper: errors surface only
- * after a field was touched or a submit was attempted.
+ * identifier check, trimmed-payload behaviour, and the full-page
+ * customer-creation flow (draft snapshot, restore, auto-select).
+ * Validation runs through the shared useFormValidation helper:
+ * errors surface only after a field was touched or a submit was
+ * attempted.
  *
  * @group component
  * @module VehicleForm
  */
 
-const createCustomerMock = vi.fn()
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }))
 
 vi.mock('../pickers.remote', () => ({
   pickCustomersRemote: () => ({
@@ -22,18 +24,18 @@ vi.mock('../pickers.remote', () => ({
   })
 }))
 
-// The inline quick-create form inside the Halter picker calls the real
-// customer create command — mock the remote module.
-vi.mock('../customers/customers.remote', () => ({
-  createCustomerRemote: (args: unknown) => createCustomerMock(args)
-}))
-
+import { goto } from '$app/navigation'
 import VehicleForm from './VehicleForm.svelte'
 import { formDirty } from '$lib/stores/form-dirty.svelte'
+import { creationFlow } from '$lib/stores/creation-flow.svelte'
 
 beforeEach(() => {
   formDirty.clear()
-  createCustomerMock.mockReset()
+  window.sessionStorage.clear()
+  // Detach the creationFlow.start spies of previous tests.
+  vi.restoreAllMocks()
+  creationFlow.reset()
+  vi.mocked(goto).mockReset()
   if (!HTMLDialogElement.prototype.showModal) {
     HTMLDialogElement.prototype.showModal = function () {
       this.setAttribute('open', '')
@@ -190,42 +192,92 @@ describe('VehicleForm', () => {
     ).toBeGreaterThan(0)
   })
 
-  it('creates a customer inline from the Halter picker and selects it', async () => {
+  it('starts the customer flow with a draft that round-trips and auto-selects the result', async () => {
     const user = userEvent.setup()
-    createCustomerMock.mockResolvedValue({
-      id: 'c9',
-      company: 'Neu GmbH',
-      firstName: null,
-      lastName: null,
-      customerNumber: 'K-9',
-      city: 'Berlin'
+    const startSpy = vi.spyOn(creationFlow, 'start')
+    const first = render(VehicleForm, {
+      props: { onSave: vi.fn(), mode: 'customer' }
     })
-    render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
 
-    // The trigger's accessible name is the FormField label ("Kunde *")
-    // — click the placeholder text inside it instead.
+    // Type something so the draft has real content to restore.
+    const make = first.container.querySelector(
+      'input[maxlength="100"]'
+    ) as HTMLInputElement
+    await user.type(make, 'VW')
+
+    // Open the Halter picker and hit the header "Neu anlegen" button.
+    // The FormField <label> leaks the dialog text into the trigger's
+    // accessible name — filter for the real affordance (class btn).
     await user.click(screen.getByText('- Kunde wählen -'))
-    // Several matches: the FormField <label> leaks the dialog text into
-    // the trigger's accessible name, and the affordance shows twice
-    // (footer + empty state). Click a real affordance button (class
-    // btn), not the trigger (class input).
     const createBtn = screen
       .getAllByRole('button', { name: /Neuen Kunden anlegen/ })
       .find((b) => b.className.includes('btn'))
     expect(createBtn).toBeTruthy()
     await user.click(createBtn!)
-    await user.type(screen.getByLabelText('Firma'), 'Neu GmbH')
-    await user.click(screen.getByRole('button', { name: 'Kunde anlegen' }))
 
-    await waitFor(() =>
-      expect(screen.getByText('Neu GmbH · Berlin')).toBeInTheDocument()
-    )
-    expect(createCustomerMock).toHaveBeenCalledWith({
-      lastName: undefined,
-      firstName: undefined,
-      company: 'Neu GmbH',
-      phone: undefined
+    // The flow frame carries a serializable draft of the whole form.
+    expect(startSpy).toHaveBeenCalledTimes(1)
+    const frame = startSpy.mock.calls[0][0]
+    expect(frame.entity).toBe('customer')
+    expect(frame.originField).toBe('customerId')
+    const draft = frame.draft as Record<string, unknown>
+    expect(draft.make).toBe('VW')
+    expect(JSON.parse(JSON.stringify(draft))).toEqual(draft)
+    expect(goto).toHaveBeenCalledWith('/customers/new')
+    // Drafted input must not trip the unsaved-changes guard mid-flow.
+    expect(formDirty.dirty).toBe(false)
+
+    // Simulate the leaf: create succeeds, back to this page.
+    first.unmount()
+    creationFlow.finish({ id: 'c9', label: 'Neu GmbH · Berlin' })
+
+    render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
+    const makeRestored = document.querySelector(
+      'input[maxlength="100"]'
+    ) as HTMLInputElement
+    expect(makeRestored.value).toBe('VW')
+    expect(screen.getByText('Neu GmbH · Berlin')).toBeInTheDocument()
+    // The restored draft counts as unsaved input again.
+    expect(formDirty.dirty).toBe(true)
+  })
+
+  it('restores the draft without selection when the flow was cancelled', async () => {
+    creationFlow.start({
+      entity: 'customer',
+      returnUrl: window.location.pathname + window.location.search,
+      originField: 'customerId',
+      draft: { make: 'Opel', model: '', licensePlate: '', vin: '' },
+      createdAt: Date.now()
     })
+    creationFlow.cancel()
+
+    const { container } = render(VehicleForm, {
+      props: { onSave: vi.fn(), mode: 'customer' }
+    })
+    const make = container.querySelector(
+      'input[maxlength="100"]'
+    ) as HTMLInputElement
+    expect(make.value).toBe('Opel')
+    // No customer got selected — the placeholder still shows.
+    expect(screen.getByText('- Kunde wählen -')).toBeInTheDocument()
+  })
+
+  it('hides the create option while a customer is already being created in the chain', async () => {
+    const user = userEvent.setup()
+    creationFlow.start({
+      entity: 'customer',
+      returnUrl: '/somewhere/else',
+      originField: 'customerId',
+      draft: {},
+      createdAt: Date.now()
+    })
+    render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
+    await user.click(screen.getByText('- Kunde wählen -'))
+    // Only the label-leaked trigger name may match — no real button.
+    const affordances = screen
+      .queryAllByRole('button', { name: /Neuen Kunden anlegen/ })
+      .filter((b) => b.className.includes('btn'))
+    expect(affordances).toHaveLength(0)
   })
 
   it('seeds the customer picker label from initial.customerLabel', () => {

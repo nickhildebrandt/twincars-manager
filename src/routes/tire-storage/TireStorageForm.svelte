@@ -32,9 +32,11 @@
 
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { goto } from '$app/navigation'
   import type { TireStorage } from '$lib/server/db/schema'
   import { busy } from '$lib/stores/busy.svelte'
   import { formDirty } from '$lib/stores/form-dirty.svelte'
+  import { creationFlow, currentUrl } from '$lib/stores/creation-flow.svelte'
   import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import FormField from '$lib/components/ui/FormField.svelte'
   import {
@@ -89,29 +91,125 @@
   const { initial = {}, onSave, onCancel }: Props = $props()
   const init = untrack(() => ({ ...initial }))
 
-  let customerId = $state(init.customerId ?? '')
-  let customerLabel = $state(init.customerLabel ?? '')
-  let vehicleId = $state(init.vehicleId ?? '')
-  let vehicleLabel = $state(init.vehicleLabel ?? '')
-  let brand = $state(init.brand ?? '')
-  let model = $state(init.model ?? '')
-  let size = $state(init.size ?? '')
-  let profileMm = $state(init.profileMm != null ? String(init.profileMm) : '')
-  let dotYear = $state(init.dotYear != null ? String(init.dotYear) : '')
-  let season = $state<'summer' | 'winter' | 'allseason' | ''>(
-    (init.season as 'summer' | 'winter' | 'allseason' | undefined) ?? ''
-  )
-  let quantity = $state(init.quantity != null ? String(init.quantity) : '4')
-  let notes = $state(init.notes ?? '')
-  let storedAt = $state(init.storedAt ?? new Date().toISOString().slice(0, 10))
-
   type LocalPhoto = TireStoragePhoto & { id: string }
-  let photos = $state<LocalPhoto[]>(
-    (init.photos ?? []).map((p, i) => ({ ...p, id: `init-${i}` }))
+
+  /**
+   * JSON-serializable snapshot of every form field (photos included,
+   * base64) — pushed into the creation-flow store when the user jumps
+   * to a full-page create and restored (below) when they come back.
+   */
+  type Draft = {
+    customerId: string
+    customerLabel: string
+    vehicleId: string
+    vehicleLabel: string
+    brand: string
+    model: string
+    size: string
+    profileMm: string
+    dotYear: string
+    season: 'summer' | 'winter' | 'allseason' | ''
+    quantity: string
+    notes: string
+    storedAt: string
+    photos: LocalPhoto[]
+  }
+
+  // Returning from a full-page create? Consume the pending return for
+  // THIS page exactly once — its draft wins over `initial`.
+  const pending = untrack(() => creationFlow.pendingReturnFor(currentUrl()))
+  const draft = (pending?.draft ?? null) as Draft | null
+
+  let customerId = $state(draft?.customerId ?? init.customerId ?? '')
+  let customerLabel = $state(draft?.customerLabel ?? init.customerLabel ?? '')
+  let vehicleId = $state(draft?.vehicleId ?? init.vehicleId ?? '')
+  let vehicleLabel = $state(draft?.vehicleLabel ?? init.vehicleLabel ?? '')
+  let brand = $state(draft?.brand ?? init.brand ?? '')
+  let model = $state(draft?.model ?? init.model ?? '')
+  let size = $state(draft?.size ?? init.size ?? '')
+  let profileMm = $state(
+    draft?.profileMm ?? (init.profileMm != null ? String(init.profileMm) : '')
   )
+  let dotYear = $state(
+    draft?.dotYear ?? (init.dotYear != null ? String(init.dotYear) : '')
+  )
+  let season = $state<'summer' | 'winter' | 'allseason' | ''>(
+    draft?.season ??
+      (init.season as 'summer' | 'winter' | 'allseason' | undefined) ??
+      ''
+  )
+  let quantity = $state(
+    draft?.quantity ?? (init.quantity != null ? String(init.quantity) : '4')
+  )
+  let notes = $state(draft?.notes ?? init.notes ?? '')
+  let storedAt = $state(
+    draft?.storedAt ?? init.storedAt ?? new Date().toISOString().slice(0, 10)
+  )
+
+  let photos = $state<LocalPhoto[]>(
+    draft?.photos ??
+      (init.photos ?? []).map((p, i) => ({ ...p, id: `init-${i}` }))
+  )
+
+  // A successful create auto-selects the new entity in the picker
+  // that started the flow.
+  if (pending?.result) {
+    if (pending.originField === 'customerId') {
+      customerId = pending.result.id
+      customerLabel = pending.result.label
+    } else if (pending.originField === 'vehicleId') {
+      vehicleId = pending.result.id
+      vehicleLabel = pending.result.label
+    }
+  }
+  // A restored draft is unsaved user input — re-arm the leave guard.
+  if (draft) untrack(() => formDirty.set(true))
 
   let errorMsg = $state<string | null>(null)
   let fileInput = $state<HTMLInputElement | null>(null)
+
+  const buildDraft = (): Draft => ({
+    customerId,
+    customerLabel,
+    vehicleId,
+    vehicleLabel,
+    brand,
+    model,
+    size,
+    profileMm,
+    dotYear,
+    season,
+    quantity,
+    notes,
+    storedAt,
+    photos: photos.map((p) => ({ ...p }))
+  })
+
+  // Cycle guard: no create for an entity type already being created
+  // somewhere in the active chain.
+  const canCreateCustomer = $derived(
+    !creationFlow.activeEntities().has('customer')
+  )
+  const canCreateVehicle = $derived(
+    !creationFlow.activeEntities().has('vehicle')
+  )
+
+  const startCreate = (
+    entity: 'customer' | 'vehicle',
+    originField: string,
+    target: string
+  ) => {
+    creationFlow.start({
+      entity,
+      returnUrl: currentUrl(),
+      originField,
+      draft: buildDraft(),
+      createdAt: Date.now()
+    })
+    // The draft carries the input — silence the unsaved-changes guard.
+    formDirty.clear()
+    goto(target)
+  }
 
   /**
    * Validation handle for the Submit button gate and the per-field
@@ -323,6 +421,12 @@
             fv.markTouched('customerId')
             markDirty()
           }}
+          onCreateCustomer={canCreateCustomer
+            ? () => startCreate('customer', 'customerId', '/customers/new')
+            : undefined}
+          onCreateVehicle={canCreateVehicle
+            ? () => startCreate('vehicle', 'vehicleId', '/vehicles/new')
+            : undefined}
         />
       </div>
     </fieldset>
