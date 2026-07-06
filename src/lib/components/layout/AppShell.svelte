@@ -270,7 +270,9 @@
           </button>
         {/if}
       </div>
-      <div class="navbar-center hidden w-full max-w-md md:flex">
+      <div
+        class="navbar-center hidden w-full min-w-0 shrink md:flex md:max-w-sm lg:max-w-md"
+      >
         <button
           type="button"
           class="input input-bordered input-sm text-base-content/60 flex h-9 w-full items-center justify-between gap-2"
@@ -287,7 +289,7 @@
           </kbd>
         </button>
       </div>
-      <div class="navbar-center md:hidden">
+      <div class="navbar-center min-w-0 shrink md:hidden">
         <h1
           class="truncate px-1 text-base font-semibold sm:text-lg"
           data-testid="page-title"
@@ -319,7 +321,7 @@
               data-testid="header-primary-action"
             >
               <Icon size={16} />
-              <span class="hidden sm:inline">{primary.label}</span>
+              <span class="hidden lg:inline">{primary.label}</span>
             </a>
           {:else}
             <button
@@ -329,7 +331,7 @@
               data-testid="header-primary-action"
             >
               <Icon size={16} />
-              <span class="hidden sm:inline">{primary.label}</span>
+              <span class="hidden lg:inline">{primary.label}</span>
             </button>
           {/if}
         {/if}

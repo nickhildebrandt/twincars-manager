@@ -251,7 +251,7 @@
               />
               {#if img.isMain}
                 <span
-                  class="badge badge-warning badge-sm absolute top-2 left-2 gap-1 shadow"
+                  class="badge badge-warning badge-sm absolute top-2 left-2 gap-1"
                   title="Titelbild"
                 >
                   <Star size={12} /> Titelbild

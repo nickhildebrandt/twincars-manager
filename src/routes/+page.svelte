@@ -51,13 +51,13 @@
     color="info"
   />
   <StatCard
-    title="Umsatz dieser Monat"
+    title="Monatsumsatz"
     value={loading ? '…' : formatEuro(kpis?.monthlyIncome ?? 0)}
     icon={TrendingUp}
     color="success"
   />
   <StatCard
-    title="Ausgaben dieser Monat"
+    title="Monatsausgaben"
     value={loading ? '…' : formatEuro(kpis?.monthlyExpense ?? 0)}
     icon={TrendingDown}
     color="error"
@@ -82,7 +82,7 @@
     icon={CalendarClock}
   />
   <StatCard
-    title="Saldo dieser Monat"
+    title="Monatssaldo"
     value={loading ? '…' : formatEuro(kpis?.monthlyBalance ?? 0)}
     icon={Wallet}
     color={(kpis?.monthlyBalance ?? 0) >= 0 ? 'success' : 'error'}
@@ -137,26 +137,28 @@
           Aktuell keine anstehenden HU-Termine oder Werkstatt-Termine.
         </div>
       {:else}
-        <ul class="menu menu-sm w-full p-0">
+        <!--
+          Plain divide-y rows instead of ul.menu: DaisyUI's menu grid
+          defeats `truncate`, clipping the date column on phones.
+        -->
+        <ul class="divide-base-300 divide-y">
           {#each upcoming as u (u.kind + (u.kind === 'hu_due' ? u.vehicleId : u.entryId))}
             <li>
               <a
-                class="flex items-center justify-between py-2"
+                class="hover:bg-base-200 flex items-center justify-between gap-2 px-4 py-2"
                 href={u.kind === 'hu_due'
                   ? `/vehicles/${u.vehicleId}`
                   : '/calendar'}
               >
-                <span class="flex items-center gap-2 truncate">
+                <span class="flex min-w-0 items-center gap-2">
                   {#if u.kind === 'hu_due'}
                     <Wrench size={14} class="text-warning shrink-0" />
                   {:else}
                     <CalendarClock size={14} class="text-info shrink-0" />
                   {/if}
-                  <span class="truncate">{u.title}</span>
+                  <span class="min-w-0 truncate text-sm">{u.title}</span>
                 </span>
-                <span
-                  class="text-base-content/60 ms-2 shrink-0 font-mono text-xs"
-                >
+                <span class="text-base-content/60 shrink-0 font-mono text-xs">
                   {fmtDate(u.dateIso)}
                 </span>
               </a>

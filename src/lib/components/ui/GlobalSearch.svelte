@@ -252,7 +252,7 @@
           <Search size={16} class="opacity-60" />
           <input
             bind:this={input}
-            type="search"
+            type="text"
             class="grow"
             placeholder="Suchen…"
             value={q}

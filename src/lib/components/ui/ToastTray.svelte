@@ -24,7 +24,7 @@
     <div
       role="status"
       aria-live="polite"
-      class="alert max-w-md min-w-[20rem] shadow-lg"
+      class="alert border-base-300 max-w-md min-w-[20rem] border shadow-md"
       class:alert-success={t.variant === 'success'}
       class:alert-warning={t.variant === 'warning'}
       class:alert-error={t.variant === 'error'}

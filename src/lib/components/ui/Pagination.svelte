@@ -21,6 +21,8 @@
   const { page: pageProp, pageCount, total, onPage }: Props = $props()
 
   const buttons = $derived(paginationButtons(pageProp, pageCount, 5))
+  // Phone variant: smaller numeric window, no first/last chevrons.
+  const compactButtons = $derived(paginationButtons(pageProp, pageCount, 3))
 </script>
 
 <div
@@ -35,7 +37,52 @@
     Treffer · Seite {pageProp} von {Math.max(1, pageCount)}
   </div>
 
-  <div class="join">
+  <!--
+    Phone join (< sm): prev / small numeric window / next. A separate
+    element instead of hiding buttons inside the full join, because
+    DaisyUI's join rounding targets :first-child/:last-child — hidden
+    edge buttons would leave the visible ones square-cornered.
+  -->
+  <div class="join max-w-full sm:hidden" data-testid="pagination-compact">
+    <button
+      type="button"
+      class="btn btn-sm join-item"
+      disabled={pageProp <= 1}
+      onclick={() => onPage(pageProp - 1)}
+      aria-label="Vorherige Seite"
+    >
+      <ChevronLeft size={16} />
+    </button>
+    {#each compactButtons as btn, i (i)}
+      {#if btn === null}
+        <button type="button" class="btn btn-sm join-item btn-disabled"
+          >…</button
+        >
+      {:else}
+        <button
+          type="button"
+          class="btn btn-sm join-item"
+          class:btn-primary={btn === pageProp}
+          onclick={() => onPage(btn)}
+          aria-current={btn === pageProp ? 'page' : undefined}
+        >
+          {btn}
+        </button>
+      {/if}
+    {/each}
+    <button
+      type="button"
+      class="btn btn-sm join-item"
+      disabled={pageProp >= pageCount}
+      onclick={() => onPage(pageProp + 1)}
+      aria-label="Nächste Seite"
+    >
+      <ChevronRight size={16} />
+    </button>
+  </div>
+
+  <!-- Full join (sm and up) incl. first/last chevrons. -->
+  <div class="join hidden max-w-full sm:flex" data-testid="pagination-full">
     <button
       type="button"
       class="btn btn-sm join-item"

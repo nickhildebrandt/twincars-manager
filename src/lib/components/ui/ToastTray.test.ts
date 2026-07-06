@@ -37,6 +37,17 @@ describe('ToastTray', () => {
     expect(screen.getByRole('status')).toHaveClass('alert-error')
   })
 
+  it('uses the standard floating-overlay border + shadow', async () => {
+    render(ToastTray)
+    toast.info('Hinweis')
+    await Promise.resolve()
+    const alert = await screen.findByRole('status')
+    // Floating overlays are the one exemption from the flat-card rule:
+    // border-base-300 + shadow-md, matching the AppShell dropdown.
+    expect(alert).toHaveClass('border', 'border-base-300', 'shadow-md')
+    expect(alert).not.toHaveClass('shadow-lg')
+  })
+
   it('dismiss button removes the toast', async () => {
     const user = userEvent.setup()
     render(ToastTray)

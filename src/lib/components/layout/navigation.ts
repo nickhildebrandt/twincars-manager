@@ -134,7 +134,7 @@ export const navigation: NavGroup[] = [
         permission: 'invoices'
       },
       {
-        label: 'Offene Rechnungen & Zahlungserinnerungen',
+        label: 'Zahlungserinnerungen',
         href: '/reminders',
         icon: AlertTriangle,
         permission: 'reminders'

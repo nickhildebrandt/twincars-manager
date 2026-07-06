@@ -31,6 +31,11 @@
     onSelect: (item: T | null) => void
     disabled?: boolean
     /**
+     * Trigger height variant. 'sm' matches `input-sm` neighbours in
+     * compact filter toolbars; default is the full-size form input.
+     */
+    triggerSize?: 'sm' | 'md'
+    /**
      * Label of the inline "create new" affordance. Only when BOTH
      * `createLabel` and `createForm` are set does the dialog offer the
      * quick-create flow.
@@ -49,6 +54,7 @@
     search,
     onSelect,
     disabled = false,
+    triggerSize = 'md',
     createLabel,
     createForm
   }: Props = $props()
@@ -142,7 +148,10 @@
 <div class="relative w-full">
   <button
     type="button"
-    class="input input-bordered flex w-full items-center justify-between gap-2 pr-16"
+    class="input input-bordered flex w-full items-center justify-between gap-2 pr-16 {triggerSize ===
+    'sm'
+      ? 'input-sm'
+      : ''}"
     {disabled}
     onclick={open}
   >
@@ -204,7 +213,7 @@
           <Search size={14} class="opacity-60" />
           <input
             bind:this={searchInput}
-            type="search"
+            type="text"
             class="grow"
             placeholder="Suchen…"
             value={q}
