@@ -151,7 +151,7 @@ CREATE INDEX IF NOT EXISTS "work_orders_customer_id_idx"
 DO $$ BEGIN
   -- One order per Termin (partial unique — directly created orders
   -- have no appointment and must not collide on NULL). Wrapped in
-  -- DO $$ so the pg-mem test harness strips it: pg-mem answers
+  -- a DO block so the pg-mem test harness strips it: pg-mem answers
   -- `appointment_id IS NULL` through the partial index (which only
   -- holds non-null rows) and would return zero rows; the service-level
   -- duplicate check covers the invariant in tests.
@@ -198,7 +198,7 @@ CREATE INDEX IF NOT EXISTS "time_entries_work_order_id_idx"
 
 DO $$ BEGIN
   -- Exactly one time entry per labor work item (write-through upsert).
-  -- DO $$ wrapper for the same pg-mem partial-index reason as above.
+  -- DO-block wrapper for the same pg-mem partial-index reason as above.
   CREATE UNIQUE INDEX IF NOT EXISTS "time_entries_work_order_item_id_idx"
     ON "time_entries" ("work_order_item_id")
     WHERE "work_order_item_id" IS NOT NULL;
