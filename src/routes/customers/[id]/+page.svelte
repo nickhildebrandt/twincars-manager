@@ -202,7 +202,9 @@
     </div>
 
     {#if customer.notes}
-      <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+      <div
+        class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
+      >
         <div class="card-body">
           <h3 class="card-title text-base">Notiz</h3>
           <p class="text-sm whitespace-pre-line">{customer.notes}</p>
@@ -212,7 +214,7 @@
   {/if}
 
   <!-- Fahrzeuge des Kunden -->
-  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
     <div class="card-body p-0">
       <div class="border-base-300 border-b px-4 py-3">
         <h3 class="text-base font-semibold">Fahrzeuge</h3>
@@ -264,7 +266,7 @@
   </div>
 
   <!-- Rechnungen des Kunden (Email-Dialog folgt am Seitenende) -->
-  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
     <div class="card-body p-0">
       <div class="border-base-300 border-b px-4 py-3">
         <h3 class="text-base font-semibold">Rechnungen</h3>

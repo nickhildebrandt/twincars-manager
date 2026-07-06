@@ -349,7 +349,10 @@
           >{e.employmentType ?? '-'}</dd
         >
         <dt class="text-base-content/60">Wochenstunden</dt><dd
-          class="sm:col-span-2">{e.weeklyHours ?? '-'}</dd
+          class="sm:col-span-2"
+          >{e.weeklyHours != null
+            ? Number(e.weeklyHours).toLocaleString('de-DE')
+            : '-'}</dd
         >
         <dt class="text-base-content/60">Urlaub / Jahr</dt><dd
           class="sm:col-span-2">{e.vacationDaysPerYear ?? '-'}</dd
@@ -416,12 +419,12 @@
       </span>
     </div>
 
-    <div class="border-base-300 rounded-box overflow-x-auto border">
-      {#if salaryVersions.length === 0}
-        <p class="text-base-content/60 px-4 py-6 text-sm">
-          Noch keine Gehaltsversionen erfasst.
-        </p>
-      {:else}
+    {#if salaryVersions.length === 0}
+      <p class="text-base-content/60 text-sm">
+        Noch keine Gehaltsversionen erfasst.
+      </p>
+    {:else}
+      <div class="overflow-x-auto">
         <table class="table">
           <thead>
             <tr>
@@ -452,8 +455,8 @@
             {/each}
           </tbody>
         </table>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -563,14 +566,12 @@
       </form>
     {/if}
 
-    <!-- Table is wrapped in its own bordered container to set it off
-         visually from the form above. -->
-    <div class="border-base-300 rounded-box overflow-x-auto border">
-      {#if absences.length === 0}
-        <p class="text-base-content/60 px-4 py-6 text-sm">
-          Noch keine Abwesenheiten erfasst.
-        </p>
-      {:else}
+    {#if absences.length === 0}
+      <p class="text-base-content/60 text-sm">
+        Noch keine Abwesenheiten erfasst.
+      </p>
+    {:else}
+      <div class="overflow-x-auto">
         <table class="table">
           <thead>
             <tr>
@@ -650,8 +651,8 @@
             </tr>
           </tfoot>
         </table>
-      {/if}
-    </div>
+      </div>
+    {/if}
   </div>
 </div>
 

@@ -188,6 +188,7 @@
             bind:valueLabel={employeeFilterLabel}
             placeholder="Alle Mitarbeiter"
             dialogTitle="Mitarbeiter auswählen"
+            triggerSize="sm"
             search={searchEmployees}
             onSelect={() => onFilterChange()}
           />
@@ -234,7 +235,8 @@
         {/snippet}
       </EmptyState>
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -324,6 +326,81 @@
           </tfoot>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list with the essentials. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as e (e.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/hours/${e.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate text-sm font-medium">
+                {fmtDate(e.date)}
+                · {`${e.employeeFirstName} ${e.employeeLastName}`.trim() ||
+                  e.employeeNumber}
+              </span>
+              <span class="mt-0.5 flex items-center gap-2 text-xs">
+                <span class="font-mono whitespace-nowrap">
+                  {fmtHours(e.hours)} h
+                </span>
+                <span class="text-base-content/70 truncate">
+                  {#if e.documentNumber}
+                    Beleg {e.documentNumber}
+                  {:else if e.customerName}
+                    Kunde {e.customerName}
+                  {:else if e.task}
+                    {e.task}
+                  {/if}
+                </span>
+              </span>
+            </a>
+            <div class="flex shrink-0 flex-col items-end gap-1">
+              {#if e.workOrderId && e.workOrderNumber}
+                <a
+                  class="link font-mono text-xs"
+                  href="/orders/{e.workOrderId}"
+                >
+                  {e.workOrderNumber}
+                </a>
+              {/if}
+              {#if e.workOrderItemId}
+                <!-- Order-derived rows are read-only here; they are
+                     maintained at the work order. -->
+                <span class="badge badge-ghost badge-sm">Auftrag</span>
+              {:else}
+                <div class="flex gap-1">
+                  <a
+                    class="btn btn-ghost btn-sm btn-square"
+                    href="/hours/{e.id}/edit"
+                    aria-label="Bearbeiten"
+                  >
+                    <Pencil size={16} />
+                  </a>
+                  <button
+                    class="btn btn-ghost btn-sm btn-square text-error"
+                    onclick={() => {
+                      toDelete = {
+                        id: e.id,
+                        label: `${fmtDate(e.date)} · ${fmtHours(e.hours)} h`
+                      }
+                      confirmOpen = true
+                    }}
+                    aria-label="Löschen"
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              {/if}
+            </div>
+          </li>
+        {/each}
+        <li
+          class="bg-base-200/30 flex items-center justify-between p-3 text-sm font-semibold"
+        >
+          <span>Summe</span>
+          <span class="font-mono">{fmtHours(totalHours)}</span>
+        </li>
+      </ul>
       <Pagination
         {total}
         page={pageNum}

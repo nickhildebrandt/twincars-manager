@@ -132,18 +132,14 @@
         Rechnungs-, Angebots-Nr) lückenlos fort.
       </p>
 
-      <div
-        class="border-base-300 bg-base-200/40 flex items-center gap-3 rounded p-3"
-      >
-        <input
-          bind:this={fileInput}
-          type="file"
-          accept=".mdb,application/vnd.ms-access,application/x-msaccess"
-          class="file-input file-input-bordered file-input-sm w-full"
-          onchange={onPicked}
-          disabled={busy.active}
-        />
-      </div>
+      <input
+        bind:this={fileInput}
+        type="file"
+        accept=".mdb,application/vnd.ms-access,application/x-msaccess"
+        class="file-input file-input-bordered file-input-sm w-full"
+        onchange={onPicked}
+        disabled={busy.active}
+      />
 
       {#if pickedFile}
         <div class="text-sm">
@@ -173,7 +169,7 @@
         </div>
       {/if}
 
-      <div class="flex justify-end gap-2">
+      <div class="flex flex-wrap justify-end gap-2">
         <button
           type="button"
           class="btn btn-ghost gap-2"

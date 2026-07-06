@@ -179,7 +179,9 @@
 
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Veröffentlichung</legend>
-      <label class="label cursor-pointer justify-start gap-3">
+      <label
+        class="label cursor-pointer items-start justify-start gap-3 whitespace-normal"
+      >
         <input
           type="checkbox"
           class="checkbox checkbox-primary"

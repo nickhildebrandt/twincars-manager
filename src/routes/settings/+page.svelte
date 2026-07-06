@@ -417,7 +417,7 @@
       <Icon size={16} />
       <span>{t.label}</span>
     </label>
-    <div class="tab-content border-base-300 bg-base-100 border p-6">
+    <div class="tab-content border-base-300 bg-base-100 border p-4">
       {#if t.id === 'company'}
         <div class="flex flex-col gap-4">
           <ImageUploader
@@ -822,7 +822,9 @@
           <fieldset class="fieldset">
             <legend class="fieldset-legend">Allgemein</legend>
             <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <label class="label cursor-pointer justify-start gap-3">
+              <label
+                class="label cursor-pointer justify-start gap-3 whitespace-normal"
+              >
                 <input
                   type="checkbox"
                   class="toggle toggle-primary"
@@ -830,7 +832,9 @@
                 />
                 <span>Zahlungserinnerungen automatisch versenden</span>
               </label>
-              <label class="label cursor-pointer justify-start gap-3">
+              <label
+                class="label cursor-pointer justify-start gap-3 whitespace-normal"
+              >
                 <input
                   type="checkbox"
                   class="toggle toggle-primary"

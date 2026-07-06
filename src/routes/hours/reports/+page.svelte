@@ -148,6 +148,7 @@
           bind:valueLabel={utilEmployeeLabel}
           placeholder="Alle Mitarbeiter"
           dialogTitle="Mitarbeiter auswählen"
+          triggerSize="sm"
           search={searchEmployees}
           onSelect={() => {}}
         />
@@ -164,7 +165,8 @@
           description="Im gewählten Zeitraum wurden keine Stunden erfasst."
         />
       {:else}
-        <div class="overflow-x-auto">
+        <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+        <div class="hidden overflow-x-auto lg:block">
           <table class="table">
             <thead>
               <tr>
@@ -202,6 +204,40 @@
             </tfoot>
           </table>
         </div>
+        <!-- Phone / small tablet: one card per employee. -->
+        <ul class="divide-base-300 divide-y lg:hidden">
+          {#each utilization.rows as r (r.employeeId)}
+            <li class="flex flex-col gap-1 p-3">
+              <span class="truncate text-sm font-medium">{r.employeeName}</span>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Stunden</span>
+                  <span class="font-mono">{fmtHours(r.totalHours)}</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Abrechenbar</span>
+                  <span class="font-mono">{fmtHours(r.billableHours)}</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Tage erfasst</span>
+                  <span class="font-mono">{r.daysLogged}</span>
+                </div>
+              </div>
+            </li>
+          {/each}
+          <li class="bg-base-200/30 flex flex-col gap-1 p-3 font-semibold">
+            <span class="text-sm">Summe</span>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <span class="font-mono">
+                {fmtHours(utilization.totals.totalHours)}
+              </span>
+              <span class="font-mono">
+                {fmtHours(utilization.totals.billableHours)}
+              </span>
+              <span class="font-mono">{utilization.totals.daysLogged}</span>
+            </div>
+          </li>
+        </ul>
       {/if}
     </div>
   </div>
@@ -239,7 +275,8 @@
           description="In diesem Monat wurden keine Stunden erfasst."
         />
       {:else}
-        <div class="overflow-x-auto">
+        <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+        <div class="hidden overflow-x-auto lg:block">
           <table class="table">
             <thead>
               <tr>
@@ -277,6 +314,40 @@
             </tfoot>
           </table>
         </div>
+        <!-- Phone / small tablet: one card per employee. -->
+        <ul class="divide-base-300 divide-y lg:hidden">
+          {#each monthlyRows as r (r.employeeId)}
+            <li class="flex flex-col gap-1 p-3">
+              <span class="truncate text-sm font-medium">{r.employeeName}</span>
+              <div class="grid grid-cols-3 gap-2 text-xs">
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Stunden</span>
+                  <span class="font-mono">{fmtHours(r.totalHours)}</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Tage erfasst</span>
+                  <span class="font-mono">{r.daysLogged}</span>
+                </div>
+                <div class="flex flex-col">
+                  <span class="text-base-content/60">Ø Std/Tag</span>
+                  <span class="font-mono">{fmtHours(r.avgHoursPerDay)}</span>
+                </div>
+              </div>
+            </li>
+          {/each}
+          <li class="bg-base-200/30 flex flex-col gap-1 p-3 font-semibold">
+            <span class="text-sm">Summe</span>
+            <div class="grid grid-cols-3 gap-2 text-xs">
+              <span class="font-mono">
+                {fmtHours(monthlyRows.reduce((a, r) => a + r.totalHours, 0))}
+              </span>
+              <span class="font-mono">
+                {monthlyRows.reduce((a, r) => a + r.daysLogged, 0)}
+              </span>
+              <span></span>
+            </div>
+          </li>
+        </ul>
       {/if}
     </div>
   </div>

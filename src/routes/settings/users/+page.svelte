@@ -252,7 +252,8 @@
             {/snippet}
           </EmptyState>
         {:else}
-          <div class="overflow-x-auto">
+          <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+          <div class="hidden overflow-x-auto lg:block">
             <table class="table">
               <thead>
                 <tr>
@@ -330,6 +331,64 @@
               </tbody>
             </table>
           </div>
+          <!-- Phone / small tablet: stacked card list with the essentials. -->
+          <ul class="divide-base-300 divide-y lg:hidden">
+            {#each users as u (u.id)}
+              <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+                <a
+                  href={`/settings/users/${u.id}/edit`}
+                  class="flex min-w-0 flex-1 flex-col gap-0.5"
+                >
+                  <span class="truncate text-sm font-medium">{u.name}</span>
+                  <span class="text-base-content/60 truncate font-mono text-xs">
+                    {u.username}
+                  </span>
+                  <span class="mt-0.5 flex flex-wrap items-center gap-1">
+                    {#each u.roles as r (r.id)}
+                      <span class="badge badge-ghost badge-sm">{r.name}</span>
+                    {:else}
+                      <span class="text-base-content/50 text-xs">keine</span>
+                    {/each}
+                    {#if u.active}
+                      <span class="badge badge-success badge-sm">Aktiv</span>
+                    {:else}
+                      <span class="badge badge-error badge-sm">
+                        Deaktiviert
+                      </span>
+                    {/if}
+                  </span>
+                </a>
+                <div class="flex shrink-0 items-start gap-1">
+                  <button
+                    class="btn btn-ghost btn-sm btn-square"
+                    aria-label={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                    title={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                    onclick={() => toggleActive(u)}
+                  >
+                    {#if u.active}
+                      <UserX size={16} />
+                    {:else}
+                      <UserCheck size={16} class="text-success" />
+                    {/if}
+                  </button>
+                  <a
+                    class="btn btn-ghost btn-sm btn-square"
+                    href="/settings/users/{u.id}/edit"
+                    aria-label="Bearbeiten"
+                  >
+                    <Pencil size={16} />
+                  </a>
+                  <button
+                    class="btn btn-ghost btn-sm btn-square text-error"
+                    aria-label="Löschen"
+                    onclick={() => askDeleteUser(u.id, u.name)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </li>
+            {/each}
+          </ul>
           <Pagination
             total={usersTotal}
             page={pageNum}
@@ -355,7 +414,8 @@
             {/snippet}
           </EmptyState>
         {:else}
-          <div class="overflow-x-auto">
+          <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+          <div class="hidden overflow-x-auto lg:block">
             <table class="table">
               <thead>
                 <tr>
@@ -433,6 +493,59 @@
               </tbody>
             </table>
           </div>
+          <!-- Phone / small tablet: stacked card list with the essentials. -->
+          <ul class="divide-base-300 divide-y lg:hidden">
+            {#each rolesList as r (r.id)}
+              {@const isAdmin = r.name === ADMIN_ROLE_NAME}
+              {@const isWildcard = r.permissions.includes('*')}
+              <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+                <a
+                  href={`/settings/users/roles/${r.id}/edit`}
+                  class="flex min-w-0 flex-1 flex-col gap-0.5"
+                >
+                  <span class="flex items-center gap-2">
+                    <span class="truncate text-sm font-medium">{r.name}</span>
+                    {#if isAdmin}
+                      <span class="badge badge-ghost badge-sm shrink-0">
+                        System
+                      </span>
+                    {/if}
+                  </span>
+                  <span class="mt-0.5 flex items-center gap-1">
+                    {#if isWildcard}
+                      <span class="badge badge-primary badge-sm">
+                        Voller Zugriff (*)
+                      </span>
+                    {:else}
+                      <span class="text-base-content/70 text-xs">
+                        {r.permissions.length}
+                        {r.permissions.length === 1
+                          ? 'Berechtigung'
+                          : 'Berechtigungen'}
+                      </span>
+                    {/if}
+                  </span>
+                </a>
+                <div class="flex shrink-0 items-start gap-1">
+                  <a
+                    class="btn btn-ghost btn-sm btn-square"
+                    href="/settings/users/roles/{r.id}/edit"
+                    aria-label="Bearbeiten"
+                  >
+                    <Pencil size={16} />
+                  </a>
+                  <button
+                    class="btn btn-ghost btn-sm btn-square text-error"
+                    aria-label="Löschen"
+                    disabled={isAdmin}
+                    onclick={() => askDeleteRole(r.id, r.name)}
+                  >
+                    <Trash2 size={16} />
+                  </button>
+                </div>
+              </li>
+            {/each}
+          </ul>
         {/if}
       {/if}
     </div>

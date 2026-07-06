@@ -101,7 +101,8 @@
         {/snippet}
       </EmptyState>
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -154,6 +155,50 @@
           </tbody>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list with the essentials. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as p (p.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/posts/${p.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate text-sm font-medium">{p.title}</span>
+              <span class="mt-0.5 flex items-center gap-2">
+                {#if p.published}
+                  <span class="badge badge-sm badge-success">
+                    Veröffentlicht
+                  </span>
+                {:else}
+                  <span class="badge badge-sm badge-ghost">Entwurf</span>
+                {/if}
+                <span class="text-base-content/60 text-xs">
+                  {fmt(p.publishedAt)}
+                </span>
+              </span>
+            </a>
+            <div class="flex shrink-0 items-start gap-1">
+              <a
+                class="btn btn-ghost btn-sm btn-square"
+                href="/posts/{p.id}/edit"
+                aria-label="Bearbeiten"
+              >
+                <Pencil size={16} />
+              </a>
+              <button
+                class="btn btn-ghost btn-sm btn-square text-error"
+                onclick={() => {
+                  toDelete = { id: p.id, title: p.title }
+                  confirmOpen = true
+                }}
+                aria-label="Löschen"
+              >
+                <Trash2 size={16} />
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
       <Pagination
         {total}
         page={pageNum}

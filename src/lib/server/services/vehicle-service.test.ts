@@ -256,6 +256,48 @@ describe('vehicle-service', () => {
       expect(fetched?.make).toBe('VW')
       expect(fetched?.licensePlate).toBe('M-GET 1')
     })
+
+    it('returns customerLabel null for stock vehicles (no owner)', async () => {
+      const created = await createVehicle({ make: 'VW', model: 'Polo' })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.customerLabel).toBeNull()
+    })
+
+    it('derives customerLabel from the owner in picker-label format', async () => {
+      const [c] = await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-G0001',
+          company: 'Muster GmbH',
+          city: 'Berlin'
+        })
+        .returning()
+      const created = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: c.id
+      })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.customerLabel).toBe('Muster GmbH · Berlin')
+    })
+
+    it('falls back to first/last name when the owner has no company', async () => {
+      const [c] = await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-G0002',
+          firstName: 'Max',
+          lastName: 'Muster'
+        })
+        .returning()
+      const created = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: c.id
+      })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.customerLabel).toBe('Max Muster')
+    })
   })
 
   describe('countVehicles', () => {

@@ -75,7 +75,8 @@
         {/snippet}
       </EmptyState>
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -135,6 +136,46 @@
           </tbody>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list with the essentials. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as v (v.id)}
+          <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+            <a
+              href={`/vehicles/${v.id}`}
+              class="flex min-w-0 flex-1 flex-col gap-0.5"
+            >
+              <span class="truncate text-sm font-medium">
+                {[v.make, v.model].filter(Boolean).join(' ') || '-'}
+              </span>
+              {#if v.plate}
+                <span class="text-base-content/60 truncate font-mono text-xs">
+                  {v.plate}
+                </span>
+              {/if}
+              <span class="mt-0.5 flex items-center gap-2">
+                <span class="font-mono text-xs">
+                  {formatEuro(v.salesPriceGross)}
+                </span>
+                {#if v.differentialTax}
+                  <span class="badge badge-ghost badge-sm">§ 25a</span>
+                {:else}
+                  <span class="badge badge-ghost badge-sm">Regelbest.</span>
+                {/if}
+              </span>
+            </a>
+            <div class="flex shrink-0 items-start">
+              <button
+                type="button"
+                class="btn btn-primary btn-sm gap-1"
+                onclick={() => sell(v.id)}
+                aria-label="Verkaufen"
+              >
+                <Receipt size={14} /> Verkaufen
+              </button>
+            </div>
+          </li>
+        {/each}
+      </ul>
       <Pagination
         {total}
         page={pageNum}

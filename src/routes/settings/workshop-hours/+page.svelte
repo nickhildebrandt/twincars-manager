@@ -93,7 +93,7 @@
 >
   <div class="card-body p-0">
     <div class="overflow-x-auto">
-      <table class="table">
+      <table class="table-sm table">
         <thead>
           <tr>
             <th>Wochentag</th>
@@ -109,7 +109,7 @@
               <td>
                 <input
                   type="time"
-                  class="input input-bordered input-sm w-full max-w-[10rem]"
+                  class="input input-bordered input-sm w-24 min-w-24"
                   bind:value={r.opensAt}
                   disabled={r.closed}
                 />
@@ -117,7 +117,7 @@
               <td>
                 <input
                   type="time"
-                  class="input input-bordered input-sm w-full max-w-[10rem]"
+                  class="input input-bordered input-sm w-24 min-w-24"
                   bind:value={r.closesAt}
                   disabled={r.closed}
                 />

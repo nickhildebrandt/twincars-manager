@@ -72,7 +72,12 @@
   type Mode = 'customer' | 'stock' | 'edit'
 
   type Props = {
-    initial?: Partial<Vehicle> & { licensePlate?: string | null }
+    initial?: Partial<Vehicle> & {
+      licensePlate?: string | null
+      /** Picker label of the current owner — seeds the customer picker
+       *  in edit mode so an existing Halter renders with its name. */
+      customerLabel?: string | null
+    }
     mode?: Mode
     onSave: (values: VehicleFormValues) => Promise<void> | void
     onCancel?: () => void
@@ -103,7 +108,7 @@
   const init = untrack(() => ({ ...initial }))
 
   let customerId = $state(init.customerId ?? '')
-  let customerLabel = $state('')
+  let customerLabel = $state(init.customerLabel ?? '')
   let make = $state(init.make ?? '')
   let model = $state(init.model ?? '')
   let licensePlate = $state(init.licensePlate ?? '')

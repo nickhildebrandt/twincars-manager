@@ -1,5 +1,6 @@
 import { db } from '$lib/server/db/client'
 import {
+  customers,
   vehicleLicensePlateVersions,
   vehicleListings,
   vehiclePhotos,
@@ -9,6 +10,7 @@ import {
   type NewVehicle,
   type VehicleLicensePlateVersion
 } from '$lib/server/db/schema'
+import { customerPickerLabel } from '$lib/utils/picker-labels'
 import {
   and,
   asc,
@@ -276,15 +278,43 @@ export async function deleteVehicle(id: string): Promise<void> {
   await db.delete(vehicles).where(eq(vehicles.id, id))
 }
 
-export async function getVehicle(id: string): Promise<VehicleWithPlate | null> {
+/**
+ * Vehicle detail shape: current plate plus the owner's picker label
+ * (`null` for stock vehicles). The label uses the shared
+ * `customerPickerLabel` format so the edit form's customer picker
+ * renders the owner exactly like a freshly picked entry.
+ */
+export type VehicleDetail = VehicleWithPlate & { customerLabel: string | null }
+
+export async function getVehicle(id: string): Promise<VehicleDetail | null> {
   const [row] = await db
     .select()
     .from(vehicles)
     .where(eq(vehicles.id, id))
     .limit(1)
   if (!row) return null
-  const v = await getEffectiveLicensePlate(id)
-  return { ...row, licensePlate: v?.licensePlate ?? null }
+  const [v, holderRows] = await Promise.all([
+    getEffectiveLicensePlate(id),
+    row.customerId
+      ? db
+          .select({
+            company: customers.company,
+            firstName: customers.firstName,
+            lastName: customers.lastName,
+            customerNumber: customers.customerNumber,
+            city: customers.city
+          })
+          .from(customers)
+          .where(eq(customers.id, row.customerId))
+          .limit(1)
+      : Promise.resolve([])
+  ])
+  const holder = holderRows[0]
+  return {
+    ...row,
+    licensePlate: v?.licensePlate ?? null,
+    customerLabel: holder ? customerPickerLabel(holder) : null
+  }
 }
 
 export async function countVehicles(): Promise<number> {

@@ -228,6 +228,19 @@ describe('VehicleForm', () => {
     })
   })
 
+  it('seeds the customer picker label from initial.customerLabel', () => {
+    render(VehicleForm, {
+      props: {
+        onSave: vi.fn(),
+        initial: { customerId: 'c1', customerLabel: 'Muster GmbH · Berlin' }
+      }
+    })
+    // The picker trigger shows the owner's label instead of the
+    // placeholder when both id and label are seeded.
+    expect(screen.getByText('Muster GmbH · Berlin')).toBeInTheDocument()
+    expect(screen.queryByText('- Kunde wählen -')).not.toBeInTheDocument()
+  })
+
   it('pre-fills make/model from the initial prop', () => {
     const { container } = render(VehicleForm, {
       props: { onSave: vi.fn(), initial: { make: 'Mercedes', model: 'GLA' } }

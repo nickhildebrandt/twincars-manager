@@ -215,7 +215,7 @@
     </div>
   </div>
   {#if v.notes}
-    <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
       <div class="card-body">
         <h3 class="card-title text-base">Notiz</h3>
         <p class="text-sm whitespace-pre-line">{v.notes}</p>
@@ -259,7 +259,7 @@
   {/if}
 
   <!-- Paginated invoice history for this vehicle. -->
-  <div class="card border-base-300 bg-base-100 border lg:col-span-2">
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
     <div class="card-body p-0">
       <div
         class="border-base-300 flex items-center justify-between border-b px-4 py-3"

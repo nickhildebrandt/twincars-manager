@@ -220,7 +220,9 @@
     <fieldset class="fieldset">
       <legend class="fieldset-legend">Berechtigungen</legend>
 
-      <label class="label cursor-pointer justify-start gap-3">
+      <label
+        class="label cursor-pointer items-start justify-start gap-3 whitespace-normal"
+      >
         <input
           type="checkbox"
           class="checkbox checkbox-sm"
@@ -244,29 +246,32 @@
         class:opacity-50={wildcard}
       >
         {#each moduleKeys as mod (mod)}
-          <div
-            class="border-base-300 rounded-box flex flex-col gap-2 border p-3"
-          >
-            <div class="text-sm font-semibold">{moduleLabels[mod]}</div>
-            <div class="flex flex-col gap-1">
-              {#each MODULE_PERMISSIONS[mod] as perm (perm)}
-                <label class="label cursor-pointer justify-start gap-3 py-1">
-                  <input
-                    type="checkbox"
-                    class="checkbox checkbox-sm"
-                    checked={selected.has(perm)}
-                    disabled={locked || wildcard}
-                    onchange={(e) =>
-                      togglePerm(perm, (e.target as HTMLInputElement).checked)}
-                  />
-                  <span class="flex flex-col">
-                    <span class="text-sm">{permissionLabel(perm)}</span>
-                    <span class="text-base-content/60 font-mono text-xs">
-                      {perm}
+          <div class="card border-base-300 border">
+            <div class="card-body gap-2 p-3">
+              <div class="text-sm font-semibold">{moduleLabels[mod]}</div>
+              <div class="flex flex-col gap-1">
+                {#each MODULE_PERMISSIONS[mod] as perm (perm)}
+                  <label class="label cursor-pointer justify-start gap-3 py-1">
+                    <input
+                      type="checkbox"
+                      class="checkbox checkbox-sm"
+                      checked={selected.has(perm)}
+                      disabled={locked || wildcard}
+                      onchange={(e) =>
+                        togglePerm(
+                          perm,
+                          (e.target as HTMLInputElement).checked
+                        )}
+                    />
+                    <span class="flex flex-col">
+                      <span class="text-sm">{permissionLabel(perm)}</span>
+                      <span class="text-base-content/60 font-mono text-xs">
+                        {perm}
+                      </span>
                     </span>
-                  </span>
-                </label>
-              {/each}
+                  </label>
+                {/each}
+              </div>
             </div>
           </div>
         {/each}

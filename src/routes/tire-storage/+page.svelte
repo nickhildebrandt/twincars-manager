@@ -75,30 +75,32 @@
       bind:query={q}
       placeholder="Suchen: Lagernummer, Marke, Modell, Größe, Kunde ..."
       onQuery={() => (pageNum = 1)}
-    />
+    >
+      {#snippet filters()}
+        <div role="tablist" class="tabs tabs-box">
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={activeTab === 'active'}
+            onclick={() => switchTab('active')}
+          >
+            Aktiv
+          </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={activeTab === 'retrieved'}
+            onclick={() => switchTab('retrieved')}
+          >
+            Abgeholt
+          </button>
+        </div>
+      {/snippet}
+    </Toolbar>
   {/snippet}
 </PageHeader>
-
-<div role="tablist" class="tabs tabs-box mb-4 w-fit">
-  <button
-    type="button"
-    role="tab"
-    class="tab"
-    class:tab-active={activeTab === 'active'}
-    onclick={() => switchTab('active')}
-  >
-    Aktiv
-  </button>
-  <button
-    type="button"
-    role="tab"
-    class="tab"
-    class:tab-active={activeTab === 'retrieved'}
-    onclick={() => switchTab('retrieved')}
-  >
-    Abgeholt
-  </button>
-</div>
 
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
@@ -121,7 +123,8 @@
         {/snippet}
       </EmptyState>
     {:else}
-      <div class="overflow-x-auto">
+      <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+      <div class="hidden overflow-x-auto lg:block">
         <table class="table">
           <thead>
             <tr>
@@ -166,6 +169,37 @@
           </tbody>
         </table>
       </div>
+      <!-- Phone / small tablet: stacked card list with the essentials. -->
+      <ul class="divide-base-300 divide-y lg:hidden">
+        {#each items as e (e.id)}
+          <li class="hover:bg-base-200">
+            <a
+              href={`/tire-storage/${e.id}`}
+              class="flex min-w-0 flex-col gap-0.5 p-3"
+            >
+              <span class="truncate text-sm font-medium">
+                <span class="font-mono">{e.storageNumber}</span>
+                · {e.customerLabel}
+              </span>
+              <span class="text-base-content/70 truncate text-xs">
+                {[[e.brand, e.model].filter(Boolean).join(' '), e.size]
+                  .filter(Boolean)
+                  .join(' · ') || '-'}
+              </span>
+              <span class="mt-0.5 flex items-center gap-2">
+                <span class="badge badge-sm {seasonBadge(e.season)}">
+                  {seasonLabel(e.season)}
+                </span>
+                <span class="text-base-content/60 text-xs">
+                  {activeTab === 'retrieved'
+                    ? `Abgeholt ${e.retrievedAt ?? '-'}`
+                    : `Eingelagert ${e.storedAt}`}
+                </span>
+              </span>
+            </a>
+          </li>
+        {/each}
+      </ul>
       <Pagination
         {total}
         page={pageNum}

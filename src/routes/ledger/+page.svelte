@@ -235,7 +235,7 @@
   Liste filtert serverseitig nach dem aktuell gewählten Monat.
 -->
 <div class="card border-base-300 bg-base-100 mb-4 border">
-  <div class="card-body flex flex-row items-center gap-2 p-3">
+  <div class="card-body flex flex-row flex-wrap items-center gap-2 p-3">
     <div class="join">
       <button
         class="btn btn-sm join-item"
@@ -259,7 +259,7 @@
         <ChevronRight size={14} />
       </button>
     </div>
-    <h2 class="ms-auto text-lg font-semibold">
+    <h2 class="ms-auto text-lg font-semibold whitespace-nowrap">
       {monthLabel(viewMonth)}
       {viewYear}
     </h2>
