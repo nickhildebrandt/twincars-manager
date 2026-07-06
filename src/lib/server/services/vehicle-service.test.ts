@@ -84,7 +84,8 @@ describe('vehicle-service', () => {
         .values({
           customerNumber: 'KU-V0001',
           firstName: 'Kunde',
-          lastName: 'Test'
+          lastName: 'Haltermann',
+          company: 'Halter & Co. KG'
         })
         .returning()
 
@@ -93,6 +94,8 @@ describe('vehicle-service', () => {
           make: 'VW',
           model: 'Golf',
           vin: 'WVWZZZ1KZAW111111',
+          hsn: '0603',
+          tsn: 'BJM',
           customerId: c.id,
           archived: false
         },
@@ -138,6 +141,30 @@ describe('vehicle-service', () => {
 
     it('filters by model', async () => {
       const res = await listVehicles({ page: 1, size: 25, q: 'Golf' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].make).toBe('VW')
+    })
+
+    it('filters by HSN', async () => {
+      const res = await listVehicles({ page: 1, size: 25, q: '0603' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].make).toBe('VW')
+    })
+
+    it('filters by TSN (case-insensitive)', async () => {
+      const res = await listVehicles({ page: 1, size: 25, q: 'bjm' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].make).toBe('VW')
+    })
+
+    it('matches via the holder last name', async () => {
+      const res = await listVehicles({ page: 1, size: 25, q: 'haltermann' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].make).toBe('VW')
+    })
+
+    it('matches via the holder company', async () => {
+      const res = await listVehicles({ page: 1, size: 25, q: 'Halter & Co' })
       expect(res.total).toBe(1)
       expect(res.items[0].make).toBe('VW')
     })

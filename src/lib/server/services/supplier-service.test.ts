@@ -46,8 +46,18 @@ describe('supplier-service', () => {
   describe('listSuppliers', () => {
     beforeEach(async () => {
       await db.insert(suppliers).values([
-        { name: 'Alpha GmbH', city: 'Berlin', contactPerson: 'Anna' },
-        { name: 'Beta AG', city: 'Hamburg', contactPerson: 'Bert' },
+        {
+          name: 'Alpha GmbH',
+          city: 'Berlin',
+          contactPerson: 'Anna',
+          phone: '030 4455667'
+        },
+        {
+          name: 'Beta AG',
+          city: 'Hamburg',
+          contactPerson: 'Bert',
+          email: 'einkauf@beta-ag.de'
+        },
         { name: 'Gamma KG', city: 'München', contactPerson: 'Clara' }
       ])
     })
@@ -69,6 +79,24 @@ describe('supplier-service', () => {
     it('filters by city search', async () => {
       const res = await listSuppliers({ page: 1, size: 25, q: 'München' })
       expect(res.items.map((s) => s.name)).toEqual(['Gamma KG'])
+    })
+
+    it('filters by contact person', async () => {
+      const res = await listSuppliers({ page: 1, size: 25, q: 'clara' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].name).toBe('Gamma KG')
+    })
+
+    it('filters by email', async () => {
+      const res = await listSuppliers({ page: 1, size: 25, q: 'einkauf@' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].name).toBe('Beta AG')
+    })
+
+    it('filters by phone', async () => {
+      const res = await listSuppliers({ page: 1, size: 25, q: '4455667' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].name).toBe('Alpha GmbH')
     })
 
     it('filters by archived flag', async () => {

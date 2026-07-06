@@ -150,7 +150,9 @@ async function searchCustomers(
           ilike(customers.lastName, term),
           ilike(customers.firstName, term),
           ilike(customers.customerNumber, term),
-          ilike(customers.email, term)
+          ilike(customers.email, term),
+          ilike(customers.phone, term),
+          ilike(customers.mobile, term)
         )!
       )
     )
@@ -181,7 +183,9 @@ async function searchVehicles(
   const baseSearch = or(
     ilike(vehicles.vin, term),
     ilike(vehicles.make, term),
-    ilike(vehicles.model, term)
+    ilike(vehicles.model, term),
+    ilike(vehicles.hsn, term),
+    ilike(vehicles.tsn, term)
   )!
   const whereSearch =
     plateMatchIds.length > 0
@@ -370,7 +374,8 @@ async function searchSuppliers(
           ilike(suppliers.name, term),
           ilike(suppliers.legacySupplierNumber, term),
           ilike(suppliers.city, term),
-          ilike(suppliers.email, term)
+          ilike(suppliers.email, term),
+          ilike(suppliers.phone, term)
         )!
       )
     )
@@ -408,7 +413,10 @@ async function searchEmployees(
         or(
           ilike(employees.firstName, term),
           ilike(employees.lastName, term),
-          ilike(employees.personnelNumber, term)
+          ilike(employees.personnelNumber, term),
+          ilike(employees.privateEmail, term),
+          ilike(employees.privatePhone, term),
+          ilike(employees.mobile, term)
         )!
       )
     )

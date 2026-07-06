@@ -31,6 +31,7 @@ import {
   documents,
   items as schemaItems,
   numberRanges,
+  vehicleLicensePlateVersions,
   vehicles
 } from '$lib/server/db/schema'
 import {
@@ -399,23 +400,38 @@ describe('document-service', () => {
       expect(res.items[0].id).toBe(first.id)
     })
 
-    // pg-mem limitation: the count-query inside `listDocuments` filters
-    // on `customers.company` / `customers.last_name` without joining
-    // `customers` into the count's FROM. Postgres also rejects this, but
-    // it surfaces here first because pg-mem evaluates the where eagerly.
-    // Skipped until the service-side bug is sorted.
-    it.skip('searches by customer company name (case-insensitive)', async () => {
+    it('searches by customer company name (case-insensitive)', async () => {
       const res = await listDocuments({ page: 1, size: 25, q: 'alpha' })
       expect(res.total).toBe(1)
       expect(res.items[0].customerName).toBe('Alpha GmbH')
     })
 
-    // pg-mem limitation: same count-query column-resolution issue as
-    // the test above.
-    it.skip('searches by document number prefix', async () => {
+    it('searches by document number prefix', async () => {
       const res = await listDocuments({ page: 1, size: 25, q: 'AN-' })
       expect(res.total).toBe(1)
       expect(res.items[0].type).toBe('offer')
+    })
+
+    it('searches by the vehicle license plate', async () => {
+      const vehicleId = await seedVehicle(customerAId)
+      await db
+        .insert(vehicleLicensePlateVersions)
+        .values({
+          vehicleId,
+          validFrom: '2026-01-01',
+          licensePlate: 'HH-QQ 4711'
+        })
+      await createDocument(
+        baseInput({
+          type: 'invoice',
+          customerId: customerAId,
+          vehicleId,
+          issueDate: '2026-05-04'
+        })
+      )
+      const res = await listDocuments({ page: 1, size: 25, q: 'HH-QQ' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].vehiclePlate).toBe('HH-QQ 4711')
     })
 
     it('exposes the aggregated paid amount per document', async () => {

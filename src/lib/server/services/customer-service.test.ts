@@ -115,6 +115,7 @@ describe('customer-service', () => {
           firstName: 'Anna',
           lastName: 'Albers',
           city: 'Berlin',
+          street: 'Gartenweg 12',
           email: 'anna@example.de',
           company: null
         },
@@ -124,7 +125,8 @@ describe('customer-service', () => {
           lastName: 'Braun',
           city: 'Hamburg',
           company: 'Braun GmbH',
-          zip: '20095'
+          zip: '20095',
+          mobile: '0171 5556677'
         },
         {
           customerNumber: 'KU-00003',
@@ -172,6 +174,28 @@ describe('customer-service', () => {
       const res = await listCustomers({ page: 1, size: 25, q: '20095' })
       expect(res.total).toBe(1)
       expect(res.items[0].lastName).toBe('Braun')
+    })
+
+    it('filters by mobile number', async () => {
+      const res = await listCustomers({ page: 1, size: 25, q: '5556677' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Braun')
+    })
+
+    it('filters by street', async () => {
+      const res = await listCustomers({ page: 1, size: 25, q: 'gartenweg' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Albers')
+    })
+
+    it('filters by email', async () => {
+      const res = await listCustomers({
+        page: 1,
+        size: 25,
+        q: 'anna@example.de'
+      })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Albers')
     })
 
     it('filters by kind=business (non-null company)', async () => {

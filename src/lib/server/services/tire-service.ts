@@ -21,18 +21,7 @@ import {
   type TirePhoto,
   type TirePriceVersion
 } from '$lib/server/db/schema'
-import {
-  and,
-  asc,
-  count,
-  desc,
-  eq,
-  ilike,
-  inArray,
-  lte,
-  or,
-  sql
-} from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, inArray, lte, or } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { allocateNumber } from './number-range-service'
 
@@ -78,12 +67,27 @@ export async function listTires(
   const filters = []
   if (q) {
     const term = `%${q}%`
+    const textSearch = or(
+      ilike(tires.articleNumber, term),
+      ilike(tires.brand, term),
+      ilike(tires.model, term),
+      ilike(tires.ean, term)
+    )!
+    // A query shaped like a tire size ("205/55R16") additionally
+    // matches the exact size components.
+    const parsedSize = parseTireSize(q)
     filters.push(
-      or(
-        ilike(tires.articleNumber, term),
-        ilike(tires.brand, term),
-        ilike(tires.model, term)
-      )
+      parsedSize
+        ? or(
+            textSearch,
+            and(
+              eq(tires.width, parsedSize.width),
+              eq(tires.aspectRatio, parsedSize.aspectRatio),
+              eq(tires.construction, parsedSize.construction),
+              eq(tires.diameterInch, parsedSize.diameterInch)
+            )!
+          )!
+        : textSearch
     )
   }
   if (season) filters.push(eq(tires.season, season))
@@ -469,16 +473,15 @@ export async function listPublicTires(
   }
   if (filters?.size && filters.size.length > 0) {
     const parsed = parseTireSize(filters.size)
-    if (parsed) {
-      where.push(eq(tires.width, parsed.width))
-      where.push(eq(tires.aspectRatio, parsed.aspectRatio))
-      where.push(eq(tires.construction, parsed.construction))
-      where.push(eq(tires.diameterInch, parsed.diameterInch))
-    } else {
-      // Unparseable size never matches — force an empty result instead
-      // of silently ignoring the filter.
-      where.push(sql`false`)
+    if (!parsed) {
+      // Unparseable size never matches — return the empty result
+      // directly instead of silently ignoring the filter.
+      return []
     }
+    where.push(eq(tires.width, parsed.width))
+    where.push(eq(tires.aspectRatio, parsed.aspectRatio))
+    where.push(eq(tires.construction, parsed.construction))
+    where.push(eq(tires.diameterInch, parsed.diameterInch))
   }
   if (typeof filters?.width === 'number')
     where.push(eq(tires.width, filters.width))

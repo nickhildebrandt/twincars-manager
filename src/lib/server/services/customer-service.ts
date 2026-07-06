@@ -52,7 +52,9 @@ export async function listCustomers(
         ilike(customers.company, term),
         ilike(customers.city, term),
         ilike(customers.zip, term),
+        ilike(customers.street, term),
         ilike(customers.phone, term),
+        ilike(customers.mobile, term),
         ilike(customers.email, term),
         ilike(customers.ebayHandle, term)
       )!

@@ -4,7 +4,7 @@ import {
   employees,
   type Employee
 } from '$lib/server/db/schema'
-import { and, asc, count, desc, eq, ilike, lte, or, sql } from 'drizzle-orm'
+import { and, asc, count, desc, eq, ilike, lte, or } from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 
 type NewEmployee = typeof employees.$inferInsert
@@ -36,7 +36,10 @@ export async function listEmployees(
         ilike(employees.lastName, term),
         ilike(employees.personnelNumber, term),
         ilike(employees.position, term),
-        ilike(employees.department, term)
+        ilike(employees.department, term),
+        ilike(employees.privateEmail, term),
+        ilike(employees.privatePhone, term),
+        ilike(employees.mobile, term)
       )
     )
   }

@@ -24,7 +24,7 @@
  *   `lastSentAt + reminderRecurEveryDays`.
  */
 
-import { and, asc, desc, eq, isNotNull, sql } from 'drizzle-orm'
+import { and, asc, desc, eq, isNotNull, max, notInArray } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
   customers,
@@ -242,13 +242,17 @@ export const listDuePaymentReminderCandidates = async (
   const firstDays = settings.reminderDays1
   const recurDays = settings.reminderRecurEveryDays
 
-  // Latest reminder per invoice (issueDate). A correlated max() in a
-  // single statement keeps the read deterministic.
-  const lastReminderDate = sql<string | null>`(
-    SELECT MAX(${reminders.issueDate})
-    FROM ${reminders}
-    WHERE ${reminders.invoiceId} = ${documents.id}
-  )`.as('last_reminder_date')
+  // Latest reminder per invoice (issueDate): a grouped subquery
+  // left-joined per invoice keeps the read deterministic in a single
+  // statement.
+  const lastReminders = db
+    .select({
+      invoiceId: reminders.invoiceId,
+      lastReminderDate: max(reminders.issueDate).as('last_reminder_date')
+    })
+    .from(reminders)
+    .groupBy(reminders.invoiceId)
+    .as('last_reminders')
 
   const rows = await db
     .select({
@@ -256,13 +260,19 @@ export const listDuePaymentReminderCandidates = async (
       number: documents.documentNumber,
       dueDate: documents.dueDate,
       reminderLevel: documents.reminderLevel,
-      lastReminderDate
+      lastReminderDate: lastReminders.lastReminderDate
     })
     .from(documents)
+    .leftJoin(lastReminders, eq(lastReminders.invoiceId, documents.id))
     .where(
       and(
         eq(documents.type, 'invoice'),
-        sql`${documents.status} not in ('paid','cancelled','draft','converted')`,
+        notInArray(documents.status, [
+          'paid',
+          'cancelled',
+          'draft',
+          'converted'
+        ]),
         isNotNull(documents.dueDate)
       )
     )

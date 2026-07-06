@@ -18,7 +18,16 @@ import {
   type Customer,
   type TireReminderSeason
 } from '$lib/server/db/schema'
-import { and, asc, eq, isNull, notInArray, sql } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  eq,
+  inArray,
+  isNotNull,
+  isNull,
+  ne,
+  notInArray
+} from 'drizzle-orm'
 import { sendDocumentEmail } from './mail-service'
 
 /**
@@ -90,8 +99,9 @@ export async function findTireReminderCandidates(
       and(
         eq(customers.archived, false),
         eq(customers.wantsTireReminders, true),
-        sql`${customers.email} IS NOT NULL AND ${customers.email} <> ''`,
-        sql`${customers.id} IN ${withActiveStorage}`,
+        isNotNull(customers.email),
+        ne(customers.email, ''),
+        inArray(customers.id, withActiveStorage),
         notInArray(customers.id, alreadyNotified)
       )
     )

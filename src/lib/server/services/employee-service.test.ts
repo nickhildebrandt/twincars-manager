@@ -61,6 +61,8 @@ describe('employee-service', () => {
           lastName: 'Albers',
           position: 'Mechanikerin',
           department: 'Werkstatt',
+          privateEmail: 'anna.albers@web.de',
+          mobile: '0160 7788990',
           archived: false
         },
         {
@@ -69,6 +71,7 @@ describe('employee-service', () => {
           lastName: 'Braun',
           position: 'Verkäufer',
           department: 'Vertrieb',
+          privatePhone: '040 1122334',
           archived: false
         },
         {
@@ -109,6 +112,28 @@ describe('employee-service', () => {
 
     it('filters by department', async () => {
       const res = await listEmployees({ page: 1, size: 25, q: 'Werkstatt' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Albers')
+    })
+
+    it('filters by private email', async () => {
+      const res = await listEmployees({
+        page: 1,
+        size: 25,
+        q: 'anna.albers@web.de'
+      })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Albers')
+    })
+
+    it('filters by private phone', async () => {
+      const res = await listEmployees({ page: 1, size: 25, q: '1122334' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].lastName).toBe('Braun')
+    })
+
+    it('filters by mobile number', async () => {
+      const res = await listEmployees({ page: 1, size: 25, q: '7788990' })
       expect(res.total).toBe(1)
       expect(res.items[0].lastName).toBe('Albers')
     })

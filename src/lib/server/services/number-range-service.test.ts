@@ -111,6 +111,14 @@ describe('number-range-service', () => {
       // real row-lock behaviour — but it does prove the single-statement
       // allocation has no read-modify-write window in application code
       // (the old SELECT-then-UPDATE version fails this test).
+      //
+      // Harness limitation (probed 2026-07): a `db.transaction` +
+      // `SELECT ... FOR UPDATE` variant of the allocator cannot be
+      // tested here — the pg-proxy driver behind `test-db.ts` throws
+      // "Transactions are not supported by the Postgres Proxy driver"
+      // on any `db.transaction`, while pg-mem itself parses
+      // `.for('update')` fine. That is one reason the allocator stays
+      // a single atomic UPDATE ... RETURNING.
       const results = await Promise.all(
         Array.from({ length: 10 }, () => allocateNumber('invoice'))
       )

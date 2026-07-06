@@ -16,6 +16,7 @@ import {
   eq,
   gte,
   ilike,
+  lt,
   lte,
   or,
   sql,
@@ -330,6 +331,9 @@ export async function utilizationSummary(params: {
       lastName: employees.lastName,
       personnelNumber: employees.personnelNumber,
       totalHours: sum(timeEntries.hours),
+      // Intentional raw fragment: drizzle has no builder for CASE WHEN
+      // (conditional aggregation); splitting into a second grouped query
+      // would double the round trips for no correctness gain.
       billableHours: sum(
         sql<string>`CASE WHEN ${timeEntries.documentId} IS NOT NULL THEN ${timeEntries.hours} ELSE 0 END`
       ),
@@ -415,12 +419,7 @@ export async function monthlyReport(params: {
     })
     .from(timeEntries)
     .leftJoin(employees, eq(timeEntries.employeeId, employees.id))
-    .where(
-      and(
-        gte(timeEntries.date, from),
-        sql`${timeEntries.date} < ${toExclusive}`
-      )
-    )
+    .where(and(gte(timeEntries.date, from), lt(timeEntries.date, toExclusive)))
     .groupBy(
       timeEntries.employeeId,
       employees.firstName,

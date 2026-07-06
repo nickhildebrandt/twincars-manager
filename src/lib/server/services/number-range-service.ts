@@ -11,10 +11,24 @@
  *   UPDATE number_ranges
  *      SET next_value = next_value + 1
  *    WHERE kind = $1
- *    RETURNING next_value - 1 AS seq, format_template
+ *    RETURNING next_value, format_template
  *
  * Postgres row-locks the row for the duration of the statement, so two
- * concurrent callers always receive distinct sequence values.
+ * concurrent callers always receive distinct sequence values — the
+ * same no-duplicates guarantee a `SELECT ... FOR UPDATE` +
+ * `UPDATE` transaction would give, in one round trip and without a
+ * lock-wait window in application code.
+ *
+ * Why NOT a `db.transaction` + `SELECT ... FOR UPDATE` restructure:
+ * the drizzle test harness (`test-db.ts`) runs on the `pg-proxy`
+ * driver, whose `transaction()` throws unconditionally ("Transactions
+ * are not supported by the Postgres Proxy driver") — every pg-mem test
+ * that allocates a number would break. pg-mem itself parses
+ * `.for('update')` fine (probed), but without a real interactive
+ * transaction the row lock could not be exercised in tests anyway.
+ * The single-statement UPDATE keeps the guarantee testable; the
+ * increment expression stays a raw `sql` fragment because drizzle has
+ * no builder API for arithmetic inside `.set()`.
  *
  * @group integration
  * @module number-range-service
@@ -56,14 +70,21 @@ async function bumpCounter(
 ): Promise<{ seq: number; formatTemplate: string } | null> {
   const [row] = await db
     .update(numberRanges)
+    // Intentional raw fragment (the only one in the service layer):
+    // the in-place increment must happen inside the atomic UPDATE and
+    // drizzle offers no builder API for arithmetic in `.set()`. See
+    // the module JSDoc for why this stays a single statement instead
+    // of a SELECT ... FOR UPDATE transaction.
     .set({ nextValue: sql`${numberRanges.nextValue} + 1` })
     .where(eq(numberRanges.kind, kind))
     .returning({
-      seq: sql<number>`${numberRanges.nextValue} - 1`,
+      nextValue: numberRanges.nextValue,
       formatTemplate: numberRanges.formatTemplate
     })
   if (!row) return null
-  return { seq: Number(row.seq), formatTemplate: row.formatTemplate }
+  // RETURNING sees the post-increment value; the allocated sequence is
+  // the value the counter held before the bump.
+  return { seq: Number(row.nextValue) - 1, formatTemplate: row.formatTemplate }
 }
 
 /**

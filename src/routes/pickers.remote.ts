@@ -112,7 +112,10 @@ export const pickCustomersRemote = query(
           ilike(customers.lastName, term),
           ilike(customers.firstName, term),
           ilike(customers.customerNumber, term),
-          ilike(customers.city, term)
+          ilike(customers.city, term),
+          ilike(customers.phone, term),
+          ilike(customers.mobile, term),
+          ilike(customers.email, term)
         )!
       )
     }
@@ -170,7 +173,9 @@ export const pickVehiclesRemote = query(
       const baseSearch = or(
         ilike(vehicles.vin, term),
         ilike(vehicles.make, term),
-        ilike(vehicles.model, term)
+        ilike(vehicles.model, term),
+        ilike(vehicles.hsn, term),
+        ilike(vehicles.tsn, term)
       )!
       filters.push(
         plateMatchIds.length > 0
@@ -236,6 +241,8 @@ export const pickCustomerVehiclesRemote = query(
         ilike(vehicles.vin, term),
         ilike(vehicles.make, term),
         ilike(vehicles.model, term),
+        ilike(vehicles.hsn, term),
+        ilike(vehicles.tsn, term),
         ilike(customers.lastName, term),
         ilike(customers.company, term)
       )!
@@ -314,7 +321,11 @@ export const pickEmployeesRemote = query(
         or(
           ilike(employees.firstName, term),
           ilike(employees.lastName, term),
-          ilike(employees.personnelNumber, term)
+          ilike(employees.personnelNumber, term),
+          ilike(employees.position, term),
+          ilike(employees.privateEmail, term),
+          ilike(employees.privatePhone, term),
+          ilike(employees.mobile, term)
         )!
       )
     }
@@ -432,7 +443,9 @@ export const pickInventoryVehiclesRemote = query(
       const baseSearch = or(
         ilike(vehicles.vin, term),
         ilike(vehicles.make, term),
-        ilike(vehicles.model, term)
+        ilike(vehicles.model, term),
+        ilike(vehicles.hsn, term),
+        ilike(vehicles.tsn, term)
       )!
       filters.push(
         plateMatchIds.length > 0
@@ -503,7 +516,12 @@ export const pickSuppliersRemote = query(
     if (q) {
       const term = `%${q}%`
       filters.push(
-        or(ilike(suppliers.name, term), ilike(suppliers.city, term))!
+        or(
+          ilike(suppliers.name, term),
+          ilike(suppliers.city, term),
+          ilike(suppliers.contactPerson, term),
+          ilike(suppliers.email, term)
+        )!
       )
     }
     const where = and(...filters)
@@ -624,7 +642,8 @@ export const pickTiresRemote = query(
         or(
           ilike(tires.articleNumber, term),
           ilike(tires.brand, term),
-          ilike(tires.model, term)
+          ilike(tires.model, term),
+          ilike(tires.ean, term)
         )!
       )
     }

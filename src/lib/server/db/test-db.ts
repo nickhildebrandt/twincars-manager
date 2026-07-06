@@ -59,6 +59,11 @@ function applyMigrations(mem: IMemoryDb): void {
           .trim()
       )
       .filter((s) => s.length > 0)
+      // Drop segments that consist only of SQL comments — e.g. a
+      // comment-prefixed DO block whose body the strip above removed.
+      // pg-mem's parser rejects comment-only input with
+      // "Unexpected end of input".
+      .filter((s) => s.replace(/^\s*--.*$/gm, '').trim().length > 0)
       // Skip data backfills (`INSERT ... SELECT`). Production migrations
       // use them to seed new tables from old columns; test fixtures
       // start empty so the work is unnecessary, and pg-mem chokes on

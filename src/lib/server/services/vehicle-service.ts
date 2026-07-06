@@ -193,16 +193,33 @@ export async function listVehicles(
       .from(vehicleLicensePlateVersions)
       .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
     const plateMatchIds = plateMatches.map((r) => r.vehicleId)
-    const baseSearch = or(
-      ilike(vehicles.vin, term),
-      ilike(vehicles.make, term),
-      ilike(vehicles.model, term)
-    )!
-    filters.push(
-      plateMatchIds.length > 0
-        ? or(baseSearch, inArray(vehicles.id, plateMatchIds))!
-        : baseSearch
-    )
+    // Fahrzeuge, deren Halter (Kunde) auf den Suchbegriff passt —
+    // vorab aufgelöst, damit Liste und Count-Query ohne Join auskommen.
+    const holderMatches = await db
+      .select({ id: customers.id })
+      .from(customers)
+      .where(
+        or(
+          ilike(customers.lastName, term),
+          ilike(customers.firstName, term),
+          ilike(customers.company, term)
+        )
+      )
+    const holderIds = holderMatches.map((r) => r.id)
+    const searches = [
+      or(
+        ilike(vehicles.vin, term),
+        ilike(vehicles.make, term),
+        ilike(vehicles.model, term),
+        ilike(vehicles.hsn, term),
+        ilike(vehicles.tsn, term)
+      )!
+    ]
+    if (plateMatchIds.length > 0)
+      searches.push(inArray(vehicles.id, plateMatchIds))
+    if (holderIds.length > 0)
+      searches.push(inArray(vehicles.customerId, holderIds))
+    filters.push(or(...searches)!)
   }
   if (kind === 'customer') {
     filters.push(isNotNull(vehicles.customerId))

@@ -5,10 +5,22 @@ import {
   documentItems,
   documentPayments,
   customers,
+  vehicleLicensePlateVersions,
   vehicles,
   type Document
 } from '$lib/server/db/schema'
-import { and, asc, count, desc, eq, ilike, ne, or, sum } from 'drizzle-orm'
+import {
+  and,
+  asc,
+  count,
+  desc,
+  eq,
+  ilike,
+  inArray,
+  ne,
+  or,
+  sum
+} from 'drizzle-orm'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { allocateNumber } from './number-range-service'
 import { latestPlateSubquery } from './vehicle-service'
@@ -51,12 +63,22 @@ export async function listDocuments(
   const filters = []
   if (q) {
     const term = `%${q}%`
+    // Documents whose vehicle carries a matching plate (any version) —
+    // resolved to ids up front so the count query needs no extra join.
+    const plateMatches = await db
+      .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+      .from(vehicleLicensePlateVersions)
+      .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+    const plateVehicleIds = plateMatches.map((r) => r.vehicleId)
+    const baseSearch = or(
+      ilike(documents.documentNumber, term),
+      ilike(customers.company, term),
+      ilike(customers.lastName, term)
+    )!
     filters.push(
-      or(
-        ilike(documents.documentNumber, term),
-        ilike(customers.company, term),
-        ilike(customers.lastName, term)
-      )
+      plateVehicleIds.length > 0
+        ? or(baseSearch, inArray(documents.vehicleId, plateVehicleIds))!
+        : baseSearch
     )
   }
   if (type && type !== 'all') filters.push(eq(documents.type, type))
@@ -103,7 +125,13 @@ export async function listDocuments(
       .orderBy(desc(documents.issueDate), desc(documents.createdAt))
       .limit(size)
       .offset(offset),
-    db.select({ value: count() }).from(documents).where(where)
+    // The customer join must be mirrored here — the q filter references
+    // customer columns, which Postgres rejects without the FROM entry.
+    db
+      .select({ value: count() })
+      .from(documents)
+      .leftJoin(customers, eq(documents.customerId, customers.id))
+      .where(where)
   ])
 
   const total = Number(totalRow[0]?.value ?? 0)

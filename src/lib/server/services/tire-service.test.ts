@@ -142,6 +142,7 @@ describe('tire-service', () => {
           aspectRatio: 55,
           diameterInch: 16,
           season: 'Ganzjahres',
+          ean: '4027784567890',
           onlineSellable: true
         })
       )
@@ -206,6 +207,24 @@ describe('tire-service', () => {
       const res = await listTires({ page: 1, size: 25, q: 'michelin' })
       expect(res.total).toBe(1)
       expect(res.items[0].brand).toBe('Michelin')
+    })
+
+    it('searches by EAN', async () => {
+      const res = await listTires({ page: 1, size: 25, q: '4027784567890' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].articleNumber).toBe('L-1')
+    })
+
+    it('matches a size-shaped query against the size components', async () => {
+      const res = await listTires({ page: 1, size: 25, q: '225/45R17' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].articleNumber).toBe('L-2')
+    })
+
+    it('still text-matches when the query is not a size', async () => {
+      const res = await listTires({ page: 1, size: 25, q: 'WinterContact' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].articleNumber).toBe('L-3')
     })
   })
 

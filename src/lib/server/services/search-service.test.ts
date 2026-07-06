@@ -52,6 +52,8 @@ async function seedCustomer(values: {
   lastName?: string | null
   email?: string | null
   city?: string | null
+  phone?: string | null
+  mobile?: string | null
   archived?: boolean
 }): Promise<string> {
   const [row] = await db
@@ -63,6 +65,8 @@ async function seedCustomer(values: {
       lastName: values.lastName ?? null,
       email: values.email ?? null,
       city: values.city ?? null,
+      phone: values.phone ?? null,
+      mobile: values.mobile ?? null,
       archived: values.archived ?? false
     })
     .returning({ id: customers.id })
@@ -73,6 +77,8 @@ async function seedVehicle(values: {
   make?: string | null
   model?: string | null
   vin?: string | null
+  hsn?: string | null
+  tsn?: string | null
   archived?: boolean
   plate?: string | null
   plateValidFrom?: string
@@ -83,6 +89,8 @@ async function seedVehicle(values: {
       make: values.make ?? null,
       model: values.model ?? null,
       vin: values.vin ?? null,
+      hsn: values.hsn ?? null,
+      tsn: values.tsn ?? null,
       archived: values.archived ?? false
     })
     .returning({ id: vehicles.id })
@@ -188,6 +196,7 @@ async function seedSupplier(values: {
   legacySupplierNumber?: string | null
   city?: string | null
   email?: string | null
+  phone?: string | null
   archived?: boolean
 }): Promise<string> {
   const [row] = await db
@@ -197,6 +206,7 @@ async function seedSupplier(values: {
       legacySupplierNumber: values.legacySupplierNumber ?? null,
       city: values.city ?? null,
       email: values.email ?? null,
+      phone: values.phone ?? null,
       archived: values.archived ?? false
     })
     .returning({ id: suppliers.id })
@@ -208,6 +218,9 @@ async function seedEmployee(values: {
   firstName: string
   lastName: string
   position?: string | null
+  privateEmail?: string | null
+  privatePhone?: string | null
+  mobile?: string | null
   archived?: boolean
 }): Promise<string> {
   const [row] = await db
@@ -217,6 +230,9 @@ async function seedEmployee(values: {
       firstName: values.firstName,
       lastName: values.lastName,
       position: values.position ?? null,
+      privateEmail: values.privateEmail ?? null,
+      privatePhone: values.privatePhone ?? null,
+      mobile: values.mobile ?? null,
       archived: values.archived ?? false
     })
     .returning({ id: employees.id })
@@ -316,6 +332,25 @@ describe('search-service · globalSearch', () => {
     expect(archivedHit.customers).toEqual([])
   })
 
+  it('finds customers by phone / mobile', async () => {
+    const withPhone = await seedCustomer({
+      customerNumber: 'K-010',
+      lastName: 'Telefon',
+      phone: '030 998877'
+    })
+    const withMobile = await seedCustomer({
+      customerNumber: 'K-011',
+      lastName: 'Handy',
+      mobile: '0170 4433221'
+    })
+
+    const byPhone = await globalSearch('998877')
+    expect(byPhone.customers.map((c) => c.id)).toEqual([withPhone])
+
+    const byMobile = await globalSearch('4433221')
+    expect(byMobile.customers.map((c) => c.id)).toEqual([withMobile])
+  })
+
   it('search is case-insensitive', async () => {
     await seedCustomer({ customerNumber: 'K-001', company: 'Alpha GmbH' })
     const lower = await globalSearch('alpha')
@@ -358,6 +393,21 @@ describe('search-service · globalSearch', () => {
 
     const archivedHit = await globalSearch('Audi')
     expect(archivedHit.vehicles).toEqual([])
+  })
+
+  it('finds vehicles by HSN / TSN', async () => {
+    const golf = await seedVehicle({
+      make: 'VW',
+      model: 'Golf',
+      hsn: '0603',
+      tsn: 'BJM'
+    })
+
+    const byHsn = await globalSearch('0603')
+    expect(byHsn.vehicles.map((v) => v.id)).toEqual([golf])
+
+    const byTsn = await globalSearch('bjm')
+    expect(byTsn.vehicles.map((v) => v.id)).toEqual([golf])
   })
 
   it('finds items by article number or description', async () => {
@@ -533,6 +583,15 @@ describe('search-service · globalSearch', () => {
     expect(archivedHit.suppliers).toEqual([])
   })
 
+  it('finds suppliers by phone', async () => {
+    const teileprofi = await seedSupplier({
+      name: 'Teileprofi OHG',
+      phone: '089 776655'
+    })
+    const byPhone = await globalSearch('776655')
+    expect(byPhone.suppliers.map((s) => s.id)).toEqual([teileprofi])
+  })
+
   it('finds employees by first name / last name / personnel number; excludes archived', async () => {
     const monteur = await seedEmployee({
       personnelNumber: 'P-001',
@@ -566,6 +625,26 @@ describe('search-service · globalSearch', () => {
 
     const archivedHit = await globalSearch('Ehemalig')
     expect(archivedHit.employees).toEqual([])
+  })
+
+  it('finds employees by private email / phone / mobile', async () => {
+    const monteur = await seedEmployee({
+      personnelNumber: 'P-010',
+      firstName: 'Paul',
+      lastName: 'Prüfer',
+      privateEmail: 'paul.pruefer@web.de',
+      privatePhone: '040 5544332',
+      mobile: '0151 2211334'
+    })
+
+    const byEmail = await globalSearch('paul.pruefer@web')
+    expect(byEmail.employees.map((e) => e.id)).toEqual([monteur])
+
+    const byPhone = await globalSearch('5544332')
+    expect(byPhone.employees.map((e) => e.id)).toEqual([monteur])
+
+    const byMobile = await globalSearch('2211334')
+    expect(byMobile.employees.map((e) => e.id)).toEqual([monteur])
   })
 
   it('finds posts by title or excerpt and flags drafts', async () => {

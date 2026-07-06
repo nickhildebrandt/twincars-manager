@@ -22,7 +22,8 @@ export async function listSuppliers(
         ilike(suppliers.name, term),
         ilike(suppliers.city, term),
         ilike(suppliers.contactPerson, term),
-        ilike(suppliers.email, term)
+        ilike(suppliers.email, term),
+        ilike(suppliers.phone, term)
       )
     )
   }
