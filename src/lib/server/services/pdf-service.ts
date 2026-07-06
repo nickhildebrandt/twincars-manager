@@ -1694,68 +1694,6 @@ export const getReminderPdfMeta = async (
 /* ────────────────────────────────────────────────────────────────────── */
 /* Phase 5: QR labels + A4-landscape car sale sign                        */
 /* ────────────────────────────────────────────────────────────────────── */
-
-/**
- * Render a small A6-landscape QR-Etikett for an article. The QR
- * payload is `{origin}/items/<articleNumber>`; consumers pass an
- * optional `origin` (request origin) so the same code works in dev /
- * staging / prod without a hard-coded base URL.
- *
- * Layout: a 90 mm × 60 mm card (close to A6 landscape) with the QR
- * on the left, article number + truncated description + current
- * price on the right.
- */
-export async function renderArticleLabelPdf(
-  item: {
-    articleNumber: string
-    description: string
-    unitPriceNet?: string | null
-    kind?: string | null
-  },
-  qrPayload: string
-): Promise<Buffer> {
-  const qr = await renderQrPng(qrPayload, { size: 320 })
-
-  const doc = await PDFDocument.create()
-  // A6 landscape: 148 × 105 mm → 419.5 × 297.6 pt
-  const page = doc.addPage([419.5, 297.6])
-  const font = await doc.embedFont(StandardFonts.Helvetica)
-  const bold = await doc.embedFont(StandardFonts.HelveticaBold)
-  const qrImage = await doc.embedPng(qr)
-
-  page.drawImage(qrImage, { x: 16, y: 40, width: 220, height: 220 })
-
-  let y = 260
-  page.drawText(item.articleNumber, {
-    x: 250,
-    y,
-    size: 18,
-    font: bold,
-    color: rgb(0, 0, 0)
-  })
-  y -= 26
-  page.drawText(truncate(item.description, 60), {
-    x: 250,
-    y,
-    size: 10,
-    font,
-    color: rgb(0.2, 0.2, 0.2),
-    maxWidth: 150
-  })
-  if (item.unitPriceNet) {
-    y -= 70
-    page.drawText(`${item.unitPriceNet} €`, {
-      x: 250,
-      y,
-      size: 22,
-      font: bold,
-      color: rgb(0, 0, 0)
-    })
-  }
-
-  return Buffer.from(await doc.save())
-}
-
 /**
  * Render an A6-landscape QR-Etikett for a tire-storage entry. The QR
  * payload is `scanUrl` — a deep link of the form

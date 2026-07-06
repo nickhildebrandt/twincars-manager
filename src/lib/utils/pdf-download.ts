@@ -16,7 +16,7 @@
  *   returned by the PDF remotes
  * @example
  * ```ts
- * const res = await busy.run(() => getArticleLabelPdfRemote({ id }).run())
+ * const res = await busy.run(() => getTireStorageLabelPdfRemote({ id }).run())
  * openPdfInNewTab(res)
  * ```
  */

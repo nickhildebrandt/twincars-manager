@@ -325,6 +325,60 @@ describe('vehicle-service', () => {
       const fetched = await getVehicle(created.id)
       expect(fetched?.customerLabel).toBe('Max Muster')
     })
+
+    it('returns previousOwnerLabel null when no previous owner is set', async () => {
+      const created = await createVehicle({ make: 'VW', model: 'Polo' })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.previousOwnerLabel).toBeNull()
+    })
+
+    it('derives previousOwnerLabel in picker-label format independent of the owner', async () => {
+      const [previous] = await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-G0003',
+          company: 'Alt GmbH',
+          city: 'Hamburg'
+        })
+        .returning()
+      // Stock vehicle: no owner, but a previous owner.
+      const created = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        previousOwnerCustomerId: previous.id
+      })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.customerLabel).toBeNull()
+      expect(fetched?.previousOwnerLabel).toBe('Alt GmbH · Hamburg')
+    })
+
+    it('resolves owner and previous-owner labels side by side', async () => {
+      const [owner] = await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-G0004',
+          firstName: 'Erika',
+          lastName: 'Muster'
+        })
+        .returning()
+      const [previous] = await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-G0005',
+          company: 'Ankauf AG',
+          city: 'Kiel'
+        })
+        .returning()
+      const created = await createVehicle({
+        make: 'BMW',
+        model: '320d',
+        customerId: owner.id,
+        previousOwnerCustomerId: previous.id
+      })
+      const fetched = await getVehicle(created.id)
+      expect(fetched?.customerLabel).toBe('Erika Muster')
+      expect(fetched?.previousOwnerLabel).toBe('Ankauf AG · Kiel')
+    })
   })
 
   describe('countVehicles', () => {

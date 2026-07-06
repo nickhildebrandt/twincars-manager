@@ -296,12 +296,36 @@ export async function deleteVehicle(id: string): Promise<void> {
 }
 
 /**
- * Vehicle detail shape: current plate plus the owner's picker label
- * (`null` for stock vehicles). The label uses the shared
- * `customerPickerLabel` format so the edit form's customer picker
- * renders the owner exactly like a freshly picked entry.
+ * Vehicle detail shape: current plate plus the owner's and previous
+ * owner's picker labels (`null` when the relation is not set). The
+ * labels use the shared `customerPickerLabel` format so the edit
+ * form's customer pickers render existing relations exactly like a
+ * freshly picked entry.
  */
-export type VehicleDetail = VehicleWithPlate & { customerLabel: string | null }
+export type VehicleDetail = VehicleWithPlate & {
+  customerLabel: string | null
+  previousOwnerLabel: string | null
+}
+
+/**
+ * Label parts of a customer for `customerPickerLabel`, or an empty
+ * array when the id is `null` / unknown. Shared by the holder and the
+ * previous-owner lookups in {@link getVehicle}.
+ */
+const fetchCustomerLabelParts = async (customerId: string | null) =>
+  customerId
+    ? db
+        .select({
+          company: customers.company,
+          firstName: customers.firstName,
+          lastName: customers.lastName,
+          customerNumber: customers.customerNumber,
+          city: customers.city
+        })
+        .from(customers)
+        .where(eq(customers.id, customerId))
+        .limit(1)
+    : []
 
 export async function getVehicle(id: string): Promise<VehicleDetail | null> {
   const [row] = await db
@@ -310,27 +334,20 @@ export async function getVehicle(id: string): Promise<VehicleDetail | null> {
     .where(eq(vehicles.id, id))
     .limit(1)
   if (!row) return null
-  const [v, holderRows] = await Promise.all([
+  const [v, holderRows, previousOwnerRows] = await Promise.all([
     getEffectiveLicensePlate(id),
-    row.customerId
-      ? db
-          .select({
-            company: customers.company,
-            firstName: customers.firstName,
-            lastName: customers.lastName,
-            customerNumber: customers.customerNumber,
-            city: customers.city
-          })
-          .from(customers)
-          .where(eq(customers.id, row.customerId))
-          .limit(1)
-      : Promise.resolve([])
+    fetchCustomerLabelParts(row.customerId),
+    fetchCustomerLabelParts(row.previousOwnerCustomerId)
   ])
   const holder = holderRows[0]
+  const previousOwner = previousOwnerRows[0]
   return {
     ...row,
     licensePlate: v?.licensePlate ?? null,
-    customerLabel: holder ? customerPickerLabel(holder) : null
+    customerLabel: holder ? customerPickerLabel(holder) : null,
+    previousOwnerLabel: previousOwner
+      ? customerPickerLabel(previousOwner)
+      : null
   }
 }
 

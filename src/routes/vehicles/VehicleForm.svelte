@@ -65,10 +65,12 @@
    *     /vehicles/new — every customer-vehicle must have an owner.
    *   - `'stock'`: picker is hidden and customer is forced to null.
    *     Used on /inventory/new — stock vehicles are *for sale* and
-   *     don't belong to anyone yet.
+   *     don't belong to anyone yet. Shows the optional Vorbesitzer
+   *     picker instead (the customer the car was bought from).
    *   - `'edit'`: picker shown, value seeded from `initial`, not
    *     required. Lets the user reassign or clear the owner during
-   *     a vehicle edit. Default.
+   *     a vehicle edit. Also shows the optional Vorbesitzer picker.
+   *     Default.
    */
   type Mode = 'customer' | 'stock' | 'edit'
 
@@ -78,6 +80,9 @@
       /** Picker label of the current owner — seeds the customer picker
        *  in edit mode so an existing Halter renders with its name. */
       customerLabel?: string | null
+      /** Picker label of the previous owner — seeds the Vorbesitzer
+       *  picker in edit mode. */
+      previousOwnerLabel?: string | null
     }
     mode?: Mode
     onSave: (values: VehicleFormValues) => Promise<void> | void
@@ -86,6 +91,12 @@
 
   export type VehicleFormValues = {
     customerId?: string
+    /**
+     * Optional Vorbesitzer. `null` clears the relation (picker shown
+     * but empty), `undefined` leaves it untouched (picker hidden in
+     * customer mode).
+     */
+    previousOwnerCustomerId?: string | null
     make?: string
     model?: string
     licensePlate?: string
@@ -116,6 +127,8 @@
   type Draft = {
     customerId: string
     customerLabel: string
+    previousOwnerCustomerId: string
+    previousOwnerLabel: string
     make: string
     model: string
     licensePlate: string
@@ -140,6 +153,12 @@
 
   let customerId = $state(draft?.customerId ?? init.customerId ?? '')
   let customerLabel = $state(draft?.customerLabel ?? init.customerLabel ?? '')
+  let previousOwnerCustomerId = $state(
+    draft?.previousOwnerCustomerId ?? init.previousOwnerCustomerId ?? ''
+  )
+  let previousOwnerLabel = $state(
+    draft?.previousOwnerLabel ?? init.previousOwnerLabel ?? ''
+  )
   let make = $state(draft?.make ?? init.make ?? '')
   let model = $state(draft?.model ?? init.model ?? '')
   let licensePlate = $state(draft?.licensePlate ?? init.licensePlate ?? '')
@@ -168,6 +187,10 @@
     customerId = pending.result.id
     customerLabel = pending.result.label
   }
+  if (pending?.result && pending.originField === 'previousOwnerCustomerId') {
+    previousOwnerCustomerId = pending.result.id
+    previousOwnerLabel = pending.result.label
+  }
   // A restored draft is unsaved user input — re-arm the leave guard.
   if (draft) untrack(() => formDirty.set(true))
 
@@ -176,6 +199,8 @@
   const buildDraft = (): Draft => ({
     customerId,
     customerLabel,
+    previousOwnerCustomerId,
+    previousOwnerLabel,
     make,
     model,
     licensePlate,
@@ -198,11 +223,27 @@
     !creationFlow.activeEntities().has('customer')
   )
 
-  const startCustomerCreate = () => {
+  /**
+   * Vorbesitzer is shown for stock vehicles and in edit mode. Edit
+   * always shows it (instead of sniffing whether the vehicle is a
+   * stock vehicle) — the field is optional either way and a customer
+   * vehicle may legitimately carry the previous owner it was bought
+   * from before it was sold.
+   */
+  const showPreviousOwner = $derived(mode !== 'customer')
+
+  /**
+   * Start the full-page customer creation flow for one of the two
+   * customer pickers (Halter / Vorbesitzer). `originField` decides
+   * which picker auto-selects the created customer on return.
+   */
+  const startCustomerCreateFor = (
+    originField: 'customerId' | 'previousOwnerCustomerId'
+  ) => {
     creationFlow.start({
       entity: 'customer',
       returnUrl: currentUrl(),
-      originField: 'customerId',
+      originField,
       draft: buildDraft(),
       createdAt: Date.now()
     })
@@ -248,6 +289,9 @@
     formDirty.clear()
     await onSave({
       customerId: resolvedCustomerId,
+      previousOwnerCustomerId: showPreviousOwner
+        ? previousOwnerCustomerId || null
+        : undefined,
       make: trimOrUndef(make),
       model: trimOrUndef(model),
       licensePlate: trimOrUndef(licensePlate),
@@ -308,7 +352,33 @@
               createLabel={canCreateCustomer
                 ? 'Neuen Kunden anlegen'
                 : undefined}
-              onCreateNew={canCreateCustomer ? startCustomerCreate : undefined}
+              onCreateNew={canCreateCustomer
+                ? () => startCustomerCreateFor('customerId')
+                : undefined}
+            />
+          </FormField>
+        </div>
+      </fieldset>
+    {/if}
+
+    {#if showPreviousOwner}
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Vorbesitzer</legend>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Kunde (optional)" colSpan="sm:col-span-2">
+            <SearchablePicker
+              bind:value={previousOwnerCustomerId}
+              bind:valueLabel={previousOwnerLabel}
+              placeholder="- Vorbesitzer wählen -"
+              dialogTitle="Vorbesitzer auswählen"
+              search={searchCustomers}
+              onSelect={() => {}}
+              createLabel={canCreateCustomer
+                ? 'Neuen Kunden anlegen'
+                : undefined}
+              onCreateNew={canCreateCustomer
+                ? () => startCustomerCreateFor('previousOwnerCustomerId')
+                : undefined}
             />
           </FormField>
         </div>
@@ -455,11 +525,12 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !fv.valid}
-      >
+      <!--
+        Rule 1.1: the submit button stays enabled (except while busy) —
+        clicking it runs the validation, marks every field touched and
+        surfaces the German error summary above the form.
+      -->
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

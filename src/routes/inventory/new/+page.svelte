@@ -15,7 +15,10 @@
    * `mode="stock"` — dadurch wird der Halter-Picker ausgeblendet
    * und `customerId` server-seitig zwingend `null`. So kann ein
    * Fahrzeug, das hier angelegt wird, nicht versehentlich als
-   * Kundenfahrzeug enden.
+   * Kundenfahrzeug enden. Stattdessen bietet das Formular den
+   * optionalen Vorbesitzer-Picker (`previousOwnerCustomerId`) an —
+   * er fließt unverändert durch `VehicleFormValues` in
+   * `createVehicleRemote` und blockiert die Anlage nie.
    */
   const handleSave = async (values: VehicleFormValues) => {
     try {

@@ -5,6 +5,8 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import ImageUploader from '$lib/components/ui/ImageUploader.svelte'
+  import VehicleDocuments from '$lib/components/ui/VehicleDocuments.svelte'
+  import { listVehicleDocumentsRemote } from '../vehicle-documents.remote'
   import {
     addVehiclePhotoRemote,
     deleteVehiclePhotoRemote,
@@ -30,13 +32,17 @@
 
   /**
    * Parallel SSR-friendly load — vehicle stamm data + photos +
-   * customer/invoices arrive in one round-trip.
+   * customer/invoices + document metadata arrive in one round-trip.
+   * The documents list is meta-only; bytes travel exclusively through
+   * `getVehicleDocumentRemote` inside the VehicleDocuments card.
    */
-  const [v, initialPhotos, initialRelated] = await Promise.all([
-    getVehicleRemote({ id }),
-    listVehiclePhotosRemote({ vehicleId: id }),
-    getVehicleRelatedRemote({ id, invoicesPage: 1 })
-  ])
+  const [v, initialPhotos, initialRelated, initialDocuments] =
+    await Promise.all([
+      getVehicleRemote({ id }),
+      listVehiclePhotosRemote({ vehicleId: id }),
+      getVehicleRelatedRemote({ id, invoicesPage: 1 }),
+      listVehicleDocumentsRemote({ vehicleId: id })
+    ])
 
   const relatedQ = $derived(getVehicleRelatedRemote({ id, invoicesPage }))
   const related = $derived(relatedQ.current ?? initialRelated)
@@ -188,6 +194,14 @@
         </dd>
         <dt class="text-base-content/60">Nächste HU</dt>
         <dd class="sm:col-span-2">{v.nextHu ?? '-'}</dd>
+        {#if v.previousOwnerCustomerId}
+          <dt class="text-base-content/60">Vorbesitzer</dt>
+          <dd class="break-words sm:col-span-2">
+            <a class="link" href={`/customers/${v.previousOwnerCustomerId}`}>
+              {v.previousOwnerLabel ?? 'Zum Kunden'}
+            </a>
+          </dd>
+        {/if}
       </dl>
     </div>
   </div>
@@ -337,5 +351,10 @@
       {onDelete}
       {onSetMain}
     />
+  </div>
+
+  <!-- Documents area — available for customer AND stock vehicles. -->
+  <div class="lg:col-span-2">
+    <VehicleDocuments vehicleId={id} initial={initialDocuments} />
   </div>
 </div>

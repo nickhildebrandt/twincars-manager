@@ -70,17 +70,24 @@ describe('VehicleForm', () => {
     expect(screen.getByText('Halter')).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled when no identifying field is set', async () => {
+  it('keeps Speichern enabled and surfaces the identifier error on click', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(VehicleForm, { props: { onSave } })
     const btn = screen.getByRole('button', {
       name: /speichern/i
     }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    // Rule 1.1: the button is never gated by validity — only by busy.
+    expect(btn).toBeEnabled()
+    await user.click(btn)
     expect(onSave).not.toHaveBeenCalled()
+    // The summary alert plus the field-level message carry the rule.
+    expect(
+      screen.getAllByText(/Kennzeichen, FIN oder Marke\/Modell/i).length
+    ).toBeGreaterThan(0)
   })
 
-  it('keeps Speichern disabled in customer mode without a customer selected', async () => {
+  it('surfaces the missing-customer error on click in customer mode', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(VehicleForm, {
@@ -93,9 +100,14 @@ describe('VehicleForm', () => {
     const btn = screen.getByRole('button', {
       name: /speichern/i
     }) as HTMLButtonElement
-    // make is set, but customer is missing — the button must stay disabled.
-    expect(btn).toBeDisabled()
+    // make is set, but customer is missing — the click must not save
+    // and must surface the German field error instead.
+    expect(btn).toBeEnabled()
+    await user.click(btn)
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(/Bitte einen Kunden auswählen/i).length
+    ).toBeGreaterThan(0)
   })
 
   it('emits trimmed make + model and forces customerId=undefined in stock mode', async () => {
@@ -305,5 +317,138 @@ describe('VehicleForm', () => {
     ) as HTMLInputElement
     expect(make.value).toBe('Mercedes')
     expect(model.value).toBe('GLA')
+  })
+
+  describe('Vorbesitzer (previous owner)', () => {
+    it('shows the optional Vorbesitzer picker in stock mode', () => {
+      render(VehicleForm, { props: { onSave: vi.fn(), mode: 'stock' } })
+      expect(screen.getByText('Vorbesitzer')).toBeInTheDocument()
+      expect(screen.getByText('- Vorbesitzer wählen -')).toBeInTheDocument()
+    })
+
+    it('shows the Vorbesitzer picker in edit mode', () => {
+      render(VehicleForm, { props: { onSave: vi.fn(), mode: 'edit' } })
+      expect(screen.getByText('- Vorbesitzer wählen -')).toBeInTheDocument()
+    })
+
+    it('hides the Vorbesitzer picker in customer mode', () => {
+      render(VehicleForm, { props: { onSave: vi.fn(), mode: 'customer' } })
+      expect(screen.queryByText('Vorbesitzer')).not.toBeInTheDocument()
+      expect(
+        screen.queryByText('- Vorbesitzer wählen -')
+      ).not.toBeInTheDocument()
+    })
+
+    it('is optional: stock submit without a previous owner emits null', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      const { container } = render(VehicleForm, {
+        props: { onSave, mode: 'stock' }
+      })
+      const make = container.querySelector(
+        'input[maxlength="100"]'
+      ) as HTMLInputElement
+      await user.type(make, 'Skoda')
+      await user.click(screen.getByRole('button', { name: /speichern/i }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0].previousOwnerCustomerId).toBeNull()
+    })
+
+    it('omits previousOwnerCustomerId entirely in customer mode', async () => {
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      const { container } = render(VehicleForm, {
+        props: {
+          onSave,
+          mode: 'customer',
+          initial: { customerId: 'c1', customerLabel: 'Muster GmbH' }
+        }
+      })
+      const make = container.querySelector(
+        'input[maxlength="100"]'
+      ) as HTMLInputElement
+      await user.type(make, 'VW')
+      await user.click(screen.getByRole('button', { name: /speichern/i }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0].previousOwnerCustomerId).toBeUndefined()
+    })
+
+    it('seeds the picker from initial.previousOwnerLabel in edit mode', () => {
+      render(VehicleForm, {
+        props: {
+          onSave: vi.fn(),
+          mode: 'edit',
+          initial: {
+            previousOwnerCustomerId: 'c7',
+            previousOwnerLabel: 'Alt GmbH · Hamburg'
+          }
+        }
+      })
+      expect(screen.getByText('Alt GmbH · Hamburg')).toBeInTheDocument()
+      expect(
+        screen.queryByText('- Vorbesitzer wählen -')
+      ).not.toBeInTheDocument()
+    })
+
+    it('starts the creation flow with originField previousOwnerCustomerId and auto-selects the result', async () => {
+      const user = userEvent.setup()
+      const startSpy = vi.spyOn(creationFlow, 'start')
+      const first = render(VehicleForm, {
+        props: { onSave: vi.fn(), mode: 'stock' }
+      })
+
+      const make = first.container.querySelector(
+        'input[maxlength="100"]'
+      ) as HTMLInputElement
+      await user.type(make, 'Skoda')
+
+      // Stock mode renders exactly one customer picker (Vorbesitzer).
+      await user.click(screen.getByText('- Vorbesitzer wählen -'))
+      const createBtn = screen
+        .getAllByRole('button', { name: /Neuen Kunden anlegen/ })
+        .find((b) => b.className.includes('btn'))
+      expect(createBtn).toBeTruthy()
+      await user.click(createBtn!)
+
+      expect(startSpy).toHaveBeenCalledTimes(1)
+      const frame = startSpy.mock.calls[0][0]
+      expect(frame.entity).toBe('customer')
+      expect(frame.originField).toBe('previousOwnerCustomerId')
+      const draft = frame.draft as Record<string, unknown>
+      expect(draft.make).toBe('Skoda')
+      expect(goto).toHaveBeenCalledWith('/customers/new')
+
+      // Simulate the leaf: create succeeds, back to this page.
+      first.unmount()
+      creationFlow.finish({ id: 'c9', label: 'Ankauf GmbH · Kiel' })
+
+      const second = render(VehicleForm, {
+        props: { onSave: vi.fn(), mode: 'stock' }
+      })
+      const makeRestored = second.container.querySelector(
+        'input[maxlength="100"]'
+      ) as HTMLInputElement
+      expect(makeRestored.value).toBe('Skoda')
+      expect(screen.getByText('Ankauf GmbH · Kiel')).toBeInTheDocument()
+    })
+
+    it('emits the picked previous owner id on submit', async () => {
+      creationFlow.start({
+        entity: 'customer',
+        returnUrl: window.location.pathname + window.location.search,
+        originField: 'previousOwnerCustomerId',
+        draft: { make: 'Seat', model: '', licensePlate: '', vin: '' },
+        createdAt: Date.now()
+      })
+      creationFlow.finish({ id: 'c42', label: 'Vorbesitzer AG · Bonn' })
+
+      const user = userEvent.setup()
+      const onSave = vi.fn()
+      render(VehicleForm, { props: { onSave, mode: 'stock' } })
+      expect(screen.getByText('Vorbesitzer AG · Bonn')).toBeInTheDocument()
+      await user.click(screen.getByRole('button', { name: /speichern/i }))
+      expect(onSave).toHaveBeenCalledTimes(1)
+      expect(onSave.mock.calls[0][0].previousOwnerCustomerId).toBe('c42')
+    })
   })
 })

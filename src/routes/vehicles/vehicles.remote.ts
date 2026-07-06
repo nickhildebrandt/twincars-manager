@@ -3,6 +3,7 @@ import { error } from '@sveltejs/kit'
 import {
   object,
   optional,
+  nullable,
   picklist,
   pipe,
   number,
@@ -47,6 +48,12 @@ import { requirePermission } from '$lib/server/auth-guards'
  */
 const vehicleInputSchema = object({
   customerId: optional(idSchema),
+  /**
+   * Optional Vorbesitzer relation (mainly stock vehicles: the customer
+   * the car was bought from). An explicit `null` clears the relation
+   * on update; omitting the key leaves it untouched.
+   */
+  previousOwnerCustomerId: optional(nullable(idSchema)),
   make: optional(pipe(string(), trim(), maxLength(100))),
   model: optional(pipe(string(), trim(), maxLength(150))),
   licensePlate: optional(licensePlateSchema),

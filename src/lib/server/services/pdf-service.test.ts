@@ -5,7 +5,6 @@ import { join } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import {
   computeDocumentInputHash,
-  renderArticleLabelPdf,
   renderDocumentPdf,
   renderTireStorageLabelPdf,
   renderVehicleSaleSignPdf,
@@ -220,53 +219,6 @@ describe('computeDocumentInputHash', () => {
  */
 const isValidPdf = (bytes: Uint8Array): boolean =>
   bytes.length > 4 && Buffer.from(bytes.subarray(0, 5)).toString() === '%PDF-'
-
-describe('renderArticleLabelPdf', () => {
-  it('returns valid PDF bytes (A6 landscape, single page) for an article', async () => {
-    const bytes = await renderArticleLabelPdf(
-      {
-        articleNumber: 'ART-00001',
-        description: 'Ölwechsel mit Filter — 5W30',
-        unitPriceNet: '79.90',
-        kind: 'service'
-      },
-      'https://twincars.local/items/ART-00001'
-    )
-    expect(isValidPdf(bytes)).toBe(true)
-
-    const doc = await PDFDocument.load(bytes)
-    expect(doc.getPageCount()).toBe(1)
-    const page = doc.getPage(0)
-    const { width, height } = page.getSize()
-    // A6 landscape: 419.5 × 297.6 pt (allow ±1 pt rounding tolerance).
-    expect(width).toBeGreaterThan(height)
-    expect(Math.round(width)).toBeGreaterThanOrEqual(419)
-    expect(Math.round(width)).toBeLessThanOrEqual(420)
-    expect(Math.round(height)).toBeGreaterThanOrEqual(297)
-    expect(Math.round(height)).toBeLessThanOrEqual(298)
-  })
-
-  it('still renders when no price is set on the article', async () => {
-    const bytes = await renderArticleLabelPdf(
-      {
-        articleNumber: 'ART-00002',
-        description: 'Lichttest',
-        unitPriceNet: null,
-        kind: 'service'
-      },
-      'https://twincars.local/items/ART-00002'
-    )
-    expect(isValidPdf(bytes)).toBe(true)
-    const doc = await PDFDocument.load(bytes)
-    expect(doc.getPageCount()).toBe(1)
-  })
-
-  it('rejects an empty QR payload (delegated to qr-service)', async () => {
-    await expect(
-      renderArticleLabelPdf({ articleNumber: 'X', description: 'x' }, '')
-    ).rejects.toThrow(/QR-Inhalt/i)
-  })
-})
 
 describe('renderTireStorageLabelPdf', () => {
   const baseEntry: TireStorage & { customerLabel: string } = {

@@ -4,13 +4,9 @@
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import { getItemPriceHistoryRemote, getItemRemote } from '../items.remote'
-  import { getArticleLabelPdfRemote } from '../labels.remote'
-  import { Pencil, QrCode } from '@lucide/svelte'
+  import { Pencil } from '@lucide/svelte'
   import { formatEuro } from '$lib/utils/money'
   import { itemKindLabel } from '$lib/utils/status-labels'
-  import { busy } from '$lib/stores/busy.svelte'
-  import { handleClientError } from '$lib/utils/client-error'
-  import { openPdfInNewTab } from '$lib/utils/pdf-download'
 
   const id = untrack(() => page.params.id!)
 
@@ -39,21 +35,6 @@
       year: 'numeric'
     })
   }
-
-  /**
-   * Fetch the QR-Etikett-PDF (base64) and open it in a new tab via a
-   * `blob:` URL. We deliberately don't trigger an automatic download
-   * — opening in a tab lets the user preview, then print or save
-   * from the browser's PDF viewer.
-   */
-  const printLabel = async () => {
-    try {
-      const res = await busy.run(() => getArticleLabelPdfRemote({ id }).run())
-      openPdfInNewTab(res)
-    } catch (err) {
-      handleClientError(err, 'QR-Etikett konnte nicht erzeugt werden')
-    }
-  }
 </script>
 
 <PageHeader
@@ -68,22 +49,9 @@
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
   <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div
-      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div class="min-w-0">
-        <h3 class="card-title text-base">Artikelnummer</h3>
-        <p class="font-mono text-lg break-all">{i.articleNumber}</p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline gap-2 sm:w-auto"
-        disabled={busy.active}
-        onclick={printLabel}
-      >
-        <QrCode size={16} />
-        QR-Etikett drucken
-      </button>
+    <div class="card-body">
+      <h3 class="card-title text-base">Artikelnummer</h3>
+      <p class="font-mono text-lg break-all">{i.articleNumber}</p>
     </div>
   </div>
   <div class="card border-base-300 bg-base-100 min-w-0 border">
