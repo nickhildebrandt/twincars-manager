@@ -42,6 +42,8 @@
  */
 
 import { createHash } from 'node:crypto'
+import { readFile } from 'node:fs/promises'
+import { join } from 'node:path'
 import {
   PDFDocument,
   PageSizes,
@@ -49,6 +51,7 @@ import {
   degrees,
   rgb,
   type PDFFont,
+  type PDFImage,
   type PDFPage
 } from 'pdf-lib'
 import { and, eq } from 'drizzle-orm'
@@ -1819,14 +1822,83 @@ export async function renderTireStorageLabelPdf(
 }
 
 /**
+ * Lazily loaded bytes of the bundled app icon
+ * (`static/icons/icon-256.png`), used as the sale-sign logo fallback
+ * when the company has not uploaded a logo. `undefined` = not yet
+ * attempted, `null` = not found on disk (renders without a logo).
+ */
+let appIconPngCache: Buffer | null | undefined
+
+async function loadAppIconPng(): Promise<Buffer | null> {
+  if (appIconPngCache !== undefined) return appIconPngCache
+  // Dev + vitest run from the repo root (static/…); the production
+  // container runs `node build` from /app, where adapter-node copied
+  // the static assets into build/client. Fail soft to "no logo".
+  const candidates = [
+    join(process.cwd(), 'static', 'icons', 'icon-256.png'),
+    join(process.cwd(), 'build', 'client', 'icons', 'icon-256.png'),
+    join(process.cwd(), 'client', 'icons', 'icon-256.png')
+  ]
+  for (const candidate of candidates) {
+    try {
+      appIconPngCache = await readFile(candidate)
+      return appIconPngCache
+    } catch {
+      // Try the next location.
+    }
+  }
+  appIconPngCache = null
+  return null
+}
+
+/**
+ * Embed the sale-sign header logo: the uploaded company logo when
+ * present (PNG or JPEG, raw base64 or data URL — same wire formats the
+ * invoice renderer accepts), otherwise the bundled app icon. Returns
+ * `null` when neither source yields a usable image.
+ */
+async function embedSaleSignLogo(
+  doc: PDFDocument,
+  settings?: { logoData?: string | null; logoMime?: string | null }
+): Promise<PDFImage | null> {
+  if (settings?.logoData) {
+    try {
+      const m = /^data:([^;]+);base64,(.+)$/.exec(settings.logoData)
+      const mime = m ? m[1] : (settings.logoMime ?? '')
+      const base64 = m ? m[2] : settings.logoData
+      const bytes = Buffer.from(base64, 'base64')
+      return mime.includes('png')
+        ? await doc.embedPng(bytes)
+        : await doc.embedJpg(bytes)
+    } catch {
+      // Corrupt upload — fall through to the app icon.
+    }
+  }
+  const iconBytes = await loadAppIconPng()
+  if (!iconBytes) return null
+  try {
+    return await doc.embedPng(iconBytes)
+  } catch {
+    return null
+  }
+}
+
+/**
  * Render an A4-landscape "ZUM VERKAUF"-Schild for a vehicle, intended
- * to be printed and placed under the windshield. Layout: large
- * headline + price at the top; key facts in a two-column grid below;
- * QR code at the bottom-right linking to the inventory listing.
+ * to be printed and placed under the windshield.
+ *
+ * Layout (top to bottom): a bold red header band with the "ZUM
+ * VERKAUF" headline on the left and the company logo (uploaded logo or
+ * the bundled app icon as fallback) + company name on the right; the
+ * vehicle title with a short red accent bar; a photo panel on the left
+ * and a red hero price box above the aligned label/value facts table on
+ * the right; a footer strip with marketing highlights (red square
+ * bullets, up to four in two columns), the contact line, and the QR
+ * code with an "Online ansehen" caption in the bottom-right corner.
  *
  * The `vehicle` argument is enriched with the cover photo bytes, the
- * gross price (already snapshotted on the listing row), the current
- * plate, and a short `highlights` array of marketing bullet points.
+ * gross price (already snapshotted on the listing row), and a short
+ * `highlights` array of marketing bullet points via `salesNotes`.
  */
 export async function renderVehicleSaleSignPdf(input: {
   vehicle: import('$lib/server/db/schema').Vehicle
@@ -1840,6 +1912,8 @@ export async function renderVehicleSaleSignPdf(input: {
     phone?: string | null
     zip?: string | null
     city?: string | null
+    logoData?: string | null
+    logoMime?: string | null
   }
 }): Promise<Buffer> {
   const vehicle = input.vehicle
@@ -1864,14 +1938,21 @@ export async function renderVehicleSaleSignPdf(input: {
   const listingUrl = input.qrPayload
 
   // ── Palette ──────────────────────────────────────────────────────
-  const ink = rgb(0.11, 0.13, 0.18) // near-black slate (header / values)
-  const muted = rgb(0.45, 0.47, 0.51) // labels
+  const ink = rgb(0.12, 0.13, 0.16) // near-black slate (title / values)
+  const muted = rgb(0.44, 0.46, 0.5) // labels
   const hair = rgb(0.85, 0.86, 0.88) // separators
   const panel = rgb(0.96, 0.965, 0.97) // light fills
-  const accent = rgb(0.74, 0.11, 0.14) // price red
+  const red = rgb(0.76, 0.05, 0.1) // signal red (band, price, accents)
+  const redDark = rgb(0.55, 0.03, 0.07) // band / price box bottom edge
+  const redTint = rgb(1, 0.85, 0.85) // light-on-red secondary text
   const white = rgb(1, 1, 1)
 
+  const title =
+    truncate(`${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim(), 60) ||
+    'Fahrzeug'
+
   const doc = await PDFDocument.create()
+  doc.setTitle(`Verkaufsschild ${title}`)
   // A4 landscape: 297 × 210 mm → 841.89 × 595.28 pt
   const W = 841.89
   const H = 595.28
@@ -1891,6 +1972,26 @@ export async function renderVehicleSaleSignPdf(input: {
     const w = f.widthOfTextAtSize(text, size)
     page.drawText(text, { x: xRight - w, y, size, font: f, color })
   }
+  const textCentered = (
+    text: string,
+    xCenter: number,
+    y: number,
+    size: number,
+    f: typeof font,
+    color: ReturnType<typeof rgb>
+  ) => {
+    const w = f.widthOfTextAtSize(text, size)
+    page.drawText(text, { x: xCenter - w / 2, y, size, font: f, color })
+  }
+  /** Truncate `text` with an ellipsis until it fits `maxW` points. */
+  const fit = (text: string, f: typeof font, size: number, maxW: number) => {
+    if (f.widthOfTextAtSize(text, size) <= maxW) return text
+    let t = text
+    while (t.length > 4 && f.widthOfTextAtSize(`${t}…`, size) > maxW) {
+      t = t.slice(0, -1)
+    }
+    return `${t.trimEnd()}…`
+  }
 
   // ── Helpers: legacy-friendly value formatting ────────────────────
   const nf = new Intl.NumberFormat('de-DE')
@@ -1899,41 +2000,98 @@ export async function renderVehicleSaleSignPdf(input: {
     return m ? `${m[2]}/${m[1]}` : iso?.trim() || null
   }
 
-  // ── Header band ──────────────────────────────────────────────────
-  const bandH = 76
-  page.drawRectangle({
-    x: 0,
-    y: H - bandH,
-    width: W,
-    height: bandH,
-    color: ink
-  })
-  page.drawText('ZUM VERKAUF', {
+  // ── Header band: headline left, logo + company right ─────────────
+  const bandH = 96
+  const bandY = H - bandH
+  page.drawRectangle({ x: 0, y: bandY, width: W, height: bandH, color: red })
+  page.drawRectangle({ x: 0, y: bandY, width: W, height: 4, color: redDark })
+  const headline = 'ZUM VERKAUF'
+  const headlineSize = 46
+  page.drawText(headline, {
     x: M,
-    y: H - 50,
-    size: 34,
+    y: bandY + 32,
+    size: headlineSize,
     font: bold,
     color: white
   })
+
+  // Logo chip: white card at the far right of the band. The uploaded
+  // company logo wins; the bundled app icon is the fallback.
+  const logo = await embedSaleSignLogo(doc, input.settings)
+  let companyRight = W - M
+  if (logo) {
+    const maxLogoH = 48
+    const maxLogoW = 116
+    const s = Math.min(maxLogoW / logo.width, maxLogoH / logo.height)
+    const lw = logo.width * s
+    const lh = logo.height * s
+    const chipPad = 9
+    const chipW = Math.max(lw + chipPad * 2, 64)
+    const chipH = 64
+    const chipX = W - M - chipW
+    const chipY = bandY + (bandH - chipH) / 2
+    page.drawRectangle({
+      x: chipX,
+      y: chipY,
+      width: chipW,
+      height: chipH,
+      color: white
+    })
+    page.drawImage(logo, {
+      x: chipX + (chipW - lw) / 2,
+      y: chipY + (chipH - lh) / 2,
+      width: lw,
+      height: lh
+    })
+    companyRight = chipX - 14
+  }
   if (companyName) {
-    textRight(companyName, W - M, H - 34, 14, bold, white)
-    if (companyCity) {
-      textRight(companyCity, W - M, H - 52, 10, font, rgb(0.78, 0.8, 0.84))
+    const headlineEnd = M + bold.widthOfTextAtSize(headline, headlineSize) + 28
+    const maxW = Math.max(60, companyRight - headlineEnd)
+    const subline = [companyPhone, companyCity].filter(Boolean).join('  ·  ')
+    const nameY = subline ? bandY + 52 : bandY + 42
+    textRight(
+      fit(companyName, bold, 15, maxW),
+      companyRight,
+      nameY,
+      15,
+      bold,
+      white
+    )
+    if (subline) {
+      textRight(
+        fit(subline, font, 10, maxW),
+        companyRight,
+        bandY + 35,
+        10,
+        font,
+        redTint
+      )
     }
   }
 
-  // ── Vehicle title (make + model) ─────────────────────────────────
-  const titleY = H - bandH - 34
-  page.drawText(
-    truncate(`${vehicle.make ?? ''} ${vehicle.model ?? ''}`.trim(), 46),
-    { x: M, y: titleY, size: 26, font: bold, color: ink }
-  )
+  // ── Vehicle title with red accent bar ────────────────────────────
+  const titleY = bandY - 44
+  page.drawText(fit(title, bold, 30, W - 2 * M), {
+    x: M,
+    y: titleY,
+    size: 30,
+    font: bold,
+    color: ink
+  })
+  page.drawRectangle({
+    x: M,
+    y: titleY - 14,
+    width: 58,
+    height: 4.5,
+    color: red
+  })
 
   // ── Photo panel (left) ───────────────────────────────────────────
   const photoX = M
-  const photoW = 430
-  const photoH = 300
-  const photoY = 150
+  const photoW = 444
+  const photoH = 276
+  const photoY = 148
   page.drawRectangle({
     x: photoX,
     y: photoY,
@@ -1950,7 +2108,7 @@ export async function renderVehicleSaleSignPdf(input: {
         ? await doc.embedPng(photoBytes)
         : await doc.embedJpg(photoBytes)
       // Contain the image within the panel (preserve aspect ratio).
-      const pad = 6
+      const pad = 8
       const maxW = photoW - pad * 2
       const maxH = photoH - pad * 2
       const scale = Math.min(maxW / img.width, maxH / img.height)
@@ -1968,67 +2126,103 @@ export async function renderVehicleSaleSignPdf(input: {
     }
   }
   if (!drewPhoto) {
-    const ph = 'Foto folgt'
-    const phW = font.widthOfTextAtSize(ph, 16)
-    page.drawText(ph, {
-      x: photoX + (photoW - phW) / 2,
-      y: photoY + photoH / 2 - 8,
-      size: 16,
+    // Ghost the logo behind the placeholder text so the empty panel
+    // doesn't look broken when a car has no photo yet.
+    if (logo) {
+      const wmScale = Math.min(150 / logo.width, 150 / logo.height)
+      const wmW = logo.width * wmScale
+      const wmH = logo.height * wmScale
+      page.drawImage(logo, {
+        x: photoX + (photoW - wmW) / 2,
+        y: photoY + (photoH - wmH) / 2 + 18,
+        width: wmW,
+        height: wmH,
+        opacity: 0.08
+      })
+    }
+    textCentered(
+      'Foto folgt',
+      photoX + photoW / 2,
+      photoY + photoH / 2 - (logo ? 78 : 6),
+      15,
       font,
-      color: muted
-    })
+      muted
+    )
   }
 
-  // ── Right column: price + facts ──────────────────────────────────
-  const colX = 500
+  // ── Right column: hero price box + facts table ───────────────────
+  const colX = 512
   const colR = W - M // right edge of the data column
+  const colW = colR - colX
 
-  // Price panel
-  const priceY = 412
-  const priceH = 78
-  page.drawRectangle({
-    x: colX,
-    y: priceY,
-    width: colR - colX,
-    height: priceH,
-    color: input.salesPriceGross != null ? accent : panel
-  })
+  const priceBoxY = 336
+  const priceBoxH = 88
   if (input.salesPriceGross != null) {
-    const priceStr = `${nf.format(input.salesPriceGross)} €`
-    page.drawText(priceStr, {
-      x: colX + 18,
-      y: priceY + 30,
-      size: 38,
-      font: bold,
-      color: white
+    page.drawRectangle({
+      x: colX,
+      y: priceBoxY,
+      width: colW,
+      height: priceBoxH,
+      color: red
     })
-    page.drawText(
+    page.drawRectangle({
+      x: colX,
+      y: priceBoxY,
+      width: colW,
+      height: 4,
+      color: redDark
+    })
+    const priceStr = `${nf.format(input.salesPriceGross)} €`
+    let priceSize = 42
+    while (
+      priceSize > 24 &&
+      bold.widthOfTextAtSize(priceStr, priceSize) > colW - 32
+    ) {
+      priceSize -= 2
+    }
+    textCentered(
+      priceStr,
+      colX + colW / 2,
+      priceBoxY + 38,
+      priceSize,
+      bold,
+      white
+    )
+    textCentered(
       input.differentialTax
         ? 'Differenzbesteuert gem. §25a UStG'
         : 'inkl. gesetzl. MwSt.',
-      {
-        x: colX + 18,
-        y: priceY + 12,
-        size: 10,
-        font,
-        color: rgb(1, 0.85, 0.85)
-      }
+      colX + colW / 2,
+      priceBoxY + 15,
+      10,
+      font,
+      redTint
     )
   } else {
-    page.drawText('Preis auf Anfrage', {
-      x: colX + 18,
-      y: priceY + 30,
-      size: 26,
-      font: bold,
-      color: ink
+    page.drawRectangle({
+      x: colX,
+      y: priceBoxY,
+      width: colW,
+      height: priceBoxH,
+      color: panel,
+      borderColor: hair,
+      borderWidth: 1
     })
+    textCentered(
+      'Preis auf Anfrage',
+      colX + colW / 2,
+      priceBoxY + 34,
+      22,
+      bold,
+      red
+    )
   }
 
-  // Facts table
+  // Facts: labels left, values right-aligned — one shared column grid.
   const v = vehicle
   const psFromKw =
     v.powerKw != null ? ` (${Math.round(v.powerKw * 1.35962)} PS)` : ''
-  const facts: Array<[string, string | null]> = [
+  const allFacts: Array<[string, string | null]> = [
     ['Erstzulassung', monthYear(v.firstRegistration)],
     [
       'Kilometerstand',
@@ -2045,64 +2239,88 @@ export async function renderVehicleSaleSignPdf(input: {
     ['Farbe', v.colorCode?.trim() || null],
     ['HU bis', monthYear(v.nextHu)]
   ]
-  let fy = priceY - 26
-  const rowH = 27
-  for (const [label, value] of facts) {
-    if (!value) continue
-    if (fy < 150) break
-    page.drawText(label, { x: colX, y: fy, size: 11, font, color: muted })
-    textRight(truncate(value, 34), colR, fy, 13, bold, ink)
-    page.drawLine({
-      start: { x: colX, y: fy - 8 },
-      end: { x: colR, y: fy - 8 },
-      thickness: 0.5,
-      color: hair
+  const facts = allFacts.filter(([, value]) => value) as Array<[string, string]>
+  const factsTop = priceBoxY - 30
+  const factsBottom = 150
+  const rowH =
+    facts.length > 1
+      ? Math.min(27, Math.floor((factsTop - factsBottom) / (facts.length - 1)))
+      : 27
+  const labelSize = rowH >= 24 ? 11 : 10
+  const valueSize = rowH >= 24 ? 13 : 11.5
+  facts.forEach(([label, value], i) => {
+    const fy = factsTop - i * rowH
+    page.drawText(label, {
+      x: colX,
+      y: fy,
+      size: labelSize,
+      font,
+      color: muted
     })
-    fy -= rowH
-  }
-
-  // ── Footer band ──────────────────────────────────────────────────
-  const footH = 118
-  page.drawLine({
-    start: { x: 0, y: footH },
-    end: { x: W, y: footH },
-    thickness: 1,
-    color: hair
+    textRight(fit(value, bold, valueSize, 185), colR, fy, valueSize, bold, ink)
+    if (i < facts.length - 1) {
+      page.drawLine({
+        start: { x: colX, y: fy - rowH * 0.32 },
+        end: { x: colR, y: fy - rowH * 0.32 },
+        thickness: 0.5,
+        color: hair
+      })
+    }
   })
 
-  // Highlights (left, bullet list)
+  // ── Footer strip: highlights, contact, QR ────────────────────────
+  const footH = 128
+  page.drawRectangle({ x: 0, y: footH - 3, width: W, height: 3, color: red })
+
+  // QR (bottom-right corner) with caption below.
+  let qrLeft = colR
+  if (listingUrl) {
+    const qrSize = 84
+    const qr = await renderQrPng(listingUrl, { size: 220 })
+    const qrImage = await doc.embedPng(qr)
+    const qrX = W - M - qrSize
+    page.drawImage(qrImage, { x: qrX, y: 32, width: qrSize, height: qrSize })
+    textCentered('Online ansehen', qrX + qrSize / 2, 17, 10, bold, red)
+    qrLeft = qrX - 24
+  }
+
+  // Highlights: red square bullets, up to four in two columns.
   if (highlights.length > 0) {
-    let hy = footH - 28
-    for (const h of highlights.slice(0, 3)) {
-      page.drawText(`•  ${truncate(h, 52)}`, {
-        x: M,
+    const colGap = 320
+    const rows = [footH - 29, footH - 51]
+    highlights.slice(0, 4).forEach((h, i) => {
+      const hx = M + Math.floor(i / 2) * colGap
+      const hy = rows[i % 2]
+      page.drawRectangle({
+        x: hx,
+        y: hy + 2.5,
+        width: 5,
+        height: 5,
+        color: red
+      })
+      page.drawText(fit(h, font, 12, colGap - 32), {
+        x: hx + 13,
         y: hy,
         size: 12,
         font,
         color: ink
       })
-      hy -= 20
-    }
+    })
   }
 
-  // Contact line (bottom-left)
+  // Contact line (bottom-left; vertically centered when no highlights).
   const contact = [companyName, companyPhone, companyCity]
     .filter(Boolean)
-    .join('     ·     ')
+    .join('   ·   ')
   if (contact) {
-    page.drawText(contact, { x: M, y: 16, size: 12, font: bold, color: ink })
-  }
-
-  // QR (bottom-right) with label to its LEFT (so nothing overlaps the code)
-  if (listingUrl) {
-    const qrSize = 88
-    const qr = await renderQrPng(listingUrl, { size: 220 })
-    const qrImage = await doc.embedPng(qr)
-    const qrX = colR - qrSize
-    const qrY = (footH - qrSize) / 2
-    page.drawImage(qrImage, { x: qrX, y: qrY, width: qrSize, height: qrSize })
-    textRight('Alle Infos online', qrX - 12, footH / 2 + 4, 11, bold, ink)
-    textRight('Jetzt scannen', qrX - 12, footH / 2 - 12, 9, font, muted)
+    const contactY = highlights.length > 0 ? 24 : (footH - 12) / 2
+    page.drawText(fit(contact, bold, 12, qrLeft - M - 10), {
+      x: M,
+      y: contactY,
+      size: 12,
+      font: bold,
+      color: ink
+    })
   }
 
   return Buffer.from(await doc.save())

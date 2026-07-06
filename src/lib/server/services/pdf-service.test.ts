@@ -1,5 +1,7 @@
 // @vitest-environment node
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 import { PDFDocument } from 'pdf-lib'
 import {
   computeDocumentInputHash,
@@ -342,7 +344,7 @@ describe('renderVehicleSaleSignPdf', () => {
     licensePlate: 'B-AB 1234'
   } as unknown as Vehicle & { licensePlate: string | null }
 
-  it('produces a valid A4-landscape single-page PDF', async () => {
+  it('produces a valid A4-landscape single-page PDF with title metadata', async () => {
     const bytes = await renderVehicleSaleSignPdf({
       vehicle: baseVehicle,
       coverPhoto: null,
@@ -360,6 +362,7 @@ describe('renderVehicleSaleSignPdf', () => {
 
     const doc = await PDFDocument.load(bytes)
     expect(doc.getPageCount()).toBe(1)
+    expect(doc.getTitle()).toBe('Verkaufsschild Volkswagen Golf VII')
     const page = doc.getPage(0)
     const { width, height } = page.getSize()
     // A4 landscape: 841.89 × 595.28 pt.
@@ -378,6 +381,61 @@ describe('renderVehicleSaleSignPdf', () => {
       qrPayload: 'https://twincars.local/inventory/v-1',
       settings: { companyName: 'Demo GmbH' } as unknown as CompanySettings
     })
+    expect(isValidPdf(bytes)).toBe(true)
+  })
+
+  it('embeds the cover photo when provided (PNG bytes)', async () => {
+    const photo = readFileSync(
+      join(process.cwd(), 'static', 'icons', 'icon-256.png')
+    )
+    const bytes = await renderVehicleSaleSignPdf({
+      vehicle: baseVehicle,
+      coverPhoto: { mime: 'image/png', data: photo },
+      salesPriceGross: 14990,
+      qrPayload: 'https://twincars.local/inventory/v-1',
+      settings: { companyName: 'Demo GmbH' } as unknown as CompanySettings
+    })
+    expect(isValidPdf(bytes)).toBe(true)
+    const doc = await PDFDocument.load(bytes)
+    expect(doc.getPageCount()).toBe(1)
+  })
+
+  it('embeds the uploaded company logo (raw base64 PNG)', async () => {
+    const logoB64 = readFileSync(
+      join(process.cwd(), 'static', 'icons', 'icon-256.png')
+    ).toString('base64')
+    const bytes = await renderVehicleSaleSignPdf({
+      vehicle: baseVehicle,
+      coverPhoto: null,
+      salesPriceGross: 24950,
+      differentialTax: true,
+      qrPayload: 'https://twincars.local/inventory/v-1',
+      settings: {
+        companyName: 'Demo GmbH',
+        logoData: logoB64,
+        logoMime: 'image/png'
+      } as unknown as CompanySettings
+    })
+    expect(isValidPdf(bytes)).toBe(true)
+  })
+
+  it('falls back to the bundled app icon when the logo upload is corrupt', async () => {
+    const bytes = await renderVehicleSaleSignPdf({
+      vehicle: baseVehicle,
+      coverPhoto: null,
+      salesPriceGross: 9999,
+      qrPayload: 'https://twincars.local/inventory/v-1',
+      settings: {
+        companyName: 'Demo GmbH',
+        logoData: 'not-a-real-image',
+        logoMime: 'image/png'
+      } as unknown as CompanySettings
+    })
+    expect(isValidPdf(bytes)).toBe(true)
+  })
+
+  it('renders without QR payload and without settings at all', async () => {
+    const bytes = await renderVehicleSaleSignPdf({ vehicle: baseVehicle })
     expect(isValidPdf(bytes)).toBe(true)
   })
 })
