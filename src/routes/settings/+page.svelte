@@ -10,10 +10,12 @@
   } from '@lucide/svelte'
   import {
     getAllSettingsRemote,
+    getLaborRateSettingRemote,
     listMailTemplatesRemote,
     removeLogoRemote,
     resetMailTemplateRemote,
     updateCompanyRemote,
+    updateLaborRateRemote,
     updateLogoRemote,
     updateMailTemplateRemote,
     updateReminderSettingsRemote,
@@ -266,6 +268,47 @@
       toast.success('Vorlage zurückgesetzt.')
     } catch (err) {
       handleClientError(err, 'Vorlage konnte nicht zurückgesetzt werden')
+    }
+  }
+
+  /* ─ Stundensatz (workshop labor rate) ─────────────────────────────── */
+
+  const laborQ = $derived(getLaborRateSettingRemote())
+  const laborRate = $derived(laborQ.current)
+
+  $effect(() => {
+    if (laborQ.error) handleClientError(laborQ.error)
+  })
+
+  let laborRateInput = $state<number | null>(null)
+  let laborRateInitialised = $state(false)
+  $effect(() => {
+    if (laborRateInitialised || laborQ.current === undefined) return
+    laborRateInput = laborQ.current?.unitPriceNet
+      ? Number(laborQ.current.unitPriceNet)
+      : null
+    laborRateInitialised = true
+  })
+
+  const fmtRate = (v: string): string =>
+    `${Number(v).toLocaleString('de-DE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2
+    })} €`
+
+  const saveLaborRate = async (e: Event) => {
+    e.preventDefault()
+    const value = Number(laborRateInput)
+    if (!Number.isFinite(value) || value <= 0) {
+      toast.error('Bitte einen Stundensatz größer als 0 eingeben.')
+      return
+    }
+    try {
+      formDirty.clear()
+      await busy.run(() => updateLaborRateRemote({ priceNet: value }))
+      toast.success('Stundensatz aktualisiert.')
+    } catch (err) {
+      handleClientError(err, 'Stundensatz konnte nicht gespeichert werden')
     }
   }
 
@@ -607,6 +650,56 @@
                 Speichern
               </button>
             </div>
+          </form>
+
+          <!--
+            Labor rate: its own small form (not a company_settings
+            column; the value lives as a price version on the
+            "Arbeitszeit" catalog item, so the history is preserved).
+          -->
+          <form
+            onsubmit={saveLaborRate}
+            oninput={markDirty}
+            onchange={markDirty}
+          >
+            <fieldset class="fieldset">
+              <legend class="fieldset-legend">Stundensatz</legend>
+              <p class="text-base-content/60 text-sm">
+                Netto pro Stunde; wird beim Abschließen von Aufträgen als
+                Arbeitszeit-Position berechnet.
+              </p>
+              {#if laborRate}
+                <div class="mt-2 flex flex-wrap items-end gap-3">
+                  <label class="flex flex-col gap-1">
+                    <span class="label-text">Stundensatz (netto, EUR)</span>
+                    <input
+                      class="input input-bordered w-44"
+                      type="number"
+                      min="0.01"
+                      step="0.01"
+                      required
+                      bind:value={laborRateInput}
+                    />
+                  </label>
+                  <span class="text-base-content/60 pb-3 text-sm">
+                    Aktuell: {laborRate.unitPriceNet
+                      ? fmtRate(laborRate.unitPriceNet)
+                      : 'nicht gesetzt'}
+                  </span>
+                  <button
+                    type="submit"
+                    class="btn btn-primary"
+                    disabled={busy.active}
+                  >
+                    Speichern
+                  </button>
+                </div>
+              {:else if laborRate === null}
+                <p class="mt-2 text-sm">
+                  Es ist kein Arbeitszeit-Artikel hinterlegt.
+                </p>
+              {/if}
+            </fieldset>
           </form>
 
           <!--

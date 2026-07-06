@@ -33,10 +33,11 @@
 
   /**
    * Klick-Ziel pro Event-Kind. Termine + Schließungen führen zur
-   * Edit-Seite; HU-Fälligkeit zum Fahrzeug. Feiertage und
-   * Mitarbeiter-Abwesenheiten sind nicht klickbar (kein direkter
-   * "edit"-Pfad — Abwesenheiten werden im Mitarbeiter-Datenblatt
-   * gepflegt, Feiertage stammen aus dem Bundesland-Stamm).
+   * Edit-Seite; HU-Fälligkeit zum Fahrzeug; Aufträge zur
+   * Auftrags-Detailseite. Feiertage und Mitarbeiter-Abwesenheiten
+   * sind nicht klickbar (kein direkter "edit"-Pfad — Abwesenheiten
+   * werden im Mitarbeiter-Datenblatt gepflegt, Feiertage stammen aus
+   * dem Bundesland-Stamm).
    */
   const eventTarget = (ev: {
     kind: string
@@ -48,6 +49,9 @@
     }
     if (ev.kind === 'hu_due') {
       return ev.sourceId ? `/vehicles/${ev.sourceId}` : null
+    }
+    if (ev.kind === 'work_order') {
+      return ev.sourceId ? `/orders/${ev.sourceId}` : null
     }
     if (
       ev.kind === 'employee_vacation' ||
@@ -120,6 +124,8 @@
         return 'bg-neutral/10 text-base-content/70'
       case 'hu_due':
         return 'bg-warning/15 text-warning'
+      case 'work_order':
+        return 'bg-secondary/10 text-secondary'
       default:
         return 'bg-primary/10 text-primary'
     }

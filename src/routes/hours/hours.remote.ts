@@ -33,9 +33,24 @@ import {
   getTimeEntry,
   listTimeEntries,
   monthlyReport,
+  OrderDerivedTimeEntryError,
   updateTimeEntry,
   utilizationSummary
 } from '$lib/server/services/time-entry-service'
+
+/**
+ * Curated 409 for mutations against rows written through from a work
+ * order — the entry is maintained at the order, not in /hours.
+ */
+const rethrowOrderDerived = (err: unknown): never => {
+  if (err instanceof OrderDerivedTimeEntryError) {
+    error(
+      409,
+      'Dieser Eintrag stammt aus einem Auftrag und wird dort gepflegt.'
+    )
+  }
+  throw err
+}
 
 /* ───────────────────────────────────────────────────────────────────── */
 /* Helpers                                                              */
@@ -88,6 +103,7 @@ const listSchema = object({
   dateTo: optional(dateStringSchema),
   customerId: optional(idSchema),
   documentId: optional(idSchema),
+  workOrderId: optional(idSchema),
   /** When true, the result is restricted to the caller's own entries. */
   scope: optional(picklist(['own', 'all']))
 })
@@ -163,7 +179,8 @@ export const listTimeEntriesRemote = query(listSchema, async (params) => {
     dateFrom: params.dateFrom,
     dateTo: params.dateTo,
     customerId: params.customerId,
-    documentId: params.documentId
+    documentId: params.documentId,
+    workOrderId: params.workOrderId
   })
 })
 
@@ -249,7 +266,7 @@ export const updateTimeEntryRemote = command(
       customerId: values.customerId ?? null,
       task: values.task ?? null,
       note: values.note ?? null
-    })
+    }).catch(rethrowOrderDerived)
     await Promise.all([
       getTimeEntryRemote({ id }).refresh(),
       requested(listTimeEntriesRemote, 4).refreshAll()
@@ -277,7 +294,7 @@ export const deleteTimeEntryRemote = command(
         error(403, 'Keine Berechtigung für diese Aktion.')
       }
     }
-    await deleteTimeEntry(id)
+    await deleteTimeEntry(id).catch(rethrowOrderDerived)
     await requested(listTimeEntriesRemote, 4).refreshAll()
   }
 )

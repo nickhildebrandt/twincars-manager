@@ -19,6 +19,10 @@
   const canReadAll = await canReadAllHoursRemote()
   const me = canReadAll ? null : await currentEmployeeRemote()
 
+  // Order-derived entries are read-only in /hours — the form is
+  // replaced by a hint + link to the owning work order.
+  const isOrderDerived = e.workOrderItemId !== null
+
   const lockedEmployee = me
     ? {
         id: me.id,
@@ -53,9 +57,23 @@
 
 <PageHeader title="Stundeneintrag bearbeiten" back={`/hours/${id}`} />
 
-<HoursForm
-  {initial}
-  {lockedEmployee}
-  onSave={handleSave}
-  onCancel={() => goto(`/hours/${id}`)}
-/>
+{#if isOrderDerived}
+  <div class="alert">
+    <span class="text-sm">
+      Dieser Eintrag stammt aus einem Auftrag und wird dort gepflegt.
+      {#if e.workOrderId && e.workOrderNumber}
+        Zum Auftrag:
+        <a class="link font-mono" href="/orders/{e.workOrderId}">
+          {e.workOrderNumber}
+        </a>
+      {/if}
+    </span>
+  </div>
+{:else}
+  <HoursForm
+    {initial}
+    {lockedEmployee}
+    onSave={handleSave}
+    onCancel={() => goto(`/hours/${id}`)}
+  />
+{/if}

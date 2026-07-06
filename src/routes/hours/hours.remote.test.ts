@@ -80,7 +80,9 @@ import {
   customers,
   documents,
   employees,
-  timeEntries
+  timeEntries,
+  workOrderItems,
+  workOrders
 } from '$lib/server/db/schema'
 import { WILDCARD_PERMISSION } from '$lib/server/auth-permissions'
 import {
@@ -112,6 +114,8 @@ async function expectHttpError(
 
 async function resetDb() {
   await db.delete(timeEntries)
+  await db.delete(workOrderItems)
+  await db.delete(workOrders)
   await db.delete(documents)
   await db.delete(customers)
   await db.delete(employees)
@@ -429,6 +433,94 @@ describe('hours.remote', () => {
       await deleteTimeEntryRemote({ id: row.id })
       const remaining = await db.select().from(timeEntries)
       expect(remaining.find((t) => t.id === row.id)).toBeUndefined()
+    })
+  })
+
+  /* ──────────────────────────────────────────────────────────────── */
+  /* Order-derived rows (write-through from work orders)              */
+  /* ──────────────────────────────────────────────────────────────── */
+
+  describe('order-derived entries', () => {
+    let workOrderId: string
+    let orderEntryId: string
+
+    beforeEach(async () => {
+      authAs({ permissions: [WILDCARD_PERMISSION] })
+      const [wo] = await db
+        .insert(workOrders)
+        .values({ orderNumber: 'AU-2026-0042', title: 'Inspektion' })
+        .returning()
+      workOrderId = wo.id
+      const [woi] = await db
+        .insert(workOrderItems)
+        .values({
+          workOrderId,
+          position: 1,
+          kind: 'labor',
+          description: 'Inspektion',
+          quantity: '1.50',
+          unit: 'Std.',
+          unitPriceNet: '85.00',
+          employeeId,
+          hours: '1.50',
+          doneAt: '2026-07-01'
+        })
+        .returning()
+      const [entry] = await db
+        .insert(timeEntries)
+        .values({
+          employeeId,
+          date: '2026-07-01',
+          hours: '1.50',
+          task: 'Inspektion',
+          workOrderId,
+          workOrderItemId: woi.id
+        })
+        .returning()
+      orderEntryId = entry.id
+    })
+
+    it('get returns workOrderId + workOrderNumber', async () => {
+      const row = await getTimeEntryRemote({ id: orderEntryId })
+      expect(row.workOrderId).toBe(workOrderId)
+      expect(row.workOrderNumber).toBe('AU-2026-0042')
+      expect(row.workOrderItemId).toBeTruthy()
+    })
+
+    it('list supports the workOrderId filter', async () => {
+      await db
+        .insert(timeEntries)
+        .values({ employeeId, date: '2026-07-02', hours: '1.00' })
+      const res = await listTimeEntriesRemote({
+        page: 1,
+        size: 25,
+        workOrderId
+      })
+      expect(res.total).toBe(1)
+      expect(res.items[0].id).toBe(orderEntryId)
+      expect(res.items[0].workOrderNumber).toBe('AU-2026-0042')
+    })
+
+    it('update of an order-derived row rejects with 409', async () => {
+      await expectHttpError(
+        () =>
+          updateTimeEntryRemote({
+            id: orderEntryId,
+            values: { employeeId, date: '2026-07-01', hours: 5 }
+          }),
+        409
+      )
+      const row = await getTimeEntryRemote({ id: orderEntryId })
+      expect(Number(row.hours)).toBe(1.5)
+    })
+
+    it('delete of an order-derived row rejects with 409', async () => {
+      await expectHttpError(
+        () => deleteTimeEntryRemote({ id: orderEntryId }),
+        409
+      )
+      const remaining = await db.select().from(timeEntries)
+      expect(remaining.find((t) => t.id === orderEntryId)).toBeTruthy()
     })
   })
 

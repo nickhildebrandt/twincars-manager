@@ -13,6 +13,10 @@
   const id = untrack(() => page.params.id!)
   const e = await getTimeEntryRemote({ id })
 
+  // Rows written through from a work-order labor item are read-only
+  // here — they are maintained at the order.
+  const isOrderDerived = e.workOrderItemId !== null
+
   const fmtHours = (v: string | number): string =>
     Number(v).toLocaleString('de-DE', {
       minimumFractionDigits: 2,
@@ -40,12 +44,23 @@
 <PageHeader
   title={`${fmtDate(e.date)} · ${fmtHours(e.hours)} h`}
   back="/hours"
-  primaryAction={{
-    label: 'Bearbeiten',
-    href: `/hours/${e.id}/edit`,
-    icon: Pencil
-  }}
+  primaryAction={isOrderDerived
+    ? undefined
+    : { label: 'Bearbeiten', href: `/hours/${e.id}/edit`, icon: Pencil }}
 />
+
+{#if isOrderDerived}
+  <div class="alert mb-4">
+    <span class="text-sm">
+      Dieser Eintrag stammt aus einem Auftrag und wird dort gepflegt.
+      {#if e.workOrderId && e.workOrderNumber}
+        <a class="link font-mono" href="/orders/{e.workOrderId}">
+          {e.workOrderNumber}
+        </a>
+      {/if}
+    </span>
+  </div>
+{/if}
 
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
   <div class="card border-base-300 bg-base-100 border">
@@ -68,6 +83,16 @@
     <div class="card-body">
       <h3 class="card-title text-base">Verknüpfung</h3>
       <dl class="grid grid-cols-3 gap-y-1 text-sm">
+        <dt class="text-base-content/60">Auftrag</dt>
+        <dd class="col-span-2">
+          {#if e.workOrderId && e.workOrderNumber}
+            <a class="link font-mono" href="/orders/{e.workOrderId}">
+              {e.workOrderNumber}
+            </a>
+          {:else}
+            -
+          {/if}
+        </dd>
         <dt class="text-base-content/60">Beleg</dt>
         <dd class="col-span-2">
           {#if e.documentNumber}
@@ -104,14 +129,16 @@
   {/if}
 </div>
 
-<div class="mt-4 flex justify-end">
-  <button
-    class="btn btn-ghost text-error gap-2"
-    onclick={() => (confirmOpen = true)}
-  >
-    <Trash2 size={16} /> Löschen
-  </button>
-</div>
+{#if !isOrderDerived}
+  <div class="mt-4 flex justify-end">
+    <button
+      class="btn btn-ghost text-error gap-2"
+      onclick={() => (confirmOpen = true)}
+    >
+      <Trash2 size={16} /> Löschen
+    </button>
+  </div>
+{/if}
 
 <ConfirmDialog
   bind:open={confirmOpen}

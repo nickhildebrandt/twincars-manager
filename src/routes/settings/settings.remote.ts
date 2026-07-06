@@ -26,6 +26,7 @@ import {
   emailSchema,
   ibanSchema,
   bicSchema,
+  moneySchema,
   phoneSchema,
   urlSchema,
   zipSchema,
@@ -34,6 +35,8 @@ import {
 } from '$lib/server/db/validation'
 import { requirePermission } from '$lib/server/auth-guards'
 import { upsertSmtpSettings } from '$lib/server/services/smtp-settings-service'
+import { getLaborRate } from '$lib/server/services/work-order-service'
+import { upsertItemPrice } from '$lib/server/services/item-service'
 
 const companyDataSchema = object({
   companyName: nameSchema,
@@ -191,6 +194,51 @@ export const updateReminderSettingsRemote = command(
       })
       .where(eq(companySettings.id, settings.id))
     void getAllSettingsRemote().refresh()
+  }
+)
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Stundensatz (workshop labor rate)                                      */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * The current workshop labor rate: the designated "Arbeitszeit" catalog
+ * item (`company_settings.labor_item_id`) with its currently valid
+ * price version. Returns `null` while no labor item is linked.
+ *
+ * @group integration
+ * @module settings
+ */
+export const getLaborRateSettingRemote = query(async () => {
+  requirePermission('settings')
+  return getLaborRate()
+})
+
+/**
+ * Set a new workshop labor rate. Writes a NEW `item_price_versions`
+ * row (`valid_from` = today) for the labor item, so the price history
+ * is preserved and existing order items keep their snapshot price.
+ *
+ * @group integration
+ * @module settings
+ */
+export const updateLaborRateRemote = command(
+  object({ priceNet: moneySchema }),
+  async ({ priceNet }) => {
+    requirePermission('settings')
+    if (priceNet <= 0) {
+      error(400, 'Der Stundensatz muss größer als 0 sein.')
+    }
+    const settings = await getSettings()
+    if (!settings.laborItemId) {
+      error(409, 'Es ist kein Arbeitszeit-Artikel hinterlegt.')
+    }
+    await upsertItemPrice({
+      itemId: settings.laborItemId,
+      validFrom: new Date().toISOString().slice(0, 10),
+      unitPriceNet: priceNet.toFixed(2)
+    })
+    void getLaborRateSettingRemote().refresh()
   }
 )
 

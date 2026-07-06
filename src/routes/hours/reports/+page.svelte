@@ -96,6 +96,11 @@
 
 <PageHeader title="Auswertungen" back="/hours" />
 
+<p class="text-base-content/60 mb-4 text-sm">
+  Die Auslastung enthält auch Stunden aus Aufträgen; sie zählen als fakturiert,
+  sobald die Rechnung zum Auftrag erstellt wurde.
+</p>
+
 <div class="card border-base-300 bg-base-100 mb-4 border">
   <div class="card-body p-3">
     <div role="tablist" class="tabs tabs-box">

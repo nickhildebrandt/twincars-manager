@@ -12,6 +12,7 @@ import {
   getTimeEntry,
   listTimeEntries,
   monthlyReport,
+  OrderDerivedTimeEntryError,
   updateTimeEntry,
   utilizationSummary
 } from './time-entry-service'
@@ -20,7 +21,9 @@ import {
   customers,
   documents,
   employees,
-  timeEntries
+  timeEntries,
+  workOrderItems,
+  workOrders
 } from '$lib/server/db/schema'
 
 /**
@@ -39,6 +42,8 @@ describe('time-entry-service', () => {
 
   beforeEach(async () => {
     await db.delete(timeEntries)
+    await db.delete(workOrderItems)
+    await db.delete(workOrders)
     await db.delete(documents)
     await db.delete(customers)
     await db.delete(employees)
@@ -267,6 +272,107 @@ describe('time-entry-service', () => {
       expect(res.items[0].employeeFirstName).toBe('Anna')
       expect(res.items[0].customerName).toBe('Kunde')
       expect(res.items[0].documentNumber).toBe('RG-0001')
+    })
+  })
+
+  /* ────────────────────────────────────────────────────────────────── */
+  /* Work-order integration (write-through rows)                       */
+  /* ────────────────────────────────────────────────────────────────── */
+
+  describe('work-order derived entries', () => {
+    let workOrderId: string
+    let orderEntryId: string
+    let manualEntryId: string
+
+    beforeEach(async () => {
+      const [wo] = await db
+        .insert(workOrders)
+        .values({ orderNumber: 'AU-2026-0001', title: 'Bremsen erneuern' })
+        .returning()
+      workOrderId = wo.id
+      const [woi] = await db
+        .insert(workOrderItems)
+        .values({
+          workOrderId,
+          position: 1,
+          kind: 'labor',
+          description: 'Bremsen erneuern',
+          quantity: '2.00',
+          unit: 'Std.',
+          unitPriceNet: '85.00',
+          employeeId,
+          hours: '2.00',
+          doneAt: '2026-07-01'
+        })
+        .returning()
+      const [orderEntry] = await db
+        .insert(timeEntries)
+        .values({
+          employeeId,
+          date: '2026-07-01',
+          hours: '2.00',
+          task: 'Bremsen erneuern',
+          workOrderId,
+          workOrderItemId: woi.id
+        })
+        .returning()
+      orderEntryId = orderEntry.id
+      const [manual] = await db
+        .insert(timeEntries)
+        .values({
+          employeeId,
+          date: '2026-07-02',
+          hours: '1.00',
+          task: 'Aufräumen'
+        })
+        .returning()
+      manualEntryId = manual.id
+    })
+
+    it('list rows carry workOrderId + workOrderNumber (null for manual rows)', async () => {
+      const res = await listTimeEntries({ page: 1, size: 25 })
+      const orderRow = res.items.find((r) => r.id === orderEntryId)
+      const manualRow = res.items.find((r) => r.id === manualEntryId)
+      expect(orderRow?.workOrderId).toBe(workOrderId)
+      expect(orderRow?.workOrderNumber).toBe('AU-2026-0001')
+      expect(orderRow?.workOrderItemId).toBeTruthy()
+      expect(manualRow?.workOrderId).toBeNull()
+      expect(manualRow?.workOrderNumber).toBeNull()
+      expect(manualRow?.workOrderItemId).toBeNull()
+    })
+
+    it('getTimeEntry carries workOrderId + workOrderNumber', async () => {
+      const got = await getTimeEntry(orderEntryId)
+      expect(got?.workOrderId).toBe(workOrderId)
+      expect(got?.workOrderNumber).toBe('AU-2026-0001')
+    })
+
+    it('filters by workOrderId', async () => {
+      const res = await listTimeEntries({ page: 1, size: 25, workOrderId })
+      expect(res.total).toBe(1)
+      expect(res.items[0].id).toBe(orderEntryId)
+    })
+
+    it('updateTimeEntry rejects order-derived rows with the typed error', async () => {
+      await expect(
+        updateTimeEntry(orderEntryId, { hours: '9.00' })
+      ).rejects.toBeInstanceOf(OrderDerivedTimeEntryError)
+      const unchanged = await getTimeEntry(orderEntryId)
+      expect(Number(unchanged?.hours)).toBe(2)
+    })
+
+    it('deleteTimeEntry rejects order-derived rows with the typed error', async () => {
+      await expect(deleteTimeEntry(orderEntryId)).rejects.toBeInstanceOf(
+        OrderDerivedTimeEntryError
+      )
+      expect(await getTimeEntry(orderEntryId)).not.toBeNull()
+    })
+
+    it('update/delete of manual rows keep working', async () => {
+      const updated = await updateTimeEntry(manualEntryId, { hours: '3.00' })
+      expect(Number(updated.hours)).toBe(3)
+      await deleteTimeEntry(manualEntryId)
+      expect(await getTimeEntry(manualEntryId)).toBeNull()
     })
   })
 

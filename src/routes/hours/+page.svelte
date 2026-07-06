@@ -1,12 +1,13 @@
 <script lang="ts">
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
+  import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
-  import { Plus, Clock, Pencil, Trash2, BarChart3 } from '@lucide/svelte'
+  import { Plus, Clock, Pencil, Trash2, BarChart3, X } from '@lucide/svelte'
   import {
     canReadAllHoursRemote,
     deleteTimeEntryRemote,
@@ -29,6 +30,11 @@
   let dateTo = $state('')
   let employeeFilterId = $state('')
   let employeeFilterLabel = $state('')
+  // Auftrag filter — deep-link only (`/hours?workOrderId=<uuid>`, e.g.
+  // from an order detail page). Cleared via the chip in the toolbar.
+  let workOrderFilterId = $state(
+    untrack(() => page.url.searchParams.get('workOrderId') ?? '')
+  )
 
   const query = $derived(
     listTimeEntriesRemote({
@@ -38,7 +44,8 @@
       dateFrom: dateFrom || undefined,
       dateTo: dateTo || undefined,
       employeeId:
-        scope === 'all' && employeeFilterId ? employeeFilterId : undefined
+        scope === 'all' && employeeFilterId ? employeeFilterId : undefined,
+      workOrderId: workOrderFilterId || undefined
     })
   )
 
@@ -95,7 +102,10 @@
             dateFrom: dateFrom || undefined,
             dateTo: dateTo || undefined,
             employeeId:
-              scope === 'all' && employeeFilterId ? employeeFilterId : undefined
+              scope === 'all' && employeeFilterId
+                ? employeeFilterId
+                : undefined,
+            workOrderId: workOrderFilterId || undefined
           }).withOverride((current) => ({
             ...current,
             items: current.items.filter((e) => e.id !== id),
@@ -184,6 +194,22 @@
         </label>
       {/if}
 
+      {#if workOrderFilterId}
+        <div class="flex flex-col gap-1">
+          <span class="label-text">Auftrag</span>
+          <button
+            type="button"
+            class="btn btn-sm gap-1"
+            onclick={() => {
+              workOrderFilterId = ''
+              onFilterChange()
+            }}
+          >
+            Gefiltert nach Auftrag <X size={14} />
+          </button>
+        </div>
+      {/if}
+
       {#if canReadAll}
         <a class="btn btn-ghost btn-sm gap-2 sm:ms-auto" href="/hours/reports">
           <BarChart3 size={16} /> Auswertungen
@@ -215,7 +241,8 @@
               <th>Datum</th>
               <th>Mitarbeiter</th>
               <th class="text-right">Stunden</th>
-              <th>Auftrag / Kunde</th>
+              <th>Auftrag</th>
+              <th>Beleg / Kunde</th>
               <th>Notiz</th>
               <th class="text-right">Aktion</th>
             </tr>
@@ -232,6 +259,15 @@
                     e.employeeNumber}</td
                 >
                 <td class="text-right font-mono">{fmtHours(e.hours)}</td>
+                <td onclick={(ev) => ev.stopPropagation()}>
+                  {#if e.workOrderId && e.workOrderNumber}
+                    <a class="link font-mono" href="/orders/{e.workOrderId}">
+                      {e.workOrderNumber}
+                    </a>
+                  {:else}
+                    <span class="text-base-content/50">-</span>
+                  {/if}
+                </td>
                 <td>
                   {#if e.documentNumber}
                     Beleg {e.documentNumber}
@@ -245,28 +281,36 @@
                 </td>
                 <td class="max-w-xs truncate">{e.note ?? ''}</td>
                 <td onclick={(ev) => ev.stopPropagation()}>
-                  <div class="flex justify-end gap-1">
-                    <a
-                      class="btn btn-ghost btn-sm btn-square"
-                      href="/hours/{e.id}/edit"
-                      aria-label="Bearbeiten"
-                    >
-                      <Pencil size={16} />
-                    </a>
-                    <button
-                      class="btn btn-ghost btn-sm btn-square text-error"
-                      onclick={() => {
-                        toDelete = {
-                          id: e.id,
-                          label: `${fmtDate(e.date)} · ${fmtHours(e.hours)} h`
-                        }
-                        confirmOpen = true
-                      }}
-                      aria-label="Löschen"
-                    >
-                      <Trash2 size={16} />
-                    </button>
-                  </div>
+                  {#if e.workOrderItemId}
+                    <!-- Order-derived rows are read-only here; they are
+                         maintained at the work order. -->
+                    <div class="flex justify-end">
+                      <span class="badge badge-ghost badge-sm">Auftrag</span>
+                    </div>
+                  {:else}
+                    <div class="flex justify-end gap-1">
+                      <a
+                        class="btn btn-ghost btn-sm btn-square"
+                        href="/hours/{e.id}/edit"
+                        aria-label="Bearbeiten"
+                      >
+                        <Pencil size={16} />
+                      </a>
+                      <button
+                        class="btn btn-ghost btn-sm btn-square text-error"
+                        onclick={() => {
+                          toDelete = {
+                            id: e.id,
+                            label: `${fmtDate(e.date)} · ${fmtHours(e.hours)} h`
+                          }
+                          confirmOpen = true
+                        }}
+                        aria-label="Löschen"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  {/if}
                 </td>
               </tr>
             {/each}
@@ -275,7 +319,7 @@
             <tr>
               <td colspan="2">Summe</td>
               <td class="text-right font-mono">{fmtHours(totalHours)}</td>
-              <td colspan="3"></td>
+              <td colspan="4"></td>
             </tr>
           </tfoot>
         </table>

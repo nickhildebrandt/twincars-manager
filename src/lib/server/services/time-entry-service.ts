@@ -4,6 +4,7 @@ import {
   documents,
   employees,
   timeEntries,
+  workOrders,
   type TimeEntry
 } from '$lib/server/db/schema'
 import {
@@ -25,9 +26,23 @@ import type { ListResult } from '$lib/server/db/validation'
 type NewTimeEntry = typeof timeEntries.$inferInsert
 
 /**
+ * Thrown when a mutation targets a row that was written through from a
+ * work-order labor item (`work_order_item_id IS NOT NULL`). Those rows
+ * are maintained exclusively at the order — the remote layer maps this
+ * to a curated 409.
+ */
+export class OrderDerivedTimeEntryError extends Error {
+  constructor() {
+    super('Time entry is derived from a work order and is maintained there.')
+    this.name = 'OrderDerivedTimeEntryError'
+  }
+}
+
+/**
  * A time-entry row joined to the human-readable fields the UI needs to
  * render the list without follow-up lookups: employee name, optional
- * customer name and optional document number.
+ * customer name, optional document number and — for rows written
+ * through from a work order — the order number.
  */
 export type TimeEntryWithRefs = TimeEntry & {
   employeeFirstName: string
@@ -36,6 +51,7 @@ export type TimeEntryWithRefs = TimeEntry & {
   customerName: string | null
   documentNumber: string | null
   documentType: string | null
+  workOrderNumber: string | null
 }
 
 export type ListTimeEntriesParams = {
@@ -47,6 +63,7 @@ export type ListTimeEntriesParams = {
   dateTo?: string
   customerId?: string
   documentId?: string
+  workOrderId?: string
 }
 
 /**
@@ -64,7 +81,8 @@ export async function listTimeEntries(
     dateFrom,
     dateTo,
     customerId,
-    documentId
+    documentId,
+    workOrderId
   } = params
   const offset = (page - 1) * size
 
@@ -89,6 +107,7 @@ export async function listTimeEntries(
   if (dateTo) filters.push(lte(timeEntries.date, dateTo))
   if (customerId) filters.push(eq(timeEntries.customerId, customerId))
   if (documentId) filters.push(eq(timeEntries.documentId, documentId))
+  if (workOrderId) filters.push(eq(timeEntries.workOrderId, workOrderId))
   const where = filters.length > 0 ? and(...filters) : undefined
 
   const [rows, totalRow, sumRow] = await Promise.all([
@@ -102,6 +121,8 @@ export async function listTimeEntries(
         customerId: timeEntries.customerId,
         task: timeEntries.task,
         note: timeEntries.note,
+        workOrderId: timeEntries.workOrderId,
+        workOrderItemId: timeEntries.workOrderItemId,
         createdAt: timeEntries.createdAt,
         updatedAt: timeEntries.updatedAt,
         employeeFirstName: employees.firstName,
@@ -110,12 +131,14 @@ export async function listTimeEntries(
         customerCompany: customers.company,
         customerLastName: customers.lastName,
         documentNumber: documents.documentNumber,
-        documentType: documents.type
+        documentType: documents.type,
+        workOrderNumber: workOrders.orderNumber
       })
       .from(timeEntries)
       .leftJoin(employees, eq(timeEntries.employeeId, employees.id))
       .leftJoin(customers, eq(timeEntries.customerId, customers.id))
       .leftJoin(documents, eq(timeEntries.documentId, documents.id))
+      .leftJoin(workOrders, eq(timeEntries.workOrderId, workOrders.id))
       .where(where)
       .orderBy(desc(timeEntries.date), desc(timeEntries.createdAt))
       .limit(size)
@@ -154,7 +177,8 @@ export async function listTimeEntries(
       employeeNumber: employeeNumber ?? '',
       customerName: customerCompany ?? customerLastName ?? null,
       documentNumber: rest.documentNumber ?? null,
-      documentType: rest.documentType ?? null
+      documentType: rest.documentType ?? null,
+      workOrderNumber: rest.workOrderNumber ?? null
     }
   })
 
@@ -189,6 +213,8 @@ export async function getTimeEntry(
       customerId: timeEntries.customerId,
       task: timeEntries.task,
       note: timeEntries.note,
+      workOrderId: timeEntries.workOrderId,
+      workOrderItemId: timeEntries.workOrderItemId,
       createdAt: timeEntries.createdAt,
       updatedAt: timeEntries.updatedAt,
       employeeFirstName: employees.firstName,
@@ -197,12 +223,14 @@ export async function getTimeEntry(
       customerCompany: customers.company,
       customerLastName: customers.lastName,
       documentNumber: documents.documentNumber,
-      documentType: documents.type
+      documentType: documents.type,
+      workOrderNumber: workOrders.orderNumber
     })
     .from(timeEntries)
     .leftJoin(employees, eq(timeEntries.employeeId, employees.id))
     .leftJoin(customers, eq(timeEntries.customerId, customers.id))
     .leftJoin(documents, eq(timeEntries.documentId, documents.id))
+    .leftJoin(workOrders, eq(timeEntries.workOrderId, workOrders.id))
     .where(eq(timeEntries.id, id))
     .limit(1)
   if (!row) return null
@@ -221,7 +249,8 @@ export async function getTimeEntry(
     employeeNumber: employeeNumber ?? '',
     customerName: customerCompany ?? customerLastName ?? null,
     documentNumber: rest.documentNumber ?? null,
-    documentType: rest.documentType ?? null
+    documentType: rest.documentType ?? null,
+    workOrderNumber: rest.workOrderNumber ?? null
   }
 }
 
@@ -232,10 +261,27 @@ export async function createTimeEntry(
   return created
 }
 
+/**
+ * Rejects mutations against rows that mirror a work-order labor item.
+ * Those rows are the write-through of the order and must be edited at
+ * the order — see {@link OrderDerivedTimeEntryError}.
+ */
+async function assertNotOrderDerived(id: string): Promise<void> {
+  const [row] = await db
+    .select({ workOrderItemId: timeEntries.workOrderItemId })
+    .from(timeEntries)
+    .where(eq(timeEntries.id, id))
+    .limit(1)
+  if (row && row.workOrderItemId !== null) {
+    throw new OrderDerivedTimeEntryError()
+  }
+}
+
 export async function updateTimeEntry(
   id: string,
   values: Partial<NewTimeEntry>
 ): Promise<TimeEntry> {
+  await assertNotOrderDerived(id)
   const [updated] = await db
     .update(timeEntries)
     .set({ ...values, updatedAt: new Date() })
@@ -245,6 +291,7 @@ export async function updateTimeEntry(
 }
 
 export async function deleteTimeEntry(id: string): Promise<void> {
+  await assertNotOrderDerived(id)
   await db.delete(timeEntries).where(eq(timeEntries.id, id))
 }
 
