@@ -16,6 +16,7 @@ import {
   Users2,
   Wallet,
   Calculator,
+  ClipboardList,
   Gift,
   Mail,
   Send,
@@ -114,6 +115,12 @@ export const navigation: NavGroup[] = [
   {
     label: 'Aufträge & Rechnungen',
     items: [
+      {
+        label: 'Aufträge',
+        href: '/orders',
+        icon: ClipboardList,
+        permission: 'orders'
+      },
       {
         label: 'Angebote / Kostenvoranschläge',
         href: '/offers',

@@ -6,13 +6,17 @@
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
-  import { Trash2 } from '@lucide/svelte'
+  import { ClipboardList, Trash2 } from '@lucide/svelte'
   import {
     deleteCalendarEntryRemote,
     findOverlappingAppointmentsRemote,
     getCalendarEntryRemote,
     updateCalendarEntryRemote
   } from '../../calendar.remote'
+  import {
+    createWorkOrderFromAppointmentRemote,
+    getWorkOrderIdForAppointmentRemote
+  } from '../../../orders/orders.remote'
   import { pickEmployeesRemote } from '../../../pickers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
@@ -30,6 +34,39 @@
 
   /** Kind kann nicht nachträglich geändert werden (Server lehnt ab). */
   const kind = entry.kind as 'appointment' | 'closure'
+
+  /**
+   * Work-order integration for Termine: the probe below requires the
+   * `orders` permission — a 403 hides both actions (a calendar user
+   * without the orders module could not create an order anyway).
+   */
+  let existingOrderId = $state<string | null>(null)
+  let ordersAvailable = $state(false)
+  if (kind === 'appointment') {
+    try {
+      const existing = await getWorkOrderIdForAppointmentRemote({
+        appointmentId: id
+      })
+      existingOrderId = existing?.id ?? null
+      ordersAvailable = true
+    } catch (err) {
+      // Permission probe only — keep the actions hidden, log for devs.
+      console.info('[calendar] work-order actions hidden:', err)
+    }
+  }
+
+  const createOrder = async () => {
+    try {
+      const created = await busy.run(() =>
+        createWorkOrderFromAppointmentRemote({ appointmentId: id })
+      )
+      formDirty.clear()
+      toast.success('Auftrag angelegt.')
+      goto(`/orders/${created.id}`)
+    } catch (err) {
+      handleClientError(err, 'Auftrag konnte nicht angelegt werden')
+    }
+  }
 
   const fmtLocalIso = (d: Date) =>
     `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
@@ -247,6 +284,27 @@
     : 'Betriebsschließung bearbeiten'}
   back="/calendar"
 />
+
+{#if kind === 'appointment' && ordersAvailable}
+  <div class="mb-4 flex flex-wrap gap-2">
+    {#if existingOrderId}
+      <a href={`/orders/${existingOrderId}`} class="btn btn-ghost btn-sm gap-2">
+        <ClipboardList size={14} />
+        Zum Auftrag
+      </a>
+    {:else}
+      <button
+        type="button"
+        class="btn btn-ghost btn-sm gap-2"
+        onclick={createOrder}
+        disabled={busy.active}
+      >
+        <ClipboardList size={14} />
+        Auftrag erstellen
+      </button>
+    {/if}
+  </div>
+{/if}
 
 <form
   onsubmit={submit}

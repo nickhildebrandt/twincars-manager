@@ -303,7 +303,9 @@ export const pickCustomerVehiclesRemote = query(
 export const pickEmployeesRemote = query(
   pickerSchema,
   async ({ q, page, size }) => {
-    requirePermission('employees')
+    // Work-order assignee/labor pickers need employees without the full
+    // employees module — the orders grant is enough for this read.
+    requireAnyPermission('employees', 'orders')
     const offset = (page - 1) * size
     const filters = [eq(employees.archived, false)]
     if (q) {
@@ -350,7 +352,9 @@ export const pickEmployeesRemote = query(
 export const pickItemsRemote = query(
   itemsPickerSchema,
   async ({ q, page, size, category }) => {
-    requirePermission('items')
+    // Orders users book catalog items on work orders without the full
+    // items module - same relaxation as pickEmployeesRemote below.
+    requireAnyPermission('items', 'orders')
     const offset = (page - 1) * size
     const filters: SQL[] = []
     if (q) {

@@ -105,6 +105,7 @@
     items: 'Leistungen / Artikel',
     offers: 'Angebote',
     invoices: 'Rechnungen',
+    orders: 'Aufträge',
     reminders: 'Mahnwesen',
     ledger: 'Kassenbuch',
     calendar: 'Kalender',
