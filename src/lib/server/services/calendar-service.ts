@@ -1,7 +1,7 @@
 /**
  * Calendar service — single source of truth for `calendar_entries` and
- * the four other event sources the calendar grid renders
- * (employee absences, business holidays).
+ * the other event sources the calendar grid renders (employee
+ * absences, public holidays, HU due dates, scheduled work orders).
  *
  * `calendar_entries` is a discriminated table: `kind` is either
  * `'appointment'` or `'closure'`. The form/remote layer enforces the
@@ -23,7 +23,9 @@ import {
   gt,
   gte,
   ilike,
+  inArray,
   isNotNull,
+  isNull,
   lt,
   lte,
   ne
@@ -36,6 +38,8 @@ import {
   employees,
   publicHolidays,
   vehicles,
+  workOrderAssignees,
+  workOrders,
   type CalendarEntry,
   type NewCalendarEntry
 } from '$lib/server/db/schema'
@@ -50,6 +54,7 @@ export type CalendarEventKind =
   | 'employee_other'
   | 'public_holiday'
   | 'hu_due'
+  | 'work_order'
 
 export type CalendarEvent = {
   id: string
@@ -81,11 +86,15 @@ const expandDays = (fromIso: string, toIsoStr: string): string[] => {
 }
 
 /**
- * Pull every event that overlaps `[fromIso, toIso]`. Three sources:
+ * Pull every event that overlaps `[fromIso, toIso]`. Sources:
  * `calendar_entries` (split into appointment / closure rows by `kind`),
- * `employee_absences` (vacation / sick / other), and `public_holidays`.
- * Filtering by employee narrows the calendar entries (those that link
- * to that employee) and the absences (their owner).
+ * `employee_absences` (vacation / sick / other), `public_holidays`,
+ * HU due dates derived from `vehicles`, and scheduled `work_orders`
+ * (only those NOT created from a Termin — orders with an
+ * `appointment_id` are already visible as that appointment — and not
+ * yet done). Filtering by employee narrows the calendar entries (those
+ * that link to that employee), the absences (their owner) and the work
+ * orders (those the employee is assigned to).
  */
 export const listCalendarEvents = async (
   fromIso: string,
@@ -95,77 +104,111 @@ export const listCalendarEvents = async (
   const fromTs = new Date(`${fromIso}T00:00:00Z`)
   const toTs = new Date(`${toIso}T23:59:59Z`)
 
-  const [entries, absences, holidays, empRows, huRows] = await Promise.all([
-    db
-      .select({
-        id: calendarEntries.id,
-        kind: calendarEntries.kind,
-        title: calendarEntries.title,
-        startsAt: calendarEntries.startsAt,
-        endsAt: calendarEntries.endsAt,
-        allDay: calendarEntries.allDay,
-        status: calendarEntries.status,
-        employeeId: calendarEntries.employeeId,
-        customerId: calendarEntries.customerId,
-        vehicleId: calendarEntries.vehicleId
-      })
-      .from(calendarEntries)
-      .where(
-        and(
-          // Inclusive overlap with [from, to].
-          lte(calendarEntries.startsAt, toTs),
-          gte(calendarEntries.endsAt, fromTs),
-          employeeId ? eq(calendarEntries.employeeId, employeeId) : undefined
-        )
-      ),
-    db
-      .select()
-      .from(employeeAbsences)
-      .where(
-        and(
-          lte(employeeAbsences.dateFrom, toIso),
-          gte(employeeAbsences.dateTo, fromIso),
-          employeeId ? eq(employeeAbsences.employeeId, employeeId) : undefined
-        )
-      ),
-    db
-      .select()
-      .from(publicHolidays)
-      .where(
-        and(gte(publicHolidays.date, fromIso), lte(publicHolidays.date, toIso))
-      ),
-    db
-      .select({
-        id: employees.id,
-        firstName: employees.firstName,
-        lastName: employees.lastName
-      })
-      .from(employees),
-    // HU-Fälligkeiten: Datum-Spalte direkt aus vehicles. Kein eigener
-    // Termin-Eintrag — abgeleitet aus dem Stammdatensatz. Aktuelles
-    // Kennzeichen kommt per Subquery aus `vehicle_license_plate_versions`.
-    (() => {
-      const lp = latestPlateSubquery()
-      return db
+  const [entries, absences, holidays, empRows, huRows, woRows] =
+    await Promise.all([
+      db
         .select({
-          id: vehicles.id,
-          plate: lp.licensePlate,
-          make: vehicles.make,
-          model: vehicles.model,
-          nextHu: vehicles.nextHu
+          id: calendarEntries.id,
+          kind: calendarEntries.kind,
+          title: calendarEntries.title,
+          startsAt: calendarEntries.startsAt,
+          endsAt: calendarEntries.endsAt,
+          allDay: calendarEntries.allDay,
+          status: calendarEntries.status,
+          employeeId: calendarEntries.employeeId,
+          customerId: calendarEntries.customerId,
+          vehicleId: calendarEntries.vehicleId
         })
-        .from(vehicles)
-        .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+        .from(calendarEntries)
         .where(
           and(
-            eq(vehicles.archived, false),
-            isNotNull(vehicles.nextHu),
-            gte(vehicles.nextHu, fromIso),
-            lte(vehicles.nextHu, toIso)
+            // Inclusive overlap with [from, to].
+            lte(calendarEntries.startsAt, toTs),
+            gte(calendarEntries.endsAt, fromTs),
+            employeeId ? eq(calendarEntries.employeeId, employeeId) : undefined
+          )
+        ),
+      db
+        .select()
+        .from(employeeAbsences)
+        .where(
+          and(
+            lte(employeeAbsences.dateFrom, toIso),
+            gte(employeeAbsences.dateTo, fromIso),
+            employeeId ? eq(employeeAbsences.employeeId, employeeId) : undefined
+          )
+        ),
+      db
+        .select()
+        .from(publicHolidays)
+        .where(
+          and(
+            gte(publicHolidays.date, fromIso),
+            lte(publicHolidays.date, toIso)
+          )
+        ),
+      db
+        .select({
+          id: employees.id,
+          firstName: employees.firstName,
+          lastName: employees.lastName
+        })
+        .from(employees),
+      // HU-Fälligkeiten: Datum-Spalte direkt aus vehicles. Kein eigener
+      // Termin-Eintrag — abgeleitet aus dem Stammdatensatz. Aktuelles
+      // Kennzeichen kommt per Subquery aus `vehicle_license_plate_versions`.
+      (() => {
+        const lp = latestPlateSubquery()
+        return db
+          .select({
+            id: vehicles.id,
+            plate: lp.licensePlate,
+            make: vehicles.make,
+            model: vehicles.model,
+            nextHu: vehicles.nextHu
+          })
+          .from(vehicles)
+          .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
+          .where(
+            and(
+              eq(vehicles.archived, false),
+              isNotNull(vehicles.nextHu),
+              gte(vehicles.nextHu, fromIso),
+              lte(vehicles.nextHu, toIso)
+            )
+          )
+      })(),
+      // Aufträge: directly created orders with a calendar placement.
+      // Orders created FROM a Termin (appointment_id set) are already
+      // visible as that Termin; completed orders leave the calendar.
+      db
+        .select({
+          id: workOrders.id,
+          title: workOrders.title,
+          scheduledAt: workOrders.scheduledAt,
+          customerId: workOrders.customerId,
+          vehicleId: workOrders.vehicleId
+        })
+        .from(workOrders)
+        .where(
+          and(
+            isNotNull(workOrders.scheduledAt),
+            gte(workOrders.scheduledAt, fromTs),
+            lte(workOrders.scheduledAt, toTs),
+            isNull(workOrders.appointmentId),
+            ne(workOrders.status, 'done'),
+            employeeId
+              ? inArray(
+                  workOrders.id,
+                  db
+                    .select({ id: workOrderAssignees.workOrderId })
+                    .from(workOrderAssignees)
+                    .where(eq(workOrderAssignees.employeeId, employeeId))
+                )
+              : undefined
           )
         )
-    })()
-  ])
+    ])
   const empById = new Map(empRows.map((e) => [e.id, e]))
   const empLabel = (id: string | null | undefined): string => {
     if (!id) return ''
@@ -256,6 +299,19 @@ export const listCalendarEvents = async (
       title: `HU: ${label}${plate}`,
       sourceId: v.id,
       vehicleId: v.id
+    })
+  }
+  for (const wo of woRows) {
+    if (!wo.scheduledAt) continue
+    out.push({
+      id: `wo-${wo.id}`,
+      kind: 'work_order',
+      dateIso: dateToIso(wo.scheduledAt),
+      title: wo.title,
+      startsAt: wo.scheduledAt,
+      sourceId: wo.id,
+      customerId: wo.customerId,
+      vehicleId: wo.vehicleId
     })
   }
   return out

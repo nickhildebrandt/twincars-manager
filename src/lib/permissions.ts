@@ -32,6 +32,8 @@ export const MODULE_PERMISSIONS = {
   items: ['items'],
   offers: ['offers'],
   invoices: ['invoices'],
+  /** Aufträge (work orders) — Kanban shop-floor jobs. */
+  orders: ['orders'],
   reminders: ['reminders'],
   ledger: ['ledger'],
   calendar: ['calendar'],

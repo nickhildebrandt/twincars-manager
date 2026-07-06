@@ -7,7 +7,9 @@ import {
   ledgerCategories,
   roles,
   rolePermissions,
-  workshopHours
+  workshopHours,
+  items,
+  itemPriceVersions
 } from './schema'
 import {
   MODULE_PERMISSIONS,
@@ -161,6 +163,9 @@ const defaultNumberRanges = [
   { kind: 'reminder', formatTemplate: 'ZE-{YYYY}-{NNNN}' },
   { kind: 'customer', formatTemplate: '{N}' },
   { kind: 'tire_storage', formatTemplate: 'L-{YYYY}-{NNNN}' },
+  // Aufträge (work orders) — own year prefix, no legacy counter to
+  // continue (the module is new; the Access DB had no work orders).
+  { kind: 'work_order', formatTemplate: 'AU-{YYYY}-{NNNN}' },
   // GoBD-Storno: gleicher Zähler-Stil wie Rechnungen, S-Präfix damit
   // Audit-Listen die Storno-Rechnungen sofort von regulären Rechnungen
   // unterscheiden. `cancelInvoice` ruft `nextDocumentNumber('storno')`.
@@ -225,6 +230,52 @@ export async function seedDefaults() {
   await seedDefaultRoles()
   await seedDefaultWorkshopHours()
   await seedDefaultHolidays()
+  await seedLaborItem()
+}
+
+/**
+ * Ensure the designated "Arbeitszeit" catalog service item exists and
+ * is linked from `company_settings.labor_item_id`. The item's current
+ * price version is the workshop labor rate (edited from the settings
+ * page); labor work-order items snapshot it at entry time.
+ *
+ * Idempotent: the item is keyed by its article number `ARBEIT`, the
+ * zero-priced initial version is only written for a newly created item
+ * (operator edits stay untouched) and the settings link is only set
+ * while the column is NULL.
+ */
+export async function seedLaborItem(): Promise<void> {
+  let [item] = await db
+    .select()
+    .from(items)
+    .where(eq(items.articleNumber, 'ARBEIT'))
+    .limit(1)
+  if (!item) {
+    ;[item] = await db
+      .insert(items)
+      .values({
+        articleNumber: 'ARBEIT',
+        description: 'Arbeitszeit',
+        kind: 'service',
+        unit: 'Std.'
+      })
+      .returning()
+    await db
+      .insert(itemPriceVersions)
+      .values({
+        itemId: item.id,
+        validFrom: new Date().toISOString().slice(0, 10),
+        unitPriceNet: '0'
+      })
+  }
+
+  const [settings] = await db.select().from(companySettings).limit(1)
+  if (settings && settings.laborItemId === null) {
+    await db
+      .update(companySettings)
+      .set({ laborItemId: item.id, updatedAt: new Date() })
+      .where(eq(companySettings.id, settings.id))
+  }
 }
 
 /**
@@ -293,6 +344,7 @@ async function seedDefaultRoles(): Promise<void> {
       'items',
       'offers',
       'invoices',
+      'orders',
       'reminders',
       'calendar',
       'inventory',

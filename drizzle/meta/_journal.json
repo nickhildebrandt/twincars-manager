@@ -232,6 +232,13 @@
       "when": 1782131718392,
       "tag": "0032_remove_shipping",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1782131718393,
+      "tag": "0033_work_orders",
+      "breakpoints": true
     }
   ]
 }

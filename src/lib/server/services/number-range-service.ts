@@ -39,7 +39,8 @@ const DEFAULT_TEMPLATES: Record<string, string> = {
   customer: '{N}',
   tire: '{N}',
   tire_storage: 'L-{YYYY}-{NNNN}',
-  storno: 'S-{N}'
+  storno: 'S-{N}',
+  work_order: 'AU-{YYYY}-{NNNN}'
 }
 
 /** Plain-counter house style for kinds without a seeded default. */

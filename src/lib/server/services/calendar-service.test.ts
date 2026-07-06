@@ -23,7 +23,9 @@ import {
   employees,
   publicHolidays,
   vehicleLicensePlateVersions,
-  vehicles
+  vehicles,
+  workOrderAssignees,
+  workOrders
 } from '$lib/server/db/schema'
 
 /**
@@ -35,6 +37,8 @@ import {
  */
 describe('calendar-service', () => {
   beforeEach(async () => {
+    await db.delete(workOrderAssignees)
+    await db.delete(workOrders)
     await db.delete(calendarEntries)
     await db.delete(employeeAbsences)
     await db.delete(publicHolidays)
@@ -324,6 +328,112 @@ describe('calendar-service', () => {
     it('returns an empty array when no source has data in range', async () => {
       const events = await listCalendarEvents('2030-01-01', '2030-01-31')
       expect(events).toEqual([])
+    })
+
+    it('includes scheduled work orders as a derived source', async () => {
+      const [customer] = await db
+        .insert(customers)
+        .values({ customerNumber: 'K-100', company: 'Mustermann GmbH' })
+        .returning()
+      const [order] = await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-2026-0001',
+          title: 'Bremsen erneuern',
+          status: 'open',
+          customerId: customer.id,
+          vehicleId,
+          scheduledAt: new Date('2026-06-18T09:00:00Z')
+        })
+        .returning()
+
+      const events = await listCalendarEvents('2026-06-16', '2026-06-20')
+      const wo = events.filter((e) => e.kind === 'work_order')
+      expect(wo).toHaveLength(1)
+      expect(wo[0].id).toBe(`wo-${order.id}`)
+      expect(wo[0].sourceId).toBe(order.id)
+      expect(wo[0].dateIso).toBe('2026-06-18')
+      expect(wo[0].title).toBe('Bremsen erneuern')
+      expect(wo[0].customerId).toBe(customer.id)
+      expect(wo[0].vehicleId).toBe(vehicleId)
+    })
+
+    it('skips work orders that are done, unscheduled, out of range or Termin-born', async () => {
+      const [appt] = await db
+        .insert(calendarEntries)
+        .values({
+          kind: 'appointment',
+          title: 'Quelle',
+          startsAt: new Date('2026-06-18T08:00:00Z'),
+          endsAt: new Date('2026-06-18T09:00:00Z'),
+          status: 'scheduled'
+        })
+        .returning()
+      await db.insert(workOrders).values([
+        {
+          orderNumber: 'AU-2026-0001',
+          title: 'Abgeschlossen',
+          status: 'done',
+          scheduledAt: new Date('2026-06-18T09:00:00Z'),
+          completedAt: new Date('2026-06-18T16:00:00Z')
+        },
+        {
+          orderNumber: 'AU-2026-0002',
+          title: 'Ohne Termin-Platzierung',
+          status: 'open',
+          scheduledAt: null
+        },
+        {
+          orderNumber: 'AU-2026-0003',
+          title: 'Ausserhalb',
+          status: 'open',
+          scheduledAt: new Date('2026-07-18T09:00:00Z')
+        },
+        {
+          orderNumber: 'AU-2026-0004',
+          title: 'Aus Termin erstellt',
+          status: 'open',
+          appointmentId: appt.id,
+          scheduledAt: new Date('2026-06-18T08:00:00Z')
+        }
+      ])
+
+      const events = await listCalendarEvents('2026-06-16', '2026-06-20')
+      expect(events.filter((e) => e.kind === 'work_order')).toHaveLength(0)
+      // The source Termin itself still shows up.
+      expect(events.some((e) => e.kind === 'appointment')).toBe(true)
+    })
+
+    it('narrows work orders to the assigned employee when filtering', async () => {
+      const [mine] = await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-2026-0001',
+          title: 'Meiner',
+          status: 'open',
+          scheduledAt: new Date('2026-06-18T09:00:00Z')
+        })
+        .returning()
+      await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-2026-0002',
+          title: 'Fremder',
+          status: 'open',
+          scheduledAt: new Date('2026-06-18T10:00:00Z')
+        })
+      await db
+        .insert(workOrderAssignees)
+        .values({ workOrderId: mine.id, employeeId })
+
+      const events = await listCalendarEvents(
+        '2026-06-16',
+        '2026-06-20',
+        employeeId
+      )
+      const wo = events.filter((e) => e.kind === 'work_order')
+      expect(wo).toHaveLength(1)
+      expect(wo[0].title).toBe('Meiner')
     })
   })
 

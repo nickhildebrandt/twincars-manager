@@ -29,6 +29,7 @@ import {
   documentItems,
   documentPayments,
   documents,
+  items as schemaItems,
   numberRanges,
   vehicles
 } from '$lib/server/db/schema'
@@ -112,6 +113,7 @@ describe('document-service', () => {
     await db.delete(documentPayments)
     await db.delete(documentItems)
     await db.delete(documents)
+    await db.delete(schemaItems)
     await db.delete(vehicles)
     await db.delete(customers)
     await db.delete(numberRanges)
@@ -244,6 +246,47 @@ describe('document-service', () => {
         expect(items[0].unit).toBe('Stk')
         expect(items[0].kind).toBe('article')
         expect(Number(items[0].discountPercent)).toBe(0)
+      })
+
+      it('passes the optional itemId backlink through to document_items.item_id', async () => {
+        const [catalogItem] = await db
+          .insert(schemaItems)
+          .values({
+            articleNumber: 'ARBEIT',
+            description: 'Arbeitszeit',
+            kind: 'service',
+            unit: 'Std.'
+          })
+          .returning()
+        const doc = await createDocument(
+          baseInput({
+            items: [
+              {
+                description: 'Bremsen erneuert',
+                quantity: 2.5,
+                unit: 'Std.',
+                unitPriceNet: 60,
+                taxRate: 19,
+                kind: 'service',
+                itemId: catalogItem.id
+              },
+              {
+                description: 'Freitext ohne Katalogbezug',
+                quantity: 1,
+                unitPriceNet: 10,
+                taxRate: 19
+              }
+            ]
+          })
+        )
+        const items = await db
+          .select()
+          .from(documentItems)
+          .where(eq(documentItems.documentId, doc.id))
+          .orderBy(documentItems.positionNumber)
+        expect(items[0].itemId).toBe(catalogItem.id)
+        // Without a backlink the column stays NULL (backward compatible).
+        expect(items[1].itemId).toBeNull()
       })
 
       it('handles a zero-item payload (rare but allowed)', async () => {

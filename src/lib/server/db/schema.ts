@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm'
 import {
   pgTable,
   uuid,
@@ -103,6 +104,16 @@ export const companySettings = pgTable('company_settings', {
    */
   geoLat: numeric('geo_lat', { precision: 9, scale: 6 }),
   geoLon: numeric('geo_lon', { precision: 9, scale: 6 }),
+  /**
+   * The designated "Arbeitszeit" catalog service item whose current
+   * price version (`item_price_versions`) is the workshop labor rate.
+   * Labor work-order items snapshot this price at entry time.
+   * `seedDefaults` creates the item (articleNumber `ARBEIT`, unit
+   * `Std.`) idempotently and links it here while the column is NULL.
+   */
+  laborItemId: uuid('labor_item_id').references(() => items.id, {
+    onDelete: 'set null'
+  }),
   createdAt: timestamp('created_at', { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -1084,6 +1095,24 @@ export const timeEntries = pgTable(
     }),
     task: varchar('task', { length: 200 }),
     note: text('note'),
+    /**
+     * Set on rows that were written through from a work order. The
+     * order-level link survives item edits and is what the completion
+     * step uses to back-fill `document_id` for the whole order.
+     */
+    workOrderId: uuid('work_order_id').references(() => workOrders.id, {
+      onDelete: 'set null'
+    }),
+    /**
+     * 1:1 back-link to the labor work-order item this row mirrors
+     * (write-through upsert — exactly one entry per labor item).
+     * Deleting the item cascades this row away. Rows with this link
+     * are read-only in /hours; they are edited at the order.
+     */
+    workOrderItemId: uuid('work_order_item_id').references(
+      () => workOrderItems.id,
+      { onDelete: 'cascade' }
+    ),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -1095,8 +1124,132 @@ export const timeEntries = pgTable(
     index('time_entries_employee_id_idx').on(t.employeeId),
     index('time_entries_date_idx').on(t.date),
     index('time_entries_document_id_idx').on(t.documentId),
-    index('time_entries_customer_id_idx').on(t.customerId)
+    index('time_entries_customer_id_idx').on(t.customerId),
+    index('time_entries_work_order_id_idx').on(t.workOrderId),
+    uniqueIndex('time_entries_work_order_item_id_idx')
+      .on(t.workOrderItemId)
+      .where(sql`${t.workOrderItemId} IS NOT NULL`)
   ]
+)
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* Aufträge (work orders) — Kanban shop-floor jobs                        */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Active workshop job from intake to invoice. Created directly or from
+ * a calendar appointment (`appointment_id`, one order per Termin),
+ * assigned to employees (`work_order_assignees`), collects work items
+ * (`work_order_items`), moves through a three-stage Kanban
+ * (`open` | `in_progress` | `done` — offen / in Bearbeitung /
+ * abgeschlossen) and, on completion, links the invoice it created
+ * (`invoice_id`). Once invoiced the order is GoBD-locked: it can be
+ * reopened only while `invoice_id IS NULL` and never deleted after.
+ */
+export const workOrders = pgTable(
+  'work_orders',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** Number-range kind `work_order`, template `AU-{YYYY}-{NNNN}`. */
+    orderNumber: varchar('order_number', { length: 50 }).notNull().unique(),
+    title: varchar('title', { length: 200 }).notNull(),
+    description: text('description'),
+    status: varchar('status', { length: 20 }).notNull().default('open'),
+    customerId: uuid('customer_id').references(() => customers.id, {
+      onDelete: 'set null'
+    }),
+    vehicleId: uuid('vehicle_id').references(() => vehicles.id, {
+      onDelete: 'set null'
+    }),
+    /** Source Termin — at most one order per appointment. */
+    appointmentId: uuid('appointment_id').references(() => calendarEntries.id, {
+      onDelete: 'set null'
+    }),
+    /** Set by `completeWorkOrder` — the invoice generated from the items. */
+    invoiceId: uuid('invoice_id').references(() => documents.id, {
+      onDelete: 'set null'
+    }),
+    /** Calendar placement for directly created orders. */
+    scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    index('work_orders_status_idx').on(t.status),
+    index('work_orders_customer_id_idx').on(t.customerId),
+    uniqueIndex('work_orders_appointment_id_idx')
+      .on(t.appointmentId)
+      .where(sql`${t.appointmentId} IS NOT NULL`),
+    index('work_orders_invoice_id_idx').on(t.invoiceId)
+  ]
+)
+
+/** m:n work order ↔ employee link — multiple employees per order. */
+export const workOrderAssignees = pgTable(
+  'work_order_assignees',
+  {
+    workOrderId: uuid('work_order_id')
+      .notNull()
+      .references(() => workOrders.id, { onDelete: 'cascade' }),
+    employeeId: uuid('employee_id')
+      .notNull()
+      .references(() => employees.id, { onDelete: 'cascade' })
+  },
+  (t) => [primaryKey({ columns: [t.workOrderId, t.employeeId] })]
+)
+
+/**
+ * One performed position on a work order: labor (hours by an employee)
+ * or material. `unit_price_net` is a **snapshot at entry time** for
+ * both kinds (ADR-007 — labor resolves the current labor-item price
+ * when added, editable per item; no resolve-at-invoice indirection).
+ * Labor rows with employee + hours write-through-upsert exactly one
+ * linked `time_entries` row (see work-order-service).
+ */
+export const workOrderItems = pgTable(
+  'work_order_items',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    workOrderId: uuid('work_order_id')
+      .notNull()
+      .references(() => workOrders.id, { onDelete: 'cascade' }),
+    position: integer('position').notNull(),
+    /** `labor` | `material`. */
+    kind: varchar('kind', { length: 20 }).notNull().default('labor'),
+    /** Catalog backlink; NULL = free text. */
+    itemId: uuid('item_id').references(() => items.id, {
+      onDelete: 'set null'
+    }),
+    description: text('description').notNull(),
+    /** Labor rows mirror `hours` here. */
+    quantity: numeric('quantity', { precision: 12, scale: 3 })
+      .notNull()
+      .default('1'),
+    unit: varchar('unit', { length: 20 }),
+    unitPriceNet: numeric('unit_price_net', {
+      precision: 12,
+      scale: 2
+    }).notNull(),
+    /** Who did the work (labor rows). */
+    employeeId: uuid('employee_id').references(() => employees.id, {
+      onDelete: 'set null'
+    }),
+    /** Labor only. */
+    hours: numeric('hours', { precision: 6, scale: 2 }),
+    doneAt: date('done_at').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [index('work_order_items_work_order_id_idx').on(t.workOrderId)]
 )
 
 /* ────────────────────────────────────────────────────────────────────── */
@@ -1685,6 +1838,17 @@ export type NewWorkshopHour = typeof workshopHours.$inferInsert
 export type TireStorageSeason = 'summer' | 'winter' | 'allseason'
 export type TimeEntry = typeof timeEntries.$inferSelect
 export type NewTimeEntry = typeof timeEntries.$inferInsert
+/* ── Aufträge (work orders) ────────────────────────────────────────── */
+export type WorkOrder = typeof workOrders.$inferSelect
+export type NewWorkOrder = typeof workOrders.$inferInsert
+export type WorkOrderAssignee = typeof workOrderAssignees.$inferSelect
+export type NewWorkOrderAssignee = typeof workOrderAssignees.$inferInsert
+export type WorkOrderItem = typeof workOrderItems.$inferSelect
+export type NewWorkOrderItem = typeof workOrderItems.$inferInsert
+/** Kanban stages: offen / in Bearbeitung / abgeschlossen. */
+export type WorkOrderStatus = 'open' | 'in_progress' | 'done'
+/** Work-item discriminator: labor (hours) vs. material. */
+export type WorkOrderItemKind = 'labor' | 'material'
 /* ── Reifenkatalog ─────────────────────────────────────────────────── */
 export type Tire = typeof tires.$inferSelect
 export type NewTire = typeof tires.$inferInsert

@@ -162,6 +162,13 @@ export type DocumentInputItem = {
   taxRate: number
   kind?: string
   articleNumber?: string
+  /**
+   * Optional catalog backlink, passed through to
+   * `document_items.item_id`. Snapshot fields on the position stay the
+   * billing source of truth — the link only enables navigation back to
+   * the catalog entry (work-order completion uses it for labor rows).
+   */
+  itemId?: string
 }
 
 export type CreateDocumentInput = {
@@ -218,6 +225,7 @@ export async function createDocument(
     itemsToInsert.push({
       positionNumber: idx + 1,
       kind: it.kind ?? 'article',
+      itemId: it.itemId ?? null,
       articleNumber: it.articleNumber ?? null,
       description: it.description,
       quantity: String(qty),
@@ -441,6 +449,7 @@ export async function cancelInvoice(
           documentId: created.id,
           positionNumber: it.positionNumber,
           kind: it.kind,
+          itemId: it.itemId,
           articleNumber: it.articleNumber,
           description: it.description,
           quantity: neg(it.quantity),
