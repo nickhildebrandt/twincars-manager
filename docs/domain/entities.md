@@ -22,11 +22,14 @@ Module: [[customers]].
 ## Fahrzeug (vehicle) - `vehicles`
 
 One table for BOTH customer vehicles and stock (used-car) vehicles.
-`customerId` nullable (stock vehicles may have none). VIN, HSN/TSN, HU/AU
-dates, technical data (`fuelType`, `gearbox`, `displacementCcm`, `powerKw`,
-`colorCode`, `bodyType`). The license plate is **versioned** in
-`vehicle_license_plate_versions` (plate changes never alter history).
-Stock lifecycle adds `vehicle_purchases`, `vehicle_listings` (status,
+`customerId` nullable (stock vehicles may have none); optional
+`previousOwnerCustomerId` names the Vorbesitzer of a stock vehicle. VIN,
+HSN/TSN, HU/AU dates, technical data (`fuelType`, `gearbox`,
+`displacementCcm`, `powerKw`, `colorCode`, `bodyType`). The license
+plate is **versioned** in `vehicle_license_plate_versions` (plate
+changes never alter history). File attachments (Fahrzeugschein etc.)
+live in `vehicle_documents` (bytea inline, meta-only list reads). Stock
+lifecycle adds `vehicle_purchases`, `vehicle_listings` (status,
 `salesPriceGross`, `differentialTax`, equipment JSON), `vehicle_photos`
 and `vehicle_sales`. Modules: [[vehicles]], [[inventory]].
 
@@ -92,15 +95,18 @@ See [[adr-011-unified-calendar-entries]]. Module: [[calendar]].
 ## Auftrag (work order) - `work_orders` + `work_order_assignees` + `work_order_items`
 
 Workshop job from intake to invoice. `orderNumber` (unique, number range
-`work_order`, `AU-{YYYY}-{NNNN}`), title, status `open` | `in_progress` |
-`done` (Kanban), optional customer/vehicle links, `appointmentId`
-backlink to the source Termin (one order per Termin), `invoiceId` set on
-completion, `scheduledAt` for calendar placement. Assignees are m:n to
+`work_order`, `AU-{YYYY}-{NNNN}`), title (auto-composed from customer +
+vehicle until manually edited), status `open` | `in_progress` | `done`
+(Kanban), customer/vehicle links (each optional, at least one required),
+`appointmentId` backlink to the source Termin (one order per Termin),
+`invoiceId` set on completion, `scheduledDate` + optional
+`scheduledTime` (HH:MM) for calendar placement. Assignees are m:n to
 `employees`. Work items (`labor` | `material`) snapshot their net price
 at entry time ([[adr-007-price-snapshots-and-versions]]); labor items
 with employee + hours write through to `time_entries` ([[hours]]).
 Completion creates the invoice from the items via the shared document
-pipeline ([[invoices]]). Module: [[orders]].
+pipeline ([[invoices]]); labor positions carry the executing employee as
+"(ausgeführt von NAME)". Module: [[orders]].
 
 ## Buchhaltung - `ledger_entries` + `ledger_categories` + `recurring_entries`
 

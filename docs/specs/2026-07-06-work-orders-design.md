@@ -154,3 +154,34 @@ Implemented as specced. Addenda beyond the design above:
   catalog item of its own.
 - The completion modal carries `issueDate` plus an optional Zahlungsart
   (`paymentMethod`), passed through to `createDocument`.
+
+### Post-release changes (still 2026-07-06, waves 2-3)
+
+- **Scheduling split**: `scheduled_at timestamptz` was replaced by
+  `scheduled_date date` + optional `scheduled_time varchar(5)` (HH:MM
+  start, no end time) in migration 0034
+  (`0034_scheduling_docs_owner.sql`); existing values were converted as
+  Europe/Berlin wall-clock before the old column was dropped.
+- **Calendar rule inverted**: ALL scheduled orders render as
+  `work_order` events regardless of status and origin; completed orders
+  carry `done: true` and the grid mutes them
+  (`bg-secondary/5 text-base-content/50 line-through`). To avoid double
+  rendering, the source Termin of an order is now excluded from the
+  appointment source (`notInArray` over `work_orders.appointment_id`);
+  the order chip replaces the Termin chip.
+- **Customer-OR-vehicle rule**: an order needs a customer or a vehicle
+  (both optional individually, at least one required). Enforced three
+  times: in `WorkOrderForm` (click-time field error), in
+  `orders.remote.ts` ("Bitte mindestens einen Kunden oder ein Fahrzeug
+  zuordnen.", also on update against the effective post-patch state)
+  and in `work-order-service.ts` (`requireCustomerOrVehicle`).
+- **Auto title**: the title composes itself from the picked customer +
+  vehicle labels until the user types into the field; clearing the
+  field completely re-arms the auto composition.
+- **Assignees**: the ad-hoc multi-select was replaced by the shared
+  `MultiSearchablePicker` over `pickEmployeesRemote`
+  ([[../architecture/creation-flow]]).
+- **Employee snapshot on the invoice**: at completion, each labor
+  position with an employee appends "(ausgeführt von NAME)" to the
+  invoice position description, so the executing employee survives on
+  the document even if the work order is later deleted.

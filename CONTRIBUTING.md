@@ -156,25 +156,54 @@ everything in it. There is **no** `:read` / `:write` / `:delete` split.
 ```svelte
 <script lang="ts">
   import { untrack } from 'svelte'
+  import { handleClientError } from '$lib/utils/client-error'
 
   let pageNum = $state(1)
   const size = 25
   let q = $state('')
 
-  const query = $derived(
-    listXRemote({ page: pageNum, size, q: q || undefined })
-  )
-  const initial = await untrack(() => query) // SSR seed
-  let lastResult = $state<typeof initial>(initial) // bridge across param changes
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
+  // Only-set keys: `{}` and `{ q: undefined }` serialize to DIFFERENT
+  // remote-cache keys, and the single-flight refresh must hit the
+  // exact instance this page holds.
+  const queryArgs = $derived({ page: pageNum, size, ...(q ? { q } : {}) })
 
-  const result = $derived(query.current ?? lastResult)
+  const initial = await untrack(() => listXRemote(queryArgs)) // SSR seed
+  let lastResult = $state<typeof initial>(initial) // bridge across param changes
+
+  // NEVER memoize the proxy: re-call the remote on every evaluation.
+  const result = $derived.by(() => listXRemote(queryArgs).current ?? lastResult)
   const items = $derived(result.items)
+
+  // One live instance inside an effect syncs lastResult and errors.
+  $effect(() => {
+    const query = listXRemote(queryArgs)
+    if (query.current) lastResult = query.current
+    if (query.error) handleClientError(query.error)
+  })
 </script>
 ```
 
+Reference implementations: `src/routes/customers/+page.svelte` and
+`src/routes/orders/+page.svelte`.
+
+- **Never memoize the remote-query proxy.** A remote-query proxy holds
+  its cache entry only for the lifetime of the effect run that created
+  it. A memoized instance (`const query = $derived(listXRemote(...))`)
+  captured during async component init is dead: its `current` stays
+  `undefined` forever, and `refreshAll` / `withOverride` land on an
+  unrendered cache entry. Always re-call `listXRemote(queryArgs)` at the
+  point of use (`$derived.by`, effect body, mutation handler).
+- **Build `queryArgs` with only-set keys** (`...(q ? { q } : {})`).
+  `{}` and `{ q: undefined }` are different cache keys; an instance built
+  with the wrong shape misses the entry the page renders.
+- **Mutations use fresh instances**:
+  `deleteXRemote({ id }).updates(listXRemote(queryArgs).withOverride(...))`
+  constructs a new proxy at call time against the exact args currently
+  rendered.
+- **Server side, parameterized list queries are refreshed with
+  `requested(listXRemote, N).refreshAll()`**, never a fixed-arg
+  `listXRemote({...}).refresh()`, which would refresh a different cache
+  key than the one the client holds (filters included).
 - Page size is **fixed at 25**. No size selector. Full pagination rules
   in section 10.
 - Filter / search / pagination changes never blank the table — the
@@ -273,25 +302,24 @@ the same response carries the authoritative refresh.
 ```ts
 await busy.run(() =>
   deleteCustomerRemote({ id }).updates(
-    listCustomersRemote({ page, size, q, archived }).withOverride(
-      (current) => ({
-        ...current,
-        items: current.items.filter((c) => c.id !== id),
-        total: Math.max(0, current.total - 1)
-      })
-    )
+    listCustomersRemote(queryArgs).withOverride((current) => ({
+      ...current,
+      items: current.items.filter((c) => c.id !== id),
+      total: Math.max(0, current.total - 1)
+    }))
   )
 )
 ```
 
-This is the standard pattern for every list-page delete. Always pass
-the **specific** filter/page combo currently rendered, so the override
-acts on the user's view.
+This is the standard pattern for every list-page delete. Always build a
+**fresh** instance from the exact `queryArgs` currently rendered (see
+section 5), so the override acts on the user's view.
 
 ### Stale-while-revalidate for filter / pagination
 
 List pages keep the previously-resolved data via a `lastResult` snapshot
-(`query.current ?? lastResult`). The previous rows stay on screen while
+(`listXRemote(queryArgs).current ?? lastResult`). The previous rows stay
+on screen while
 the next page loads; the top progress bar signals the refetch. Never
 blank the table or replace it with a loader during a filter/pagination
 change.
@@ -615,6 +643,49 @@ What the component guarantees:
   `onSelect(null)`.
 - Selecting an item binds `value` and `valueLabel` and closes the dialog.
 
+### Creating "the one" from inside a picker (full-page creation flow)
+
+When the record the user needs does not exist yet, the picker offers a
+single **"Neu anlegen"** affordance, rendered exactly once, in the
+dialog header next to the close button, and only when the host passes
+both `createLabel` and `onCreateNew`. There are **no inline mini-forms**
+inside picker dialogs; creating an entity always uses its regular
+full-page form.
+
+The round trip is coordinated by the stack store
+`src/lib/stores/creation-flow.svelte.ts` (`creationFlow`):
+
+- The **host** form snapshots its complete state as a JSON-serializable
+  draft and calls
+  `creationFlow.start({ entity, returnUrl, originField, draft, createdAt })`,
+  then `goto`s the entity's `/new` page. `originField` names the picker
+  field that started the flow (e.g. `'customerId'`).
+- The **leaves** are the regular create pages `/customers/new`,
+  `/vehicles/new` and `/employees/new`. In flow mode they show an info
+  hint, and on save call `creationFlow.finish({ id, label })` (or
+  `creationFlow.cancel()`), then `goto` back to `returnUrl`.
+- Back on the host, `creationFlow.pendingReturnFor(currentUrl())` hands
+  the draft and the result back exactly once; the host restores every
+  field from the draft and auto-selects the created record into
+  `originField`.
+- Flows nest (e.g. Auftrag → Fahrzeug → Kunde). The stack is mirrored to
+  `sessionStorage` (key `twincars.creation-flow`) so it survives the
+  full-page navigations; a stack untouched for one hour is dropped as
+  abandoned.
+- **Cycle guard**: hosts hide "Neu anlegen" for entity types already on
+  the stack (`creationFlow.activeEntities()`), so a vehicle form opened
+  from a vehicle flow cannot start a second vehicle flow.
+
+### Picking "the many": `MultiSearchablePicker`
+
+Multi-select relations (e.g. work-order assignees) use the shared
+`MultiSearchablePicker`: the multi-select variant of `SearchablePicker`
+with the same server-side search, pagination and optional header create
+affordance. Rows carry checkboxes, the selection survives page changes,
+and the dialog is **transactional**: "Übernehmen (N)" writes the
+selection back to the bindable `values` / `valueLabels` props,
+"Abbrechen" or the backdrop discards it.
+
 ### Forbidden picker patterns
 
 - ❌ `<select>` for relationships, unless the option list is truly
@@ -624,6 +695,9 @@ What the component guarantees:
   client and filtering locally.
 - ❌ A picker without server-side search / pagination.
 - ❌ Picker remotes outside `pickers.remote.ts` — keep them centralized.
+- ❌ Inline quick-create mini-forms inside a picker dialog, or more than
+  one create affordance per dialog. "Neu anlegen" lives once in the
+  dialog header and goes through the full-page creation flow.
 
 ## 10. Pagination
 
@@ -705,6 +779,14 @@ inside pickers is also fixed at 25.
 - Forms are plain Svelte components with `<input bind:value>` and a single
   `onSave` callback. Their submit handler delegates the mutation to
   `busy.run(() => createXRemote(...))`.
+- **Action buttons are never disabled for missing or invalid input.**
+  The only allowed disable conditions are `busy.active` and genuine mode
+  gates (e.g. a locked seeded role, a not-yet-created setup admin),
+  never a validation state. Validation happens **at click time**: the
+  submit handler marks all fields touched, and if the form is invalid it
+  renders a German error summary (`alert alert-error` at the top of the
+  form) plus per-field errors and returns. Forms carry `novalidate` so
+  the browser's native (English) validation bubbles never appear.
 - The **server schema** in `*.remote.ts` is authoritative. Inline
   client-side validation only mirrors it for UX; never replaces it.
 - Numeric DB columns use realistic Valibot bounds (e.g. `mileageKm` ≤
@@ -978,6 +1060,13 @@ templates are canonical. Reuse the wording when adding new modules.
   client-side slicing for pagination (see section 10).
 - ❌ List pages that forget to reset `pageNum = 1` on filter / search
   change.
+- ❌ Memoizing a remote-query proxy
+  (`const query = $derived(listXRemote(...))`) or refreshing a
+  parameterized list with a fixed-arg server `.refresh()`; see the
+  section 5 recipe (`$derived.by` + `requested(...).refreshAll()`).
+- ❌ Disabling a save/submit button because the input is missing or
+  invalid. Validation is click-time with a German error summary
+  (section 11); only `busy.active` and true mode gates may disable.
 - ❌ Showing a raw `Error.message`, an HTTP status, a stack trace, a
   SQL fragment or any other internal detail to the user. Every error
   goes through `handleClientError` (toast) or the curated
@@ -1205,8 +1294,10 @@ When you scaffold a new module (e.g. payroll), copy the **customers** and
 2. `src/routes/<x>/<x>.remote.ts` — `listXRemote` / `getXRemote` / mutation
    commands using the input schema; mutations refresh via
    `requested(listXRemote, 4).refreshAll()`.
-3. `src/routes/<x>/+page.svelte` — list page with the standard
-   `untrack(() => query)` snapshot + `lastResult` fallback. Pagination
+3. `src/routes/<x>/+page.svelte`: list page per the section 5 recipe:
+   only-set-key `queryArgs`, `await untrack(...)` SSR seed,
+   `$derived.by(() => listXRemote(queryArgs).current ?? lastResult)`
+   (never memoize the proxy) and one syncing `$effect`. Pagination
    contract from section 10. Rows fully clickable per section 8.
 4. `src/routes/<x>/[id]/+page.svelte` — top-level await detail page.
 5. `src/routes/<x>/[id]/edit/+page.svelte` and `src/routes/<x>/new/+page.svelte`

@@ -1,20 +1,18 @@
 ---
 title: Module - items (Leistungen, Material, Artikel)
 tags: [module, items, catalog]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # items - "Leistungen, Material, Artikel"
 
 - **Purpose**: the service/article catalog used to build document
-  positions; versioned sales prices; QR labels; online-bookable services.
+  positions; versioned sales prices; online-bookable services.
 - **Routes**: `/items`, `/items/new`, `/items/[id]`, `/items/[id]/edit`.
 - **Remotes**:
   - `items.remote.ts`: `listItemsRemote`, `getItemRemote`,
     `getItemPriceHistoryRemote`, `createItemRemote`, `updateItemRemote`,
     `deleteItemRemote`.
-  - `labels.remote.ts`: `getArticleLabelPdfRemote` - A6 QR label, QR
-    payload `{origin}/items/<articleNumber>` ([[pdf-pipeline]]).
   - Guard `requirePermission('items')`.
 - **Service**: `item-service.ts` - the ONLY price read paths are
   `getCurrentItemPrice(itemId)` and `getItemPriceAt(itemId, dateIso)`.
@@ -30,6 +28,10 @@ updated: 2026-07-05
   - Document positions snapshot the price - editing an item never
     touches existing documents
     ([[adr-007-price-snapshots-and-versions]]).
-- **Picker**: `pickItemsRemote` (returns price extras for pre-fill).
-- **Tests**: `item-service.test.ts`, `ItemForm.test.ts`,
-  `labels.remote.test.ts`.
+  - The A6 QR article label was removed per requirement (2026-07):
+    `labels.remote.ts` and the `renderArticleLabelPdf` renderer are
+    gone; the only remaining QR label is the tire-storage one
+    ([[tire-storage]], [[pdf-pipeline]]).
+- **Picker**: `pickItemsRemote` (returns price extras for pre-fill;
+  also open to `orders` permission holders).
+- **Tests**: `item-service.test.ts`, `ItemForm.test.ts`.

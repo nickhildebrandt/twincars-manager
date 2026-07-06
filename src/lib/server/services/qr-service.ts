@@ -11,9 +11,8 @@
  *
  * Payload convention (set by the caller, not enforced here):
  *
- *  - **Articles**: encode `{origin}/items/<articleNumber>` so a phone
- *    scanner deep-links into the app's item detail view.
- *  - **Tire-storage**: encode the bare storage number (e.g.
+ *  - **Tire-storage** (the only label consumer since the article QR
+ *    label was removed): encode the bare storage number (e.g.
  *    `L-2026-0001`). The workshop scanner reads it offline and the
  *    Phase-7 public API will resolve it server-side. Keeping the QR
  *    payload independent of any URL means the same printed label keeps

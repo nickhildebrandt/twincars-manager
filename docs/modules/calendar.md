@@ -30,12 +30,22 @@ updated: 2026-07-06
 - **Event kinds emitted to the grid**: `appointment`,
   `business_closure`, `public_holiday`, `employee_vacation`,
   `employee_sick`, `employee_other`, `hu_due`, `work_order`.
-- **Work-order source** (the sixth derived source): scheduled work
-  orders (`scheduledAt` in range, `appointmentId IS NULL` - orders
-  created FROM a Termin are already visible as that Termin - and
-  `status != 'done'`) appear with a `bg-secondary/10 text-secondary`
-  badge and click through to `/orders/[id]`; the source honors the
-  month view's employee filter (assignees). See [[orders]].
+- **Work-order source** (the sixth derived source): ALL scheduled work
+  orders (`scheduledDate` in range) appear as `work_order` events,
+  regardless of status and origin. Open/in-progress orders get a
+  `bg-secondary/10 text-secondary` badge; completed ones carry
+  `done: true` and render muted
+  (`bg-secondary/5 text-base-content/50 line-through`). To avoid double
+  rendering, an appointment with a linked order is excluded from the
+  appointment source (the order chip replaces the Termin chip). Events
+  click through to `/orders/[id]`; the source honors the month view's
+  employee filter (assignees). Timed placement uses the optional
+  `scheduledTime` (HH:MM); timeless orders behave like all-day chips.
+  See [[orders]].
+- **"Neuer Auftrag" action**: the grid toolbar links to `/orders/new`
+  (workshop jobs are created as Aufträge, not as Termine), and
+  `/calendar/new` shows an info hint ("Werkstattarbeit geplant?") with
+  the same link above the Termin form.
 - **Appointment ↔ order**: the appointment edit page offers "Auftrag
   erstellen" (`createWorkOrderFromAppointmentRemote`, one order per
   Termin) and turns into a "Zum Auftrag" link once the order exists.

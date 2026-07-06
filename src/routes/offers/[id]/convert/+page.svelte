@@ -148,7 +148,7 @@
   back={`/offers/${id}`}
 />
 
-<form onsubmit={submit} class="space-y-4">
+<form onsubmit={submit} class="space-y-4" novalidate>
   {#if errorMsg}
     <div class="alert alert-error"><span>{errorMsg}</span></div>
   {/if}

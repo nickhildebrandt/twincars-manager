@@ -1,11 +1,17 @@
 ---
-title: Module - reminders (Zahlungserinnerungen)
+title: Module - reminders (Offene Rechnungen)
 tags: [module, reminders, documents]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
-# reminders - "Offene Rechnungen & Zahlungserinnerungen"
+# reminders - "Offene Rechnungen"
 
+- **Naming**: the module is labeled **"Offene Rechnungen"** in the
+  sidebar (group "Aufträge & Rechnungen") and as the page title; the
+  route stays `/reminders` and the permission key stays `reminders`.
+  The artifact wording **"Zahlungserinnerung"** is retained for the
+  actions, PDFs, number range and mail templates - it names the thing
+  being sent, not the module.
 - **Purpose**: track open invoices and send the single friendly
   "Zahlungserinnerung" (no escalation, no Mahngebühr, no Verzugszinsen -
   the same template every time).

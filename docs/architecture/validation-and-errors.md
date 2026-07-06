@@ -1,7 +1,7 @@
 ---
 title: Validation and error handling
 tags: [architecture, validation, valibot, errors]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # Validation and error handling
@@ -18,6 +18,11 @@ sentence, and never sees anything private (stacks, SQL, paths).
   `phoneSchema`, `idSchema`, `paymentMethodSchema` (picklist over
   `src/lib/payment-methods.ts`: Überweisung | Bar | Lastschrift | Karte),
   document type picklists, etc. Reach for these before writing new ones.
+- Global column validators added 2026-07: `licensePlateSchema`
+  (uppercased, max 12 chars, `A-ZÄÖÜ0-9 -`), `vinSchema` (exactly 17
+  chars, ISO 3779, no I/O/Q, uppercased), `hsnSchema` (4 digits),
+  `tsnSchema` (3 alphanumerics, uppercased), `timeHHMMSchema` (24-hour
+  HH:MM) and `personnelNumberSchema` (non-empty, max 20 chars).
 - Every pipe step needs a German message; realistic numeric bounds so
   hostile payloads cannot overflow Postgres ints into 500s.
 
@@ -40,6 +45,12 @@ sentence, and never sees anything private (stacks, SQL, paths).
   from `src/lib/utils/client-error.ts`: toast shows only curated German
   (anything else collapses to "Es ist leider ein Fehler aufgetreten.");
   the raw error goes to `console.error('[client-error]', ...)` only.
+- **Click-time form validation, never disabled buttons**: action
+  buttons are disabled only by `busy.active` (or a true mode gate),
+  never by validation state. On submit, `useFormValidation` from
+  `src/lib/utils/form-validation.svelte.ts` marks all fields touched
+  and renders a German error summary plus per-field errors; forms carry
+  `novalidate` so browser bubbles never appear (CONTRIBUTING §11).
 - Single-toast store `$lib/stores/toast.svelte` - one toast at a time.
 - Root `src/routes/+error.svelte` renders thrown route errors with
   status-aware German copy and "Zurück" / "Zum Dashboard" actions.

@@ -1,7 +1,7 @@
 ---
 title: PDF pipeline
 tags: [architecture, pdf, pdf-lib]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # PDF pipeline
@@ -30,20 +30,25 @@ reminders are not `documents` rows.
 - `renderDocumentPdf` - Rechnung / Angebot / KV / AB, incl. §19 UStG
   notice when `smallBusinessExempt`, logo, footer, payment info.
 - `renderReminderPdf` - Zahlungserinnerung.
-- `renderArticleLabelPdf` - A6 landscape QR label for an item; QR payload
-  `{origin}/items/<articleNumber>`; uncached (cheap, always fresh).
-  Exposed via `src/routes/items/labels.remote.ts`.
 - `renderTireStorageLabelPdf` - A6 QR label for a Reifeneinlagerung
   (Nummer / Kunde / Reifensatz / QR); QR payload
   `{origin}/tire-storage/scan/<storageNumber>` so a phone scan resolves
   to the detail page. Exposed via
-  `src/routes/tire-storage/labels.remote.ts`.
-- `renderVehicleSaleSignPdf` - A4 landscape "Verkaufsschild" (dark header
-  band, photo panel, red price panel honoring `differentialTax` /
-  "Preis auf Anfrage", facts table from real vehicle columns
-  fuelType/gearbox/colorCode/displacementCcm/powerKw/bodyType, footer
-  with highlights + QR). Exposed via
-  `src/routes/vehicles/sale-sign.remote.ts`.
+  `src/routes/tire-storage/labels.remote.ts`. (This is the ONLY QR
+  label left: the A6 article label and its `renderArticleLabelPdf` /
+  `items/labels.remote.ts` were removed 2026-07 per requirement,
+  [[items]].)
+- `renderVehicleSaleSignPdf` - A4 landscape "Verkaufsschild", redesigned
+  2026-07: bold red header band ("ZUM VERKAUF" left, logo chip right - a
+  white card holding the uploaded company logo or the bundled app icon
+  `static/icons/icon-256.png` as fallback), vehicle title with a red
+  accent bar, photo panel left, red hero price box (honoring
+  `differentialTax` / "Preis auf Anfrage") above the aligned label/value
+  facts grid right (real vehicle columns
+  fuelType/gearbox/colorCode/displacementCcm/powerKw/bodyType), footer
+  with marketing highlights (red square bullets, up to four in two
+  columns), contact line and QR code captioned "Online ansehen"
+  bottom-right. Exposed via `src/routes/vehicles/sale-sign.remote.ts`.
 
 QR codes come from `src/lib/server/services/qr-service.ts`
 (`renderQrPng`, `renderQrSvg`; `qrcode` package).

@@ -31,6 +31,22 @@ updated: 2026-07-06
   [[adr-007-price-snapshots-and-versions]]); writes through to
   `time_entries`. Column detail in [[database-schema]].
 - **Special**:
+  - **Scheduling**: `scheduledDate` (date) + optional `scheduledTime`
+    (HH:MM start, `timeHHMMSchema`, no end time) since migration 0034;
+    the old `scheduled_at` timestamptz was converted as Europe/Berlin
+    wall-clock and dropped.
+  - **Customer-OR-vehicle rule**: at least one of customer/vehicle is
+    required (both individually optional). Enforced in the form
+    (click-time error), the remote ("Bitte mindestens einen Kunden oder
+    ein Fahrzeug zuordnen.", also against the effective post-patch
+    state on update) and the service (`requireCustomerOrVehicle`).
+  - **Auto title**: composed from the picked customer + vehicle labels
+    until the user types into the title field; clearing the field
+    re-arms the auto composition.
+  - **Multi-assign**: assignees are picked with the shared
+    `MultiSearchablePicker` over `pickEmployeesRemote`
+    ([[creation-flow]]) - transactional "Übernehmen", server search +
+    pagination.
   - **Status flow**: open ⇄ in_progress via `moveWorkOrderStatusRemote`;
     `done` is reachable ONLY through `completeWorkOrderRemote`; reopen
     (done → in_progress) only while `invoice_id IS NULL`; delete 409s
@@ -45,13 +61,17 @@ updated: 2026-07-06
     become `Std.` service positions (quantity = hours, labor item as
     `itemId` backlink), material rows keep their snapshot price; then
     `time_entries.document_id` is back-filled so order hours count as
-    billable in the utilization reports.
+    billable in the utilization reports. Labor positions with an
+    employee snapshot the executing employee into the position text:
+    "(ausgeführt von NAME)" is appended at completion.
   - **Appointment link**: one order per Termin (`appointment_id` unique
     partial index); `createWorkOrderFromAppointmentRemote` copies title,
     customer, vehicle and employee from the Termin ([[calendar]]).
-  - **Calendar source**: directly created scheduled orders (not from a
-    Termin, not done) appear in the month grid as `work_order` events
-    ([[calendar]]).
+  - **Calendar source**: ALL scheduled orders appear in the month grid
+    as `work_order` events, regardless of status and origin; completed
+    ones render muted with line-through (`done: true`). The source
+    Termin of an order is excluded from the appointment source, so the
+    order chip replaces the Termin chip ([[calendar]]).
   - **Done column bounded**: latest 25 by `completed_at`; older
     completed orders live in the paginated list.
 - **Permission** `orders` - seeded to Mitarbeiter AND Werkstattleiter

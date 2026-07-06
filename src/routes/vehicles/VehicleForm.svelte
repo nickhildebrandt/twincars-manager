@@ -326,6 +326,7 @@
   oninput={markDirty}
   onchange={markDirty}
   class="card border-base-300 bg-base-100 border"
+  novalidate
 >
   <div class="card-body gap-4">
     {#if errorMsg}

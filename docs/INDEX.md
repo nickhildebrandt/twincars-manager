@@ -26,6 +26,7 @@ rulebooks; these notes explain, connect and locate - they do not override.
 - [[database-schema]] - all tables by group, versioned values, snapshots
 - [[validation-and-errors]] - Valibot with German messages, error funnels
 - [[loading-and-busy]] - the single `busy` store and the three loading tiers
+- [[creation-flow]] - full-page create from pickers, draft stack store, MultiSearchablePicker
 - [[styling]] - DaisyUI v5 + Tailwind v4 rules, card baseline, forbidden patterns
 - [[pdf-pipeline]] - pdf-lib rendering, bytea cache, `pdfs.remote.ts`, labels/signs
 - [[pwa-service-worker]] - installable PWA, precache strategy, dev unregistration

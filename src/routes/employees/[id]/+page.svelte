@@ -514,6 +514,7 @@
       <form
         onsubmit={submit}
         class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto]"
+        novalidate
       >
         <label class="flex w-full flex-col gap-1">
           <span class="label-text">Typ</span>

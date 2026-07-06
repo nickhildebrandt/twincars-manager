@@ -1,7 +1,7 @@
 ---
 title: Module - inventory (Zu verkaufende Fahrzeuge)
 tags: [module, inventory, used-cars]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # inventory - "Zu verkaufende Fahrzeuge"
@@ -19,9 +19,14 @@ updated: 2026-07-05
   (customer FK restrict, `tradeInValue`), `vehicle_photos`.
 - **Special**:
   - One-click "Verkaufsschild" A4 PDF from the detail
-    (`sale-sign.remote.ts` in [[vehicles]]): honors `differentialTax`
+    (`sale-sign.remote.ts` in [[vehicles]]): redesigned 2026-07 (red
+    header band, logo chip with app-icon fallback, hero price box,
+    aligned facts grid, two-column highlights, QR "Online ansehen" -
+    [[pdf-pipeline]]); honors `differentialTax`
     ("Differenzbesteuert gem. §25a UStG" vs "inkl. gesetzl. MwSt."),
     "Preis auf Anfrage" without price, "Foto folgt" placeholder.
+  - `/inventory/new` offers the optional Vorbesitzer picker
+    (`vehicles.previousOwnerCustomerId`, [[vehicles]]).
   - Public surface: `GET /api/public/used-cars` (+ `/[id]`) exposes
     available listings to the website ([[public-rest-api]]).
 - **Tests**: covered through `vehicle-service.test.ts` /

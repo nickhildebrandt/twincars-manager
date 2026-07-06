@@ -671,6 +671,7 @@
         <form
           onsubmit={submitItem}
           class="border-base-300 flex flex-col gap-3 border-t px-4 py-4"
+          novalidate
         >
           <div class="flex flex-wrap items-center justify-between gap-2">
             <h4 class="text-sm font-semibold">

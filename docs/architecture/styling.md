@@ -1,7 +1,7 @@
 ---
 title: Styling rules (DaisyUI v5 + Tailwind v4)
 tags: [architecture, styling, daisyui, tailwind]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # Styling - DaisyUI v5 + Tailwind v4, no custom CSS
@@ -25,6 +25,11 @@ Confirm class names via the DaisyUI Blueprint MCP before writing markup.
 - **Forms**: every input/select/textarea/file-input carries `w-full`
   (DaisyUI v5 clamps controls at 20rem otherwise); grid decides the
   width. Labels above inputs.
+- **Always-clickable actions**: action buttons are never disabled for
+  missing or invalid input; only `busy.active` and true mode gates may
+  disable. Validation is click-time with a German error summary
+  (`alert alert-error`) + field errors; forms carry `novalidate`
+  (CONTRIBUTING §11, [[validation-and-errors]]).
 - **Tables**: no zebra. Clickable rows get
   `hover:bg-base-200 cursor-pointer` + `goto()` on the `<tr>`; action
   cells `<td onclick={(e) => e.stopPropagation()}>`; totals in `<tfoot>`

@@ -1,7 +1,7 @@
 ---
 title: Module - customers (Kunden)
 tags: [module, customers]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # customers - "Kunden"
@@ -32,6 +32,12 @@ for new modules.
     (`asHtml`) - no unsubscribe footer (transactional), see [[smtp-mail]].
   - Number from the `customer` number range; `legacyCustomerNumber` from
     the import.
+  - `/customers/new` doubles as a creation-flow leaf: opened via "Neu
+    anlegen" from a customer picker it returns to the origin form with
+    the new customer auto-selected ([[creation-flow]]).
+  - List search covers number, name, company, city, zip, street, phone,
+    mobile, email and eBay handle (server-side ILIKE,
+    [[remote-functions]]).
 - **Picker**: `pickCustomersRemote` in `src/routes/pickers.remote.ts`.
 - **Tests**: `customer-service.test.ts` (service),
   `customers.remote.test.ts` (guards/integration),

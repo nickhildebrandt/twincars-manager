@@ -302,20 +302,25 @@ Vollständiges Schema in `src/lib/server/db/schema.ts`. Auswahl der wichtigsten 
 
 Die UI ist über die linke **DaisyUI-Sidebar** in folgende Bereiche gegliedert:
 
-| Bereich               | Module                                                                                                      | Status                                                                             |
-| --------------------- | ----------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- |
-| Übersicht             | Start (Dashboard mit anstehenden Terminen), Kalender                                                        | beide live                                                                         |
-| Kunden & Fahrzeuge    | Kunden, Fahrzeuge, Fahrzeugbestand                                                                          | alle drei live (strikte Trennung Kunde/Stock)                                      |
-| Aufträge & Rechnungen | Angebote/KV, Rechnungen, Offene/Mahnungen, Rechnungsausgangsbuch                                            | KV/Rechnung mit Versand + Statusflüssen live; Mahnungs-CTA live; Sales-Ledger Stub |
-| Stammdaten            | Leistungen/Material/Artikel, Lieferanten                                                                    | beide live                                                                         |
-| Personal              | Mitarbeiter (mit paginierten Lohnabrechnungen + Jahres-Selektor), Lohn/Gehalt (auto-generiert zum Stichtag) | live                                                                               |
-| Finanzen              | Buchhaltung, Controlling                                                                                    | Buchhaltung live, Controlling Stub                                                 |
-| Kommunikation         | Serienbriefe, Gesendet                                                                                      | Gesendet live, Serienbriefe Stub                                                   |
-| System                | Einstellungen, Import (Kfz-Kaufmann)                                                                        | Settings live (4 Tabs), Import Stub                                                |
+| Bereich               | Module                                                                                                 |
+| --------------------- | ------------------------------------------------------------------------------------------------------ |
+| Übersicht             | Start (Dashboard), Kalender                                                                            |
+| Kunden & Fahrzeuge    | Kunden, Fahrzeuge, Zu verkaufende Fahrzeuge, Reifenlager                                               |
+| Aufträge & Rechnungen | Aufträge (Kanban), Angebote / Kostenvoranschläge, Rechnungen, Offene Rechnungen, Rechnungsausgangsbuch |
+| Stammdaten            | Leistungen, Material, Artikel; Reifenkatalog; Lieferanten                                              |
+| Personal              | Mitarbeiter, Stunden (Zeiterfassung)                                                                   |
+| Finanzen              | Buchhaltung                                                                                            |
+| Kommunikation         | Rundschreiben, Gesendet, Aktuelle Informationen, Anfragen                                              |
+| System                | Einstellungen (inkl. Import, eBay, Werkstattzeiten als Unterseiten/Tabs)                               |
 
-Forms folgen dem Pattern aus `CONTRIBUTING.md` §11 (Validierung, w-full,
-unsaved-changes-Guard via `formDirty`-Store). Die Stub-Module zeigen einen
-einheitlichen "In Vorbereitung"-Block mit konkreter Feature-Liste.
+Alle Module sind vollständig umgesetzt; die Sidebar wird pro Nutzer nach
+Modul-Berechtigungen gefiltert. Das Modul "Offene Rechnungen" (Route
+`/reminders`) versendet die freundliche "Zahlungserinnerung"; die
+Artefakt-Bezeichnung bleibt auf Aktionen, PDFs und Mailvorlagen erhalten.
+Forms folgen dem Pattern aus `CONTRIBUTING.md` §11 (Klick-Zeitpunkt-
+Validierung mit deutscher Fehlerzusammenfassung, niemals deaktivierte
+Buttons wegen fehlender Eingaben, w-full, unsaved-changes-Guard via
+`formDirty`-Store).
 
 ### Start (Dashboard)
 
@@ -342,9 +347,13 @@ mit den nächsten 10 fälligen HU-Terminen + Werkstatt-Terminen, sortiert nach D
 
 ### Fahrzeugbestand / Gebrauchtwagen-Handel
 
-Tabellen sind bereits angelegt (`vehicle_purchases`, `vehicle_listings`, `vehicle_photos`,
-`vehicle_sales`). Funktionen folgen: Bestandsliste, Foto-Galerie, **A4-Verkaufsschild als PDF**,
-"Verkaufen"-Aktion mit automatischer Übergabe Bestand → Kunde und Rechnung.
+Bestandsliste, Foto-Galerie, Fahrzeug-Dokumente (PDF/JPEG/PNG/WebP, max.
+15 MB je Datei), optionaler Vorbesitzer-Bezug und "Verkaufen"-Aktion mit
+Übergabe Bestand → Kunde (`vehicle_purchases`, `vehicle_listings`,
+`vehicle_photos`, `vehicle_documents`, `vehicle_sales`). Das
+**A4-Verkaufsschild als PDF** (ein Klick auf der Detailseite) trägt
+roten Kopfbalken, Logo-Chip, Preisbox, Faktenraster, Highlights in zwei
+Spalten und einen QR-Code "Online ansehen".
 
 ### Lohn und Gehalt
 

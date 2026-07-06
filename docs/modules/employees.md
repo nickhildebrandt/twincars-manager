@@ -1,7 +1,7 @@
 ---
 title: Module - employees (Mitarbeiter)
 tags: [module, employees, hr]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # employees - "Mitarbeiter"
@@ -37,6 +37,11 @@ updated: 2026-07-05
     `employees` has no `vacation_carryover*` columns yet.
   - Payroll was removed (migration 0015) in favor of time tracking
     ([[hours]]).
-- **Picker**: `pickEmployeesRemote`.
+  - `/employees/new` doubles as a creation-flow leaf
+    ([[creation-flow]]); work-order assignees pick employees through
+    `MultiSearchablePicker` ([[orders]]).
+- **Picker**: `pickEmployeesRemote` (also open to `orders` permission
+  holders; search: name, personnel number, position, private
+  email/phone, mobile).
 - **Tests**: `employee-service.test.ts`, `absence-service.test.ts`,
   `EmployeeForm.test.ts`.

@@ -6,11 +6,12 @@ updated: 2026-07-06
 
 # settings - "Einstellungen"
 
-Umbrella for app configuration. NOTE: consolidation is in progress
-(2026-07): Import and eBay are being folded INTO the Einstellungen tab
-surface; the extra sidebar entries remain only for users whose sole
-grant is a sub-permission. Verify current tab layout in
-`src/routes/settings/+page.svelte` before relying on this list.
+Umbrella for app configuration. The sidebar's "System" group contains
+exactly ONE entry, "Einstellungen"; everything settings-shaped (incl.
+Import and eBay) lives inside `/settings`. The one exception is
+**"Anfragen"**: the page keeps living at `/settings/inquiries` but is
+navigated from the **Kommunikation** group (daily communication work,
+not administration; still the `mailings` permission).
 
 ## `/settings` (tabbed page, `?tab=` mirrored in URL)
 
@@ -46,7 +47,8 @@ intact - [[adr-007-price-snapshots-and-versions]]). Guard
 - `/settings/workshop-hours` - opening hours per weekday
   (`workshop-hours.remote.ts`); drives public free slots.
 - `/settings/inquiries` - contact-form inquiries from the website with
-  notification retry (`inquiries.remote.ts`, `mailings` permission).
+  notification retry (`inquiries.remote.ts`, `mailings` permission);
+  sidebar entry "Anfragen" in the Kommunikation group.
 - `/settings/tire-reminders` - seasonal tire-mail preview + send
   (`tire-reminders.remote.ts`); see [[tire-storage]].
 

@@ -1,7 +1,7 @@
 ---
 title: Server transport - remote functions only
 tags: [architecture, sveltekit, transport]
-updated: 2026-07-05
+updated: 2026-07-06
 ---
 
 # Remote functions - the only server transport
@@ -41,11 +41,24 @@ All are "third-party plumbing or external consumer", never convenience:
   suspends and flushes complete HTML. After hydration the app is a SPA
   with a dehydrated query cache.
 - **Single-flight mutations**: server side
-  `await requested(listXRemote, 4).refreshAll()` inside the command;
-  client side `await mutate(...).updates(listX.withOverride(...))` for
-  optimistic deletes/status flips (the standard, not pessimistic refresh).
-- **List pages**: `untrack(() => query)` SSR seed + `lastResult` fallback
-  (stale-while-revalidate; the table never blanks). See `CONTRIBUTING.md` §5.
+  `await requested(listXRemote, 4).refreshAll()` inside the command
+  (NEVER a fixed-arg `listXRemote({...}).refresh()` for parameterized
+  queries - it would refresh a different cache key than the one the
+  client renders); client side
+  `await mutate(...).updates(listX.withOverride(...))` for optimistic
+  deletes/status flips (the standard, not pessimistic refresh).
+- **List pages**: only-set-key `queryArgs` (`{}` and `{ q: undefined }`
+  are different cache keys), `await untrack(() => listXRemote(queryArgs))`
+  SSR seed, read via
+  `$derived.by(() => listXRemote(queryArgs).current ?? lastResult)`
+  (stale-while-revalidate; the table never blanks), one `$effect`
+  syncing `lastResult` + errors, fresh instances in mutation handlers.
+  **Never memoize a remote-query proxy**: a proxy holds its cache entry
+  only for the lifetime of the effect run that created it, so a
+  memoized instance from async init stays `current === undefined` and
+  `refreshAll`/`withOverride` land on an unrendered entry. Reference:
+  `src/routes/customers/+page.svelte`, `src/routes/orders/+page.svelte`;
+  binding long form in `CONTRIBUTING.md` §5.
 - **Detail pages**: plain top-level `await getXRemote({ id })`; no
   try/catch (the root `+error.svelte` handles thrown errors).
 - **Guards first**: every query/command body starts with `requireUser()` /
@@ -57,12 +70,41 @@ All are "third-party plumbing or external consumer", never convenience:
   `src/routes/pickers.remote.ts` (pickCustomers, pickVehicles,
   pickEmployees, pickItems, pickInventoryVehicles,
   pickSuppliers, pickDocuments, pickTires) and feed the shared
-  `SearchablePicker` component. Never `<select>` for relationships.
+  `SearchablePicker` / `MultiSearchablePicker` components
+  ([[creation-flow]] for the in-picker create affordance). Never
+  `<select>` for relationships.
   (Exception: `src/routes/invoices/new/pickers.remote.ts` exists for the
   invoice form; keep new pickers centralized.)
 - **PDF bytes**: only through the global `src/routes/pdfs.remote.ts`
   ([[pdf-pipeline]]); list views may call only the `...PdfMetaRemote`
   queries.
+
+## Search coverage (list queries and pickers)
+
+Every entity is searchable by ALL sensible attributes, always with
+server-side ILIKE + pagination (never client-side filtering). Current
+coverage of the `q` term:
+
+- **customers** (list): customer number, last/first name, company,
+  city, zip, street, phone, mobile, email, eBay handle. Picker:
+  company, last/first name, number, city, phone, mobile, email.
+- **vehicles** (list + picker): license plate (via
+  `vehicle_license_plate_versions`), VIN, make, model, HSN, TSN, plus
+  the holder's name/company.
+- **employees** (list): first/last name, personnel number, position,
+  department, private email/phone, mobile (picker: same minus
+  department).
+- **suppliers** (list): name, city, contact person, email, phone
+  (picker: same minus phone).
+- **tires** (list + picker): article number, brand, model, EAN; a
+  size-shaped query ("205/55R16") additionally matches the parsed size
+  components exactly.
+
+Performance note: the infix `%term%` ILIKE on the newly added fields
+has **no trigram indexes** yet (the only GIN index is the jsonb one on
+`items.attributes`). That is acceptable at current scale (about 10k
+customers from the legacy import); revisit with `pg_trgm` GIN indexes
+if the dataset grows.
 
 ## `src/hooks.ts` (universal)
 
