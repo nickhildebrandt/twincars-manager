@@ -100,5 +100,29 @@ describe('filterNavigationByPermissions', () => {
       expect(labels).toContain('Kunden')
       expect(labels).not.toContain('Fahrzeuge')
     })
+
+    it('labels the reminders module "Offene Rechnungen" (requirement 2.11)', () => {
+      const item = navigation
+        .flatMap((g) => g.items)
+        .find((i) => i.href === '/reminders')
+      expect(item?.label).toBe('Offene Rechnungen')
+    })
+
+    it('keeps the System group to Einstellungen only (requirement 2.12)', () => {
+      const system = navigation.find((g) => g.label === 'System')
+      expect(system?.items.map((i) => i.label)).toEqual(['Einstellungen'])
+      // No sidebar Import entry — the import lives as a /settings tab.
+      const hrefs = navigation.flatMap((g) => g.items.map((i) => i.href))
+      expect(hrefs).not.toContain('/settings/import')
+    })
+
+    it('lists Anfragen under Kommunikation with the mailings permission', () => {
+      const komm = navigation.find((g) => g.label === 'Kommunikation')
+      const anfragen = komm?.items.find((i) => i.label === 'Anfragen')
+      expect(anfragen?.href).toBe('/settings/inquiries')
+      expect(anfragen?.permission).toBe('mailings')
+      const system = navigation.find((g) => g.label === 'System')
+      expect(system?.items.map((i) => i.label)).not.toContain('Anfragen')
+    })
   })
 })

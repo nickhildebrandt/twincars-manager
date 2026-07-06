@@ -186,8 +186,9 @@
   const n = (v: number | string) => (v === '' ? undefined : Number(v))
 
   /**
-   * Validation handle for the Submit button gate and the per-field
-   * error display. Field errors only surface once the field was
+   * Validation handle for the per-field error display — NOT for gating
+   * the submit button (rule 1.1: always clickable except while busy).
+   * Field errors only surface once the field was
    * touched (blur) or a submit was attempted; the server-side schema
    * stays authoritative.
    */
@@ -264,6 +265,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -606,11 +608,7 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !fv.valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

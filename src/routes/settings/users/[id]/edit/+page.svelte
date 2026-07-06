@@ -117,6 +117,7 @@
     onsubmit={submit}
     oninput={markDirty}
     onchange={markDirty}
+    novalidate
     class="card border-base-300 bg-base-100 border"
   >
     <div class="card-body gap-4">
@@ -183,11 +184,7 @@
           >
             Abbrechen
           </button>
-          <button
-            type="submit"
-            class="btn btn-primary"
-            disabled={busy.active || !name.trim()}
-          >
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
             {#if busy.active}
               <span class="loading loading-spinner loading-sm"></span>
             {/if}
@@ -200,6 +197,7 @@
 
   <form
     onsubmit={submitPasswordReset}
+    novalidate
     class="card border-base-300 bg-base-100 border"
   >
     <div class="card-body gap-4">
@@ -241,13 +239,7 @@
       </fieldset>
 
       <div class="card-actions justify-end">
-        <button
-          type="submit"
-          class="btn btn-primary"
-          disabled={busy.active ||
-            resetPassword.length < 8 ||
-            resetPassword !== resetPasswordConfirm}
-        >
+        <button type="submit" class="btn btn-primary" disabled={busy.active}>
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>
           {/if}

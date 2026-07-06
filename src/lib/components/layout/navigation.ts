@@ -22,7 +22,6 @@ import {
   Send,
   Newspaper,
   Settings,
-  Database,
   Inbox
 } from '@lucide/svelte'
 import type { Component } from 'svelte'
@@ -134,7 +133,10 @@ export const navigation: NavGroup[] = [
         permission: 'invoices'
       },
       {
-        label: 'Zahlungserinnerungen',
+        // Requirement 2.11: the module is the OP list ("Offene
+        // Rechnungen"); the Zahlungserinnerung wording stays on the
+        // send ACTIONS inside the module only.
+        label: 'Offene Rechnungen',
         href: '/reminders',
         icon: AlertTriangle,
         permission: 'reminders'
@@ -216,6 +218,15 @@ export const navigation: NavGroup[] = [
         href: '/posts',
         icon: Newspaper,
         permission: 'posts'
+      },
+      {
+        // Requirement 2.12: Anfragen is communication, not system
+        // administration. The page keeps living under /settings (tab
+        // bar) and keeps the `mailings` permission.
+        label: 'Anfragen',
+        href: '/settings/inquiries',
+        icon: Inbox,
+        permission: 'mailings'
       }
     ]
   },
@@ -223,27 +234,13 @@ export const navigation: NavGroup[] = [
     label: 'System',
     items: [
       // Everything settings-shaped lives INSIDE /settings as tabs
-      // (incl. eBay + KFZ-Kaufmann-Import). The extra entries below
-      // exist only for users whose sole grant is a sub-permission
-      // (mailings / import) and who therefore cannot see the
-      // "Einstellungen" entry itself.
+      // (incl. eBay + KFZ-Kaufmann-Import) — requirement 2.12: the
+      // sidebar shows only the "Einstellungen" entry here.
       {
         label: 'Einstellungen',
         href: '/settings',
         icon: Settings,
         permission: 'settings'
-      },
-      {
-        label: 'Anfragen',
-        href: '/settings/inquiries',
-        icon: Inbox,
-        permission: 'mailings'
-      },
-      {
-        label: 'Import (Kfz-Kaufmann)',
-        href: '/settings/import',
-        icon: Database,
-        permission: 'import'
       }
     ]
   }

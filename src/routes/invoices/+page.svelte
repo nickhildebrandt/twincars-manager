@@ -5,7 +5,6 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Plus, Receipt, Trash2 } from '@lucide/svelte'
   import { listInvoicesRemote, deleteInvoiceRemote } from './invoices.remote'
@@ -15,30 +14,38 @@
   import { formatEuro } from '$lib/utils/money'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
   let status = $state<'all' | 'draft' | 'open' | 'paid' | 'cancelled'>('all')
 
-  const query = $derived(
-    listInvoicesRemote({ page: pageNum, size, q: q || undefined, status })
-  )
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    status
+  })
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listInvoicesRemote(queryArgs))
 
   /** Cache last successful result so paginating doesn't flash empty state. */
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listInvoicesRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = listInvoicesRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -53,12 +60,7 @@
       // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
         deleteInvoiceRemote({ id }).updates(
-          listInvoicesRemote({
-            page: pageNum,
-            size,
-            q: q || undefined,
-            status
-          }).withOverride((current) => ({
+          listInvoicesRemote(queryArgs).withOverride((current) => ({
             ...current,
             items: current.items.filter((i) => i.id !== id),
             total: Math.max(0, current.total - 1)

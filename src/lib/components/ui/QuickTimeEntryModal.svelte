@@ -37,15 +37,6 @@
   const employeeQ = $derived(currentEmployeeRemote())
   const employee = $derived(employeeQ.current)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (!date) return false
-    if (!Number.isFinite(hours) || hours <= 0 || hours > 24) return false
-    const t = task.trim()
-    if (!t || t.length > 200) return false
-    return true
-  })
-
   const reset = () => {
     date = todayIso()
     hours = 1
@@ -120,7 +111,7 @@
         <Clock size={18} class="inline-block" />
         Arbeit erfassen
       </h3>
-      <form onsubmit={submit} class="mt-3 flex flex-col gap-3">
+      <form onsubmit={submit} novalidate class="mt-3 flex flex-col gap-3">
         {#if errorMsg}
           <div class="alert alert-error">
             <span>{errorMsg}</span>
@@ -174,11 +165,7 @@
           >
             Abbrechen
           </button>
-          <button
-            type="submit"
-            class="btn btn-primary"
-            disabled={busy.active || !valid}
-          >
+          <button type="submit" class="btn btn-primary" disabled={busy.active}>
             {#if busy.active}
               <span class="loading loading-spinner loading-sm"></span>
             {/if}

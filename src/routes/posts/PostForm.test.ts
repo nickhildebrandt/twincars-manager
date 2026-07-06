@@ -39,9 +39,11 @@ describe('PostForm', () => {
     expect(label.className).toContain('items-start')
   })
 
-  it('keeps Speichern disabled while title/body are empty', () => {
+  it('keeps Speichern enabled even while title/body are empty (rule 1.1)', () => {
     render(PostForm, { props: { onSave: vi.fn() } })
-    expect(screen.getByRole('button', { name: /speichern/i })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
   })
 
   it('rejects a submit without content and shows a German error', async () => {

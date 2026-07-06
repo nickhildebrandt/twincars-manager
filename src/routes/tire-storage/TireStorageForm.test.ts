@@ -62,26 +62,35 @@ describe('TireStorageForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled when no customer is selected', async () => {
-    const onSave = vi.fn()
-    render(TireStorageForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-    expect(onSave).not.toHaveBeenCalled()
+  it('keeps Speichern enabled even while the form is empty (rule 1.1)', () => {
+    render(TireStorageForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
   })
 
-  it('keeps Speichern disabled when no season is selected', async () => {
+  it('shows the customer error on a click without a customer', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(TireStorageForm, { props: { onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Kunden auswählen.').length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the season error on a click without a season', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(TireStorageForm, {
       props: { onSave, initial: { customerId: 'cust-1' } }
     })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte eine Saison wählen.').length
+    ).toBeGreaterThan(0)
   })
 
   it('rejects when initial quantity exceeds 20', async () => {

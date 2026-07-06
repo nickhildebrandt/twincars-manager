@@ -76,10 +76,21 @@ const appointmentInitial = {
 }
 
 describe('CalendarForm', () => {
-  it('new mode shows the kind selector and gates Speichern on the title', () => {
+  it('new mode shows the kind selector and keeps Speichern enabled (rule 1.1)', () => {
     render(CalendarForm, { props: { mode: 'new', onSave: vi.fn() } })
     expect(screen.getByLabelText('Art *')).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /speichern/i })).toBeDisabled()
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
+  })
+
+  it('shows the title error on a click without a title', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(CalendarForm, { props: { mode: 'new', onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(screen.getByText('Bitte einen Titel angeben.')).toBeInTheDocument()
   })
 
   it('edit mode hides the kind selector and seeds from initial', () => {
@@ -180,9 +191,10 @@ describe('CalendarForm', () => {
     expect(overlapsMock).not.toHaveBeenCalled()
   })
 
-  it('disables Speichern when the closure end date is before the start', async () => {
+  it('rejects a closure whose end date is before the start at click time', async () => {
     const user = userEvent.setup()
-    render(CalendarForm, { props: { mode: 'new', onSave: vi.fn() } })
+    const onSave = vi.fn()
+    render(CalendarForm, { props: { mode: 'new', onSave } })
 
     await user.selectOptions(screen.getByLabelText('Art *'), 'closure')
     await user.type(screen.getByLabelText('Titel *'), 'Betriebsurlaub')
@@ -193,6 +205,10 @@ describe('CalendarForm', () => {
       target: { value: '2026-08-03' }
     })
 
-    expect(screen.getByRole('button', { name: /speichern/i })).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Bis-Datum darf nicht vor dem Von-Datum liegen.')
+    ).toBeInTheDocument()
   })
 })

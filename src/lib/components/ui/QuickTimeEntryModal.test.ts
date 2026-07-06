@@ -76,7 +76,7 @@ describe('QuickTimeEntryModal', () => {
     expect(screen.queryByText(/Arbeit erfassen/)).not.toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled without a task description', async () => {
+  it('keeps Speichern enabled without a task description (rule 1.1)', () => {
     render(QuickTimeEntryModal, {
       props: { open: true, documentId: 'doc-1', onClose: vi.fn() }
     })
@@ -84,8 +84,21 @@ describe('QuickTimeEntryModal', () => {
       name: /speichern/i,
       hidden: true
     }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    expect(btn).not.toBeDisabled()
+  })
+
+  it('shows the task error on a click without a task description', async () => {
+    const user = userEvent.setup()
+    render(QuickTimeEntryModal, {
+      props: { open: true, documentId: 'doc-1', onClose: vi.fn() }
+    })
+    await user.click(
+      screen.getByRole('button', { name: /speichern/i, hidden: true })
+    )
     expect(createTimeEntryMock).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Bitte angeben, was gemacht wurde.')
+    ).toBeInTheDocument()
   })
 
   it('submits with the resolved employee id and link to the document', async () => {

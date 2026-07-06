@@ -80,9 +80,10 @@
   let errorMsg = $state<string | null>(null)
 
   /**
-   * Validation handle for the Submit button gate and the per-field
-   * error display. The name error only surfaces once the field was
-   * touched (blur) or a submit was attempted.
+   * Validation handle for the per-field error display — NOT for gating
+   * the submit button (rule 1.1: always clickable except while busy or
+   * locked). The name error only surfaces once the field was touched
+   * (blur) or a submit was attempted.
    */
   const fv = useFormValidation(roleSchema, () => ({ name }))
 
@@ -106,7 +107,7 @@
     offers: 'Angebote',
     invoices: 'Rechnungen',
     orders: 'Aufträge',
-    reminders: 'Mahnwesen',
+    reminders: 'Offene Rechnungen',
     ledger: 'Kassenbuch',
     calendar: 'Kalender',
     inventory: 'Lager',
@@ -171,6 +172,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -305,7 +307,7 @@
         <button
           type="submit"
           class="btn btn-primary"
-          disabled={busy.active || locked || !fv.valid}
+          disabled={busy.active || locked}
         >
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>

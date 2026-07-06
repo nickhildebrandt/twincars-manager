@@ -230,8 +230,8 @@
    *   created → versenden
    *   sent    → als bezahlt markieren
    *   paid    → no CTA (terminal)
-   * Zahlungserinnerungen werden über das Mahnwesen-Modul versendet;
-   * der Banner oben bietet den direkten CTA dafür.
+   * Zahlungserinnerungen werden über das Modul "Offene Rechnungen"
+   * versendet; der Banner oben bietet den direkten CTA dafür.
    */
   const headerAction = $derived.by(() => {
     if (data.doc.status === 'paid' || data.doc.status === 'cancelled')

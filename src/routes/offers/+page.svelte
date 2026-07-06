@@ -5,7 +5,6 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Plus, FileText, Trash2 } from '@lucide/svelte'
   import { listOffersRemote, deleteOfferRemote } from './offers.remote'
@@ -15,32 +14,40 @@
   import { formatEuro } from '$lib/utils/money'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
   let subtype = $state<
     'all' | 'offer' | 'cost_estimate' | 'order_confirmation'
   >('all')
 
-  const query = $derived(
-    listOffersRemote({ page: pageNum, size, q: q || undefined, subtype })
-  )
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    subtype
+  })
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listOffersRemote(queryArgs))
 
   /** Cache last successful result so paginating doesn't flash empty state. */
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listOffersRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = listOffersRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -55,12 +62,7 @@
       // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
         deleteOfferRemote({ id }).updates(
-          listOffersRemote({
-            page: pageNum,
-            size,
-            q: q || undefined,
-            subtype
-          }).withOverride(
+          listOffersRemote(queryArgs).withOverride(
             // The query has a polymorphic return type (depending on whether
             // a subtype is selected); cast keeps the optimistic update
             // generic across both shapes.

@@ -13,31 +13,35 @@
   import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
 
-  const query = $derived(
-    listPostsRemote({
-      page: pageNum,
-      size,
-      q: q || undefined,
-      published: 'all'
-    })
-  )
-
-  const initial = await untrack(() => query)
-
-  let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    published: 'all' as const
   })
 
-  const result = $derived(query.current ?? lastResult)
+  const initial = await untrack(() => listPostsRemote(queryArgs))
+
+  let lastResult = $state<typeof initial>(initial)
+
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listPostsRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
 
   $effect(() => {
+    const query = listPostsRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -53,12 +57,7 @@
     try {
       await busy.run(() =>
         deletePostRemote({ id }).updates(
-          listPostsRemote({
-            page: pageNum,
-            size,
-            q: q || undefined,
-            published: 'all'
-          }).withOverride((current) => ({
+          listPostsRemote(queryArgs).withOverride((current) => ({
             ...current,
             items: current.items.filter((p) => p.id !== id),
             total: Math.max(0, current.total - 1)

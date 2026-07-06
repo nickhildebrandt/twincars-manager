@@ -61,7 +61,7 @@
       errorMsg =
         errs._form ??
         (Object.values(errs).find((v) => v != null) as string | null) ??
-        null
+        'Bitte prüfen Sie Ihre Eingaben.'
       return
     }
     errorMsg = null
@@ -91,6 +91,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -170,11 +171,7 @@
     </fieldset>
 
     <div class="card-actions justify-end gap-2">
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !fv.valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

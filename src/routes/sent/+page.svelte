@@ -5,7 +5,6 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import { ChevronLeft, ChevronRight, Send } from '@lucide/svelte'
   import { listSentRemote } from './sent.remote'
   import { handleClientError } from '$lib/utils/client-error'
@@ -16,7 +15,7 @@
   } from '$lib/utils/status-labels'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
   let type = $state<
     'all' | 'invoice' | 'offer' | 'cost_estimate' | 'reminder' | 'mailing'
@@ -74,33 +73,35 @@
     viewMonth = today.getMonth() + 1
   }
 
-  const query = $derived(
-    listSentRemote({
-      page: pageNum,
-      size,
-      q: q || undefined,
-      type,
-      from: fromIso,
-      to: toIso
-    })
-  )
+  // Only set filter keys carry into the arg object (stable cache key).
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    type,
+    from: fromIso,
+    to: toIso
+  })
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listSentRemote(queryArgs))
 
   /** Cache last successful result so paginating doesn't flash empty state. */
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // refreshes never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listSentRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = listSentRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 

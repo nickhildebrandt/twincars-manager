@@ -93,8 +93,8 @@
 </script>
 
 <PageHeader
-  title="Zahlungserinnerungen"
-  subtitle="OP-Liste mit automatisch berechneten Verzugstagen - eine einzige freundliche Erinnerung wird wiederholt versendet."
+  title="Offene Rechnungen"
+  subtitle="OP-Liste mit automatisch berechneten Verzugstagen - eine einzige freundliche Zahlungserinnerung wird wiederholt versendet."
   primaryAction={{
     label: 'Fällige jetzt versenden',
     onClick: runAutoBatch,

@@ -34,17 +34,26 @@ describe('TireForm', () => {
     expect(screen.getByText('Zoll *')).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled without a brand', async () => {
-    const onSave = vi.fn()
-    render(TireForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-    expect(onSave).not.toHaveBeenCalled()
+  it('keeps Speichern enabled even while the form is empty (rule 1.1)', () => {
+    render(TireForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
   })
 
-  it('keeps Speichern disabled without a width', async () => {
+  it('shows the brand error on a click without a brand', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(TireForm, { props: { onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte die Marke angeben.').length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the width error on a click without a width', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(TireForm, {
       props: {
@@ -52,11 +61,11 @@ describe('TireForm', () => {
         initial: { brand: 'A', model: 'B', aspectRatio: 55, diameterInch: 16 }
       }
     })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte die Breite in mm angeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('exposes the three German season options', () => {

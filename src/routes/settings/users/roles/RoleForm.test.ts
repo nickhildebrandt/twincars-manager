@@ -61,14 +61,18 @@ describe('RoleForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('rejects save when name is shorter than 2 characters', async () => {
+  it('keeps Speichern enabled even while the name is invalid (rule 1.1)', () => {
+    render(RoleForm, { props: { onSave: vi.fn(), initial: { name: 'X' } } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
+  })
+
+  it('rejects a click when name is shorter than 2 characters', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
-    const { container } = render(RoleForm, {
-      props: { onSave, initial: { name: 'X' } }
-    })
-    const { fireEvent } = await import('@testing-library/svelte')
-    const form = container.querySelector('form') as HTMLFormElement
-    await fireEvent.submit(form)
+    render(RoleForm, { props: { onSave, initial: { name: 'X' } } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
     // The message shows in the alert and under the field.
     expect(

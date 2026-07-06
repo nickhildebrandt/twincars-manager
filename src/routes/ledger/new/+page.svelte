@@ -36,17 +36,16 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived(
-    Boolean(description.trim()) && amountGross !== '' && Number(amountGross) > 0
-  )
-
   const cats = $derived(listCategoriesRemote({ direction }))
   const categories = $derived(cats.current ?? [])
 
   const submit = async (e: Event) => {
     e.preventDefault()
     errorMsg = null
+    if (!entryDate) {
+      errorMsg = 'Bitte ein Datum angeben.'
+      return
+    }
     if (!description.trim()) {
       errorMsg = 'Bitte eine Beschreibung eingeben.'
       return
@@ -89,6 +88,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -183,11 +183,7 @@
         onclick={() => goto('/ledger')}
         disabled={busy.active}>Abbrechen</button
       >
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

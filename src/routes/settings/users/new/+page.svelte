@@ -24,15 +24,6 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (username.trim().length < 3) return false
-    if (!name.trim()) return false
-    if (password.length < 8) return false
-    if (password !== passwordConfirm) return false
-    return true
-  })
-
   const markDirty = () => formDirty.set(true)
   $effect(() => () => formDirty.clear())
 
@@ -94,6 +85,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -174,11 +166,7 @@
       >
         Abbrechen
       </button>
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

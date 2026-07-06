@@ -28,17 +28,25 @@ describe('SupplierForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled when the company name is empty', async () => {
-    const onSave = vi.fn()
-    render(SupplierForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-    expect(onSave).not.toHaveBeenCalled()
+  it('keeps Speichern enabled even while the form is invalid (rule 1.1)', () => {
+    render(SupplierForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
   })
 
-  it('keeps Speichern disabled and shows the inline error on invalid email after blur', async () => {
+  it('shows the required-name message on a click with an empty company name', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(SupplierForm, { props: { onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Firmennamen eingeben.').length
+    ).toBeGreaterThan(0)
+  })
+
+  it('surfaces the email error on submit click and after blur', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(SupplierForm, { props: { onSave } })
@@ -50,15 +58,12 @@ describe('SupplierForm', () => {
       'input[type="email"]'
     ) as HTMLInputElement
     await user.type(emailInput, 'not-an-email')
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    // The button is gated by validity immediately …
-    expect(btn).toBeDisabled()
-    // … but the field only lights up after blur (touched).
+    // The field only lights up after blur (touched).
     expect(emailInput.className).not.toContain('input-error')
     await fireEvent.blur(emailInput)
     expect(emailInput.className).toContain('input-error')
+    // Clicking submit does not save and shows the German message.
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
     expect(
       screen.getAllByText(/gültige E-Mail-Adresse/i).length

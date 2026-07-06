@@ -35,11 +35,32 @@
   let attachments = $state<ComposerAttachment[]>([])
 
   let confirmOpen = $state(false)
+  let errorMsg = $state<string | null>(null)
 
   const canCompose = $derived(preview.totalWithEmail > 0)
-  const canSend = $derived(
-    canCompose && subject.trim().length > 0 && body.trim().length > 0
-  )
+
+  /**
+   * Click-time validation (rule 1.1: the Senden button is never gated
+   * on validity) — surfaces a German message and only then opens the
+   * send confirmation.
+   */
+  const requestSend = () => {
+    errorMsg = null
+    if (!canCompose) {
+      errorMsg =
+        'Es sind keine Empfänger mit Newsletter-Opt-in und E-Mail-Adresse vorhanden.'
+      return
+    }
+    if (subject.trim().length === 0) {
+      errorMsg = 'Bitte einen Betreff eingeben.'
+      return
+    }
+    if (body.trim().length === 0) {
+      errorMsg = 'Bitte einen Nachrichtentext eingeben.'
+      return
+    }
+    confirmOpen = true
+  }
 
   const sendBroadcast = async () => {
     try {
@@ -126,12 +147,17 @@
         disabled={!canCompose}
         hint="Empfänger erhalten die Nachricht via BCC, Adressen werden nicht untereinander sichtbar. Eine Abbestellen-Fußzeile wird automatisch angehängt."
       />
+      {#if errorMsg}
+        <div class="alert alert-error">
+          <span>{errorMsg}</span>
+        </div>
+      {/if}
       <div class="card-actions justify-end">
         <button
           type="button"
           class="btn btn-primary gap-2"
-          onclick={() => (confirmOpen = true)}
-          disabled={!canSend || busy.active}
+          onclick={requestSend}
+          disabled={busy.active}
         >
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>

@@ -73,7 +73,13 @@
     event.preventDefault()
     errorMessage = null
     fv.markAllTouched()
-    if (!fv.valid) return
+    if (!fv.valid) {
+      const errs = fv.errors as Record<string, string | null>
+      errorMessage =
+        Object.values(errs).find((v) => v != null) ??
+        'Bitte prüfen Sie Ihre Eingaben.'
+      return
+    }
     try {
       await busy.run(async () => {
         const { error } = await authClient.signIn.username({
@@ -135,7 +141,11 @@
             <span>{reasonMessage}</span>
           </div>
         {/if}
-        <form class="mt-4 flex flex-col gap-3" onsubmit={handleSubmit}>
+        <form
+          class="mt-4 flex flex-col gap-3"
+          onsubmit={handleSubmit}
+          novalidate
+        >
           <FormField
             label="Benutzername"
             required
@@ -175,7 +185,7 @@
           <button
             type="submit"
             class="btn btn-primary mt-2"
-            disabled={busy.active || !fv.valid}
+            disabled={busy.active}
           >
             {#if busy.active}
               <span class="loading loading-spinner loading-sm"></span>

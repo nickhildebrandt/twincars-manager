@@ -45,11 +45,6 @@
 
   let errorMsg = $state<string | null>(null)
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived(
-    Boolean(description.trim()) && amountGross !== '' && Number(amountGross) > 0
-  )
-
   const cats = $derived(listCategoriesRemote({ direction }))
   const categories = $derived(cats.current ?? [])
 
@@ -62,6 +57,10 @@
     if (!isManual) {
       errorMsg =
         'System-generierte Buchungen können nicht direkt bearbeitet werden.'
+      return
+    }
+    if (!entryDate) {
+      errorMsg = 'Bitte ein Datum angeben.'
       return
     }
     if (!description.trim()) {
@@ -129,6 +128,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -239,7 +239,7 @@
         <button
           type="submit"
           class="btn btn-primary"
-          disabled={busy.active || !isManual || !valid}
+          disabled={busy.active || !isManual}
         >
           Speichern
         </button>

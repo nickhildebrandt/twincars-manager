@@ -5,7 +5,6 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import { Plus, Car, Pencil, Trash2 } from '@lucide/svelte'
   import { listVehiclesRemote, deleteVehicleRemote } from './vehicles.remote'
   import { handleClientError } from '$lib/utils/client-error'
@@ -13,37 +12,40 @@
   import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
 
-  const query = $derived(
-    listVehiclesRemote({
-      page: pageNum,
-      size,
-      q: q || undefined,
-      kind: 'customer'
-    })
-  )
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    kind: 'customer' as const
+  })
 
   // Top-level await: SvelteKit suspends rendering until the initial query
   // resolves so SSR carries the data, and hydration reuses the dehydrated
   // cache without re-fetching.
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listVehiclesRemote(queryArgs))
 
   // Cache the last successful result across param changes so the table
   // stays populated during a refetch instead of dropping to empty state.
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listVehiclesRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = listVehiclesRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -53,12 +55,7 @@
       // returns the authoritative list for the current filter/page combo.
       await busy.run(() =>
         deleteVehicleRemote({ id }).updates(
-          listVehiclesRemote({
-            page: pageNum,
-            size,
-            q: q || undefined,
-            kind: 'customer'
-          }).withOverride((current) => ({
+          listVehiclesRemote(queryArgs).withOverride((current) => ({
             ...current,
             items: current.items.filter((v) => v.id !== id),
             total: Math.max(0, current.total - 1)

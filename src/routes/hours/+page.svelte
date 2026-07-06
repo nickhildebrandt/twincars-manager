@@ -25,7 +25,7 @@
   let scope = $state<Scope>(canReadAll ? 'all' : 'own')
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let dateFrom = $state('')
   let dateTo = $state('')
   let employeeFilterId = $state('')
@@ -36,27 +36,30 @@
     untrack(() => page.url.searchParams.get('workOrderId') ?? '')
   )
 
-  const query = $derived(
-    listTimeEntriesRemote({
-      page: pageNum,
-      size,
-      scope,
-      dateFrom: dateFrom || undefined,
-      dateTo: dateTo || undefined,
-      employeeId:
-        scope === 'all' && employeeFilterId ? employeeFilterId : undefined,
-      workOrderId: workOrderFilterId || undefined
-    })
-  )
-
-  const initial = await untrack(() => query)
-
-  let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    scope,
+    ...(dateFrom ? { dateFrom } : {}),
+    ...(dateTo ? { dateTo } : {}),
+    ...(scope === 'all' && employeeFilterId
+      ? { employeeId: employeeFilterId }
+      : {}),
+    ...(workOrderFilterId ? { workOrderId: workOrderFilterId } : {})
   })
 
-  const result = $derived(query.current ?? lastResult)
+  const initial = await untrack(() => listTimeEntriesRemote(queryArgs))
+
+  let lastResult = $state<typeof initial>(initial)
+
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listTimeEntriesRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
@@ -70,6 +73,8 @@
   )
 
   $effect(() => {
+    const query = listTimeEntriesRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -95,18 +100,7 @@
     try {
       await busy.run(() =>
         deleteTimeEntryRemote({ id }).updates(
-          listTimeEntriesRemote({
-            page: pageNum,
-            size,
-            scope,
-            dateFrom: dateFrom || undefined,
-            dateTo: dateTo || undefined,
-            employeeId:
-              scope === 'all' && employeeFilterId
-                ? employeeFilterId
-                : undefined,
-            workOrderId: workOrderFilterId || undefined
-          }).withOverride((current) => ({
+          listTimeEntriesRemote(queryArgs).withOverride((current) => ({
             ...current,
             items: current.items.filter((e) => e.id !== id),
             total: Math.max(0, current.total - 1)

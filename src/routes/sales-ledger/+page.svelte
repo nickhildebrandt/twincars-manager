@@ -3,7 +3,6 @@
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import StatCard from '$lib/components/ui/StatCard.svelte'
   import { BookOpen, TrendingUp } from '@lucide/svelte'
   import { getSalesLedgerRemote } from './sales-ledger.remote'
@@ -18,23 +17,26 @@
     'this_month'
   )
 
-  const query = $derived(getSalesLedgerRemote({ period }))
+  const queryArgs = $derived({ period })
 
   /** Top-level await: SSR carries the data; hydration reuses the cache. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => getSalesLedgerRemote(queryArgs))
 
   /** Cache last successful result so changing the period doesn't flash empty. */
   let lastData = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastData = query.current
-  })
 
-  const data = $derived(query.current ?? lastData)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // refreshes never render. See src/routes/orders/+page.svelte.
+  const data = $derived.by(
+    () => getSalesLedgerRemote(queryArgs).current ?? lastData
+  )
   const rows = $derived(data.rows)
   const totals = $derived(data.totals)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = getSalesLedgerRemote(queryArgs)
+    if (query.current) lastData = query.current
     if (query.error) handleClientError(query.error)
   })
 </script>

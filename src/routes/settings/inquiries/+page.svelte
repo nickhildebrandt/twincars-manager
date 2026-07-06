@@ -15,19 +15,18 @@
   type Status = 'all' | 'pending' | 'sent' | 'failed'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let status = $state<Status>('all')
 
-  const query = $derived(
-    listInquiriesRemote({
-      page: pageNum,
-      size,
-      status: status === 'all' ? undefined : status
-    })
-  )
+  // Only set filter keys carry into the arg object (stable cache key).
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(status === 'all' ? {} : { status })
+  })
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listInquiriesRemote(queryArgs))
 
   /**
    * Cache last successful result so filter / pagination changes don't
@@ -35,16 +34,20 @@
    * stale-while-revalidate pattern as `/sent`.
    */
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // refreshes never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listInquiriesRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
 
   $effect(() => {
+    const query = listInquiriesRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 

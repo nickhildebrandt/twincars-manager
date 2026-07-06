@@ -19,7 +19,7 @@
    * one extra rule enforced here is the business rule "either Firma OR
    * Vor-/Nachname must be present for regular customers, or eBay-Name
    * for eBay customers" — that one would surface as a server-side 400
-   * otherwise, but we want the Submit button disabled instead.
+   * otherwise, but we want the German message at click time instead.
    */
   const ebaySchema = object({
     kind: picklist(['ebay']),
@@ -178,9 +178,10 @@
   let errorMsg = $state<string | null>(null)
 
   /**
-   * Validation handle bound to the currently active kind. The Submit
-   * button is gated by `fv.valid`; each field flips red as soon as it
-   * has been touched AND is invalid.
+   * Validation handle bound to the currently active kind — for the
+   * per-field error display, NOT for gating the submit button (rule
+   * 1.1: always clickable except while busy). Each field flips red as
+   * soon as it has been touched AND is invalid.
    */
   const fv = useFormValidation(
     () => (kind === 'ebay' ? ebaySchema : regularSchema),
@@ -282,6 +283,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -535,11 +537,7 @@
           Abbrechen
         </button>
       {/if}
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !fv.valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}

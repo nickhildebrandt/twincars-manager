@@ -6,12 +6,13 @@ import CustomerForm from './CustomerForm.svelte'
 
 /**
  * Component tests for CustomerForm. The form follows the standardised
- * validation UX:
+ * validation UX (rule 1.1):
  *
- * - Speichern starts disabled when no required field is filled.
- * - Entering valid input enables the button.
- * - Entering invalid input keeps the button disabled and flips the field
- *   border to `input-error` (after blur).
+ * - Speichern is always clickable (only `busy.active` disables it).
+ * - Clicking with invalid input surfaces a German error summary and
+ *   does NOT call `onSave`.
+ * - Invalid fields flip to `input-error` after blur or a submit
+ *   attempt.
  *
  * @group component
  * @module CustomerForm
@@ -27,41 +28,45 @@ describe('CustomerForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('starts with Speichern disabled when no name is given', () => {
+  it('keeps Speichern enabled even while the form is invalid (rule 1.1)', () => {
     render(CustomerForm, { props: { onSave: vi.fn() } })
     const btn = screen.getByRole('button', {
       name: /speichern/i
     }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    expect(btn).not.toBeDisabled()
   })
 
-  it('keeps Speichern disabled until at least Firma or Nachname is filled', async () => {
+  it('shows the Firma-oder-Nachname rule on a click without any name', async () => {
     const user = userEvent.setup()
-    render(CustomerForm, { props: { onSave: vi.fn() } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-    // Typing into Firma enables the button.
+    const onSave = vi.fn()
+    render(CustomerForm, { props: { onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getByText('Bitte mindestens Firma oder Nachname angeben.')
+    ).toBeInTheDocument()
+    // Typing into Firma and clicking again saves.
     const inputs = screen.getAllByRole('textbox')
     await user.type(inputs[0], 'Mustermann GmbH')
-    expect(btn).not.toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
   })
 
-  it('disables Speichern when the email is malformed', async () => {
+  it('surfaces the email error on a submit click with a malformed email', async () => {
     const user = userEvent.setup()
+    const onSave = vi.fn()
     const { container } = render(CustomerForm, {
-      props: { onSave: vi.fn(), initial: { lastName: 'Müller' } }
+      props: { onSave, initial: { lastName: 'Müller' } }
     })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).not.toBeDisabled()
     const emailInput = container.querySelector(
       'input[type="email"]'
     ) as HTMLInputElement
     await user.type(emailInput, 'not-an-email')
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte eine gültige E-Mail-Adresse eingeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('shows an error and adds input-error after blur on invalid email', async () => {
@@ -139,19 +144,23 @@ describe('CustomerForm', () => {
     expect(payload.lastName).toBeUndefined()
   })
 
-  it('keeps Speichern disabled when the eBay handle is shorter than 3 characters', async () => {
+  it('rejects an eBay handle shorter than 3 characters at click time', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     render(CustomerForm, { props: { onSave } })
     await user.click(screen.getByRole('radio', { name: /ebay-kunde/i }))
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
     const handleInput = screen.getByLabelText(/ebay-name/i)
     await user.type(handleInput, 'ab')
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText(
+        'Bitte einen eBay-Namen mit 3 bis 100 Zeichen angeben.'
+      ).length
+    ).toBeGreaterThan(0)
     await user.type(handleInput, 'c')
-    expect(btn).not.toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
   })
 
   it('passes through wantsBroadcast=true and wantsTireReminders=true on save', async () => {

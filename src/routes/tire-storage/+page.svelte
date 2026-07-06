@@ -12,33 +12,36 @@
   type Tab = 'active' | 'retrieved'
   let activeTab = $state<Tab>('active')
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
 
-  const query = $derived(
-    listTireStorageRemote({
-      page: pageNum,
-      size,
-      q: q || undefined,
-      active: activeTab === 'active'
-    })
-  )
+  // Only set filter keys carry into the arg object (stable cache key).
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    active: activeTab === 'active'
+  })
 
   /** Top-level await: SSR carries the first page. */
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listTireStorageRemote(queryArgs))
 
   /** Keep last result around so filter/page changes never blank the table. */
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // refreshes never render. See src/routes/orders/+page.svelte.
+  const result = $derived.by(
+    () => listTireStorageRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
 
   $effect(() => {
+    const query = listTireStorageRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 

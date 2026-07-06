@@ -22,14 +22,22 @@ describe('ItemForm', () => {
     expect(screen.getByText('Typ')).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled without a description', async () => {
+  it('keeps Speichern enabled even without a description (rule 1.1)', () => {
+    render(ItemForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
+  })
+
+  it('shows the required-description message on a click without one', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(ItemForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte eine Beschreibung eingeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('does not offer the "Reifen" kind anymore', () => {
@@ -60,14 +68,15 @@ describe('ItemForm', () => {
       expect(onSave.mock.calls[0][0].kind).toBe('service')
     })
 
-    it('keeps Speichern disabled when description is whitespace-only', async () => {
+    it('rejects a whitespace-only description at click time', async () => {
+      const user = userEvent.setup()
       const onSave = vi.fn()
       render(ItemForm, { props: { onSave, initial: { description: '   ' } } })
-      const btn = screen.getByRole('button', {
-        name: /speichern/i
-      }) as HTMLButtonElement
-      expect(btn).toBeDisabled()
+      await user.click(screen.getByRole('button', { name: /speichern/i }))
       expect(onSave).not.toHaveBeenCalled()
+      expect(
+        screen.getAllByText('Bitte eine Beschreibung eingeben.').length
+      ).toBeGreaterThan(0)
     })
 
     it('invokes onCancel when the cancel button is clicked', async () => {

@@ -5,7 +5,6 @@
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
-  import Loader from '$lib/components/ui/Loader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import { Plus, Users, Pencil, Trash2 } from '@lucide/svelte'
   import { listCustomersRemote, deleteCustomerRemote } from './customers.remote'
@@ -14,46 +13,49 @@
   import { busy } from '$lib/stores/busy.svelte'
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
   let kindFilter = $state<'all' | 'private' | 'business' | 'ebay'>('all')
 
-  /**
-   * Anchored remote query, reactive to filter/page state. The first
-   * resolution is awaited inline below — that gives the SSR renderer a
-   * fully populated HTML response. Subsequent param changes are observed
-   * via `query.current` and `query.loading`, so the previous list stays
-   * visible while the next page is loading (smooth pagination, no flicker).
-   */
-  const query = $derived(
-    listCustomersRemote({
-      page: pageNum,
-      size,
-      q: q || undefined,
-      kind: kindFilter
-    })
-  )
+  // Only set filter keys carry into the arg object — `{}` and
+  // `{q: undefined}` serialize to different remote-cache keys, and the
+  // single-flight refresh must hit the exact instance this page holds.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    kind: kindFilter
+  })
 
   // Top-level await: SvelteKit suspends rendering until the initial query
   // resolves, so SSR carries the data and hydration has nothing to swap in.
-  // `untrack` makes the explicit "snapshot once for SSR" intent clear —
-  // subsequent param changes flow through `query.current` (see below).
-  const initial = await untrack(() => query)
+  const initial = await untrack(() => listCustomersRemote(queryArgs))
 
   // Cache the last successful result across param changes so the table
   // stays populated during a refetch instead of dropping to empty state.
   let lastResult = $state<typeof initial>(initial)
-  $effect(() => {
-    if (query.current) lastResult = query.current
-  })
 
-  const result = $derived(query.current ?? lastResult)
+  /**
+   * The rendered result. `listCustomersRemote(...)` is deliberately
+   * re-called on EVERY evaluation (never memoized in its own `$derived`
+   * and never pre-read during init): a remote-query proxy only holds
+   * its cache entry for the lifetime of the effect run that created it.
+   * A memoized instance loses the entry as soon as that run is torn
+   * down — `current` then stays `undefined` forever and single-flight
+   * refreshes / optimistic overrides land on a throwaway entry nothing
+   * renders. Re-calling per read re-acquires the entry and re-tracks
+   * the resource. See `src/routes/orders/+page.svelte`.
+   */
+  const result = $derived.by(
+    () => listCustomersRemote(queryArgs).current ?? lastResult
+  )
   const items = $derived(result.items)
   const total = $derived(result.total)
   const pageCount = $derived(result.pageCount)
-  const loading = $derived(query.loading)
 
   $effect(() => {
+    const query = listCustomersRemote(queryArgs)
+    if (query.current) lastResult = query.current
     if (query.error) handleClientError(query.error)
   })
 
@@ -76,12 +78,7 @@
       // for whatever filter / page combo is currently rendered.
       await busy.run(() =>
         deleteCustomerRemote({ id }).updates(
-          listCustomersRemote({
-            page: pageNum,
-            size,
-            q: q || undefined,
-            kind: kindFilter
-          }).withOverride((current) => ({
+          listCustomersRemote(queryArgs).withOverride((current) => ({
             ...current,
             items: current.items.filter((c) => c.id !== id),
             total: Math.max(0, current.total - 1)

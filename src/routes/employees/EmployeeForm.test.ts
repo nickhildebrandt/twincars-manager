@@ -31,17 +31,25 @@ describe('EmployeeForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled when first and last name are empty', async () => {
-    const onSave = vi.fn()
-    render(EmployeeForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
-    expect(onSave).not.toHaveBeenCalled()
+  it('keeps Speichern enabled even while names are empty (rule 1.1)', () => {
+    render(EmployeeForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
   })
 
-  it('keeps Speichern disabled when only first name is provided', async () => {
+  it('shows the first-name error on a click with empty names', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(EmployeeForm, { props: { onSave } })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Vornamen eingeben.').length
+    ).toBeGreaterThan(0)
+  })
+
+  it('shows the last-name error on a click with only a first name', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(EmployeeForm, { props: { onSave } })
@@ -49,11 +57,11 @@ describe('EmployeeForm', () => {
       'input[maxlength="100"]'
     )[0] as HTMLInputElement
     await user.type(firstName, 'Max')
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Nachnamen eingeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('calls onSave with trimmed first/last name', async () => {

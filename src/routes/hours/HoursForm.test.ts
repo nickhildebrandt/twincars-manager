@@ -68,14 +68,22 @@ describe('HoursForm', () => {
     ).toBeInTheDocument()
   })
 
-  it('keeps Speichern disabled without an employee selected', async () => {
+  it('keeps Speichern enabled without an employee selected (rule 1.1)', () => {
+    render(HoursForm, { props: { onSave: vi.fn() } })
+    expect(
+      screen.getByRole('button', { name: /speichern/i })
+    ).not.toBeDisabled()
+  })
+
+  it('shows the employee error on a click without an employee selected', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(HoursForm, { props: { onSave } })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte einen Mitarbeiter auswählen.').length
+    ).toBeGreaterThan(0)
   })
 
   it('rejects when the hours field is set to zero', async () => {
@@ -93,10 +101,9 @@ describe('HoursForm', () => {
     ) as HTMLInputElement
     await user.clear(hoursInput)
     await user.type(hoursInput, '0')
-    // The type=number input has min=0.25 — jsdom blocks button-click
-    // submit on invalid HTML5 values. Fire the submit event directly.
-    const form = container.querySelector('form') as HTMLFormElement
-    await fireEvent.submit(form)
+    // The form carries `novalidate`, so the click reaches our German
+    // click-time validation instead of the native min=0.25 bubble.
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
     // The message shows in the alert and under the field.
     expect(
@@ -119,10 +126,9 @@ describe('HoursForm', () => {
     ) as HTMLInputElement
     await user.clear(hoursInput)
     await user.type(hoursInput, '25')
-    // type=number max=24 → jsdom marks the form invalid on click; fire
-    // submit directly.
-    const form = container.querySelector('form') as HTMLFormElement
-    await fireEvent.submit(form)
+    // The form carries `novalidate`, so the click reaches our German
+    // click-time validation instead of the native max=24 bubble.
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
     // The message shows in the alert and under the field.
     expect(screen.getAllByText(/Maximal 24 Stunden/i).length).toBeGreaterThan(0)
@@ -150,16 +156,17 @@ describe('HoursForm', () => {
     expect(onSave.mock.calls[0][0].task).toBe('Werkstattorganisation')
   })
 
-  it('keeps Speichern disabled in task link-kind with empty task', async () => {
+  it('rejects a click in task link-kind with an empty task', async () => {
+    const user = userEvent.setup()
     const onSave = vi.fn()
     render(HoursForm, {
       props: { onSave, lockedEmployee: { id: 'emp-1', label: 'Test' } }
     })
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte eine Aufgabe eingeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('emits trimmed task as the task value', async () => {
@@ -282,7 +289,7 @@ describe('HoursForm', () => {
     expect(formDirty.dirty).toBe(false)
   })
 
-  it('disables Speichern when date is cleared', async () => {
+  it('rejects a click when the date is cleared', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()
     const { container } = render(HoursForm, {
@@ -296,11 +303,11 @@ describe('HoursForm', () => {
       'input[type="date"]'
     ) as HTMLInputElement
     await user.clear(dateInput)
-    const btn = screen.getByRole('button', {
-      name: /speichern/i
-    }) as HTMLButtonElement
-    expect(btn).toBeDisabled()
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).not.toHaveBeenCalled()
+    expect(
+      screen.getAllByText('Bitte ein Datum eingeben.').length
+    ).toBeGreaterThan(0)
   })
 
   it('invokes onCancel when the cancel button is clicked', async () => {

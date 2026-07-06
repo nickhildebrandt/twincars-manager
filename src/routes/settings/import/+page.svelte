@@ -14,6 +14,21 @@
   let confirmOpen = $state(false)
   let resultOpen = $state(false)
   let summary = $state<Summary | null>(null)
+  let errorMsg = $state<string | null>(null)
+
+  /**
+   * Click-time file check (rule 1.1: action buttons are never gated on
+   * missing input) — returns false and shows the German message when
+   * no .mdb file has been picked yet.
+   */
+  const requireFile = (): boolean => {
+    if (pickedFile) {
+      errorMsg = null
+      return true
+    }
+    errorMsg = 'Bitte zuerst eine .mdb-Datei auswählen.'
+    return false
+  }
 
   /**
    * Live progress of a running (real) import. The command call blocks
@@ -60,6 +75,7 @@
       return
     }
     pickedFile = f
+    errorMsg = null
   }
 
   const readAsDataUrl = (f: File): Promise<string> =>
@@ -169,20 +185,30 @@
         </div>
       {/if}
 
+      {#if errorMsg}
+        <div class="alert alert-error text-sm">
+          <span>{errorMsg}</span>
+        </div>
+      {/if}
+
       <div class="flex flex-wrap justify-end gap-2">
         <button
           type="button"
           class="btn btn-ghost gap-2"
-          disabled={!pickedFile || busy.active}
-          onclick={() => runImport(true)}
+          disabled={busy.active}
+          onclick={() => {
+            if (requireFile()) runImport(true)
+          }}
         >
           Vorschau (ohne Speichern)
         </button>
         <button
           type="button"
           class="btn btn-primary gap-2"
-          disabled={!pickedFile || busy.active}
-          onclick={() => (confirmOpen = true)}
+          disabled={busy.active}
+          onclick={() => {
+            if (requireFile()) confirmOpen = true
+          }}
         >
           <Upload size={16} />
           Import starten
@@ -441,10 +467,10 @@
           <button
             type="button"
             class="btn btn-primary gap-2"
-            disabled={busy.active || !pickedFile}
+            disabled={busy.active}
             onclick={() => {
               resultOpen = false
-              confirmOpen = true
+              if (requireFile()) confirmOpen = true
             }}
           >
             <Upload size={16} />

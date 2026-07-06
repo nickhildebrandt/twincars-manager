@@ -57,39 +57,41 @@
   /* — Users tab — */
 
   let pageNum = $state(1)
-  const size = 25
+  const size = 25 as const
   let q = $state('')
 
-  const usersQuery = $derived(
-    listUsersRemote({ page: pageNum, size, q: q || undefined })
-  )
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const usersArgs = $derived({ page: pageNum, size, ...(q ? { q } : {}) })
 
-  const initialUsers = await untrack(() => usersQuery)
+  const initialUsers = await untrack(() => listUsersRemote(usersArgs))
   let lastUsersResult = $state<typeof initialUsers>(initialUsers)
-  $effect(() => {
-    if (usersQuery.current) lastUsersResult = usersQuery.current
-  })
 
-  const usersResult = $derived(usersQuery.current ?? lastUsersResult)
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init — `current` stays undefined and
+  // optimistic overrides never render. See src/routes/orders/+page.svelte.
+  const usersResult = $derived.by(
+    () => listUsersRemote(usersArgs).current ?? lastUsersResult
+  )
   const users = $derived(usersResult.items)
   const usersTotal = $derived(usersResult.total)
   const usersPageCount = $derived(usersResult.pageCount)
 
   $effect(() => {
+    const usersQuery = listUsersRemote(usersArgs)
+    if (usersQuery.current) lastUsersResult = usersQuery.current
     if (usersQuery.error) handleClientError(usersQuery.error)
   })
 
   /* — Roles tab — */
 
-  const rolesQuery = $derived(listRolesRemote())
-  const initialRoles = await untrack(() => rolesQuery)
+  const initialRoles = await untrack(() => listRolesRemote())
   let lastRoles = $state<typeof initialRoles>(initialRoles)
-  $effect(() => {
-    if (rolesQuery.current) lastRoles = rolesQuery.current
-  })
-  const rolesList = $derived(rolesQuery.current ?? lastRoles)
+  const rolesList = $derived.by(() => listRolesRemote().current ?? lastRoles)
 
   $effect(() => {
+    const rolesQuery = listRolesRemote()
+    if (rolesQuery.current) lastRoles = rolesQuery.current
     if (rolesQuery.error) handleClientError(rolesQuery.error)
   })
 
@@ -121,11 +123,7 @@
       try {
         await busy.run(() =>
           deleteUserRemote({ id }).updates(
-            listUsersRemote({
-              page: pageNum,
-              size,
-              q: q || undefined
-            }).withOverride((current) => ({
+            listUsersRemote(usersArgs).withOverride((current) => ({
               ...current,
               items: current.items.filter((u) => u.id !== id),
               total: Math.max(0, current.total - 1)
@@ -164,11 +162,7 @@
     try {
       await busy.run(() =>
         setUserActiveRemote({ id: u.id, active: next }).updates(
-          listUsersRemote({
-            page: pageNum,
-            size,
-            q: q || undefined
-          }).withOverride((current) => ({
+          listUsersRemote(usersArgs).withOverride((current) => ({
             ...current,
             items: current.items.map((x) =>
               x.id === u.id ? { ...x, active: next } : x

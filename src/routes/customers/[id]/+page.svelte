@@ -66,25 +66,38 @@
     return name || '-'
   })
 
-  const canSend = $derived(
-    !!customer.email &&
-      emailSubject.trim().length > 0 &&
-      emailBody.trim().length > 0
-  )
+  let emailErrorMsg = $state<string | null>(null)
 
   const openEmailDialog = () => {
     emailSubject = ''
     emailBody = ''
     emailAsHtml = false
     emailAttachments = []
+    emailErrorMsg = null
     emailOpen = true
   }
   const closeEmailDialog = () => {
     emailOpen = false
   }
 
+  /**
+   * Click-time validation (rule 1.1: the Senden button is never gated
+   * on validity) — German messages appear in the dialog instead.
+   */
   const sendEmail = async () => {
-    if (!customer.email) return
+    emailErrorMsg = null
+    if (!customer.email) {
+      emailErrorMsg = 'Für diesen Kunden ist keine E-Mail-Adresse hinterlegt.'
+      return
+    }
+    if (emailSubject.trim().length === 0) {
+      emailErrorMsg = 'Bitte einen Betreff eingeben.'
+      return
+    }
+    if (emailBody.trim().length === 0) {
+      emailErrorMsg = 'Bitte einen Nachrichtentext eingeben.'
+      return
+    }
     try {
       await busy.run(() =>
         sendAdHocCustomerEmailRemote({
@@ -348,6 +361,12 @@
         />
       {/if}
 
+      {#if emailErrorMsg}
+        <div class="alert alert-error mt-3 text-sm">
+          <span>{emailErrorMsg}</span>
+        </div>
+      {/if}
+
       <div class="modal-action">
         <button
           type="button"
@@ -361,7 +380,7 @@
           type="button"
           class="btn btn-primary"
           onclick={sendEmail}
-          disabled={!canSend || busy.active}
+          disabled={busy.active}
         >
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>

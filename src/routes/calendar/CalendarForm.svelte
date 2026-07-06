@@ -45,7 +45,8 @@
    *
    * The overlap-confirmation flow (warn, never refuse, when the time
    * window intersects another non-cancelled appointment) and the
-   * submit validity gate live entirely inside this component. The
+   * click-time validation (rule 1.1: the submit button is never gated
+   * on validity) live entirely inside this component. The
    * parent page owns the actual remote call (`onSave`), toast and
    * navigation; the edit page additionally passes its delete button
    * via the `deleteAction` snippet.
@@ -246,20 +247,6 @@
     goto(target)
   }
 
-  /** Submit button validity gate — mirrors the rules in `submit`. */
-  const valid = $derived.by(() => {
-    if (!title.trim()) return false
-    if (kind === 'appointment') {
-      const startStr = allDay ? `${startsAt.slice(0, 10)}T00:00` : startsAt
-      const endStr = allDay ? `${endsAt.slice(0, 10)}T00:00` : endsAt
-      if (!allDay && new Date(endStr) <= new Date(startStr)) return false
-      if (allDay && endStr.slice(0, 10) < startStr.slice(0, 10)) return false
-    } else {
-      if (dateTo < dateFrom) return false
-    }
-    return true
-  })
-
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
     pickEmployeesRemote({
       ...params,
@@ -311,6 +298,10 @@
     }
 
     if (kind === 'appointment') {
+      if (!startsAt || !endsAt) {
+        errorMsg = 'Bitte Beginn und Ende angeben.'
+        return
+      }
       const startStr = allDay ? `${startsAt.slice(0, 10)}T00:00` : startsAt
       const endStr = allDay ? `${endsAt.slice(0, 10)}T00:00` : endsAt
       if (!allDay && new Date(endStr) <= new Date(startStr)) {
@@ -371,6 +362,10 @@
     }
 
     // kind === 'closure'
+    if (!dateFrom || !dateTo) {
+      errorMsg = 'Bitte Von- und Bis-Datum angeben.'
+      return
+    }
     if (dateTo < dateFrom) {
       errorMsg = 'Bis-Datum darf nicht vor dem Von-Datum liegen.'
       return
@@ -394,6 +389,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -575,11 +571,7 @@
             Abbrechen
           </button>
         {/if}
-        <button
-          type="submit"
-          class="btn btn-primary"
-          disabled={busy.active || !valid}
-        >
+        <button type="submit" class="btn btn-primary" disabled={busy.active}>
           {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>
           {/if}

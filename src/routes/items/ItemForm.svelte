@@ -120,6 +120,7 @@
   onsubmit={submit}
   oninput={markDirty}
   onchange={markDirty}
+  novalidate
   class="card border-base-300 bg-base-100 border"
 >
   <div class="card-body gap-4">
@@ -242,11 +243,7 @@
           disabled={busy.active}>Abbrechen</button
         >
       {/if}
-      <button
-        type="submit"
-        class="btn btn-primary"
-        disabled={busy.active || !fv.valid}
-      >
+      <button type="submit" class="btn btn-primary" disabled={busy.active}>
         {#if busy.active}
           <span class="loading loading-spinner loading-sm"></span>
         {/if}
