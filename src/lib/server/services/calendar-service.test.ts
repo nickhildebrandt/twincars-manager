@@ -343,7 +343,8 @@ describe('calendar-service', () => {
           status: 'open',
           customerId: customer.id,
           vehicleId,
-          scheduledAt: new Date('2026-06-18T09:00:00Z')
+          scheduledDate: '2026-06-18',
+          scheduledTime: '09:00'
         })
         .returning()
 
@@ -356,9 +357,55 @@ describe('calendar-service', () => {
       expect(wo[0].title).toBe('Bremsen erneuern')
       expect(wo[0].customerId).toBe(customer.id)
       expect(wo[0].vehicleId).toBe(vehicleId)
+      // Timed order → startsAt carries the local wall-clock start.
+      expect(wo[0].startsAt).toEqual(new Date('2026-06-18T09:00:00'))
     })
 
-    it('skips work orders that are done, unscheduled, out of range or Termin-born', async () => {
+    it('renders timeless orders like all-day chips (no startsAt)', async () => {
+      await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-2026-0001',
+          title: 'Ganztägig geplant',
+          status: 'open',
+          scheduledDate: '2026-06-18'
+        })
+      const events = await listCalendarEvents('2026-06-16', '2026-06-20')
+      const wo = events.filter((e) => e.kind === 'work_order')
+      expect(wo).toHaveLength(1)
+      expect(wo[0].dateIso).toBe('2026-06-18')
+      expect(wo[0].startsAt).toBeNull()
+    })
+
+    it('skips work orders that are done, unscheduled or out of range', async () => {
+      await db.insert(workOrders).values([
+        {
+          orderNumber: 'AU-2026-0001',
+          title: 'Abgeschlossen',
+          status: 'done',
+          scheduledDate: '2026-06-18',
+          scheduledTime: '09:00',
+          completedAt: new Date('2026-06-18T16:00:00Z')
+        },
+        {
+          orderNumber: 'AU-2026-0002',
+          title: 'Ohne Termin-Platzierung',
+          status: 'open',
+          scheduledDate: null
+        },
+        {
+          orderNumber: 'AU-2026-0003',
+          title: 'Ausserhalb',
+          status: 'open',
+          scheduledDate: '2026-07-18'
+        }
+      ])
+
+      const events = await listCalendarEvents('2026-06-16', '2026-06-20')
+      expect(events.filter((e) => e.kind === 'work_order')).toHaveLength(0)
+    })
+
+    it('renders Termin-born orders as work_order and hides the source Termin', async () => {
       const [appt] = await db
         .insert(calendarEntries)
         .values({
@@ -369,39 +416,37 @@ describe('calendar-service', () => {
           status: 'scheduled'
         })
         .returning()
-      await db.insert(workOrders).values([
-        {
-          orderNumber: 'AU-2026-0001',
-          title: 'Abgeschlossen',
-          status: 'done',
-          scheduledAt: new Date('2026-06-18T09:00:00Z'),
-          completedAt: new Date('2026-06-18T16:00:00Z')
-        },
-        {
-          orderNumber: 'AU-2026-0002',
-          title: 'Ohne Termin-Platzierung',
-          status: 'open',
-          scheduledAt: null
-        },
-        {
-          orderNumber: 'AU-2026-0003',
-          title: 'Ausserhalb',
-          status: 'open',
-          scheduledAt: new Date('2026-07-18T09:00:00Z')
-        },
-        {
+      // A second appointment WITHOUT an order keeps rendering normally.
+      await createCalendarEntry({
+        kind: 'appointment',
+        title: 'Ohne Auftrag',
+        startsAt: new Date('2026-06-19T08:00:00Z'),
+        endsAt: new Date('2026-06-19T09:00:00Z'),
+        allDay: false,
+        status: 'scheduled'
+      })
+      const [order] = await db
+        .insert(workOrders)
+        .values({
           orderNumber: 'AU-2026-0004',
           title: 'Aus Termin erstellt',
           status: 'open',
           appointmentId: appt.id,
-          scheduledAt: new Date('2026-06-18T08:00:00Z')
-        }
-      ])
+          scheduledDate: '2026-06-18',
+          scheduledTime: '10:00'
+        })
+        .returning()
 
       const events = await listCalendarEvents('2026-06-16', '2026-06-20')
-      expect(events.filter((e) => e.kind === 'work_order')).toHaveLength(0)
-      // The source Termin itself still shows up.
-      expect(events.some((e) => e.kind === 'appointment')).toBe(true)
+      // The order renders exactly once — as a work_order chip.
+      const wo = events.filter((e) => e.kind === 'work_order')
+      expect(wo).toHaveLength(1)
+      expect(wo[0].sourceId).toBe(order.id)
+      // Its source Termin is excluded so nothing renders twice; the
+      // unlinked appointment stays visible.
+      const appts = events.filter((e) => e.kind === 'appointment')
+      expect(appts.some((e) => e.title.includes('Quelle'))).toBe(false)
+      expect(appts.some((e) => e.title.includes('Ohne Auftrag'))).toBe(true)
     })
 
     it('narrows work orders to the assigned employee when filtering', async () => {
@@ -411,7 +456,8 @@ describe('calendar-service', () => {
           orderNumber: 'AU-2026-0001',
           title: 'Meiner',
           status: 'open',
-          scheduledAt: new Date('2026-06-18T09:00:00Z')
+          scheduledDate: '2026-06-18',
+          scheduledTime: '09:00'
         })
         .returning()
       await db
@@ -420,7 +466,8 @@ describe('calendar-service', () => {
           orderNumber: 'AU-2026-0002',
           title: 'Fremder',
           status: 'open',
-          scheduledAt: new Date('2026-06-18T10:00:00Z')
+          scheduledDate: '2026-06-18',
+          scheduledTime: '10:00'
         })
       await db
         .insert(workOrderAssignees)

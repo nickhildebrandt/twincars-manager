@@ -19,13 +19,13 @@ import { eq, inArray } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import { documents, workOrders } from '$lib/server/db/schema'
 import {
-  dateFromStringSchema,
   dateStringSchema,
   idSchema,
   longTextSchema,
   moneySchema,
   paymentMethodSchema,
-  searchQuerySchema
+  searchQuerySchema,
+  timeHHMMSchema
 } from '$lib/server/db/validation'
 import {
   addWorkOrderItem,
@@ -54,16 +54,17 @@ const titleSchema = pipe(
 )
 
 /**
- * Shared input schema for `createWorkOrderRemote`. `scheduledAt` comes
- * from a `datetime-local` input as a string and is transformed into a
- * `Date` server-side.
+ * Shared input schema for `createWorkOrderRemote`. Scheduling is a
+ * plain `YYYY-MM-DD` date plus an optional `HH:MM` start time (no end
+ * time) — both stored as-is, no timezone conversion.
  */
 const workOrderInputSchema = object({
   title: titleSchema,
   description: optional(longTextSchema),
   customerId: optional(idSchema),
   vehicleId: optional(idSchema),
-  scheduledAt: optional(dateFromStringSchema),
+  scheduledDate: optional(dateStringSchema),
+  scheduledTime: optional(timeHHMMSchema),
   assigneeIds: optional(
     pipe(
       array(idSchema),
@@ -82,7 +83,8 @@ const workOrderPatchSchema = object({
   description: optional(nullable(longTextSchema)),
   customerId: optional(nullable(idSchema)),
   vehicleId: optional(nullable(idSchema)),
-  scheduledAt: optional(nullable(dateFromStringSchema)),
+  scheduledDate: optional(nullable(dateStringSchema)),
+  scheduledTime: optional(nullable(timeHHMMSchema)),
   assigneeIds: optional(
     pipe(
       array(idSchema),
@@ -305,7 +307,8 @@ export const createWorkOrderRemote = command(
       description: input.description ?? null,
       customerId: input.customerId ?? null,
       vehicleId: input.vehicleId ?? null,
-      scheduledAt: input.scheduledAt ?? null,
+      scheduledDate: input.scheduledDate ?? null,
+      scheduledTime: input.scheduledTime ?? null,
       assigneeIds: input.assigneeIds
     })
     await refreshBoardAndLists()

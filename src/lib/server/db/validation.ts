@@ -10,7 +10,9 @@ import {
   optional,
   picklist,
   pipe,
+  regex,
   string,
+  toUpperCase,
   transform,
   trim
 } from 'valibot'
@@ -179,6 +181,79 @@ export const positiveIntegerSchema = pipe(
   minValue(0, 'Der Wert darf nicht negativ sein.'),
   maxValue(1_000_000_000, 'Der Wert ist zu groß.'),
   check((v) => Number.isInteger(v), 'Bitte geben Sie eine ganze Zahl ein.')
+)
+
+/**
+ * German license plate (Kennzeichen), deliberately permissive: it
+ * accepts the usual `B-XY 123` shape as well as Kürzel-Ziffern
+ * variants, seasonal / historic suffixes and diplomatic plates —
+ * uppercase letters (incl. umlauts), digits, spaces and hyphens, up
+ * to 12 characters. Input is uppercased for the caller.
+ */
+export const licensePlateSchema = pipe(
+  string('Bitte ein Kennzeichen eingeben.'),
+  trim(),
+  toUpperCase(),
+  minLength(1, 'Das Kennzeichen darf nicht leer sein.'),
+  maxLength(12, 'Das Kennzeichen darf maximal 12 Zeichen lang sein.'),
+  regex(
+    /^[A-ZÄÖÜ0-9 -]+$/,
+    'Bitte ein gültiges Kennzeichen eingeben (z. B. B-XY 123).'
+  )
+)
+
+/**
+ * Vehicle identification number (FIN/VIN): exactly 17 characters,
+ * letters and digits without I, O and Q (ISO 3779). Lowercase input
+ * is normalized to uppercase.
+ */
+export const vinSchema = pipe(
+  string('Bitte eine Fahrgestellnummer eingeben.'),
+  trim(),
+  toUpperCase(),
+  regex(
+    /^[A-HJ-NPR-Z0-9]{17}$/,
+    'Bitte eine gültige Fahrgestellnummer eingeben (17 Zeichen, ohne I, O und Q).'
+  )
+)
+
+/** Herstellerschlüsselnummer: exactly 4 digits. */
+export const hsnSchema = pipe(
+  string('Bitte eine HSN eingeben.'),
+  trim(),
+  regex(/^\d{4}$/, 'Die HSN muss aus genau 4 Ziffern bestehen.')
+)
+
+/**
+ * Typschlüsselnummer: exactly 3 alphanumeric characters (uppercase;
+ * lowercase input is normalized).
+ */
+export const tsnSchema = pipe(
+  string('Bitte eine TSN eingeben.'),
+  trim(),
+  toUpperCase(),
+  regex(
+    /^[A-Z0-9]{3}$/,
+    'Die TSN muss aus genau 3 Zeichen (Buchstaben oder Ziffern) bestehen.'
+  )
+)
+
+/** Time of day as `HH:MM` (24-hour clock). */
+export const timeHHMMSchema = pipe(
+  string('Bitte eine Uhrzeit eingeben.'),
+  trim(),
+  regex(
+    /^([01]\d|2[0-3]):[0-5]\d$/,
+    'Bitte eine gültige Uhrzeit (HH:MM) angeben.'
+  )
+)
+
+/** Personalnummer: non-empty, trimmed, at most 20 characters. */
+export const personnelNumberSchema = pipe(
+  string('Bitte eine Personalnummer eingeben.'),
+  trim(),
+  minLength(1, 'Die Personalnummer darf nicht leer sein.'),
+  maxLength(20, 'Die Personalnummer darf maximal 20 Zeichen lang sein.')
 )
 
 export const searchQuerySchema = pipe(

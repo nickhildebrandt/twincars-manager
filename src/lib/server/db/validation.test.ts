@@ -2,12 +2,18 @@ import { describe, it, expect } from 'vitest'
 import { safeParse } from 'valibot'
 import {
   emailSchema,
+  hsnSchema,
   ibanSchema,
+  licensePlateSchema,
   listParamsSchema,
   moneySchema,
   nameSchema,
   notesSchema,
   paymentMethodSchema,
+  personnelNumberSchema,
+  timeHHMMSchema,
+  tsnSchema,
+  vinSchema,
   zipSchema
 } from './validation'
 import { PAYMENT_METHODS } from '$lib/payment-methods'
@@ -121,6 +127,103 @@ describe('validation schemas', () => {
     })
     it('rejects an empty string (forms send undefined instead)', () => {
       expect(safeParse(paymentMethodSchema, '').success).toBe(false)
+    })
+  })
+
+  describe('licensePlateSchema', () => {
+    it('accepts common German plates including umlauts and Kürzel-Ziffern variants', () => {
+      for (const plate of [
+        'B-XY 123',
+        'M-A 1',
+        'TÖL-K 42',
+        'GÖ-AB 1234',
+        'B-XY 123E',
+        'B-XY 123H',
+        '0-1'
+      ]) {
+        expect(safeParse(licensePlateSchema, plate).success).toBe(true)
+      }
+    })
+    it('uppercases the input', () => {
+      const r = safeParse(licensePlateSchema, ' b-xy 123 ')
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.output).toBe('B-XY 123')
+    })
+    it('rejects empty, overlong and out-of-charset values', () => {
+      expect(safeParse(licensePlateSchema, '').success).toBe(false)
+      expect(safeParse(licensePlateSchema, 'B-XY 123456789').success).toBe(
+        false
+      )
+      expect(safeParse(licensePlateSchema, 'B_XY!123').success).toBe(false)
+    })
+  })
+
+  describe('vinSchema', () => {
+    it('accepts a valid 17-char VIN and uppercases it', () => {
+      const r = safeParse(vinSchema, 'wvwzzz1jz3w386752')
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.output).toBe('WVWZZZ1JZ3W386752')
+    })
+    it('rejects wrong lengths', () => {
+      expect(safeParse(vinSchema, 'WVWZZZ1JZ3W38675').success).toBe(false)
+      expect(safeParse(vinSchema, 'WVWZZZ1JZ3W3867521').success).toBe(false)
+    })
+    it('rejects the forbidden letters I, O and Q', () => {
+      expect(safeParse(vinSchema, 'IVWZZZ1JZ3W386752').success).toBe(false)
+      expect(safeParse(vinSchema, 'OVWZZZ1JZ3W386752').success).toBe(false)
+      expect(safeParse(vinSchema, 'QVWZZZ1JZ3W386752').success).toBe(false)
+    })
+  })
+
+  describe('hsnSchema', () => {
+    it('accepts exactly 4 digits', () => {
+      expect(safeParse(hsnSchema, '0603').success).toBe(true)
+    })
+    it('rejects letters and wrong lengths', () => {
+      expect(safeParse(hsnSchema, '060').success).toBe(false)
+      expect(safeParse(hsnSchema, '06035').success).toBe(false)
+      expect(safeParse(hsnSchema, '06A3').success).toBe(false)
+    })
+  })
+
+  describe('tsnSchema', () => {
+    it('accepts 3 alphanumeric characters and uppercases them', () => {
+      const r = safeParse(tsnSchema, 'ajh')
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.output).toBe('AJH')
+      expect(safeParse(tsnSchema, '123').success).toBe(true)
+    })
+    it('rejects wrong lengths and special characters', () => {
+      expect(safeParse(tsnSchema, 'AJ').success).toBe(false)
+      expect(safeParse(tsnSchema, 'AJHX').success).toBe(false)
+      expect(safeParse(tsnSchema, 'A-1').success).toBe(false)
+    })
+  })
+
+  describe('timeHHMMSchema', () => {
+    it('accepts valid 24h times', () => {
+      for (const t of ['00:00', '08:30', '19:05', '23:59']) {
+        expect(safeParse(timeHHMMSchema, t).success).toBe(true)
+      }
+    })
+    it('rejects invalid times and other formats', () => {
+      for (const t of ['24:00', '12:60', '8:30', '0830', '12:5', 'abc']) {
+        expect(safeParse(timeHHMMSchema, t).success).toBe(false)
+      }
+    })
+  })
+
+  describe('personnelNumberSchema', () => {
+    it('accepts trimmed values up to 20 chars', () => {
+      const r = safeParse(personnelNumberSchema, '  P-001  ')
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.output).toBe('P-001')
+    })
+    it('rejects empty and overlong values', () => {
+      expect(safeParse(personnelNumberSchema, '   ').success).toBe(false)
+      expect(safeParse(personnelNumberSchema, 'x'.repeat(21)).success).toBe(
+        false
+      )
     })
   })
 })

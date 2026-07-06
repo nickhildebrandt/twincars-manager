@@ -59,6 +59,14 @@ import {
 
 const YEAR = new Date().getFullYear()
 
+const pad = (n: number): string => String(n).padStart(2, '0')
+/** Local wall-clock date of a Date — mirrors the service conversion. */
+const localDate = (d: Date): string =>
+  `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+/** Local wall-clock HH:MM of a Date — mirrors the service conversion. */
+const localTime = (d: Date): string =>
+  `${pad(d.getHours())}:${pad(d.getMinutes())}`
+
 const expectHttpError = async (
   fn: () => Promise<unknown>,
   status: number,
@@ -174,6 +182,32 @@ describe('work-order-service', () => {
         'Max Schrauber'
       ])
     })
+
+    it('persists the split scheduling fields (date + optional time)', async () => {
+      const dated = await createWorkOrder({
+        title: 'Nur Datum',
+        scheduledDate: '2026-07-10'
+      })
+      expect(dated.scheduledDate).toBe('2026-07-10')
+      expect(dated.scheduledTime).toBeNull()
+
+      const timed = await createWorkOrder({
+        title: 'Mit Uhrzeit',
+        scheduledDate: '2026-07-10',
+        scheduledTime: '08:30'
+      })
+      expect(timed.scheduledDate).toBe('2026-07-10')
+      expect(timed.scheduledTime).toBe('08:30')
+    })
+
+    it('drops a start time that arrives without a date', async () => {
+      const order = await createWorkOrder({
+        title: 'Zeit ohne Datum',
+        scheduledTime: '08:30'
+      })
+      expect(order.scheduledDate).toBeNull()
+      expect(order.scheduledTime).toBeNull()
+    })
   })
 
   describe('createWorkOrderFromAppointment', () => {
@@ -206,10 +240,24 @@ describe('work-order-service', () => {
       expect(order.customerId).toBe(customerId)
       expect(order.vehicleId).toBe(vehicleId)
       expect(order.appointmentId).toBe(appt.id)
-      expect(order.scheduledAt?.toISOString()).toBe(appt.startsAt.toISOString())
+      // Timed Termin → wall-clock date + HH:MM of its start.
+      expect(order.scheduledDate).toBe(localDate(appt.startsAt))
+      expect(order.scheduledTime).toBe(localTime(appt.startsAt))
       const detail = await getWorkOrder(order.id)
       expect(detail?.assignees.map((a) => a.id)).toEqual([employeeId])
       expect(detail?.appointmentTitle).toBe('HU-Vorbereitung')
+    })
+
+    it('maps an all-day Termin to a date-only placement', async () => {
+      const { appt } = await seedAppointment({
+        allDay: true,
+        startsAt: new Date('2026-07-10T00:00:00Z'),
+        endsAt: new Date('2026-07-11T00:00:00Z')
+      })
+      const order = await createWorkOrderFromAppointment(appt.id)
+      // All-day Termine are pinned to UTC midnight — UTC date, no time.
+      expect(order.scheduledDate).toBe('2026-07-10')
+      expect(order.scheduledTime).toBeNull()
     })
 
     it('404s for an unknown appointment', async () => {
@@ -246,6 +294,24 @@ describe('work-order-service', () => {
       expect(updated.title).toBe('Neu')
       const detail = await getWorkOrder(order.id)
       expect(detail?.assignees.map((a) => a.id)).toEqual([emp2])
+    })
+
+    it('re-schedules and clears the time together with the date', async () => {
+      const order = await createWorkOrder({
+        title: 'Job',
+        scheduledDate: '2026-07-10',
+        scheduledTime: '08:30'
+      })
+      const moved = await updateWorkOrder(order.id, {
+        scheduledDate: '2026-07-11',
+        scheduledTime: '14:00'
+      })
+      expect(moved.scheduledDate).toBe('2026-07-11')
+      expect(moved.scheduledTime).toBe('14:00')
+
+      const cleared = await updateWorkOrder(order.id, { scheduledDate: null })
+      expect(cleared.scheduledDate).toBeNull()
+      expect(cleared.scheduledTime).toBeNull()
     })
   })
 
@@ -666,6 +732,10 @@ describe('work-order-service', () => {
 
       const byQuery = await listWorkOrders({ page: 1, size: 25, q: 'brems' })
       expect(byQuery.total).toBe(1)
+
+      const byPlate = await listWorkOrders({ page: 1, size: 25, q: 'B-XY' })
+      expect(byPlate.total).toBe(1)
+      expect(byPlate.items[0].title).toBe('Bremsen')
     })
   })
 

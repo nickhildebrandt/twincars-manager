@@ -25,10 +25,10 @@ import {
   ilike,
   inArray,
   isNotNull,
-  isNull,
   lt,
   lte,
-  ne
+  ne,
+  notInArray
 } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
@@ -90,9 +90,11 @@ const expandDays = (fromIso: string, toIsoStr: string): string[] => {
  * `calendar_entries` (split into appointment / closure rows by `kind`),
  * `employee_absences` (vacation / sick / other), `public_holidays`,
  * HU due dates derived from `vehicles`, and scheduled `work_orders`
- * (only those NOT created from a Termin — orders with an
- * `appointment_id` are already visible as that appointment — and not
- * yet done). Filtering by employee narrows the calendar entries (those
+ * (not yet done). Scheduled orders ALWAYS render as `work_order`
+ * events — including Termin-born ones; to avoid double rendering, an
+ * appointment with a linked work order is excluded from the
+ * appointment source (the order chip replaces it and stays visually
+ * distinct). Filtering by employee narrows the calendar entries (those
  * that link to that employee), the absences (their owner) and the work
  * orders (those the employee is assigned to).
  */
@@ -103,6 +105,14 @@ export const listCalendarEvents = async (
 ): Promise<CalendarEvent[]> => {
   const fromTs = new Date(`${fromIso}T00:00:00Z`)
   const toTs = new Date(`${toIso}T23:59:59Z`)
+
+  // Appointments that spawned a work order are represented by that
+  // order's chip instead (closures never carry an appointment link, so
+  // applying the exclusion to the whole entries query is safe).
+  const appointmentsWithOrder = db
+    .select({ id: workOrders.appointmentId })
+    .from(workOrders)
+    .where(isNotNull(workOrders.appointmentId))
 
   const [entries, absences, holidays, empRows, huRows, woRows] =
     await Promise.all([
@@ -125,6 +135,7 @@ export const listCalendarEvents = async (
             // Inclusive overlap with [from, to].
             lte(calendarEntries.startsAt, toTs),
             gte(calendarEntries.endsAt, fromTs),
+            notInArray(calendarEntries.id, appointmentsWithOrder),
             employeeId ? eq(calendarEntries.employeeId, employeeId) : undefined
           )
         ),
@@ -178,24 +189,23 @@ export const listCalendarEvents = async (
             )
           )
       })(),
-      // Aufträge: directly created orders with a calendar placement.
-      // Orders created FROM a Termin (appointment_id set) are already
-      // visible as that Termin; completed orders leave the calendar.
+      // Aufträge: every scheduled, not-yet-done order — Termin-born
+      // ones included (their source appointment is excluded above).
+      // NULL scheduled_date rows fall out of the range comparison.
       db
         .select({
           id: workOrders.id,
           title: workOrders.title,
-          scheduledAt: workOrders.scheduledAt,
+          scheduledDate: workOrders.scheduledDate,
+          scheduledTime: workOrders.scheduledTime,
           customerId: workOrders.customerId,
           vehicleId: workOrders.vehicleId
         })
         .from(workOrders)
         .where(
           and(
-            isNotNull(workOrders.scheduledAt),
-            gte(workOrders.scheduledAt, fromTs),
-            lte(workOrders.scheduledAt, toTs),
-            isNull(workOrders.appointmentId),
+            gte(workOrders.scheduledDate, fromIso),
+            lte(workOrders.scheduledDate, toIso),
             ne(workOrders.status, 'done'),
             employeeId
               ? inArray(
@@ -302,13 +312,18 @@ export const listCalendarEvents = async (
     })
   }
   for (const wo of woRows) {
-    if (!wo.scheduledAt) continue
+    if (!wo.scheduledDate) continue
     out.push({
       id: `wo-${wo.id}`,
       kind: 'work_order',
-      dateIso: dateToIso(wo.scheduledAt),
+      dateIso: wo.scheduledDate,
       title: wo.title,
-      startsAt: wo.scheduledAt,
+      // Timed orders carry a wall-clock start (local-naive, matching
+      // how appointment `datetime-local` inputs are parsed); timeless
+      // orders behave like all-day chips (no startsAt).
+      startsAt: wo.scheduledTime
+        ? new Date(`${wo.scheduledDate}T${wo.scheduledTime}:00`)
+        : null,
       sourceId: wo.id,
       customerId: wo.customerId,
       vehicleId: wo.vehicleId

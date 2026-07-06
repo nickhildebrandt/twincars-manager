@@ -42,6 +42,7 @@ import {
   employees,
   items,
   timeEntries,
+  vehicleLicensePlateVersions,
   vehicles,
   workOrderAssignees,
   workOrderItems,
@@ -73,7 +74,10 @@ export type KanbanCard = {
   status: string
   customerLabel: string | null
   vehiclePlate: string | null
-  scheduledAt: Date | null
+  /** Planned date `YYYY-MM-DD`, `null` = not scheduled. */
+  scheduledDate: string | null
+  /** Optional planned start time `HH:MM` (no end time). */
+  scheduledTime: string | null
   completedAt: Date | null
   assignees: Array<{ id: string; label: string }>
 }
@@ -151,13 +155,22 @@ export async function listWorkOrders(
   const filters = []
   if (q) {
     const term = `%${q}%`
+    // Orders whose vehicle has a matching license plate (any version).
+    const plateMatches = await db
+      .selectDistinct({ vehicleId: vehicleLicensePlateVersions.vehicleId })
+      .from(vehicleLicensePlateVersions)
+      .where(ilike(vehicleLicensePlateVersions.licensePlate, term))
+    const plateVehicleIds = plateMatches.map((r) => r.vehicleId)
+    const baseSearch = or(
+      ilike(workOrders.orderNumber, term),
+      ilike(workOrders.title, term),
+      ilike(customers.company, term),
+      ilike(customers.lastName, term)
+    )!
     filters.push(
-      or(
-        ilike(workOrders.orderNumber, term),
-        ilike(workOrders.title, term),
-        ilike(customers.company, term),
-        ilike(customers.lastName, term)
-      )
+      plateVehicleIds.length > 0
+        ? or(baseSearch, inArray(workOrders.vehicleId, plateVehicleIds))!
+        : baseSearch
     )
   }
   if (status && status !== 'all') filters.push(eq(workOrders.status, status))
@@ -301,7 +314,8 @@ export async function listKanbanBoard(params?: {
         })
       : null,
     vehiclePlate: r.vehiclePlate ?? null,
-    scheduledAt: r.order.scheduledAt,
+    scheduledDate: r.order.scheduledDate,
+    scheduledTime: r.order.scheduledTime,
     completedAt: r.order.completedAt,
     assignees: assigneesByOrder.get(r.order.id) ?? []
   })
@@ -379,7 +393,10 @@ export type CreateWorkOrderInput = {
   description?: string | null
   customerId?: string | null
   vehicleId?: string | null
-  scheduledAt?: Date | null
+  /** Planned date `YYYY-MM-DD`. */
+  scheduledDate?: string | null
+  /** Optional planned start time `HH:MM`; ignored without a date. */
+  scheduledTime?: string | null
   assigneeIds?: string[]
 }
 
@@ -402,6 +419,7 @@ export async function createWorkOrder(
   input: CreateWorkOrderInput
 ): Promise<WorkOrder> {
   const orderNumber = await allocateNumber('work_order')
+  const scheduledDate = input.scheduledDate ?? null
   const [created] = await db
     .insert(workOrders)
     .values({
@@ -410,7 +428,9 @@ export async function createWorkOrder(
       description: input.description ?? null,
       customerId: input.customerId ?? null,
       vehicleId: input.vehicleId ?? null,
-      scheduledAt: input.scheduledAt ?? null
+      scheduledDate,
+      // A time without a date is meaningless — normalize it away.
+      scheduledTime: scheduledDate ? (input.scheduledTime ?? null) : null
     })
     .returning()
   if (input.assigneeIds && input.assigneeIds.length > 0) {
@@ -420,10 +440,34 @@ export async function createWorkOrder(
 }
 
 /**
+ * Map a Termin's `startsAt` to the split scheduling fields. All-day
+ * appointments are pinned to UTC midnight by the calendar remote, so
+ * their date is read in UTC and no start time is carried; timed
+ * appointments were created from a local `datetime-local` string, so
+ * their wall-clock date + `HH:MM` are read back with local getters
+ * (the same convention the forms use).
+ */
+const scheduleFromAppointment = (appointment: {
+  startsAt: Date
+  allDay: boolean
+}): { scheduledDate: string; scheduledTime: string | null } => {
+  const d = appointment.startsAt
+  if (appointment.allDay) {
+    return { scheduledDate: d.toISOString().slice(0, 10), scheduledTime: null }
+  }
+  const pad = (n: number) => String(n).padStart(2, '0')
+  return {
+    scheduledDate: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
+    scheduledTime: `${pad(d.getHours())}:${pad(d.getMinutes())}`
+  }
+}
+
+/**
  * Create an order from a calendar Termin: copies title / customer /
  * vehicle, turns the appointment's employee into an assignee, links
  * `appointment_id` (UNIQUE — one order per Termin) and places the
- * order at the appointment's start time.
+ * order at the appointment's start date + time (all-day Termine map
+ * to a date-only placement).
  */
 export async function createWorkOrderFromAppointment(
   appointmentId: string
@@ -452,6 +496,7 @@ export async function createWorkOrderFromAppointment(
   }
 
   const orderNumber = await allocateNumber('work_order')
+  const schedule = scheduleFromAppointment(appointment)
   const [created] = await db
     .insert(workOrders)
     .values({
@@ -460,7 +505,8 @@ export async function createWorkOrderFromAppointment(
       customerId: appointment.customerId,
       vehicleId: appointment.vehicleId,
       appointmentId: appointment.id,
-      scheduledAt: appointment.startsAt
+      scheduledDate: schedule.scheduledDate,
+      scheduledTime: schedule.scheduledTime
     })
     .returning()
   if (appointment.employeeId) {
@@ -476,6 +522,9 @@ export async function updateWorkOrder(
   patch: UpdateWorkOrderInput
 ): Promise<WorkOrder> {
   const { assigneeIds, ...fields } = patch
+  // Clearing the date clears the time with it — a start time without
+  // a date is meaningless.
+  if (fields.scheduledDate === null) fields.scheduledTime = null
   const [updated] = await db
     .update(workOrders)
     .set({ ...fields, updatedAt: new Date() })

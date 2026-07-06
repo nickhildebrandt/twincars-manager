@@ -33,7 +33,8 @@
             description: values.description ?? null,
             customerId: values.customerId ?? null,
             vehicleId: values.vehicleId ?? null,
-            scheduledAt: values.scheduledAt ?? null,
+            scheduledDate: values.scheduledDate ?? null,
+            scheduledTime: values.scheduledTime ?? null,
             assigneeIds: values.assigneeIds
           }
         })
@@ -60,7 +61,8 @@
     customerLabel: detail.customerLabel,
     vehicleId: detail.order.vehicleId,
     vehicleLabel: detail.vehicleLabel,
-    scheduledAt: detail.order.scheduledAt,
+    scheduledDate: detail.order.scheduledDate,
+    scheduledTime: detail.order.scheduledTime,
     assigneeIds: detail.assignees.map((a) => a.id)
   }}
   employees={employeesPage.items}

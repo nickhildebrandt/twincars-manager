@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { isNotNull } from 'drizzle-orm'
 import {
   pgTable,
   uuid,
@@ -247,6 +247,15 @@ export const vehicles = pgTable(
     customerId: uuid('customer_id').references(() => customers.id, {
       onDelete: 'set null'
     }),
+    /**
+     * Optional Vorbesitzer for stock vehicles: the customer the car was
+     * bought from. Independent of `customerId` (the current owner) —
+     * a stock vehicle has no owner but may well have a previous one.
+     */
+    previousOwnerCustomerId: uuid('previous_owner_customer_id').references(
+      () => customers.id,
+      { onDelete: 'set null' }
+    ),
     legacyVehicleId: varchar('legacy_vehicle_id', { length: 50 }),
     make: varchar('make', { length: 100 }),
     model: varchar('model', { length: 150 }),
@@ -372,6 +381,33 @@ export const vehiclePhotos = pgTable('vehicle_photos', {
     .notNull()
     .defaultNow()
 })
+
+/**
+ * Documents attached to a vehicle (Fahrzeugbrief scan, purchase
+ * contract, HU report, photos of damage documentation, …). The raw
+ * bytes live in `bytea` — single-tenant app, no separate object
+ * storage worth the complexity (same reasoning as `document_pdfs`).
+ * List views must select the meta columns only; the bytes travel
+ * exclusively through the single-document read path.
+ */
+export const vehicleDocuments = pgTable(
+  'vehicle_documents',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    vehicleId: uuid('vehicle_id')
+      .notNull()
+      .references(() => vehicles.id, { onDelete: 'cascade' }),
+    fileName: varchar('file_name', { length: 255 }).notNull(),
+    mime: varchar('mime', { length: 100 }).notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    data: bytea('data').notNull(),
+    note: varchar('note', { length: 500 }),
+    uploadedAt: timestamp('uploaded_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [index('vehicle_documents_vehicle_id_idx').on(t.vehicleId)]
+)
 
 export const vehicleSales = pgTable('vehicle_sales', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -1128,7 +1164,7 @@ export const timeEntries = pgTable(
     index('time_entries_work_order_id_idx').on(t.workOrderId),
     uniqueIndex('time_entries_work_order_item_id_idx')
       .on(t.workOrderItemId)
-      .where(sql`${t.workOrderItemId} IS NOT NULL`)
+      .where(isNotNull(t.workOrderItemId))
   ]
 )
 
@@ -1169,8 +1205,14 @@ export const workOrders = pgTable(
     invoiceId: uuid('invoice_id').references(() => documents.id, {
       onDelete: 'set null'
     }),
-    /** Calendar placement for directly created orders. */
-    scheduledAt: timestamp('scheduled_at', { withTimezone: true }),
+    /**
+     * Calendar placement (Europe/Berlin wall-clock, split into a date
+     * and an optional `HH:MM` start time — there is no end time). An
+     * order with a date but no time renders like an all-day chip.
+     */
+    scheduledDate: date('scheduled_date'),
+    /** Optional start time `HH:MM`; only meaningful with a date. */
+    scheduledTime: varchar('scheduled_time', { length: 5 }),
     completedAt: timestamp('completed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
@@ -1184,7 +1226,7 @@ export const workOrders = pgTable(
     index('work_orders_customer_id_idx').on(t.customerId),
     uniqueIndex('work_orders_appointment_id_idx')
       .on(t.appointmentId)
-      .where(sql`${t.appointmentId} IS NOT NULL`),
+      .where(isNotNull(t.appointmentId)),
     index('work_orders_invoice_id_idx').on(t.invoiceId)
   ]
 )
@@ -1796,6 +1838,8 @@ export type NewCustomer = typeof customers.$inferInsert
 export type Vehicle = typeof vehicles.$inferSelect
 export type VehiclePhoto = typeof vehiclePhotos.$inferSelect
 export type NewVehiclePhoto = typeof vehiclePhotos.$inferInsert
+export type VehicleDocument = typeof vehicleDocuments.$inferSelect
+export type NewVehicleDocument = typeof vehicleDocuments.$inferInsert
 export type CalendarEntry = typeof calendarEntries.$inferSelect
 export type NewCalendarEntry = typeof calendarEntries.$inferInsert
 export type CalendarEntryKind = 'appointment' | 'closure'

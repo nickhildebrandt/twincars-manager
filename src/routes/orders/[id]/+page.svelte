@@ -86,6 +86,10 @@
         )
       : '-'
 
+  /** Planned placement: date plus optional `HH:MM` start time. */
+  const fmtScheduled = (dateIso: string | null, time: string | null): string =>
+    dateIso ? `${fmtDate(dateIso)}${time ? `, ${time} Uhr` : ''}` : '-'
+
   const fmtAmount = (v: string | number | null): string =>
     Number(v ?? 0).toLocaleString('de-DE', {
       minimumFractionDigits: 0,
@@ -452,7 +456,9 @@
           </dd>
         {/if}
         <dt class="text-base-content/60">Geplant am</dt>
-        <dd class="sm:col-span-3">{fmtDateTime(order.scheduledAt)}</dd>
+        <dd class="sm:col-span-3">
+          {fmtScheduled(order.scheduledDate, order.scheduledTime)}
+        </dd>
         <dt class="text-base-content/60">Mitarbeiter</dt>
         <dd class="sm:col-span-3">
           {#if detail.assignees.length > 0}

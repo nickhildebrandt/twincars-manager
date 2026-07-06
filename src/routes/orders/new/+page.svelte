@@ -24,7 +24,8 @@
           description: values.description,
           customerId: values.customerId,
           vehicleId: values.vehicleId,
-          scheduledAt: values.scheduledAt,
+          scheduledDate: values.scheduledDate,
+          scheduledTime: values.scheduledTime,
           assigneeIds: values.assigneeIds
         })
       )

@@ -20,8 +20,10 @@
     description?: string
     customerId?: string
     vehicleId?: string
-    /** `datetime-local` string, empty = not scheduled. */
-    scheduledAt?: string
+    /** Planned date `YYYY-MM-DD`, empty = not scheduled. */
+    scheduledDate?: string
+    /** Optional start time `HH:MM`; only sent together with a date. */
+    scheduledTime?: string
     assigneeIds: string[]
   }
 </script>
@@ -52,7 +54,8 @@
       customerLabel?: string | null
       vehicleId?: string | null
       vehicleLabel?: string | null
-      scheduledAt?: Date | string | null
+      scheduledDate?: string | null
+      scheduledTime?: string | null
       assigneeIds?: string[]
     }
     /** Selectable employees (id + display label). */
@@ -63,9 +66,6 @@
 
   const { initial = {}, employees, onSave, onCancel }: Props = $props()
 
-  const fmtLocalIso = (d: Date) =>
-    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}T${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
-
   const init = untrack(() => ({
     title: initial.title ?? '',
     description: initial.description ?? '',
@@ -73,9 +73,8 @@
     customerLabel: initial.customerLabel ?? '',
     vehicleId: initial.vehicleId ?? '',
     vehicleLabel: initial.vehicleLabel ?? '',
-    scheduledAt: initial.scheduledAt
-      ? fmtLocalIso(new Date(initial.scheduledAt))
-      : '',
+    scheduledDate: initial.scheduledDate ?? '',
+    scheduledTime: initial.scheduledTime ?? '',
     assigneeIds: initial.assigneeIds ?? []
   }))
 
@@ -85,7 +84,8 @@
   let customerLabel = $state(init.customerLabel)
   let vehicleId = $state(init.vehicleId)
   let vehicleLabel = $state(init.vehicleLabel)
-  let scheduledAt = $state(init.scheduledAt)
+  let scheduledDate = $state(init.scheduledDate)
+  let scheduledTime = $state(init.scheduledTime)
   /** Selected assignees as a reactive Set; checkboxes toggle entries. */
   let selected = $state<Set<string>>(new Set(init.assigneeIds))
 
@@ -127,7 +127,9 @@
       description: description.trim() || undefined,
       customerId: customerId || undefined,
       vehicleId: vehicleId || undefined,
-      scheduledAt: scheduledAt || undefined,
+      scheduledDate: scheduledDate || undefined,
+      // A start time without a date is meaningless — drop it.
+      scheduledTime: (scheduledDate && scheduledTime) || undefined,
       assigneeIds: Array.from(selected)
     })
   }
@@ -186,8 +188,17 @@
           <span class="label-text">Geplant am</span>
           <input
             class="input input-bordered w-full"
-            type="datetime-local"
-            bind:value={scheduledAt}
+            type="date"
+            bind:value={scheduledDate}
+          />
+        </label>
+        <label class="flex w-full flex-col gap-1">
+          <span class="label-text">Uhrzeit (optional)</span>
+          <input
+            class="input input-bordered w-full"
+            type="time"
+            bind:value={scheduledTime}
+            disabled={!scheduledDate}
           />
         </label>
       </div>

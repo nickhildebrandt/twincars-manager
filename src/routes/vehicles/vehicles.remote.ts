@@ -13,7 +13,14 @@ import {
   trim,
   maxLength
 } from 'valibot'
-import { idSchema, notesSchema } from '$lib/server/db/validation'
+import {
+  hsnSchema,
+  idSchema,
+  licensePlateSchema,
+  notesSchema,
+  tsnSchema,
+  vinSchema
+} from '$lib/server/db/validation'
 import {
   countVehicles,
   createVehicle,
@@ -42,16 +49,16 @@ const vehicleInputSchema = object({
   customerId: optional(idSchema),
   make: optional(pipe(string(), trim(), maxLength(100))),
   model: optional(pipe(string(), trim(), maxLength(150))),
-  licensePlate: optional(pipe(string(), trim(), maxLength(20))),
-  vin: optional(pipe(string(), trim(), maxLength(25))),
+  licensePlate: optional(licensePlateSchema),
+  vin: optional(vinSchema),
   firstRegistration: optional(pipe(string(), trim(), maxLength(10))),
   mileageKm: optional(
     pipe(number(), integer(), minValue(0), maxValue(9_999_999))
   ),
   nextHu: optional(pipe(string(), trim(), maxLength(10))),
   nextAu: optional(pipe(string(), trim(), maxLength(10))),
-  hsn: optional(pipe(string(), trim(), maxLength(10))),
-  tsn: optional(pipe(string(), trim(), maxLength(10))),
+  hsn: optional(hsnSchema),
+  tsn: optional(tsnSchema),
   displacementCcm: optional(
     pipe(number(), integer(), minValue(0), maxValue(99_999))
   ),
