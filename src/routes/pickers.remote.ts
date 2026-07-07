@@ -430,10 +430,17 @@ export const pickInventoryVehiclesRemote = query(
   async ({ q, page, size }) => {
     requirePermission('inventory')
     const offset = (page - 1) * size
+    // Canonical stock definition (mirrors `listInventoryRemote`):
+    // customer-less + not archived. The listing row is OPTIONAL — a
+    // freshly created stock vehicle has none yet and must still be
+    // sellable; only an explicit non-available status excludes it.
     const filters = [
       eq(vehicles.archived, false),
-      eq(vehicleListings.status, 'available'),
-      isNull(vehicles.customerId)
+      isNull(vehicles.customerId),
+      or(
+        isNull(vehicleListings.status),
+        eq(vehicleListings.status, 'available')
+      )!
     ]
     if (q) {
       const term = `%${q}%`
@@ -470,7 +477,7 @@ export const pickInventoryVehiclesRemote = query(
           differentialTax: vehicleListings.differentialTax
         })
         .from(vehicles)
-        .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+        .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
         .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
         .where(where)
         .orderBy(asc(vehicles.make), asc(vehicles.model))
@@ -479,7 +486,7 @@ export const pickInventoryVehiclesRemote = query(
       db
         .select({ value: count() })
         .from(vehicles)
-        .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
+        .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
         .where(where)
     ])
     const out = rows.map((r) => {

@@ -163,8 +163,10 @@
   }
   const runDatevExport = async () => {
     try {
+      // Query in an event handler: execute via .run() (awaiting the
+      // bare proxy throws outside a reactive context).
       const res = await busy.run(() =>
-        exportDatevRemote({ from: datevFrom, to: datevTo })
+        exportDatevRemote({ from: datevFrom, to: datevTo }).run()
       )
       downloadBase64File(res)
       toast.success('DATEV-Export heruntergeladen.')

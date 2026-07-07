@@ -9,12 +9,22 @@
     Plus
   } from '@lucide/svelte'
   import { listCalendarEventsRemote } from './calendar.remote'
+  import { pickEmployeesRemote } from '../pickers.remote'
+  import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import { handleClientError } from '$lib/utils/client-error'
 
   /* — View state — */
   const today = new Date()
   let viewYear = $state(today.getUTCFullYear())
   let viewMonth = $state(today.getUTCMonth() + 1) // 1..12
+
+  /**
+   * Optional employee filter — narrows appointments (entry employee),
+   * absences and work orders (assignee) to one employee; the shared
+   * sources (holidays, closures, HU) stay visible.
+   */
+  let employeeId = $state('')
+  let employeeLabel = $state('')
 
   const ym = $derived(
     `${viewYear}-${String(viewMonth).padStart(2, '0')}` as const
@@ -25,16 +35,35 @@
     return `${ym}-${String(last).padStart(2, '0')}`
   })
 
-  /* — Calendar events query (month bucket). — */
-  const eventsQ = $derived(
-    listCalendarEventsRemote({ from: fromIso, to: toIso })
-  )
-  const initialEvents = await untrack(() => eventsQ)
-  const events = $derived(eventsQ.current ?? initialEvents)
-
-  $effect(() => {
-    if (eventsQ.error) handleClientError(eventsQ.error)
+  /* — Calendar events query (month bucket, only-set keys). — */
+  const queryArgs = $derived.by(() => {
+    const args: { from: string; to: string; employeeId?: string } = {
+      from: fromIso,
+      to: toIso
+    }
+    if (employeeId) args.employeeId = employeeId
+    return args
   })
+  // The query proxy is deliberately re-called on every evaluation
+  // (never memoized in its own `$derived`) — see CONTRIBUTING §5.
+  const initialEvents = await untrack(() => listCalendarEventsRemote(queryArgs))
+  // Stale-while-revalidate: keep the last result so month or filter
+  // changes never blank the grid while the next bucket loads.
+  let lastEvents = $state(initialEvents)
+  $effect(() => {
+    const q = listCalendarEventsRemote(queryArgs)
+    if (q.current) lastEvents = q.current
+    if (q.error) handleClientError(q.error)
+  })
+  const events = $derived.by(
+    () => listCalendarEventsRemote(queryArgs).current ?? lastEvents
+  )
+
+  const searchEmployees = (params: { q: string; page: number; size: number }) =>
+    pickEmployeesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   /**
    * Klick-Ziel pro Event-Kind. Termine + Schließungen führen zur
@@ -211,6 +240,17 @@
         <ClipboardList size={14} />
         Neuer Auftrag
       </a>
+      <div class="w-full sm:w-64">
+        <SearchablePicker
+          bind:value={employeeId}
+          bind:valueLabel={employeeLabel}
+          placeholder="Alle Mitarbeiter"
+          dialogTitle="Mitarbeiter filtern"
+          triggerSize="sm"
+          search={searchEmployees}
+          onSelect={() => {}}
+        />
+      </div>
       <h2 class="ms-auto text-lg font-semibold">
         {monthLabel(viewMonth)}
         {viewYear}

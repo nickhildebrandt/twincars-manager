@@ -56,11 +56,17 @@ class BusyStore {
   begin(): () => void {
     this.#count += 1
     let crossedSlow = false
+    let ended = false
     const slowTimer = setTimeout(() => {
       crossedSlow = true
       this.#slowCount += 1
     }, BusyStore.SLOW_AFTER_MS)
+    // Idempotent: callers may race (e.g. `afterNavigate` plus the
+    // cancelled-navigation cleanup both ending the same slot) — only
+    // the first call decrements.
     return () => {
+      if (ended) return
+      ended = true
       clearTimeout(slowTimer)
       if (this.#count > 0) this.#count -= 1
       if (crossedSlow && this.#slowCount > 0) this.#slowCount -= 1

@@ -36,10 +36,14 @@
    * query below.
    */
   const e = await getEmployeeRemote({ id })
-  const absencesQ = $derived(
-    listAbsencesRemote({ employeeId: id, year: absenceYear })
-  )
-  const initialAbs = await untrack(() => absencesQ)
+  /**
+   * Query args for the absence list. The query proxy itself is never
+   * memoized (list-page recipe / CONTRIBUTING §5): a proxy stored in
+   * its own `$derived` detaches from later `refresh()` cache updates —
+   * the list then only changes on a full reload.
+   */
+  const absArgs = $derived({ employeeId: id, year: absenceYear })
+  const initialAbs = await untrack(() => listAbsencesRemote(absArgs))
   const salaryVersionsQ = listEmployeeSalaryVersionsRemote({ employeeId: id })
   const initialSalaryVersions = await salaryVersionsQ
   let salaryVersions = $state<typeof initialSalaryVersions>(
@@ -49,19 +53,16 @@
     if (salaryVersionsQ.current) salaryVersions = salaryVersionsQ.current
   })
 
-  /**
-   * Imperative state mirror — same trick as the reminders list (see
-   * CONTRIBUTING §7): top-level-await seeds, mutations re-fetch via
-   * `.run()` and assign back. Avoids the brittle reactive `query.current`
-   * path entirely.
-   */
   // Mirror customers' lastResult pattern: keep the previous result
   // visible across param changes so the table doesn't flash empty.
   let lastAbs = $state<typeof initialAbs>(initialAbs)
   $effect(() => {
-    if (absencesQ.current) lastAbs = absencesQ.current
+    const q = listAbsencesRemote(absArgs)
+    if (q.current) lastAbs = q.current
   })
-  const absencesData = $derived(absencesQ.current ?? lastAbs)
+  const absencesData = $derived.by(
+    () => listAbsencesRemote(absArgs).current ?? lastAbs
+  )
   const absences = $derived(absencesData.absences)
   const balance = $derived(absencesData.balance)
 
@@ -146,9 +147,6 @@
     if (Number.isFinite(y) && y !== absenceYear) absenceYear = y
   }
 
-  /** Refresh the active query — used after every mutation. */
-  const refresh = () => absencesQ.refresh()
-
   /* — Konflikt-Modal für Urlaub vs. Krankheit am gleichen Tag — */
   type ConflictRow = {
     id: string
@@ -161,8 +159,10 @@
   let conflictRows = $state<ConflictRow[]>([])
 
   const persistAbsence = async (replaceConflicting = false) => {
-    await busy.run(async () => {
-      await createAbsenceRemote({
+    // The command refreshes every subscribed list key server-side
+    // (single-flight) — no separate client refresh needed.
+    await busy.run(() =>
+      createAbsenceRemote({
         employeeId: id,
         type: formType,
         dateFrom: formFrom,
@@ -170,8 +170,7 @@
         status: formStatus,
         replaceConflicting
       })
-      await refresh()
-    })
+    )
     reset()
     toast.success('Abwesenheit eingetragen.')
   }
@@ -193,12 +192,14 @@
       }
     }
     try {
+      // Event-handler call site: queries must be executed via `.run()`
+      // (only render-time calls create a reactive resource).
       const conflicts = await getAbsenceConflictsRemote({
         employeeId: id,
         type: formType,
         dateFrom: formFrom,
         dateTo: formTo
-      })
+      }).run()
       if (conflicts.length > 0) {
         conflictRows = conflicts as ConflictRow[]
         conflictOpen = true
@@ -229,10 +230,9 @@
     status: 'planned' | 'approved' | 'cancelled'
   ) => {
     try {
-      await busy.run(async () => {
-        await updateAbsenceRemote({ id: rowId, values: { status } })
-        await refresh()
-      })
+      await busy.run(() =>
+        updateAbsenceRemote({ id: rowId, values: { status } })
+      )
       toast.success('Status aktualisiert.')
     } catch (err) {
       handleClientError(err)
@@ -241,10 +241,7 @@
 
   const remove = async (rowId: string) => {
     try {
-      await busy.run(async () => {
-        await deleteAbsenceRemote({ id: rowId, employeeId: id })
-        await refresh()
-      })
+      await busy.run(() => deleteAbsenceRemote({ id: rowId, employeeId: id }))
       toast.success('Eintrag gelöscht.')
     } catch (err) {
       handleClientError(err)

@@ -15,6 +15,13 @@
  *      sale invoice -> als bezahlt -> vehicle at buyer, Vorbesitzer
  *      intact)
  *   7. Import page renders (upload card + no-file click message)
+ *   8. Work-order lifecycle (create with customer, Kanban arrow move
+ *      with instant render, material position, completion -> invoice,
+ *      read-only order afterwards)
+ *   9. Calendar Termin -> Auftrag (create appointment incl. possible
+ *      Terminkollision confirm; order created ONCE, second visit
+ *      links to it; both deleted again)
+ *  10. Offer -> invoice conversion (convert page, converted banner)
  *
  * Prerequisites (deliberately NOT repo dependencies — Playwright is an
  * agent/CI tool, never a project dep):
@@ -333,6 +340,191 @@ try {
   assert(
     (await mainText()).includes('Bitte zuerst eine .mdb-Datei auswählen.'),
     'no-file click shows the German hint (always-clickable rule)'
+  )
+
+  /* Shared helper: pick an entity in a SearchablePicker dialog. */
+  const pickInDialog = async (triggerText, query, hitText) => {
+    await page.getByText(triggerText).first().click()
+    const dlg = page.locator('dialog.modal[open]').last()
+    await dlg.locator('input').first().fill(query)
+    await page.waitForTimeout(1200)
+    await dlg.getByText(hitText).first().click()
+    await page.waitForTimeout(500)
+  }
+
+  /* 9 -- Work-order lifecycle: create -> Kanban move -> items ->
+         complete -> invoice */
+  step('Order lifecycle (create -> kanban -> complete -> invoice)')
+  await gotoSettled(`${BASE}/orders/new`)
+  await pickInDialog('Kunde suchen', `Smokekäufer-${TAG}`, `Smokekäufer-${TAG}`)
+  const orderTitle = `Smoke Auftrag ${TAG}`
+  await page.locator('input[maxlength="200"]').first().fill(orderTitle)
+  await page.getByRole('button', { name: 'Speichern' }).first().click()
+  await page.waitForURL(/\/orders\/[0-9a-f-]{36}$/)
+  const orderUrl = page.url()
+  assert(true, `order created: ${orderUrl}`)
+
+  // Kanban: the fresh order sits in "Offen"; the arrow moves it to
+  // "In Bearbeitung" instantly (optimistic override).
+  await gotoSettled(`${BASE}/orders`)
+  await page.locator('input[type="search"]').first().fill(orderTitle)
+  await page.waitForTimeout(1500)
+  const openCol = page.locator('div[role="list"][aria-label="Offen"]')
+  assert(
+    (await openCol
+      .locator('[role="button"]', { hasText: orderTitle })
+      .count()) === 1,
+    'new order shows in the Offen column'
+  )
+  await openCol
+    .locator('[role="button"]', { hasText: orderTitle })
+    .first()
+    .getByRole('button', { name: 'In Bearbeitung verschieben' })
+    .click()
+  let moved = false
+  for (let i = 0; i < 20 && !moved; i += 1) {
+    moved =
+      (await page
+        .locator('div[role="list"][aria-label="In Bearbeitung"]')
+        .locator('[role="button"]', { hasText: orderTitle })
+        .count()) === 1
+    if (!moved) await page.waitForTimeout(100)
+  }
+  assert(moved, 'kanban arrow moves the card to In Bearbeitung (instant)')
+
+  // Items + completion: one material row, then Abschluss creates the
+  // invoice and the order becomes read-only.
+  await gotoSettled(orderUrl)
+  await page.locator('input[aria-label="Material"]').check()
+  await page
+    .locator('label', { hasText: 'Beschreibung' })
+    .first()
+    .locator('input')
+    .first()
+    .fill('Smoke Kleinteil')
+  await page
+    .locator('label', { hasText: 'Menge' })
+    .first()
+    .locator('input')
+    .first()
+    .fill('1')
+  await page
+    .locator('label', { hasText: 'Einzelpreis (netto)' })
+    .first()
+    .locator('input')
+    .first()
+    .fill('10')
+  await page.getByRole('button', { name: 'Position hinzufügen' }).click()
+  await page.waitForTimeout(1200)
+  await page
+    .getByRole('button', { name: 'Abschließen & Rechnung erstellen' })
+    .first()
+    .click()
+  await page.waitForTimeout(700)
+  await page
+    .locator('.modal-open')
+    .last()
+    .getByRole('button', { name: 'Abschließen & Rechnung erstellen' })
+    .click()
+  await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/)
+  await page.waitForTimeout(700)
+  assert(
+    (await mainText()).includes('Smoke Kleinteil'),
+    `completion created the invoice: ${page.url()}`
+  )
+  await gotoSettled(orderUrl)
+  assert(
+    (await mainText()).includes('abgeschlossen und abgerechnet'),
+    'completed order is read-only with the invoice back-link'
+  )
+
+  /* 10 -- Calendar: Termin -> Auftrag (once only) */
+  step('Calendar Termin -> Auftrag')
+  await gotoSettled(`${BASE}/calendar/new`)
+  const terminTitle = `Smoke Termin ${TAG}`
+  await fillLabeled('Titel', terminTitle)
+  const todayIso = new Date().toISOString().slice(0, 10)
+  const dts = page.locator('input[type="datetime-local"]')
+  await dts.nth(0).fill(`${todayIso}T20:00`)
+  await dts.nth(1).fill(`${todayIso}T21:00`)
+  await pickInDialog('Kunde suchen', `Smokekäufer-${TAG}`, `Smokekäufer-${TAG}`)
+  await page.getByRole('button', { name: 'Speichern' }).first().click()
+  await page.waitForTimeout(1200)
+  // Repeated runs overlap the same slot -- confirm the Terminkollision.
+  const collision = page.locator('.modal-open, dialog[open]', {
+    hasText: 'Terminkollision'
+  })
+  if ((await collision.count()) > 0) {
+    await collision.getByRole('button', { name: 'Trotzdem speichern' }).click()
+    await page.waitForTimeout(1200)
+  }
+  assert(page.url().endsWith('/calendar'), 'Termin saved, back on calendar')
+  await page.getByText(terminTitle).first().click()
+  await page.waitForURL(/\/calendar\/[0-9a-f-]{36}\/edit/)
+  const terminEditUrl = page.url()
+  await page.waitForTimeout(700)
+  await page.getByRole('button', { name: 'Auftrag erstellen' }).click()
+  await page.waitForURL(/\/orders\/[0-9a-f-]{36}$/)
+  await page.waitForTimeout(700)
+  const terminOrderUrl = page.url()
+  assert(
+    (await mainText()).includes(terminTitle),
+    'order carries the Termin link'
+  )
+  await gotoSettled(terminEditUrl)
+  assert(
+    (await page.getByRole('button', { name: 'Auftrag erstellen' }).count()) ===
+      0 &&
+      (await page.getByRole('link', { name: /Zum Auftrag/ }).count()) === 1,
+    'second visit offers "Zum Auftrag" instead of a second create'
+  )
+  // Self-cleaning: drop the Termin-order and the Termin again.
+  await gotoSettled(terminOrderUrl)
+  await page.getByRole('button', { name: 'Löschen' }).first().click()
+  await page.waitForTimeout(500)
+  await page
+    .locator('.modal-open, dialog[open]')
+    .last()
+    .locator('button.btn-error')
+    .last()
+    .click()
+  await page.waitForTimeout(1200)
+  await gotoSettled(terminEditUrl)
+  await page.getByRole('button', { name: 'Löschen' }).first().click()
+  await page.waitForTimeout(500)
+  await page
+    .locator('.modal-open, dialog[open]')
+    .last()
+    .locator('button.btn-error')
+    .last()
+    .click()
+  await page.waitForTimeout(1200)
+  assert(true, 'Termin order + Termin deleted again (self-cleaning)')
+
+  /* 11 -- Offer -> invoice conversion */
+  step('Offer -> invoice conversion')
+  await gotoSettled(`${BASE}/offers/new`)
+  await pickInDialog('Kunde suchen', `Smokekäufer-${TAG}`, `Smokekäufer-${TAG}`)
+  const offerRow = page.locator('table tbody tr').first()
+  await offerRow.locator('input').nth(0).fill(`Smoke Angebotsposition ${TAG}`)
+  await offerRow.locator('input').nth(1).fill('1')
+  await offerRow.locator('input').nth(3).fill('42')
+  await page.getByRole('button', { name: 'Speichern' }).last().click()
+  await page.waitForURL(/\/offers\/[0-9a-f-]{36}$/)
+  const offerUrl = page.url()
+  assert(true, `offer created: ${offerUrl}`)
+  await gotoSettled(`${offerUrl}/convert`)
+  await page.getByRole('button', { name: 'Rechnung erstellen' }).click()
+  await page.waitForURL(/\/invoices\/[0-9a-f-]{36}$/)
+  await page.waitForTimeout(700)
+  assert(
+    (await mainText()).includes(`Smoke Angebotsposition ${TAG}`),
+    `offer converted to invoice: ${page.url()}`
+  )
+  await gotoSettled(offerUrl)
+  assert(
+    (await mainText()).includes('In Rechnung überführt'),
+    'source offer shows the converted banner'
   )
 } catch (err) {
   fail(`unexpected error: ${err?.message ?? err}`)

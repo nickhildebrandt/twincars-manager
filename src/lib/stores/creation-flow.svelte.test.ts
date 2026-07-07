@@ -147,6 +147,65 @@ describe('creation-flow store', () => {
     expect(outer?.result?.label).toBe('B-AA 1 · VW Golf')
   })
 
+  it('carries leafInitial on the frame and the holder through finish', () => {
+    const store = new CreationFlowStore()
+    // Order form with a picked customer starts a vehicle creation and
+    // hands the customer over as the leaf prefill.
+    store.start(
+      frame({
+        entity: 'vehicle',
+        returnUrl: '/orders/new',
+        originField: 'vehicleId',
+        leafInitial: { customerId: 'c1', customerLabel: 'Alpha GmbH · Berlin' }
+      })
+    )
+    expect(store.top?.leafInitial).toEqual({
+      customerId: 'c1',
+      customerLabel: 'Alpha GmbH · Berlin'
+    })
+
+    // The leaf finishes with a DIFFERENT holder — the result carries it
+    // so the host can re-sync its customer picker.
+    store.finish({
+      id: 'v1',
+      label: 'B-AA 1 · VW Golf',
+      holder: { id: 'c2', label: 'Beta GmbH · Hamburg' }
+    })
+    const pending = store.pendingReturnFor('/orders/new')
+    expect(pending?.result?.holder).toEqual({
+      id: 'c2',
+      label: 'Beta GmbH · Hamburg'
+    })
+  })
+
+  it('leafInitial and holder survive the sessionStorage round trip', () => {
+    const first = new CreationFlowStore()
+    first.start(
+      frame({
+        entity: 'vehicle',
+        returnUrl: '/orders/new',
+        originField: 'vehicleId',
+        leafInitial: { customerId: 'c1', customerLabel: 'Alpha GmbH' }
+      })
+    )
+    const rehydrated = new CreationFlowStore()
+    expect(rehydrated.top?.leafInitial).toEqual({
+      customerId: 'c1',
+      customerLabel: 'Alpha GmbH'
+    })
+
+    rehydrated.finish({
+      id: 'v1',
+      label: 'B-AA 1 · VW Golf',
+      holder: { id: 'c1', label: 'Alpha GmbH' }
+    })
+    const third = new CreationFlowStore()
+    expect(third.pendingReturnFor('/orders/new')?.result?.holder).toEqual({
+      id: 'c1',
+      label: 'Alpha GmbH'
+    })
+  })
+
   it('activeEntities reports every level for the cycle guard', () => {
     const store = new CreationFlowStore()
     store.start(frame({ entity: 'vehicle' }))

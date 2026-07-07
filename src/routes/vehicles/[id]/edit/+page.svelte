@@ -16,7 +16,9 @@
 
   const handleSave = async (values: VehicleFormValues) => {
     try {
-      await busy.run(() => updateVehicleRemote({ id, values }))
+      // customerLabel is a UI-only field for creation-flow leaves.
+      const { customerLabel, ...payload } = values
+      await busy.run(() => updateVehicleRemote({ id, values: payload }))
       toast.success('Fahrzeug gespeichert.')
       goto(`/vehicles/${id}`)
     } catch (err) {

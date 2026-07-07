@@ -9,12 +9,20 @@
    * and binds it — exactly how the offer and invoice create pages use
    * the editor.
    */
-  type Props = { initial?: Position[]; descriptionPlaceholder?: string }
+  type Props = {
+    initial?: Position[]
+    descriptionPlaceholder?: string
+    onVehiclePicked?: (v: { id: string }) => void
+  }
 
-  let { initial = [blankPosition()], descriptionPlaceholder }: Props = $props()
+  let {
+    initial = [blankPosition()],
+    descriptionPlaceholder,
+    onVehiclePicked
+  }: Props = $props()
 
   // svelte-ignore state_referenced_locally -- seeding once is the point
   let positions = $state<Position[]>(initial)
 </script>
 
-<PositionsEditor bind:positions {descriptionPlaceholder} />
+<PositionsEditor bind:positions {descriptionPlaceholder} {onVehiclePicked} />

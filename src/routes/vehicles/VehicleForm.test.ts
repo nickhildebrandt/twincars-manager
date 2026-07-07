@@ -305,6 +305,38 @@ describe('VehicleForm', () => {
     expect(screen.queryByText('- Kunde wählen -')).not.toBeInTheDocument()
   })
 
+  it('emits customerId plus the UI-only customerLabel on submit (customer mode)', async () => {
+    // Leaf pages hand the holder label back to their creation-flow
+    // host through this field — it must mirror the picked customer.
+    const onSave = vi.fn()
+    const { container } = render(VehicleForm, {
+      props: {
+        onSave,
+        mode: 'customer',
+        initial: {
+          customerId: 'c1',
+          customerLabel: 'Muster GmbH · Berlin',
+          make: 'VW'
+        }
+      }
+    })
+    await fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    const payload = onSave.mock.calls[0][0]
+    expect(payload.customerId).toBe('c1')
+    expect(payload.customerLabel).toBe('Muster GmbH · Berlin')
+  })
+
+  it('omits customerLabel when no customer is set (stock mode)', async () => {
+    const onSave = vi.fn()
+    const { container } = render(VehicleForm, {
+      props: { onSave, mode: 'stock', initial: { make: 'VW' } }
+    })
+    await fireEvent.submit(container.querySelector('form') as HTMLFormElement)
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(onSave.mock.calls[0][0].customerLabel).toBeUndefined()
+  })
+
   it('pre-fills make/model from the initial prop', () => {
     const { container } = render(VehicleForm, {
       props: { onSave: vi.fn(), initial: { make: 'Mercedes', model: 'GLA' } }

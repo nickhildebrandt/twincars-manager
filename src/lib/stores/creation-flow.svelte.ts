@@ -24,6 +24,17 @@
 /** Entity types that support the full-page creation flow. */
 export type CreationFlowEntity = 'customer' | 'vehicle' | 'employee'
 
+/**
+ * Prefill values the host hands to the leaf page so related pickers
+ * start preselected. Today's only use: a host that already picked a
+ * customer starts a VEHICLE creation — the leaf preselects that
+ * customer as the holder instead of opening with an empty picker.
+ */
+export type CreationFlowLeafInitial = {
+  customerId?: string
+  customerLabel?: string
+}
+
 /** One level of the flow: "somebody at `returnUrl` is waiting for a new `entity`". */
 export type CreationFlowFrame = {
   entity: CreationFlowEntity
@@ -35,10 +46,23 @@ export type CreationFlowFrame = {
   draft: unknown
   /** Epoch ms; stale flows are dropped on load. */
   createdAt: number
+  /** Optional prefill the leaf consumes (see {@link CreationFlowLeafInitial}). */
+  leafInitial?: CreationFlowLeafInitial
 }
 
 /** Created entity handed back to the originating picker. */
-export type CreationFlowResult = { id: string; label: string }
+export type CreationFlowResult = {
+  id: string
+  label: string
+  /**
+   * Holder of a created vehicle (customer id + picker label), `null`
+   * for holderless creations. Hosts re-sync their customer picker to
+   * this when it differs from their current selection — the same rule
+   * as picking an existing vehicle, which always wins over a
+   * previously chosen customer.
+   */
+  holder?: { id: string; label: string } | null
+}
 
 /** Popped frame plus outcome, waiting to be consumed by the origin form. */
 export type CreationFlowReturn = {

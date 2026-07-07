@@ -79,7 +79,10 @@
   })
 
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
-    pickEmployeesRemote({ ...params, size: params.size as 10 | 25 | 50 | 100 })
+    pickEmployeesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const onFilterChange = () => {
     pageNum = 1

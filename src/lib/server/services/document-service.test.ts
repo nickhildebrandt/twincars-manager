@@ -644,6 +644,20 @@ describe('document-service', () => {
       expect(storno!.items[0].description).toBe('Ölwechsel')
     })
 
+    it('persists the storno PDF like every other document creation', async () => {
+      // Regression: the view path reads ONLY the cached PDF (no
+      // on-demand render) — a storno without a persisted PDF would
+      // 404 forever on its PDF-Vorschau. pdf-service is mocked here,
+      // so assert the persist call itself.
+      const { renderAndPersistDocumentPdf } = await import('./pdf-service')
+      const persistMock = vi.mocked(renderAndPersistDocumentPdf)
+      persistMock.mockClear()
+      const original = await createDocument(baseInput())
+      await setDocumentStatus(original.id, 'sent')
+      const res = await cancelInvoice(original.id, 'Doppelt erfasst')
+      expect(persistMock).toHaveBeenCalledWith(res.stornoId)
+    })
+
     it('refuses to cancel a draft invoice', async () => {
       const doc = await createDocument(baseInput())
       await setDocumentStatus(doc.id, 'draft')

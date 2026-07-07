@@ -103,4 +103,17 @@ describe('busy store', () => {
     end()
     expect(busy.active).toBe(false)
   })
+
+  it('a double-ended slot never steals a concurrent operation', () => {
+    // Regression for the cancelled-navigation cleanup: slot A ends
+    // twice (afterNavigate + navigation.complete), while slot B is
+    // still running — B must keep the store active.
+    const endA = busy.begin()
+    const endB = busy.begin()
+    endA()
+    endA()
+    expect(busy.active).toBe(true)
+    endB()
+    expect(busy.active).toBe(false)
+  })
 })

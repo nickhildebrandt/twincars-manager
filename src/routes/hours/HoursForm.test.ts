@@ -15,15 +15,15 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 vi.mock('$app/navigation', () => ({ goto: vi.fn() }))
 
-// HoursForm awaits the picker queries directly (no `.run()`), so the
-// mocks must be plain promises resolving to an empty result page.
+// The picker search closures execute queries via `.run()` (event
+// handler context), so the mocks expose the same shape.
 const emptyPage = () =>
   Promise.resolve({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
 
 vi.mock('../pickers.remote', () => ({
-  pickEmployeesRemote: () => emptyPage(),
-  pickDocumentsRemote: () => emptyPage(),
-  pickCustomersRemote: () => emptyPage()
+  pickEmployeesRemote: () => ({ run: () => emptyPage() }),
+  pickDocumentsRemote: () => ({ run: () => emptyPage() }),
+  pickCustomersRemote: () => ({ run: () => emptyPage() })
 }))
 
 import { goto } from '$app/navigation'

@@ -502,6 +502,20 @@ export async function cancelInvoice(
     })
     .where(eq(documents.id, originalId))
 
+  // Die Stornorechnung ist ein aufbewahrungspflichtiger Beleg — ihr
+  // PDF wird wie bei jeder Beleg-Anlage sofort persistiert (der
+  // View-Pfad liest ausschliesslich aus dem Cache und würde sonst
+  // dauerhaft 404 liefern). Lazy-Import wie in createDocument.
+  try {
+    const { renderAndPersistDocumentPdf } = await import('./pdf-service')
+    await renderAndPersistDocumentPdf(created.id)
+  } catch (err) {
+    console.error(
+      '[document-service] PDF-Render bei Storno fehlgeschlagen',
+      err
+    )
+  }
+
   return { stornoId: created.id, stornoNumber: created.documentNumber }
 }
 

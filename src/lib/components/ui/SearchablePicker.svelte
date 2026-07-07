@@ -111,6 +111,23 @@
     onSelect(null)
   }
 
+  /**
+   * Single click entry for the trigger button. The clear "X" is a
+   * span INSIDE the trigger <button>; Svelte's delegated click never
+   * reaches the span's own onclick here (clicks fell through to
+   * `open`, so the selection could not be cleared by mouse at all).
+   * Deciding on the button handler via `closest()` is robust against
+   * that: X clears, everything else opens the dialog.
+   */
+  const handleTriggerClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('[data-picker-clear]')) {
+      handleClear(e)
+      return
+    }
+    open()
+  }
+
   /** Keyboard activation for the span[role=button] clear affordance. */
   const handleClearKey = (e: KeyboardEvent) => {
     if (e.key !== 'Enter' && e.key !== ' ') return
@@ -141,7 +158,7 @@
     ? 'input-sm'
     : ''}"
   {disabled}
-  onclick={open}
+  onclick={handleTriggerClick}
 >
   <span
     class={value
@@ -157,6 +174,7 @@
         tabindex="0"
         class="btn btn-ghost btn-square btn-xs"
         aria-label="Auswahl entfernen"
+        data-picker-clear
         onclick={handleClear}
         onkeydown={handleClearKey}
       >

@@ -147,6 +147,20 @@
     handleClear(e)
   }
 
+  /**
+   * Single click entry for the trigger button — same workaround as in
+   * SearchablePicker: delegated clicks never reach the nested clear
+   * span's own onclick, so the button handler decides via `closest()`.
+   */
+  const handleTriggerClick = (e: MouseEvent) => {
+    const target = e.target as HTMLElement | null
+    if (target?.closest('[data-picker-clear]')) {
+      handleClear(e)
+      return
+    }
+    open()
+  }
+
   /** Close first — the host navigates to the full creation page. */
   const handleCreateNew = () => {
     close()
@@ -167,7 +181,7 @@
     ? 'input-sm'
     : ''}"
   {disabled}
-  onclick={open}
+  onclick={handleTriggerClick}
 >
   <span
     class={values.length > 0
@@ -183,6 +197,7 @@
         tabindex="0"
         class="btn btn-ghost btn-square btn-xs"
         aria-label="Auswahl entfernen"
+        data-picker-clear
         onclick={handleClear}
         onkeydown={handleClearKey}
       >

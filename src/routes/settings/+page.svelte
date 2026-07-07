@@ -58,11 +58,14 @@
     if (url.search !== pageStore.url.search) replaceState(url, pageStore.state)
   })
 
-  const sQ = $derived(getAllSettingsRemote())
-  const data = $derived(sQ.current)
+  // Never memoize the query proxy (CONTRIBUTING §5) — the save
+  // commands refresh this query server-side and the page must pick
+  // the fresh value up without a reload.
+  const data = $derived.by(() => getAllSettingsRemote().current)
 
   $effect(() => {
-    if (sQ.error) handleClientError(sQ.error)
+    const q = getAllSettingsRemote()
+    if (q.error) handleClientError(q.error)
   })
 
   // Company / Bank fields
@@ -112,8 +115,7 @@
   let reminderTemplateBody = $state('')
 
   /* — Mail template state — */
-  const templatesQ = $derived(listMailTemplatesRemote())
-  const templates = $derived(templatesQ.current ?? [])
+  const templates = $derived.by(() => listMailTemplatesRemote().current ?? [])
   let activeTemplateKey = $state<string | null>(null)
   let templateSubject = $state('')
   let templateBody = $state('')
@@ -273,19 +275,19 @@
 
   /* ─ Stundensatz (workshop labor rate) ─────────────────────────────── */
 
-  const laborQ = $derived(getLaborRateSettingRemote())
-  const laborRate = $derived(laborQ.current)
+  const laborRate = $derived.by(() => getLaborRateSettingRemote().current)
 
   $effect(() => {
-    if (laborQ.error) handleClientError(laborQ.error)
+    const q = getLaborRateSettingRemote()
+    if (q.error) handleClientError(q.error)
   })
 
   let laborRateInput = $state<number | null>(null)
   let laborRateInitialised = $state(false)
   $effect(() => {
-    if (laborRateInitialised || laborQ.current === undefined) return
-    laborRateInput = laborQ.current?.unitPriceNet
-      ? Number(laborQ.current.unitPriceNet)
+    if (laborRateInitialised || laborRate === undefined) return
+    laborRateInput = laborRate?.unitPriceNet
+      ? Number(laborRate.unitPriceNet)
       : null
     laborRateInitialised = true
   })
@@ -355,6 +357,10 @@
         return 'Zahlungserinnerung'
       case 'mailing':
         return 'Serienbrief'
+      case 'appointment_confirmation':
+        return 'Terminbestätigung'
+      case 'tire_reminder':
+        return 'Reifenwechsel-Erinnerung'
       default:
         return key
     }

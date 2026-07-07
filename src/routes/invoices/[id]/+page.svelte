@@ -84,15 +84,25 @@
    * forever. Filtering happens server-side via the existing
    * `documentId` filter on `listTimeEntries`.
    */
-  const timeEntriesQ = $derived(
-    listTimeEntriesRemote({ page: 1, size: 25, documentId: id })
+  // Never memoize the query proxy (CONTRIBUTING §5): a proxy stored
+  // in its own `$derived` detaches from later `refresh()` cache
+  // updates — a freshly logged entry would only appear after reload.
+  const timeEntriesArgs = {
+    page: 1 as const,
+    size: 25 as const,
+    documentId: id
+  }
+  const timeEntriesInitial = await untrack(() =>
+    listTimeEntriesRemote(timeEntriesArgs)
   )
-  const timeEntriesInitial = await untrack(() => timeEntriesQ)
   let lastTimeEntries = $state(timeEntriesInitial)
   $effect(() => {
-    if (timeEntriesQ.current) lastTimeEntries = timeEntriesQ.current
+    const q = listTimeEntriesRemote(timeEntriesArgs)
+    if (q.current) lastTimeEntries = q.current
   })
-  const timeEntries = $derived(timeEntriesQ.current ?? lastTimeEntries)
+  const timeEntries = $derived.by(
+    () => listTimeEntriesRemote(timeEntriesArgs).current ?? lastTimeEntries
+  )
 
   /** Permission set granted to the caller via assigned roles. */
   const callerPermissions = $derived(new Set(currentUser?.permissions ?? []))
@@ -202,7 +212,9 @@
    */
   const downloadXRechnung = async () => {
     try {
-      const res = await busy.run(() => getInvoiceXRechnungRemote({ id }))
+      // Query in an event handler: execute via .run() (awaiting the
+      // bare proxy throws outside a reactive context).
+      const res = await busy.run(() => getInvoiceXRechnungRemote({ id }).run())
       downloadBase64File(res)
       toast.success('E-Rechnung (XRechnung) heruntergeladen.')
     } catch (err) {
@@ -517,7 +529,7 @@
                   {/if}
                 </td>
                 <td class="text-right">
-                  {Number(it.quantity)}
+                  {Number(it.quantity).toLocaleString('de-DE')}
                   {it.unit ?? ''}
                 </td>
                 <td class="hidden text-right font-mono sm:table-cell">
@@ -548,9 +560,9 @@
           </span>
         </dd>
         <dt class="text-base-content/60">Datum</dt>
-        <dd class="text-right">{data.doc.issueDate}</dd>
+        <dd class="text-right">{fmtDate(data.doc.issueDate)}</dd>
         <dt class="text-base-content/60">Fällig</dt>
-        <dd class="text-right">{data.doc.dueDate ?? '-'}</dd>
+        <dd class="text-right">{fmtDate(data.doc.dueDate)}</dd>
         <dt class="text-base-content/60">Netto</dt>
         <dd class="text-right font-mono"
           >{formatEuro(Number(data.doc.netTotal))}</dd
@@ -745,10 +757,18 @@
                   </td>
                   <td>{t.task ?? '-'}</td>
                   <td class="text-right font-mono"
-                    >{Number(t.hours).toFixed(2)}</td
+                    >{Number(t.hours).toLocaleString('de-DE', {
+                      minimumFractionDigits: 2,
+                      maximumFractionDigits: 2
+                    })}</td
                   >
                   <td class="text-right">
-                    {#if canDelete}
+                    {#if t.workOrderItemId}
+                      <!-- Order-derived rows are read-only everywhere;
+                           they are maintained at the work order (same
+                           rule as /hours). -->
+                      <span class="badge badge-ghost badge-sm">Auftrag</span>
+                    {:else if canDelete}
                       <button
                         type="button"
                         class="btn btn-ghost btn-xs text-error gap-1"

@@ -36,9 +36,15 @@
    * the navigation takes longer than 250 ms.
    */
   let endNavigation: (() => void) | null = null
-  beforeNavigate(() => {
+  beforeNavigate((nav) => {
     endNavigation?.()
-    endNavigation = busy.begin()
+    const end = (endNavigation = busy.begin())
+    // A navigation can be CANCELLED (e.g. by the unsaved-changes
+    // guard) — then `afterNavigate` never fires and the slot would
+    // leak, leaving every button disabled. `navigation.complete`
+    // settles either way; `end` is idempotent, so double-ending via
+    // afterNavigate is harmless.
+    void nav.complete.catch(() => {}).finally(() => end())
   })
   afterNavigate(() => {
     endNavigation?.()

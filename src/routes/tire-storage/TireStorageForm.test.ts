@@ -302,18 +302,54 @@ describe('TireStorageForm', () => {
       const frame = startSpy.mock.calls[0][0]
       expect(frame.entity).toBe('vehicle')
       expect(frame.originField).toBe('vehicleId')
+      // The picked customer travels to the leaf as holder prefill.
+      expect(frame.leafInitial).toEqual({
+        customerId: 'cust-1',
+        customerLabel: 'Alpha GmbH'
+      })
       const draft = frame.draft as Record<string, unknown>
       expect(draft.customerId).toBe('cust-1')
       expect(goto).toHaveBeenCalledWith('/vehicles/new')
 
-      // Simulate the leaf: vehicle created, back to this page.
+      // Simulate the leaf: vehicle created under the same holder.
       first.unmount()
-      creationFlow.finish({ id: 'v9', label: 'B-XY 9 · Opel Corsa' })
+      creationFlow.finish({
+        id: 'v9',
+        label: 'B-XY 9 · Opel Corsa',
+        holder: { id: 'cust-1', label: 'Alpha GmbH' }
+      })
 
       render(TireStorageForm, { props: { onSave: vi.fn() } })
       // Customer kept from the draft, vehicle auto-selected.
       expect(screen.getByText('Alpha GmbH')).toBeInTheDocument()
       expect(screen.getByText('B-XY 9 · Opel Corsa')).toBeInTheDocument()
+    })
+
+    it("re-syncs the customer to the created vehicle's holder on return", () => {
+      creationFlow.start({
+        entity: 'vehicle',
+        returnUrl: window.location.pathname + window.location.search,
+        originField: 'vehicleId',
+        draft: {
+          customerId: 'cust-1',
+          customerLabel: 'Alpha GmbH',
+          vehicleId: '',
+          vehicleLabel: ''
+        },
+        createdAt: Date.now(),
+        leafInitial: { customerId: 'cust-1', customerLabel: 'Alpha GmbH' }
+      })
+      // The leaf saved the vehicle under a DIFFERENT holder.
+      creationFlow.finish({
+        id: 'v9',
+        label: 'HH-Z 99 · Ford Ka',
+        holder: { id: 'cust-2', label: 'Beta GmbH · Hamburg' }
+      })
+
+      render(TireStorageForm, { props: { onSave: vi.fn() } })
+      expect(screen.getByText('HH-Z 99 · Ford Ka')).toBeInTheDocument()
+      expect(screen.getByText('Beta GmbH · Hamburg')).toBeInTheDocument()
+      expect(screen.queryByText('Alpha GmbH')).toBeNull()
     })
 
     it('offers no vehicle creation without a customer', async () => {

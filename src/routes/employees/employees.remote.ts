@@ -365,7 +365,9 @@ export const createAbsenceRemote = command(absenceInputSchema, async (data) => {
     attachmentName: data.attachmentName ?? null,
     attachmentData: data.attachmentData ?? null
   })
-  await listAbsencesRemote({ employeeId: data.employeeId }).refresh()
+  // Refresh every subscribed key — the detail page queries with an
+  // additional `year` arg, so an exact-args refresh would miss it.
+  await requested(listAbsencesRemote, 4).refreshAll()
   return created
 })
 
@@ -430,7 +432,7 @@ export const updateAbsenceRemote = command(
       }
     }
     const row = await updateAbsence(id, values)
-    await listAbsencesRemote({ employeeId: row.employeeId }).refresh()
+    await requested(listAbsencesRemote, 4).refreshAll()
     return row
   }
 )
@@ -446,6 +448,6 @@ export const deleteAbsenceRemote = command(
   async ({ id, employeeId }) => {
     requirePermission('employees')
     await deleteAbsence(id)
-    await listAbsencesRemote({ employeeId }).refresh()
+    await requested(listAbsencesRemote, 4).refreshAll()
   }
 )

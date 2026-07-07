@@ -224,6 +224,31 @@ describe('pickers.remote', () => {
       expect(res.total).toBe(1)
       expect(res.items[0].label).toContain('A4')
     })
+
+    it('pickInventoryVehiclesRemote includes fresh stock without a listing row', async () => {
+      // Regression: /inventory/new creates no vehicle_listings row —
+      // the picker must still offer the vehicle (listing is optional,
+      // mirroring listInventoryRemote), otherwise a freshly created
+      // stock vehicle can never be sold via invoice position.
+      await db
+        .insert(vehicles)
+        .values({ make: 'Skoda', model: 'Fabia', hsn: '8004', tsn: 'AJH' })
+      const res = await pickInventoryVehiclesRemote({ ...page, q: 'Fabia' })
+      expect(res.total).toBe(1)
+      expect(res.items[0].label).toContain('Fabia')
+    })
+
+    it('pickInventoryVehiclesRemote excludes sold listings', async () => {
+      const [sold] = await db
+        .insert(vehicles)
+        .values({ make: 'Seat', model: 'Ibiza' })
+        .returning({ id: vehicles.id })
+      await db
+        .insert(vehicleListings)
+        .values({ vehicleId: sold.id, status: 'sold' })
+      const res = await pickInventoryVehiclesRemote({ ...page, q: 'Ibiza' })
+      expect(res.total).toBe(0)
+    })
   })
 
   describe('pickEmployeesRemote', () => {

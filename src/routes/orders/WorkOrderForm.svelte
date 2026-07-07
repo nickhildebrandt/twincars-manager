@@ -188,6 +188,14 @@
       } else if (pending.originField === 'vehicleId') {
         s.vehicleId = id
         s.vehicleLabel = label
+        // The created vehicle determines its holder — re-sync the
+        // customer when it differs (same rule as picking an existing
+        // vehicle; a mismatched Kunde/Fahrzeug pair must not survive).
+        const holder = pending.result.holder
+        if (holder && holder.id !== s.customerId) {
+          s.customerId = holder.id
+          s.customerLabel = holder.label
+        }
       } else if (pending.originField === 'assigneeIds') {
         if (!s.assigneeIds.includes(id)) s.assigneeIds = [...s.assigneeIds, id]
         s.assigneeLabels.set(id, label)
@@ -264,7 +272,12 @@
       returnUrl: currentUrl(),
       originField,
       draft: buildDraft(),
-      createdAt: Date.now()
+      createdAt: Date.now(),
+      // A vehicle created from here belongs to the customer already
+      // picked — the leaf preselects them as holder.
+      ...(entity === 'vehicle' && customerId
+        ? { leafInitial: { customerId, customerLabel } }
+        : {})
     })
     // The draft carries the input — silence the unsaved-changes guard.
     formDirty.clear()

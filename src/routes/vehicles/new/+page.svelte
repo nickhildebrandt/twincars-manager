@@ -18,14 +18,33 @@
    */
   const inFlow = $derived(creationFlow.top?.entity === 'vehicle')
 
+  /**
+   * Host-provided prefill: a host that already picked a customer hands
+   * it over so the holder starts preselected. Snapshotted once at init
+   * — the frame does not change while this leaf is open.
+   */
+  const leafInitial =
+    creationFlow.top?.entity === 'vehicle'
+      ? (creationFlow.top.leafInitial ?? null)
+      : null
+
   const handleSave = async (values: VehicleFormValues) => {
     try {
-      const created = await busy.run(() => createVehicleRemote(values))
+      // customerLabel is a UI-only companion for the flow result below
+      // — never sent to the server.
+      const { customerLabel, ...payload } = values
+      const created = await busy.run(() => createVehicleRemote(payload))
       toast.success('Fahrzeug angelegt.')
       if (creationFlow.top?.entity === 'vehicle') {
         const returnUrl = creationFlow.finish({
           id: created.id,
-          label: vehiclePickerLabel(created)
+          label: vehiclePickerLabel(created),
+          // Hand the holder back so the host re-syncs its customer
+          // picker when it differs (same rule as picking an existing
+          // vehicle).
+          holder: values.customerId
+            ? { id: values.customerId, label: customerLabel ?? '' }
+            : null
         })
         goto(returnUrl ?? `/vehicles/${created.id}`, { replaceState: true })
         return
@@ -59,4 +78,14 @@
     </span>
   </div>
 {/if}
-<VehicleForm mode="customer" onSave={handleSave} onCancel={handleCancel} />
+<VehicleForm
+  mode="customer"
+  initial={leafInitial
+    ? {
+        customerId: leafInitial.customerId,
+        customerLabel: leafInitial.customerLabel
+      }
+    : {}}
+  onSave={handleSave}
+  onCancel={handleCancel}
+/>

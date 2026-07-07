@@ -4,7 +4,7 @@ import { object } from 'valibot'
 import { idSchema } from '$lib/server/db/validation'
 import { db } from '$lib/server/db/client'
 import { documents, customers, documentPayments } from '$lib/server/db/schema'
-import { and, asc, eq, max, ne, sum } from 'drizzle-orm'
+import { and, asc, eq, max, notInArray, sum } from 'drizzle-orm'
 import { reminders as remindersTable } from '$lib/server/db/schema'
 import {
   autoSendDuePaymentReminders,
@@ -69,8 +69,16 @@ export const listOpenInvoicesRemote = query(async () => {
     .where(
       and(
         eq(documents.type, 'invoice'),
-        ne(documents.status, 'paid'),
-        ne(documents.status, 'cancelled')
+        // Nur echte offene Forderungen: Storno-Belege (negative
+        // Gegenbuchungen), Entwürfe und konvertierte Belege sind keine
+        // mahnbaren Rechnungen.
+        notInArray(documents.status, [
+          'paid',
+          'cancelled',
+          'storno',
+          'draft',
+          'converted'
+        ])
       )
     )
     // Postgres' `ORDER BY ... ASC` legt NULL-Werte standardmäßig ans

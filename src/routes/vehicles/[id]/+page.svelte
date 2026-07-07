@@ -63,8 +63,13 @@
     () => getVehicleRemote({ id }).current ?? initialVehicle
   )
 
-  const relatedQ = $derived(getVehicleRelatedRemote({ id, invoicesPage }))
-  const related = $derived(relatedQ.current ?? initialRelated)
+  // Never memoize the query proxy (CONTRIBUTING §5) — mutations
+  // refresh `getVehicleRelatedRemote` server-side and the related
+  // cards must pick the fresh value up without a reload.
+  const related = $derived.by(
+    () =>
+      getVehicleRelatedRemote({ id, invoicesPage }).current ?? initialRelated
+  )
   const customer = $derived(related.customer)
   const invoices = $derived(related.invoices)
 

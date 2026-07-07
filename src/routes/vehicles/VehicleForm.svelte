@@ -92,6 +92,13 @@
   export type VehicleFormValues = {
     customerId?: string
     /**
+     * Picker label of the chosen holder — UI-only companion of
+     * `customerId` so creation-flow leaves can hand the holder back to
+     * their host form. Callers strip it before server calls (the
+     * server schemas would ignore it anyway).
+     */
+    customerLabel?: string
+    /**
      * Optional Vorbesitzer. `null` clears the relation (picker shown
      * but empty), `undefined` leaves it untouched (picker hidden in
      * customer mode).
@@ -316,6 +323,7 @@
     formDirty.clear()
     await onSave({
       customerId: resolvedCustomerId,
+      customerLabel: resolvedCustomerId ? customerLabel : undefined,
       previousOwnerCustomerId: showPreviousOwner
         ? previousOwnerCustomerId || null
         : undefined,

@@ -239,13 +239,22 @@
     (fv.touched as Record<string, boolean>)[k] === true
 
   const searchEmployees = (params: { q: string; page: number; size: number }) =>
-    pickEmployeesRemote({ ...params, size: params.size as 10 | 25 | 50 | 100 })
+    pickEmployeesRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const searchDocuments = (params: { q: string; page: number; size: number }) =>
-    pickDocumentsRemote({ ...params, size: params.size as 10 | 25 | 50 | 100 })
+    pickDocumentsRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const searchCustomers = (params: { q: string; page: number; size: number }) =>
-    pickCustomersRemote({ ...params, size: params.size as 10 | 25 | 50 | 100 })
+    pickCustomersRemote({
+      ...params,
+      size: params.size as 10 | 25 | 50 | 100
+    }).run()
 
   const submit = async (e: Event) => {
     e.preventDefault()

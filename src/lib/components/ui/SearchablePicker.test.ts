@@ -126,6 +126,25 @@ describe('SearchablePicker', () => {
     expect(await screen.findByText('Alpha GmbH')).toBeInTheDocument()
   })
 
+  it('clears via mouse click on the X without opening the dialog', async () => {
+    // Regression: delegated clicks on the nested clear span fell
+    // through to the trigger's own handler — the dialog opened and the
+    // selection could never be cleared by mouse. The trigger handler
+    // now routes clicks on [data-picker-clear] to the clear path.
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const search = vi.fn()
+    render(SearchablePicker, {
+      props: { value: 'a', valueLabel: 'Alpha GmbH', search, onSelect }
+    })
+    const clear = screen.getByRole('button', { name: 'Auswahl entfernen' })
+    await user.click(clear)
+    expect(onSelect).toHaveBeenCalledWith(null)
+    // The click must not open the dialog (no search fired).
+    expect(search).not.toHaveBeenCalled()
+    expect(screen.getByText('Bitte wählen')).toBeInTheDocument()
+  })
+
   it('clears via keyboard on the focused clear affordance', async () => {
     const user = userEvent.setup()
     const onSelect = vi.fn()

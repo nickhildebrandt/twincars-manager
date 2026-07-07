@@ -18,9 +18,30 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const emptyPage = () =>
   Promise.resolve({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
 
+const stockVehicle = {
+  id: 'veh-stock-1',
+  label: 'Skoda Fabia · B-QA 100',
+  plate: 'B-QA 100',
+  vin: null,
+  make: 'Skoda',
+  model: 'Fabia',
+  firstRegistration: null,
+  salesPriceGross: 5950,
+  differentialTax: false
+}
+
 vi.mock('../pickers.remote', () => ({
   pickItemsRemote: () => ({ run: () => emptyPage() }),
-  pickInventoryVehiclesRemote: () => ({ run: () => emptyPage() })
+  pickInventoryVehiclesRemote: () => ({
+    run: () =>
+      Promise.resolve({
+        items: [stockVehicle],
+        total: 1,
+        page: 1,
+        size: 25,
+        pageCount: 1
+      })
+  })
 }))
 
 import {
@@ -156,6 +177,27 @@ describe('PositionsEditor', () => {
     await user.click(screen.getByTestId('add-position'))
     expect(screen.getByText('Position 2')).toBeInTheDocument()
     expect(screen.getAllByLabelText('Quelle')).toHaveLength(4)
+  })
+
+  it('notifies the host when a stock vehicle is picked (document link)', async () => {
+    // Regression: without the host callback the sold vehicle was only
+    // a position — documents.vehicle_id stayed NULL and the paid
+    // invoice never transferred the car out of inventory.
+    const user = userEvent.setup()
+    const onVehiclePicked = vi.fn()
+    const { container } = render(Harness, { props: { onVehiclePicked } })
+    // switch the row source to Fahrzeug
+    const select = container.querySelector('select') as HTMLSelectElement
+    await user.selectOptions(select, 'vehicle')
+    // open the stock picker and choose the vehicle
+    await user.click(screen.getAllByText('Fahrzeug aus Bestand')[0])
+    await user.click(await screen.findByText('Skoda Fabia · B-QA 100'))
+    expect(onVehiclePicked).toHaveBeenCalledTimes(1)
+    expect(onVehiclePicked.mock.calls[0][0]).toMatchObject({
+      id: 'veh-stock-1',
+      make: 'Skoda',
+      model: 'Fabia'
+    })
   })
 
   it('removes a row via the delete button', async () => {

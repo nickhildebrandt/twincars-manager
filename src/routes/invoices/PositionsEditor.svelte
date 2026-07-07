@@ -110,11 +110,19 @@
     positions: Position[]
     /** Placeholder of the free-text description input. */
     descriptionPlaceholder?: string
+    /**
+     * Fires after a stock vehicle was picked into a position row.
+     * Hosts link the vehicle at DOCUMENT level too (documents.vehicle_id
+     * is what `transferStockVehicleOnPayment` keys on — without it a
+     * paid sale invoice would leave the car in inventory).
+     */
+    onVehiclePicked?: (v: PickedVehicle) => void
   }
 
   let {
     positions = $bindable(),
-    descriptionPlaceholder = 'Beschreibung'
+    descriptionPlaceholder = 'Beschreibung',
+    onVehiclePicked
   }: Props = $props()
 
   const searchArticles = (params: { q: string; page: number; size: number }) =>
@@ -300,7 +308,10 @@
       triggerSize="sm"
       search={searchInventoryVehicles}
       onSelect={(it) => {
-        if (it) fillVehicleRow(idx, it as PickedVehicle)
+        if (it) {
+          fillVehicleRow(idx, it as PickedVehicle)
+          onVehiclePicked?.(it as PickedVehicle)
+        }
       }}
     />
   {/if}

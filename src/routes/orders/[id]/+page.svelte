@@ -864,9 +864,10 @@
     <div class="modal-box">
       <h3 class="text-lg font-semibold">Auftrag abschließen?</h3>
       <p class="text-base-content/80 py-3 text-sm">
-        Aus den {items.length}
-        {items.length === 1 ? 'Position' : 'Positionen'} wird die Rechnung erstellt.
-        Der Auftrag wird danach schreibgeschützt.
+        {items.length === 1
+          ? 'Aus der einen Position'
+          : `Aus den ${items.length} Positionen`} wird die Rechnung erstellt. Der
+        Auftrag wird danach schreibgeschützt.
       </p>
       {#if completeError}
         <div class="alert alert-error mb-3">

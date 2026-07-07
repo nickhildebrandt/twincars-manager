@@ -51,15 +51,25 @@
    */
   const data = $derived.by(() => getOfferRemote({ id }).current ?? initialData)
 
-  const timeEntriesQ = $derived(
-    listTimeEntriesRemote({ page: 1, size: 25, documentId: id })
+  // Never memoize the query proxy (CONTRIBUTING §5): a proxy stored
+  // in its own `$derived` detaches from later `refresh()` cache
+  // updates — a freshly logged entry would only appear after reload.
+  const timeEntriesArgs = {
+    page: 1 as const,
+    size: 25 as const,
+    documentId: id
+  }
+  const timeEntriesInitial = await untrack(() =>
+    listTimeEntriesRemote(timeEntriesArgs)
   )
-  const timeEntriesInitial = await untrack(() => timeEntriesQ)
   let lastTimeEntries = $state(timeEntriesInitial)
   $effect(() => {
-    if (timeEntriesQ.current) lastTimeEntries = timeEntriesQ.current
+    const q = listTimeEntriesRemote(timeEntriesArgs)
+    if (q.current) lastTimeEntries = q.current
   })
-  const timeEntries = $derived(timeEntriesQ.current ?? lastTimeEntries)
+  const timeEntries = $derived.by(
+    () => listTimeEntriesRemote(timeEntriesArgs).current ?? lastTimeEntries
+  )
 
   const callerPermissions = $derived(new Set(currentUser?.permissions ?? []))
   const hasAny = (...keys: string[]): boolean =>

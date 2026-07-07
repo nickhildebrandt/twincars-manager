@@ -27,6 +27,7 @@ vi.mock('../customers/customers.remote', () => ({
   createCustomerRemote: vi.fn()
 }))
 vi.mock('../vehicles/vehicles.remote', () => ({ createVehicleRemote: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn() }))
 
 import WorkOrderForm from './WorkOrderForm.svelte'
 import { formDirty } from '$lib/stores/form-dirty.svelte'
@@ -212,5 +213,110 @@ describe('WorkOrderForm', () => {
     await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).toHaveBeenCalledTimes(1)
     expect(onSave.mock.calls[0][0].assigneeIds).toEqual(['emp-1', 'emp-2'])
+  })
+
+  describe('creation flow (vehicle leaf with holder)', () => {
+    it('hands the picked customer to the vehicle leaf as leafInitial', async () => {
+      const user = userEvent.setup()
+      const startSpy = vi.spyOn(creationFlow, 'start')
+      render(WorkOrderForm, {
+        props: {
+          initial: {
+            customerId: 'cust-1',
+            customerLabel: 'Alpha GmbH · Berlin'
+          },
+          onSave: vi.fn()
+        }
+      })
+      await user.click(screen.getByText('Fahrzeug dieses Kunden suchen'))
+      const createBtn = screen
+        .getAllByRole('button', { name: /Neues Fahrzeug anlegen/ })
+        .filter((b) => b.className.includes('btn'))[0]
+      await user.click(createBtn)
+
+      expect(startSpy).toHaveBeenCalledTimes(1)
+      const frame = startSpy.mock.calls[0][0]
+      expect(frame.entity).toBe('vehicle')
+      expect(frame.leafInitial).toEqual({
+        customerId: 'cust-1',
+        customerLabel: 'Alpha GmbH · Berlin'
+      })
+      startSpy.mockRestore()
+    })
+
+    it("re-syncs the customer to the created vehicle's holder on return", () => {
+      creationFlow.start({
+        entity: 'vehicle',
+        returnUrl: window.location.pathname + window.location.search,
+        originField: 'vehicleId',
+        draft: {
+          title: '',
+          titleTouched: false,
+          description: '',
+          customerId: 'cust-1',
+          customerLabel: 'Alpha GmbH · Berlin',
+          vehicleId: '',
+          vehicleLabel: '',
+          scheduledDate: '',
+          scheduledTime: '',
+          assigneeIds: [],
+          assigneeLabels: []
+        },
+        createdAt: Date.now(),
+        leafInitial: {
+          customerId: 'cust-1',
+          customerLabel: 'Alpha GmbH · Berlin'
+        }
+      })
+      // The leaf saved the vehicle under a DIFFERENT holder.
+      creationFlow.finish({
+        id: 'veh-9',
+        label: 'B-XY 9 · Opel Corsa',
+        holder: { id: 'cust-2', label: 'Beta GmbH · Hamburg' }
+      })
+
+      const { container } = render(WorkOrderForm, {
+        props: { onSave: vi.fn() }
+      })
+      // Vehicle auto-selected, customer re-synced to the holder.
+      expect(screen.getByText('B-XY 9 · Opel Corsa')).toBeInTheDocument()
+      expect(screen.getByText('Beta GmbH · Hamburg')).toBeInTheDocument()
+      expect(screen.queryByText('Alpha GmbH · Berlin')).toBeNull()
+      // The auto-title composes with the synced holder, not the stale one.
+      expect(titleInput(container).value).toBe(
+        'Opel Corsa · B-XY 9 · Beta GmbH'
+      )
+    })
+
+    it('keeps the customer when the created vehicle has the same holder', () => {
+      creationFlow.start({
+        entity: 'vehicle',
+        returnUrl: window.location.pathname + window.location.search,
+        originField: 'vehicleId',
+        draft: {
+          title: '',
+          titleTouched: false,
+          description: '',
+          customerId: 'cust-1',
+          customerLabel: 'Alpha GmbH · Berlin',
+          vehicleId: '',
+          vehicleLabel: '',
+          scheduledDate: '',
+          scheduledTime: '',
+          assigneeIds: [],
+          assigneeLabels: []
+        },
+        createdAt: Date.now()
+      })
+      creationFlow.finish({
+        id: 'veh-9',
+        label: 'B-XY 9 · Opel Corsa',
+        holder: { id: 'cust-1', label: 'Alpha GmbH · Berlin' }
+      })
+
+      render(WorkOrderForm, { props: { onSave: vi.fn() } })
+      expect(screen.getByText('B-XY 9 · Opel Corsa')).toBeInTheDocument()
+      expect(screen.getByText('Alpha GmbH · Berlin')).toBeInTheDocument()
+    })
   })
 })
