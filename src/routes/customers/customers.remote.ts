@@ -15,7 +15,9 @@ import {
 } from 'valibot'
 import {
   addressLineSchema,
+  bicSchema,
   citySchema,
+  ibanSchema,
   idSchema,
   notesSchema,
   optionalEmailSchema,
@@ -60,8 +62,8 @@ const customerInputSchema = object({
   notes: optional(notesSchema),
   paymentTermDays: optional(number()),
   vatId: optional(pipe(string(), trim(), maxLength(30))),
-  bankIban: optional(pipe(string(), trim(), maxLength(34))),
-  bankBic: optional(pipe(string(), trim(), maxLength(11))),
+  bankIban: optional(ibanSchema),
+  bankBic: optional(bicSchema),
   bankName: optional(pipe(string(), trim(), maxLength(100))),
   customerNumber: optional(pipe(string(), trim(), maxLength(50))),
   kind: optional(picklist(['regular', 'ebay'])),

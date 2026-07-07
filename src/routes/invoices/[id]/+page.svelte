@@ -53,11 +53,29 @@
    * The reminder list is loaded in parallel; it's a small query and fits the
    * same SSR-hydration story.
    */
-  const [data, invoiceReminders, currentUser] = await Promise.all([
+  const [initialData, initialReminders, currentUser] = await Promise.all([
     getInvoiceRemote({ id }),
     listRemindersForInvoiceRemote({ invoiceId: id }),
     getCurrentUserRemote()
   ])
+
+  /**
+   * Reactive reads — never memoize the query proxy. Commands like
+   * `setInvoiceStatusRemote` and `createPaymentReminderRemote` refresh
+   * these queries server-side in the same flight; reading `.current`
+   * here flips the page (status badge, header CTA, reminder banner)
+   * without a remount. `Promise.all` above consumed the thenables
+   * outside Svelte's tracked await, so its results alone would stay a
+   * static snapshot forever.
+   */
+  const data = $derived.by(
+    () => getInvoiceRemote({ id }).current ?? initialData
+  )
+  const invoiceReminders = $derived.by(
+    () =>
+      listRemindersForInvoiceRemote({ invoiceId: id }).current ??
+      initialReminders
+  )
 
   /**
    * Reactive list of time entries logged against this document. The
@@ -399,6 +417,22 @@
       >
         <Clock size={14} />
         Arbeit erfassen
+      </button>
+    {/if}
+    {#if data.doc.status === 'created'}
+      <!--
+        Barzahlung ohne E-Mail-Versand: eine frisch angelegte Rechnung
+        kann direkt als bezahlt markiert werden (Verkauf über den
+        Tresen). Der Header-CTA bleibt "Versenden" für den Mail-Weg.
+      -->
+      <button
+        type="button"
+        class="btn btn-sm gap-2"
+        onclick={markPaid}
+        disabled={busy.active}
+      >
+        <CheckCircle2 size={14} />
+        Als bezahlt markieren
       </button>
     {/if}
     {#if data.doc.status === 'draft'}

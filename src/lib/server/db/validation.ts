@@ -17,6 +17,7 @@ import {
   trim
 } from 'valibot'
 import { PAYMENT_METHODS } from '$lib/payment-methods'
+import { isValidBic, isValidIban, normalizeBankCode } from '$lib/utils/iban'
 
 /**
  * Reusable Valibot schemas. Use these in every Remote Function instead of
@@ -88,16 +89,35 @@ export const urlSchema = pipe(
   maxLength(2048, 'Die URL darf maximal 2048 Zeichen lang sein.')
 )
 
+/**
+ * IBAN: normalized to compact upper-case, then checked against the ISO
+ * 13616 pattern + mod-97 checksum. An empty string stays allowed so
+ * callers can model "no bank details" without a separate schema.
+ */
 export const ibanSchema = pipe(
   string(),
   trim(),
-  maxLength(34, 'Die IBAN darf maximal 34 Zeichen lang sein.')
+  transform(normalizeBankCode),
+  maxLength(34, 'Die IBAN darf maximal 34 Zeichen lang sein.'),
+  check(
+    (v) => v.length === 0 || isValidIban(v),
+    'Bitte geben Sie eine gültige IBAN ein.'
+  )
 )
 
+/**
+ * BIC: normalized to compact upper-case, then checked against the ISO
+ * 9362 shape (8 or 11 characters). Empty string stays allowed.
+ */
 export const bicSchema = pipe(
   string(),
   trim(),
-  maxLength(11, 'Der BIC darf maximal 11 Zeichen lang sein.')
+  transform(normalizeBankCode),
+  maxLength(11, 'Der BIC darf maximal 11 Zeichen lang sein.'),
+  check(
+    (v) => v.length === 0 || isValidBic(v),
+    'Bitte geben Sie einen gültigen BIC ein (8 oder 11 Zeichen).'
+  )
 )
 
 export const notesSchema = pipe(

@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import { page } from '$app/state'
   import { authClient } from '$lib/client/auth-client'
+  import { signInErrorMessage } from './sign-in-error'
   import { busy } from '$lib/stores/busy.svelte'
   import { handleClientError } from '$lib/utils/client-error'
   import { pageTitle } from '$lib/stores/page-title.svelte'
@@ -87,9 +88,8 @@
           password
         })
         if (error) {
-          errorMessage =
-            error.message?.trim() ||
-            'Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.'
+          // better-auth error strings are English — map to German here.
+          errorMessage = signInErrorMessage(error)
           return
         }
         // FULL document load, not a client-side goto: the async root

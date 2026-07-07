@@ -176,6 +176,10 @@
       <div class="card-body">
         <h3 class="card-title text-base">Anschrift</h3>
         <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+          <dt class="text-base-content/60">Kundennr.</dt>
+          <dd class="font-mono break-words sm:col-span-2">
+            {customer.customerNumber}
+          </dd>
           <dt class="text-base-content/60">Firma</dt>
           <dd class="break-words sm:col-span-2">{customer.company ?? '-'}</dd>
           <dt class="text-base-content/60">Name</dt>

@@ -44,9 +44,11 @@
     liveProgress = { pct: 0, label: 'Import wird gestartet …' }
     pollTimer = setInterval(async () => {
       try {
-        const q = getImportProgressRemote()
-        await q.refresh()
-        const job = q.current ?? (await q)
+        // `.run()` is the imperative execution path for remote queries
+        // outside a tracking context. Calling `refresh()` on a fresh,
+        // never-awaited proxy is a silent no-op and awaiting the proxy
+        // in an event handler throws — both left the bar frozen at 0 %.
+        const job = await getImportProgressRemote().run()
         if (!job) return
         // Only trust jobs started after this click (stale rows from
         // earlier runs would otherwise flash 100 %).
@@ -237,8 +239,8 @@
         <li>
           Belege werden direkt als <strong>abgeschlossen</strong> (bezahlt bzw.
           storniert) angelegt und tauchen <strong>nicht</strong> in „Gesendet" auf,
-          weil sie nicht durch dieses System verschickt wurden. PDFs werden bei Bedarf
-          on-demand generiert.
+          weil sie nicht durch dieses System verschickt wurden. Alle zugehörigen PDFs
+          werden bereits beim Import erzeugt und im Cache abgelegt.
         </li>
         <li>
           KFZ-Kaufmann verknüpft Rechnungen <strong>nicht</strong> mit einem konkreten
@@ -447,11 +449,19 @@
       <div class="alert alert-warning mt-4 items-start text-sm">
         <Info size={16} class="mt-0.5 shrink-0" />
         <div>
-          Belege wurden als „abgeschlossen" angelegt und tauchen nicht in der
-          Gesendet-Liste auf. Alle PDFs wurden bereits beim Import gerendert und
-          liegen im Cache - der Detail-View lädt sie unverändert aus der
-          Datenbank, ohne sie neu zu erzeugen. Rechnungen sind nicht mit
-          Fahrzeugen verknüpft (Quelle hatte diese Information nicht).
+          {#if summary.dryRun}
+            Belege werden als „abgeschlossen" angelegt und tauchen nicht in der
+            Gesendet-Liste auf. Alle PDFs werden beim echten Import gerendert
+            und im Cache abgelegt - der Detail-View lädt sie später unverändert
+            aus der Datenbank. Rechnungen sind nicht mit Fahrzeugen verknüpft
+            (Quelle hatte diese Information nicht).
+          {:else}
+            Belege wurden als „abgeschlossen" angelegt und tauchen nicht in der
+            Gesendet-Liste auf. Alle PDFs wurden bereits beim Import gerendert
+            und liegen im Cache - der Detail-View lädt sie unverändert aus der
+            Datenbank, ohne sie neu zu erzeugen. Rechnungen sind nicht mit
+            Fahrzeugen verknüpft (Quelle hatte diese Information nicht).
+          {/if}
         </div>
       </div>
 

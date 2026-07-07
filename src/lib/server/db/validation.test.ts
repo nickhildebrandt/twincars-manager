@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { safeParse } from 'valibot'
 import {
+  bicSchema,
   emailSchema,
   hsnSchema,
   ibanSchema,
@@ -64,11 +65,43 @@ describe('validation schemas', () => {
   })
 
   describe('ibanSchema', () => {
-    it('accepts up to 34 chars', () => {
+    it('accepts a valid German IBAN', () => {
       expect(safeParse(ibanSchema, 'DE89370400440532013000').success).toBe(true)
     })
     it('rejects > 34 chars', () => {
       expect(safeParse(ibanSchema, 'X'.repeat(35)).success).toBe(false)
+    })
+    it('rejects an IBAN with a broken mod-97 checksum', () => {
+      expect(safeParse(ibanSchema, 'DE00370400440532013000').success).toBe(
+        false
+      )
+    })
+    it('rejects arbitrary text that fits the length limit', () => {
+      expect(safeParse(ibanSchema, 'DE00INVALIDIBAN').success).toBe(false)
+    })
+    it('normalizes grouped lowercase input to compact upper-case', () => {
+      const r = safeParse(ibanSchema, 'de89 3704 0044 0532 0130 00')
+      expect(r.success).toBe(true)
+      if (r.success) expect(r.output).toBe('DE89370400440532013000')
+    })
+    it('still allows an empty string (optional bank details)', () => {
+      expect(safeParse(ibanSchema, '').success).toBe(true)
+    })
+  })
+
+  describe('bicSchema', () => {
+    it('accepts 8- and 11-char BICs', () => {
+      expect(safeParse(bicSchema, 'MARKDEF1').success).toBe(true)
+      expect(safeParse(bicSchema, 'BYLADEM1001').success).toBe(true)
+    })
+    it('rejects a one-letter BIC', () => {
+      expect(safeParse(bicSchema, 'X').success).toBe(false)
+    })
+    it('rejects a 9-char BIC (invalid length)', () => {
+      expect(safeParse(bicSchema, 'MARKDEF12').success).toBe(false)
+    })
+    it('still allows an empty string (optional bank details)', () => {
+      expect(safeParse(bicSchema, '').success).toBe(true)
     })
   })
 

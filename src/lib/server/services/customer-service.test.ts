@@ -17,7 +17,12 @@ import {
   updateCustomer
 } from './customer-service'
 import { db } from '$lib/server/db/client'
-import { customers, numberRanges } from '$lib/server/db/schema'
+import {
+  customers,
+  documents,
+  numberRanges,
+  vehicles
+} from '$lib/server/db/schema'
 
 /**
  * Integration tests for the customer service, exercising the full
@@ -336,6 +341,41 @@ describe('customer-service', () => {
       })
       await deleteCustomer(created.id)
       expect(await getCustomer(created.id)).toBeNull()
+    })
+
+    it('refuses (409, German) while a vehicle still references the customer', async () => {
+      const created = await createCustomer({
+        customerNumber: 'KU-00012',
+        lastName: 'Halter'
+      })
+      await db
+        .insert(vehicles)
+        .values({ customerId: created.id, make: 'VW', model: 'Golf' })
+      await expect(deleteCustomer(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('Fahrzeug') }
+      })
+      // The customer row must be untouched.
+      expect(await getCustomer(created.id)).not.toBeNull()
+    })
+
+    it('refuses while a document still references the customer', async () => {
+      const created = await createCustomer({
+        customerNumber: 'KU-00013',
+        lastName: 'Belegkunde'
+      })
+      await db
+        .insert(documents)
+        .values({
+          documentNumber: 'RE-1',
+          type: 'invoice',
+          customerId: created.id,
+          issueDate: '2026-01-01'
+        })
+      await expect(deleteCustomer(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('Beleg') }
+      })
     })
   })
 

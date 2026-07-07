@@ -12,6 +12,8 @@ import {
   maxLength
 } from 'valibot'
 import {
+  bicSchema,
+  ibanSchema,
   idSchema,
   notesSchema,
   optionalEmailSchema
@@ -72,8 +74,8 @@ const employeeInputSchema = object({
   socialInsuranceNumber: optional(pipe(string(), trim(), maxLength(30))),
   healthInsurance: optional(pipe(string(), trim(), maxLength(100))),
   bankAccountHolder: optional(pipe(string(), trim(), maxLength(200))),
-  bankIban: optional(pipe(string(), trim(), maxLength(34))),
-  bankBic: optional(pipe(string(), trim(), maxLength(11))),
+  bankIban: optional(ibanSchema),
+  bankBic: optional(bicSchema),
   bankName: optional(pipe(string(), trim(), maxLength(100)))
 })
 

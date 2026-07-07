@@ -1,6 +1,10 @@
+import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db/client'
 import {
   customers,
+  documents,
+  tireStorage,
+  vehicles,
   type Customer,
   type NewCustomer
 } from '$lib/server/db/schema'
@@ -148,8 +152,47 @@ export async function updateCustomer(
 
 /**
  * Delete a customer record.
+ *
+ * Guarded: refuses (409, German message) while vehicles, documents or
+ * tire-storage rows still reference the customer. Without the guard the
+ * `ON DELETE SET NULL` FKs would silently detach invoices (GoBD-relevant)
+ * and flip the customer's private vehicles into the for-sale stock list
+ * (`customer_id IS NULL` is the stock marker); the tire-storage FK is
+ * RESTRICT and would surface as an uncurated 500 instead.
  */
 export async function deleteCustomer(id: string): Promise<void> {
+  const [vehicleCount, documentCount, tireStorageCount] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(vehicles)
+      .where(eq(vehicles.customerId, id)),
+    db
+      .select({ value: count() })
+      .from(documents)
+      .where(eq(documents.customerId, id)),
+    db
+      .select({ value: count() })
+      .from(tireStorage)
+      .where(eq(tireStorage.customerId, id))
+  ])
+  const blockers: string[] = []
+  const vehiclesN = Number(vehicleCount[0]?.value ?? 0)
+  const documentsN = Number(documentCount[0]?.value ?? 0)
+  const tiresN = Number(tireStorageCount[0]?.value ?? 0)
+  if (vehiclesN > 0)
+    blockers.push(`${vehiclesN} Fahrzeug${vehiclesN === 1 ? '' : 'e'}`)
+  if (documentsN > 0)
+    blockers.push(`${documentsN} Beleg${documentsN === 1 ? '' : 'e'}`)
+  if (tiresN > 0)
+    blockers.push(`${tiresN} Reifeneinlagerung${tiresN === 1 ? '' : 'en'}`)
+  if (blockers.length > 0) {
+    // Toast prefix is "Kunde konnte nicht gelöscht werden: …" — keep the
+    // detail free of a second "kann nicht gelöscht werden".
+    error(
+      409,
+      `Es sind noch ${blockers.join(', ')} mit diesem Kunden verknüpft. Bitte zuerst die Verknüpfungen entfernen.`
+    )
+  }
   await db.delete(customers).where(eq(customers.id, id))
 }
 

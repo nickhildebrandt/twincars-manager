@@ -812,7 +812,7 @@
         >
           <div class="alert alert-info">
             <span class="text-sm">
-              Es gibt nur eine einzige freundliche „Zahlungserinnerung" — keine
+              Es gibt nur eine einzige freundliche „Zahlungserinnerung", keine
               Mahnstufen, keine Mahngebühr, keine Verzugszinsen. Sie wird ab dem
               konfigurierten Tag nach Fälligkeit versendet und so lange in
               regelmäßigen Abständen wiederholt, bis die Rechnung bezahlt ist.

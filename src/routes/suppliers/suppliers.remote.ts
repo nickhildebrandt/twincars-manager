@@ -12,7 +12,9 @@ import {
 } from 'valibot'
 import {
   addressLineSchema,
+  bicSchema,
   citySchema,
+  ibanSchema,
   idSchema,
   notesSchema,
   optionalEmailSchema,
@@ -42,8 +44,8 @@ const supplierInputSchema = object({
   email: optionalEmailSchema,
   website: optional(urlSchema),
   bankName: optional(pipe(string(), trim(), maxLength(100))),
-  iban: optional(pipe(string(), trim(), maxLength(34))),
-  bic: optional(pipe(string(), trim(), maxLength(11))),
+  iban: optional(ibanSchema),
+  bic: optional(bicSchema),
   notes: optional(notesSchema)
 })
 

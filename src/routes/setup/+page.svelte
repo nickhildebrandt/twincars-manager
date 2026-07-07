@@ -23,6 +23,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { isValidBic, isValidIban, normalizeBankCode } from '$lib/utils/iban'
 
   let step = $state(1)
   const totalSteps = 8
@@ -158,7 +159,11 @@
     if (n === 3) {
       if (!taxNumber.trim()) return 'Bitte Steuernummer eingeben.'
       if (!iban.trim()) return 'Bitte IBAN eingeben.'
+      if (!isValidIban(normalizeBankCode(iban)))
+        return 'Bitte eine gültige IBAN eingeben.'
       if (!bic.trim()) return 'Bitte BIC eingeben.'
+      if (!isValidBic(normalizeBankCode(bic)))
+        return 'Bitte einen gültigen BIC eingeben (8 oder 11 Zeichen).'
       if (!bankName.trim()) return 'Bitte Bankname eingeben.'
     }
     // Step 4 (logo) is optional — a logo can be added later in Settings,
@@ -834,8 +839,8 @@
           </div>
           <p class="text-base-content/70 text-sm">
             Bitte prüfen Sie Ihre Eingaben. Über „Bearbeiten" gelangen Sie
-            zurück zum entsprechenden Schritt - beim erneuten „Weiter" landen
-            Sie wieder hier.
+            zurück zum entsprechenden Schritt; von dort führt „Weiter" Sie
+            wieder Schritt für Schritt bis zu dieser Übersicht.
           </p>
 
           <div class="mt-2 grid grid-cols-1 gap-4">

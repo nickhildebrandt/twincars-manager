@@ -37,10 +37,19 @@
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const [data, currentUser] = await Promise.all([
+  const [initialData, currentUser] = await Promise.all([
     getOfferRemote({ id }),
     getCurrentUserRemote()
   ])
+
+  /**
+   * Reactive read — never memoize the query proxy. `cancelOfferRemote`,
+   * `markOfferSentRemote` and `sendOfferRemote` refresh
+   * `getOfferRemote({ id })` server-side in the same flight; reading
+   * `.current` keeps status badge + actions live without a remount
+   * (the `Promise.all` snapshot above alone would never update).
+   */
+  const data = $derived.by(() => getOfferRemote({ id }).current ?? initialData)
 
   const timeEntriesQ = $derived(
     listTimeEntriesRemote({ page: 1, size: 25, documentId: id })

@@ -19,8 +19,8 @@
  *   - Belege werden direkt als `paid` (oder `cancelled` bei Status
  *     "storniert") angelegt; sie tauchen NICHT in den gesendeten
  *     Nachrichten auf, weil sie nicht durch dieses System verschickt
- *     wurden. PDFs werden bei der nächsten Detailansicht on-demand
- *     gerendert.
+ *     wurden. PDFs werden am Ende des Imports vorab gerendert (Schritt
+ *     14) und liegen danach im `document_pdfs`-Cache.
  *   - `mdb-tools` muss auf dem Host installiert sein
  *     (`apk add mdbtools` im Container).
  */
