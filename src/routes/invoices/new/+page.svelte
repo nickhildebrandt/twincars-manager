@@ -198,6 +198,9 @@
       })
     )
     toast.success(`Rechnung ${created.documentNumber} erstellt.`)
+    // Saved — silence the unsaved-changes guard before navigating
+    // (§11: clear before goto so beforeNavigate stays quiet).
+    formDirty.clear()
     goto(`/invoices/${created.id}`, { replaceState: true })
   }
 

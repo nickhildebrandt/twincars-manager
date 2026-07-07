@@ -12,9 +12,16 @@ import {
   deleteLicensePlateVersion,
   deleteVehicle,
   getEffectiveLicensePlate,
+  getPublicUsedCar,
   getVehicle,
   listLicensePlateVersions,
+  listPublicUsedCars,
+  listVehiclePurchases,
+  listVehicleSales,
   listVehicles,
+  purchaseVehicleIntoStock,
+  recordVehiclePurchase,
+  sellStockVehicleToCustomer,
   updateVehicle,
   upsertLicensePlateVersion,
   withCurrentPlates
@@ -22,9 +29,15 @@ import {
 import { db } from '$lib/server/db/client'
 import {
   customers,
+  vehicleDocuments,
   vehicleLicensePlateVersions,
+  vehicleListings,
+  vehiclePhotos,
+  vehiclePurchases,
+  vehicleSales,
   vehicles
 } from '$lib/server/db/schema'
+import { eq } from 'drizzle-orm'
 
 /**
  * Integration tests for the vehicle service, exercising the full
@@ -37,6 +50,11 @@ import {
  */
 describe('vehicle-service', () => {
   beforeEach(async () => {
+    await db.delete(vehicleSales)
+    await db.delete(vehicleListings)
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleDocuments)
+    await db.delete(vehiclePhotos)
     await db.delete(vehicleLicensePlateVersions)
     await db.delete(vehicles)
     await db.delete(customers)
@@ -526,6 +544,471 @@ describe('vehicle-service', () => {
 
     it('returns an empty array for empty input', async () => {
       expect(await withCurrentPlates([])).toEqual([])
+    })
+  })
+
+  /* ── Ownership transfers (Ankauf / Verkauf) ─────────────────────── */
+
+  const seedCustomer = async (values: {
+    customerNumber: string
+    firstName?: string
+    lastName?: string
+    company?: string
+    city?: string
+  }): Promise<string> => {
+    const [row] = await db
+      .insert(customers)
+      .values(values)
+      .returning({ id: customers.id })
+    return row.id
+  }
+
+  describe('recordVehiclePurchase', () => {
+    it('snapshots the previous owner display name and formats the price', async () => {
+      const ownerId = await seedCustomer({
+        customerNumber: 'KU-P0001',
+        firstName: 'Anna',
+        lastName: 'Alt',
+        city: 'Kiel'
+      })
+      const v = await createVehicle({ make: 'VW', model: 'Golf' })
+      const row = await recordVehiclePurchase({
+        vehicleId: v.id,
+        purchaseDate: '2026-07-01',
+        purchasePrice: 1234.5,
+        previousOwnerCustomerId: ownerId
+      })
+      // pg-mem does not preserve numeric scale ('1234.5' instead of
+      // '1234.50' from real Postgres) — compare numerically.
+      expect(Number(row.purchasePrice)).toBe(1234.5)
+      // Display name (no city suffix) — rename-proof snapshot.
+      expect(row.previousOwner).toBe('Anna Alt')
+      expect(row.purchaseDate).toBe('2026-07-01')
+    })
+
+    it('defaults the NOT NULL price to 0.00 and allows no previous owner', async () => {
+      const v = await createVehicle({ make: 'VW', model: 'Polo' })
+      const row = await recordVehiclePurchase({
+        vehicleId: v.id,
+        purchaseDate: '2026-07-02'
+      })
+      expect(Number(row.purchasePrice)).toBe(0)
+      expect(row.previousOwner).toBeNull()
+    })
+  })
+
+  describe('sellStockVehicleToCustomer', () => {
+    it('transfers a stock vehicle, writes the sale row and flips the listing', async () => {
+      const buyerId = await seedCustomer({
+        customerNumber: 'KU-S0001',
+        firstName: 'Bernd',
+        lastName: 'Neu'
+      })
+      const previousOwnerId = await seedCustomer({
+        customerNumber: 'KU-S0002',
+        company: 'Alt GmbH'
+      })
+      const v = await createVehicle({
+        make: 'BMW',
+        model: '320d',
+        previousOwnerCustomerId: previousOwnerId
+      })
+      await db
+        .insert(vehicleListings)
+        .values({ vehicleId: v.id, salesPriceGross: '19990.00' })
+
+      const updated = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        invoiceId: null,
+        salesPriceGross: '19990.00',
+        saleDate: '2026-07-07'
+      })
+      expect(updated?.customerId).toBe(buyerId)
+      // Vorbesitzer records who the car was BOUGHT from — untouched.
+      expect(updated?.previousOwnerCustomerId).toBe(previousOwnerId)
+
+      const sales = await listVehicleSales(v.id)
+      expect(sales).toHaveLength(1)
+      expect(sales[0].customerId).toBe(buyerId)
+      expect(Number(sales[0].salesPriceGross)).toBe(19990)
+      expect(sales[0].saleDate).toBe('2026-07-07')
+
+      const [listing] = await db
+        .select()
+        .from(vehicleListings)
+        .where(eq(vehicleListings.vehicleId, v.id))
+      expect(listing.status).toBe('sold')
+    })
+
+    it('records the invoice backlink on the sale row', async () => {
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0003' })
+      const v = await createVehicle({ make: 'VW', model: 'Golf' })
+      const invoiceId = crypto.randomUUID()
+      await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        invoiceId,
+        salesPriceGross: 9990,
+        saleDate: '2026-07-07'
+      })
+      const sales = await listVehicleSales(v.id)
+      expect(sales[0].invoiceId).toBe(invoiceId)
+      expect(Number(sales[0].salesPriceGross)).toBe(9990)
+    })
+
+    it('works without a listing row (fresh stock vehicle)', async () => {
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0004' })
+      const v = await createVehicle({ make: 'VW', model: 'Polo' })
+      const updated = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 5000,
+        saleDate: '2026-07-07'
+      })
+      expect(updated?.customerId).toBe(buyerId)
+      expect(await listVehicleSales(v.id)).toHaveLength(1)
+    })
+
+    it('no-ops for a non-stock vehicle (repair invoice on a customer car)', async () => {
+      const ownerId = await seedCustomer({ customerNumber: 'KU-S0005' })
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0006' })
+      const v = await createVehicle({
+        make: 'Audi',
+        model: 'A4',
+        customerId: ownerId
+      })
+      const res = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 100,
+        saleDate: '2026-07-07'
+      })
+      expect(res).toBeNull()
+      expect(await listVehicleSales(v.id)).toHaveLength(0)
+      const after = await getVehicle(v.id)
+      expect(after?.customerId).toBe(ownerId)
+    })
+
+    it('no-ops for an unknown vehicle', async () => {
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0007' })
+      const res = await sellStockVehicleToCustomer({
+        vehicleId: '00000000-0000-0000-0000-000000000000',
+        customerId: buyerId,
+        salesPriceGross: 100,
+        saleDate: '2026-07-07'
+      })
+      expect(res).toBeNull()
+    })
+
+    it('no-ops for an unknown buyer', async () => {
+      const v = await createVehicle({ make: 'VW', model: 'Polo' })
+      const res = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: '00000000-0000-0000-0000-000000000000',
+        salesPriceGross: 100,
+        saleDate: '2026-07-07'
+      })
+      expect(res).toBeNull()
+      const after = await getVehicle(v.id)
+      expect(after?.customerId).toBeNull()
+      expect(await listVehicleSales(v.id)).toHaveLength(0)
+    })
+
+    it('is idempotent — a second call writes no second sale row', async () => {
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0008' })
+      const v = await createVehicle({ make: 'VW', model: 'Golf' })
+      await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 9990,
+        saleDate: '2026-07-07'
+      })
+      const second = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 9990,
+        saleDate: '2026-07-07'
+      })
+      expect(second).toBeNull()
+      expect(await listVehicleSales(v.id)).toHaveLength(1)
+    })
+
+    it('blocks when a current-cycle sale row exists even with customer_id NULL', async () => {
+      // Degenerate state: sale row exists (no purchase since), but the
+      // FK was cleared manually. The cycle guard must refuse a second
+      // sale row.
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0009' })
+      const v = await createVehicle({ make: 'VW', model: 'Golf' })
+      await db
+        .insert(vehicleSales)
+        .values({
+          vehicleId: v.id,
+          customerId: buyerId,
+          saleDate: '2026-01-01',
+          salesPriceGross: '1000.00'
+        })
+      const res = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 2000,
+        saleDate: '2026-07-07'
+      })
+      expect(res).toBeNull()
+      expect(await listVehicleSales(v.id)).toHaveLength(1)
+    })
+  })
+
+  describe('purchaseVehicleIntoStock', () => {
+    it('re-hangs a customer vehicle into stock with history row', async () => {
+      const ownerId = await seedCustomer({
+        customerNumber: 'KU-A0001',
+        firstName: 'Anna',
+        lastName: 'Alt',
+        city: 'Kiel'
+      })
+      const v = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: ownerId
+      })
+      const updated = await purchaseVehicleIntoStock({
+        vehicleId: v.id,
+        purchasePrice: 5000,
+        purchaseDate: '2026-07-01',
+        notes: 'Inzahlungnahme'
+      })
+      expect(updated.customerId).toBeNull()
+      expect(updated.previousOwnerCustomerId).toBe(ownerId)
+
+      const purchases = await listVehiclePurchases(v.id)
+      expect(purchases).toHaveLength(1)
+      expect(Number(purchases[0].purchasePrice)).toBe(5000)
+      expect(purchases[0].previousOwner).toBe('Anna Alt')
+      expect(purchases[0].notes).toBe('Inzahlungnahme')
+      expect(purchases[0].purchaseDate).toBe('2026-07-01')
+    })
+
+    it('defaults the purchase price to 0.00 when not provided', async () => {
+      const ownerId = await seedCustomer({ customerNumber: 'KU-A0002' })
+      const v = await createVehicle({
+        make: 'VW',
+        model: 'Polo',
+        customerId: ownerId
+      })
+      await purchaseVehicleIntoStock({
+        vehicleId: v.id,
+        purchaseDate: '2026-07-01'
+      })
+      const purchases = await listVehiclePurchases(v.id)
+      expect(Number(purchases[0].purchasePrice)).toBe(0)
+    })
+
+    it('throws 404 for an unknown vehicle', async () => {
+      await expect(
+        purchaseVehicleIntoStock({
+          vehicleId: '00000000-0000-0000-0000-000000000000',
+          purchaseDate: '2026-07-01'
+        })
+      ).rejects.toMatchObject({ status: 404 })
+    })
+
+    it('throws 409 for a vehicle that is already stock', async () => {
+      const v = await createVehicle({ make: 'VW', model: 'Polo' })
+      await expect(
+        purchaseVehicleIntoStock({
+          vehicleId: v.id,
+          purchaseDate: '2026-07-01'
+        })
+      ).rejects.toMatchObject({ status: 409 })
+      expect(await listVehiclePurchases(v.id)).toHaveLength(0)
+    })
+
+    it('flips a sold listing back to available but leaves other states alone', async () => {
+      const ownerId = await seedCustomer({ customerNumber: 'KU-A0003' })
+      const vSold = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: ownerId
+      })
+      await db
+        .insert(vehicleListings)
+        .values({ vehicleId: vSold.id, status: 'sold' })
+      await purchaseVehicleIntoStock({
+        vehicleId: vSold.id,
+        purchaseDate: '2026-07-01'
+      })
+      const [soldListing] = await db
+        .select()
+        .from(vehicleListings)
+        .where(eq(vehicleListings.vehicleId, vSold.id))
+      expect(soldListing.status).toBe('available')
+
+      const owner2 = await seedCustomer({ customerNumber: 'KU-A0004' })
+      const vReserved = await createVehicle({
+        make: 'BMW',
+        model: '320d',
+        customerId: owner2
+      })
+      await db
+        .insert(vehicleListings)
+        .values({ vehicleId: vReserved.id, status: 'reserved' })
+      await purchaseVehicleIntoStock({
+        vehicleId: vReserved.id,
+        purchaseDate: '2026-07-01'
+      })
+      const [reservedListing] = await db
+        .select()
+        .from(vehicleListings)
+        .where(eq(vehicleListings.vehicleId, vReserved.id))
+      expect(reservedListing.status).toBe('reserved')
+    })
+  })
+
+  describe('full ownership lifecycle (Ankauf → Verkauf → Ankauf)', () => {
+    it('keeps history, associated data and stock visibility through two cycles', async () => {
+      const customerA = await seedCustomer({
+        customerNumber: 'KU-L0001',
+        firstName: 'Anna',
+        lastName: 'Alt'
+      })
+      const customerB = await seedCustomer({
+        customerNumber: 'KU-L0002',
+        firstName: 'Bernd',
+        lastName: 'Neu'
+      })
+
+      // Customer A's vehicle with attached documents + photos.
+      const v = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: customerA,
+        licensePlate: 'KI-AA 100'
+      })
+      await db
+        .insert(vehicleDocuments)
+        .values({
+          vehicleId: v.id,
+          fileName: 'brief.pdf',
+          mime: 'application/pdf',
+          sizeBytes: 3,
+          data: Buffer.from('pdf')
+        })
+      await db
+        .insert(vehiclePhotos)
+        .values({
+          vehicleId: v.id,
+          mime: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,AA==',
+          isMain: true
+        })
+
+      // 1) Ankauf from A: vehicle becomes stock, A is the Vorbesitzer.
+      const afterPurchase1 = await purchaseVehicleIntoStock({
+        vehicleId: v.id,
+        purchasePrice: 4000,
+        purchaseDate: '2026-06-01'
+      })
+      expect(afterPurchase1.customerId).toBeNull()
+      expect(afterPurchase1.previousOwnerCustomerId).toBe(customerA)
+      const purchases1 = await listVehiclePurchases(v.id)
+      expect(purchases1).toHaveLength(1)
+      expect(purchases1[0].previousOwner).toBe('Anna Alt')
+
+      // Listing goes online; the car shows in stock + public lists.
+      await db
+        .insert(vehicleListings)
+        .values({ vehicleId: v.id, salesPriceGross: '9990.00' })
+      const stock1 = await listVehicles({ page: 1, size: 25, kind: 'stock' })
+      expect(stock1.items.map((i) => i.id)).toContain(v.id)
+      expect((await listPublicUsedCars()).map((c) => c.id)).toContain(v.id)
+
+      // 2) Sale to B (paid invoice): FK re-hang + sale history row.
+      const invoiceId = crypto.randomUUID()
+      const afterSale = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: customerB,
+        invoiceId,
+        salesPriceGross: '9990.00',
+        saleDate: '2026-06-15'
+      })
+      expect(afterSale?.customerId).toBe(customerB)
+      // The Vorbesitzer stays A — it records who the car came FROM.
+      expect(afterSale?.previousOwnerCustomerId).toBe(customerA)
+      const sales1 = await listVehicleSales(v.id)
+      expect(sales1).toHaveLength(1)
+      expect(sales1[0].invoiceId).toBe(invoiceId)
+      expect(Number(sales1[0].salesPriceGross)).toBe(9990)
+      const [listingAfterSale] = await db
+        .select()
+        .from(vehicleListings)
+        .where(eq(vehicleListings.vehicleId, v.id))
+      expect(listingAfterSale.status).toBe('sold')
+
+      // Associated data follows the vehicle FK — nothing re-hung.
+      const docs = await db
+        .select({ id: vehicleDocuments.id })
+        .from(vehicleDocuments)
+        .where(eq(vehicleDocuments.vehicleId, v.id))
+      expect(docs).toHaveLength(1)
+      const photos = await db
+        .select({ id: vehiclePhotos.id })
+        .from(vehiclePhotos)
+        .where(eq(vehiclePhotos.vehicleId, v.id))
+      expect(photos).toHaveLength(1)
+
+      // Sold car is out of every stock view.
+      const stock2 = await listVehicles({ page: 1, size: 25, kind: 'stock' })
+      expect(stock2.items.map((i) => i.id)).not.toContain(v.id)
+      expect((await listPublicUsedCars()).map((c) => c.id)).not.toContain(v.id)
+      expect(await getPublicUsedCar(v.id)).toBeNull()
+
+      // 3) Second Ankauf, now from B — despite the old sale row the
+      // vehicle must be back in stock everywhere.
+      const afterPurchase2 = await purchaseVehicleIntoStock({
+        vehicleId: v.id,
+        purchasePrice: 6000,
+        purchaseDate: '2026-07-01'
+      })
+      expect(afterPurchase2.customerId).toBeNull()
+      expect(afterPurchase2.previousOwnerCustomerId).toBe(customerB)
+      const purchases2 = await listVehiclePurchases(v.id)
+      expect(purchases2).toHaveLength(2)
+      expect(purchases2[0].previousOwner).toBe('Bernd Neu')
+      // The old sale row stays as history.
+      expect(await listVehicleSales(v.id)).toHaveLength(1)
+
+      const stock3 = await listVehicles({ page: 1, size: 25, kind: 'stock' })
+      expect(stock3.items.map((i) => i.id)).toContain(v.id)
+      expect((await listPublicUsedCars()).map((c) => c.id)).toContain(v.id)
+      expect((await getPublicUsedCar(v.id))?.id).toBe(v.id)
+      const [listingAfterRepurchase] = await db
+        .select()
+        .from(vehicleListings)
+        .where(eq(vehicleListings.vehicleId, v.id))
+      expect(listingAfterRepurchase.status).toBe('available')
+
+      // 4) The re-purchased car can be sold again (second cycle).
+      const afterSale2 = await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: customerA,
+        salesPriceGross: 11990,
+        saleDate: '2026-07-07'
+      })
+      expect(afterSale2?.customerId).toBe(customerA)
+      expect(await listVehicleSales(v.id)).toHaveLength(2)
+
+      // Documents and photos survived both cycles.
+      const docsFinal = await db
+        .select({ id: vehicleDocuments.id })
+        .from(vehicleDocuments)
+        .where(eq(vehicleDocuments.vehicleId, v.id))
+      expect(docsFinal).toHaveLength(1)
+      const photosFinal = await db
+        .select({ id: vehiclePhotos.id })
+        .from(vehiclePhotos)
+        .where(eq(vehiclePhotos.vehicleId, v.id))
+      expect(photosFinal).toHaveLength(1)
     })
   })
 })

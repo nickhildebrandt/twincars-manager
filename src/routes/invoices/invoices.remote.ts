@@ -27,7 +27,10 @@ import {
   setDocumentStatus
 } from '$lib/server/services/document-service'
 import { sendDocumentEmail } from '$lib/server/services/mail-service'
-import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
+import {
+  latestPlateSubquery,
+  sellStockVehicleToCustomer
+} from '$lib/server/services/vehicle-service'
 import { db } from '$lib/server/db/client'
 import { customers, documents, vehicles } from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
@@ -217,35 +220,34 @@ export const setInvoiceStatusRemote = command(
  * Final-Übergang Lager → Kunde, ausgelöst beim Bezahlen einer
  * Verkaufs-Rechnung.
  *
- * Wenn die Rechnung
- *   - ein verknüpftes Fahrzeug (`vehicleId`) und
- *   - einen verknüpften Kunden (`customerId`) trägt **und**
- *   - das Fahrzeug aktuell `customer_id IS NULL` (=Lager) ist,
- * dann wird das Fahrzeug auf den Rechnungs-Kunden umgeschrieben.
- * Damit wandert es aus „Zu verkaufende Fahrzeuge" in „Fahrzeuge"
- * — aber **erst nach Zahlungseingang**, nicht schon beim Anlegen
- * der Rechnung.
+ * Wenn die Rechnung ein verknüpftes Fahrzeug (`vehicleId`) und einen
+ * verknüpften Kunden (`customerId`) trägt, übergibt der Service
+ * {@link sellStockVehicleToCustomer} das Fahrzeug an den
+ * Rechnungs-Kunden, schreibt eine `vehicle_sales`-Historienzeile
+ * (Verkaufspreis = Rechnungs-Bruttobetrag, Verkaufsdatum = heute,
+ * Rechnungs-Backlink) und setzt ein vorhandenes Listing auf `sold`.
+ * Damit wandert es aus „Zu verkaufende Fahrzeuge" in „Fahrzeuge" —
+ * aber **erst nach Zahlungseingang**, nicht schon beim Anlegen der
+ * Rechnung.
  *
- * Idempotent: ein zweiter Aufruf macht nichts mehr, weil
- * `customer_id` dann nicht mehr NULL ist.
+ * Idempotent: der Service macht für Nicht-Lagerfahrzeuge (normale
+ * Werkstatt-Rechnungen), unbekannte Fahrzeuge/Kunden und bereits
+ * verkaufte Fahrzeuge nichts — ein zweites „bezahlt" schreibt keine
+ * zweite Verkaufszeile.
  */
 async function transferStockVehicleOnPayment(invoiceId: string): Promise<void> {
   const result = await getDocument(invoiceId)
   if (!result || result.doc.type !== 'invoice') return
-  const { vehicleId, customerId } = result.doc
+  const { vehicleId, customerId, grossTotal } = result.doc
   if (!vehicleId || !customerId) return
 
-  const [veh] = await db
-    .select({ id: vehicles.id, customerId: vehicles.customerId })
-    .from(vehicles)
-    .where(eq(vehicles.id, vehicleId))
-    .limit(1)
-  if (!veh || veh.customerId !== null) return
-
-  await db
-    .update(vehicles)
-    .set({ customerId, updatedAt: new Date() })
-    .where(eq(vehicles.id, vehicleId))
+  await sellStockVehicleToCustomer({
+    vehicleId,
+    customerId,
+    invoiceId,
+    salesPriceGross: grossTotal,
+    saleDate: new Date().toISOString().slice(0, 10)
+  })
 }
 
 /**

@@ -16,7 +16,6 @@ import {
   vehicles,
   vehicleLicensePlateVersions,
   vehicleListings,
-  vehicleSales,
   employees,
   items,
   suppliers,
@@ -417,7 +416,10 @@ export const pickItemsRemote = query(
 )
 
 /**
- * Picker for vehicles still in stock (have a listing, not yet sold).
+ * Picker for vehicles still in stock (have an `available` listing and
+ * no owner). Stock = `customer_id IS NULL` — the sale flow sets the
+ * buyer on payment, so sold cars drop out; historical `vehicle_sales`
+ * rows do not block a re-purchased vehicle from being picked again.
  * Returns pricing data for invoice/offer positions.
  *
  * @group integration
@@ -431,7 +433,7 @@ export const pickInventoryVehiclesRemote = query(
     const filters = [
       eq(vehicles.archived, false),
       eq(vehicleListings.status, 'available'),
-      isNull(vehicleSales.id)
+      isNull(vehicles.customerId)
     ]
     if (q) {
       const term = `%${q}%`
@@ -469,7 +471,6 @@ export const pickInventoryVehiclesRemote = query(
         })
         .from(vehicles)
         .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-        .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
         .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
         .where(where)
         .orderBy(asc(vehicles.make), asc(vehicles.model))
@@ -479,7 +480,6 @@ export const pickInventoryVehiclesRemote = query(
         .select({ value: count() })
         .from(vehicles)
         .innerJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-        .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
         .where(where)
     ])
     const out = rows.map((r) => {

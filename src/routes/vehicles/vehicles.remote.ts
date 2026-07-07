@@ -15,6 +15,7 @@ import {
   maxLength
 } from 'valibot'
 import {
+  dateStringSchema,
   hsnSchema,
   idSchema,
   licensePlateSchema,
@@ -28,8 +29,11 @@ import {
   deleteVehicle,
   getVehicle,
   listVehicles,
+  purchaseVehicleIntoStock,
+  recordVehiclePurchase,
   updateVehicle
 } from '$lib/server/services/vehicle-service'
+import { listInventoryRemote } from '../inventory/inventory.remote'
 import {
   addVehiclePhoto,
   deleteVehiclePhoto,
@@ -42,11 +46,11 @@ import { and, count as sqlCount, desc, eq } from 'drizzle-orm'
 import { requirePermission } from '$lib/server/auth-guards'
 
 /**
- * Validation schema shared by `createVehicleRemote` and
+ * Field shape shared by `createVehicleRemote` and
  * `updateVehicleRemote`. Numeric fields are bounded to fit Postgres `int`
  * (max 2_147_483_647) plus business-realistic ceilings.
  */
-const vehicleInputSchema = object({
+const vehicleInputShape = {
   customerId: optional(idSchema),
   /**
    * Optional Vorbesitzer relation (mainly stock vehicles: the customer
@@ -76,6 +80,33 @@ const vehicleInputSchema = object({
   gearbox: optional(pipe(string(), trim(), maxLength(30))),
   bodyType: optional(pipe(string(), trim(), maxLength(50))),
   notes: optional(notesSchema)
+}
+
+const vehicleInputSchema = object(vehicleInputShape)
+
+/**
+ * Ankaufspreis: the gross amount actually paid for the vehicle
+ * (used-car purchases from private sellers carry no deductible input
+ * VAT under § 25a UStG, so brutto is the canonical semantics of
+ * `vehicle_purchases.purchase_price`).
+ */
+const purchasePriceSchema = pipe(
+  number('Bitte einen Ankaufspreis eingeben.'),
+  minValue(0, 'Der Ankaufspreis darf nicht negativ sein.'),
+  maxValue(1_000_000_000, 'Der Ankaufspreis ist zu groß.')
+)
+
+/**
+ * Create-only schema: the base vehicle fields plus optional Ankauf
+ * data. `/inventory/new` always sends `purchaseDate` (defaulted to
+ * today), which triggers a `vehicle_purchases` history row after the
+ * vehicle insert; `/vehicles/new` never sends the purchase fields.
+ * Both fields are optional — they never block creation.
+ */
+const createVehicleSchema = object({
+  ...vehicleInputShape,
+  purchasePrice: optional(purchasePriceSchema),
+  purchaseDate: optional(dateStringSchema)
 })
 
 /**
@@ -220,6 +251,12 @@ const refreshListsAndCount = async (): Promise<void> => {
 /**
  * Create a vehicle.
  *
+ * When the payload carries `purchaseDate` (stock creations from
+ * `/inventory/new`), a `vehicle_purchases` history row is written
+ * right after the insert — with the picked Vorbesitzer's display name
+ * as a rename-proof snapshot and `purchasePrice` defaulting to
+ * `'0.00'` when not provided.
+ *
  * @remarks
  * Single-flight mutation. Pass `listVehiclesRemote` to `.updates(...)` on the
  * client to refresh the current view inside the same response.
@@ -228,15 +265,24 @@ const refreshListsAndCount = async (): Promise<void> => {
  * @module vehicles
  */
 export const createVehicleRemote = command(
-  vehicleInputSchema,
+  createVehicleSchema,
   async (input) => {
     requirePermission('vehicles')
+    const { purchasePrice, purchaseDate, ...vehicleInput } = input
     const data = await createVehicle({
-      ...input,
-      firstRegistration: input.firstRegistration ?? null,
-      nextHu: input.nextHu ?? null,
-      nextAu: input.nextAu ?? null
+      ...vehicleInput,
+      firstRegistration: vehicleInput.firstRegistration ?? null,
+      nextHu: vehicleInput.nextHu ?? null,
+      nextAu: vehicleInput.nextAu ?? null
     } as never)
+    if (purchaseDate) {
+      await recordVehiclePurchase({
+        vehicleId: data.id,
+        purchaseDate,
+        purchasePrice,
+        previousOwnerCustomerId: vehicleInput.previousOwnerCustomerId ?? null
+      })
+    }
     await refreshListsAndCount()
     return data
   }
@@ -273,6 +319,51 @@ export const deleteVehicleRemote = command(
     requirePermission('vehicles')
     await deleteVehicle(id)
     await refreshListsAndCount()
+  }
+)
+
+/**
+ * Ankauf: take an existing CUSTOMER vehicle into the sales stock.
+ * The current owner becomes the Vorbesitzer, `customer_id` is
+ * cleared, and a `vehicle_purchases` history row records the deal
+ * (price defaults to `'0.00'` when unknown). Requires the
+ * `inventory` permission — buying into stock is an inventory
+ * operation, not vehicle master-data editing.
+ *
+ * Refreshes the detail queries plus the vehicle/inventory lists the
+ * client holds, so the detail page flips to Verkaufsbestand in the
+ * same flight.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const purchaseVehicleIntoStockRemote = command(
+  object({
+    id: idSchema,
+    purchaseDate: dateStringSchema,
+    purchasePrice: optional(purchasePriceSchema),
+    notes: optional(notesSchema)
+  }),
+  async ({ id, purchaseDate, purchasePrice, notes }) => {
+    requirePermission('inventory')
+    const vehicle = await purchaseVehicleIntoStock({
+      vehicleId: id,
+      purchaseDate,
+      purchasePrice,
+      notes
+    })
+    // requested(...) only refreshes instances the CLIENT holds — the
+    // detail page tracks getVehicleRemote({ id }) and its related
+    // query, so both flip in the same flight. A hypothetical
+    // inventory-only caller (no `vehicles` read) never holds them and
+    // therefore never trips their guards here.
+    await Promise.all([
+      requested(getVehicleRemote, 4).refreshAll(),
+      requested(getVehicleRelatedRemote, 4).refreshAll(),
+      requested(listVehiclesRemote, 4).refreshAll(),
+      requested(listInventoryRemote, 4).refreshAll()
+    ])
+    return vehicle
   }
 )
 

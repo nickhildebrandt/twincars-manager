@@ -11,7 +11,7 @@ import {
   trim
 } from 'valibot'
 import { db } from '$lib/server/db/client'
-import { vehicles, vehicleListings, vehicleSales } from '$lib/server/db/schema'
+import { vehicles, vehicleListings } from '$lib/server/db/schema'
 import { idSchema } from '$lib/server/db/validation'
 import { requirePermission } from '$lib/server/auth-guards'
 import { and, asc, count, eq, ilike, inArray, isNull, or } from 'drizzle-orm'
@@ -41,10 +41,15 @@ const buildInventorySelect = (lp: ReturnType<typeof latestPlateSubquery>) => ({
 })
 
 /**
- * List vehicles in stock — anything with no customer link and not yet
- * sold. The listing row is optional: a freshly created stock vehicle
- * shows up immediately (with empty price / location) and gets enriched
- * later when the user adds a listing.
+ * List vehicles in stock — anything with no customer link. A stock
+ * vehicle is by definition customer-less: the sale flow sets
+ * `customer_id` on payment, so sold cars leave the list automatically.
+ * Old `vehicle_sales` rows are deliberately NOT a filter — they are
+ * pure history, and a re-purchased vehicle (Ankauf after an earlier
+ * sale) must show up in stock again. The listing row is optional: a
+ * freshly created stock vehicle shows up immediately (with empty
+ * price / location) and gets enriched later when the user adds a
+ * listing.
  *
  * @group integration
  * @module inventory
@@ -54,11 +59,7 @@ export const listInventoryRemote = query(listSchema, async (params) => {
   const { page, size, q } = params
   const offset = (page - 1) * size
 
-  const filters = [
-    eq(vehicles.archived, false),
-    isNull(vehicles.customerId),
-    isNull(vehicleSales.id)
-  ]
+  const filters = [eq(vehicles.archived, false), isNull(vehicles.customerId)]
   if (q) {
     const term = `%${q}%`
     // Suchtreffer im aktuellen Kennzeichen einsammeln und per
@@ -87,7 +88,6 @@ export const listInventoryRemote = query(listSchema, async (params) => {
       .select(buildInventorySelect(lp))
       .from(vehicles)
       .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-      .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
       .leftJoin(lp, eq(lp.vehicleId, vehicles.id))
       .where(where)
       .orderBy(asc(vehicles.make), asc(vehicles.model))
@@ -97,7 +97,6 @@ export const listInventoryRemote = query(listSchema, async (params) => {
       .select({ value: count() })
       .from(vehicles)
       .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-      .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
       .where(where)
   ])
 

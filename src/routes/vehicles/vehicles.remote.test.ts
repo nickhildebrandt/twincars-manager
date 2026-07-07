@@ -74,13 +74,16 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   vehicleLicensePlateVersions,
+  vehiclePurchases,
   vehicles
 } from '$lib/server/db/schema'
 import {
   createVehicleRemote,
   getVehicleRemote,
+  purchaseVehicleIntoStockRemote,
   updateVehicleRemote
 } from './vehicles.remote'
+import { eq } from 'drizzle-orm'
 
 const asVehiclesUser = () => {
   mockRequestEvent.locals.user = {
@@ -89,6 +92,15 @@ const asVehiclesUser = () => {
     email: 'u1@twincars.local'
   }
   mockRequestEvent.locals.permissions = new Set(['vehicles'])
+}
+
+const withPermissions = (...keys: string[]) => {
+  mockRequestEvent.locals.user = {
+    id: 'u1',
+    name: 'Test',
+    email: 'u1@twincars.local'
+  }
+  mockRequestEvent.locals.permissions = new Set(keys)
 }
 
 const seedCustomer = async (): Promise<string> => {
@@ -105,6 +117,7 @@ const seedCustomer = async (): Promise<string> => {
 
 describe('vehicles.remote — previousOwnerCustomerId', () => {
   beforeEach(async () => {
+    await db.delete(vehiclePurchases)
     await db.delete(vehicleLicensePlateVersions)
     await db.delete(vehicles)
     await db.delete(customers)
@@ -169,5 +182,158 @@ describe('vehicles.remote — previousOwnerCustomerId', () => {
     })) as { previousOwnerCustomerId: string | null; model: string | null }
     expect(updated.model).toBe('Golf Variant')
     expect(updated.previousOwnerCustomerId).toBe(previousOwnerId)
+  })
+})
+
+describe('vehicles.remote — createVehicleRemote purchase data (Ankauf)', () => {
+  beforeEach(async () => {
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+    asVehiclesUser()
+  })
+
+  it('writes a vehicle_purchases row when purchaseDate is sent (stock creation)', async () => {
+    const previousOwnerId = await seedCustomer()
+    const created = (await createVehicleRemote({
+      make: 'VW',
+      model: 'Golf',
+      previousOwnerCustomerId: previousOwnerId,
+      purchaseDate: '2026-07-01',
+      purchasePrice: 4500
+    })) as { id: string }
+
+    const rows = await db
+      .select()
+      .from(vehiclePurchases)
+      .where(eq(vehiclePurchases.vehicleId, created.id))
+    expect(rows).toHaveLength(1)
+    expect(rows[0].purchaseDate).toBe('2026-07-01')
+    expect(Number(rows[0].purchasePrice)).toBe(4500)
+    // Rename-proof display-name snapshot of the picked Vorbesitzer.
+    expect(rows[0].previousOwner).toBe('Ankauf GmbH')
+  })
+
+  it('records price 0.00 and no owner snapshot when only the date is sent', async () => {
+    const created = (await createVehicleRemote({
+      make: 'VW',
+      model: 'Polo',
+      purchaseDate: '2026-07-02'
+    })) as { id: string }
+    const rows = await db
+      .select()
+      .from(vehiclePurchases)
+      .where(eq(vehiclePurchases.vehicleId, created.id))
+    expect(rows).toHaveLength(1)
+    expect(Number(rows[0].purchasePrice)).toBe(0)
+    expect(rows[0].previousOwner).toBeNull()
+  })
+
+  it('writes NO purchase row without purchaseDate (customer creation)', async () => {
+    const created = (await createVehicleRemote({
+      make: 'Audi',
+      model: 'A4'
+    })) as { id: string }
+    const rows = await db
+      .select()
+      .from(vehiclePurchases)
+      .where(eq(vehiclePurchases.vehicleId, created.id))
+    expect(rows).toHaveLength(0)
+  })
+
+  it('rejects a negative purchase price with a German message', async () => {
+    await expect(
+      createVehicleRemote({
+        make: 'VW',
+        model: 'Golf',
+        purchaseDate: '2026-07-01',
+        purchasePrice: -1
+      })
+    ).rejects.toThrowError(/Ankaufspreis darf nicht negativ/)
+  })
+})
+
+describe('vehicles.remote — purchaseVehicleIntoStockRemote', () => {
+  beforeEach(async () => {
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+  })
+
+  const seedCustomerVehicle = async (): Promise<{
+    customerId: string
+    vehicleId: string
+  }> => {
+    const customerId = await seedCustomer()
+    const [veh] = await db
+      .insert(vehicles)
+      .values({ make: 'VW', model: 'Golf', customerId })
+      .returning({ id: vehicles.id })
+    return { customerId, vehicleId: veh.id }
+  }
+
+  it('re-hangs the vehicle into stock with the inventory permission', async () => {
+    withPermissions('inventory')
+    const { customerId, vehicleId } = await seedCustomerVehicle()
+
+    const updated = (await purchaseVehicleIntoStockRemote({
+      id: vehicleId,
+      purchaseDate: '2026-07-07',
+      purchasePrice: 3000
+    })) as { customerId: string | null; previousOwnerCustomerId: string | null }
+    expect(updated.customerId).toBeNull()
+    expect(updated.previousOwnerCustomerId).toBe(customerId)
+
+    const rows = await db
+      .select()
+      .from(vehiclePurchases)
+      .where(eq(vehiclePurchases.vehicleId, vehicleId))
+    expect(rows).toHaveLength(1)
+    expect(Number(rows[0].purchasePrice)).toBe(3000)
+    expect(rows[0].previousOwner).toBe('Ankauf GmbH')
+  })
+
+  it('rejects callers with only the vehicles permission (403)', async () => {
+    withPermissions('vehicles')
+    const { vehicleId } = await seedCustomerVehicle()
+    await expect(
+      purchaseVehicleIntoStockRemote({
+        id: vehicleId,
+        purchaseDate: '2026-07-07'
+      })
+    ).rejects.toMatchObject({ status: 403 })
+    expect(await db.select().from(vehiclePurchases)).toHaveLength(0)
+  })
+
+  it('rejects anonymous callers (401)', async () => {
+    mockRequestEvent.locals.user = null
+    mockRequestEvent.locals.permissions = new Set()
+    await expect(
+      purchaseVehicleIntoStockRemote({
+        id: '00000000-0000-0000-0000-000000000000',
+        purchaseDate: '2026-07-07'
+      })
+    ).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('rejects an invalid date with the German validation message', async () => {
+    withPermissions('inventory')
+    const { vehicleId } = await seedCustomerVehicle()
+    await expect(
+      purchaseVehicleIntoStockRemote({ id: vehicleId, purchaseDate: 'gestern' })
+    ).rejects.toThrowError(/gültiges Datum/)
+  })
+
+  it('surfaces the 409 for a vehicle that is already stock', async () => {
+    withPermissions('inventory')
+    const [veh] = await db
+      .insert(vehicles)
+      .values({ make: 'BMW', model: '320d', customerId: null })
+      .returning({ id: vehicles.id })
+    await expect(
+      purchaseVehicleIntoStockRemote({ id: veh.id, purchaseDate: '2026-07-07' })
+    ).rejects.toMatchObject({ status: 409 })
   })
 })

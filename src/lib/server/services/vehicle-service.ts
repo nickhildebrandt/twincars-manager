@@ -1,16 +1,23 @@
+import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db/client'
 import {
   customers,
   vehicleLicensePlateVersions,
   vehicleListings,
   vehiclePhotos,
+  vehiclePurchases,
   vehicleSales,
   vehicles,
   type Vehicle,
   type NewVehicle,
-  type VehicleLicensePlateVersion
+  type VehicleLicensePlateVersion,
+  type VehiclePurchase,
+  type VehicleSale
 } from '$lib/server/db/schema'
-import { customerPickerLabel } from '$lib/utils/picker-labels'
+import {
+  customerDisplayName,
+  customerPickerLabel
+} from '$lib/utils/picker-labels'
 import {
   and,
   asc,
@@ -373,6 +380,228 @@ export async function withCurrentPlates<T extends { id: string }>(
 export { asc }
 
 /* ────────────────────────────────────────────────────────────────────── */
+/* Ownership transfers (Ankauf / Verkauf)                                 */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Normalize a money input (number or numeric string) into the
+ * `'0.00'`-style string Drizzle expects for `numeric` columns.
+ * `null` / `undefined` / empty string fall back to `'0.00'` — the
+ * purchase-price column is NOT NULL and "unknown" is recorded as zero.
+ */
+const toMoneyString = (v: number | string | null | undefined): string => {
+  if (v == null || v === '') return '0.00'
+  const n = Number(v)
+  return Number.isFinite(n) ? n.toFixed(2) : '0.00'
+}
+
+/**
+ * Append a `vehicle_purchases` history row (Ankauf). Snapshots the
+ * previous owner's display name via {@link customerDisplayName} so the
+ * history stays readable even if the customer is later renamed or
+ * deleted (the varchar snapshot is rename-proof, unlike the FK on the
+ * vehicle).
+ *
+ * Price semantics: `purchase_price` is the amount actually paid
+ * (brutto). Used-car purchases from private sellers carry no
+ * deductible input VAT (§ 25a UStG differential taxation), so the
+ * paid gross amount is the canonical value. `'0.00'` when unknown —
+ * the column is NOT NULL.
+ */
+export async function recordVehiclePurchase(params: {
+  vehicleId: string
+  purchaseDate: string
+  purchasePrice?: number | string | null
+  previousOwnerCustomerId?: string | null
+  notes?: string | null
+}): Promise<VehiclePurchase> {
+  let previousOwner: string | null = null
+  if (params.previousOwnerCustomerId) {
+    const rows = await fetchCustomerLabelParts(params.previousOwnerCustomerId)
+    previousOwner = rows[0] ? customerDisplayName(rows[0]) : null
+  }
+  const [row] = await db
+    .insert(vehiclePurchases)
+    .values({
+      vehicleId: params.vehicleId,
+      purchaseDate: params.purchaseDate,
+      purchasePrice: toMoneyString(params.purchasePrice),
+      previousOwner,
+      notes: params.notes ?? null
+    })
+    .returning()
+  return row
+}
+
+/**
+ * Final transfer stock → customer when a stock-sale invoice is paid.
+ *
+ * Guards (all of them make the call an idempotent no-op returning
+ * `null` — the caller is the invoice-payment path, which must never
+ * throw for ordinary repair invoices):
+ *   - the vehicle exists,
+ *   - it is currently stock (`customer_id IS NULL`),
+ *   - the buyer exists,
+ *   - no sale row exists for the current stock cycle (a sale row
+ *     OLDER than the latest purchase row belongs to a previous
+ *     ownership cycle and does not block a re-sale).
+ *
+ * Writes, in order: `vehicles.customer_id` = buyer (+`updated_at`),
+ * one `vehicle_sales` history row, and — when a listing row exists —
+ * `vehicle_listings.status` = `'sold'`. `previous_owner_customer_id`
+ * stays untouched: it records who the workshop bought the car from,
+ * not who it was sold to.
+ */
+export async function sellStockVehicleToCustomer(params: {
+  vehicleId: string
+  customerId: string
+  invoiceId?: string | null
+  salesPriceGross: number | string
+  saleDate: string
+  notes?: string | null
+}): Promise<Vehicle | null> {
+  const [veh] = await db
+    .select()
+    .from(vehicles)
+    .where(eq(vehicles.id, params.vehicleId))
+    .limit(1)
+  if (!veh || veh.customerId !== null) return null
+
+  const buyerRows = await fetchCustomerLabelParts(params.customerId)
+  if (!buyerRows[0]) return null
+
+  // Idempotency across the current stock cycle: a sale row newer than
+  // the latest purchase row means this cycle is already sold. Older
+  // sale rows are history from a previous cycle (re-purchased car).
+  const [latestSale] = await db
+    .select({ createdAt: vehicleSales.createdAt })
+    .from(vehicleSales)
+    .where(eq(vehicleSales.vehicleId, params.vehicleId))
+    .orderBy(desc(vehicleSales.createdAt))
+    .limit(1)
+  if (latestSale) {
+    const [latestPurchase] = await db
+      .select({ createdAt: vehiclePurchases.createdAt })
+      .from(vehiclePurchases)
+      .where(eq(vehiclePurchases.vehicleId, params.vehicleId))
+      .orderBy(desc(vehiclePurchases.createdAt))
+      .limit(1)
+    if (
+      !latestPurchase ||
+      latestSale.createdAt.getTime() > latestPurchase.createdAt.getTime()
+    ) {
+      return null
+    }
+  }
+
+  const [updated] = await db
+    .update(vehicles)
+    .set({ customerId: params.customerId, updatedAt: new Date() })
+    .where(eq(vehicles.id, params.vehicleId))
+    .returning()
+  await db
+    .insert(vehicleSales)
+    .values({
+      vehicleId: params.vehicleId,
+      customerId: params.customerId,
+      invoiceId: params.invoiceId ?? null,
+      saleDate: params.saleDate,
+      salesPriceGross: toMoneyString(params.salesPriceGross),
+      notes: params.notes ?? null
+    })
+  await db
+    .update(vehicleListings)
+    .set({ status: 'sold', updatedAt: new Date() })
+    .where(eq(vehicleListings.vehicleId, params.vehicleId))
+  return updated
+}
+
+/**
+ * Ankauf of an EXISTING customer vehicle into the sales stock: the
+ * FK re-hang. The current owner becomes the Vorbesitzer
+ * (`previous_owner_customer_id` + rename-proof varchar snapshot in
+ * the `vehicle_purchases` row) and `customer_id` is cleared, which by
+ * definition puts the vehicle into the Verkaufsbestand lists.
+ *
+ * All vehicle-associated data (documents, photos, plate versions,
+ * tire storage, work orders) is vehicle-FK'd and follows
+ * automatically. Sale rows from a previous ownership cycle stay as
+ * history. A listing row left in `'sold'` state from that previous
+ * cycle flips back to `'available'` so the car is immediately
+ * pickable for a re-sale.
+ *
+ * Throws a curated 404/409 — this is a deliberate operator action
+ * (unlike {@link sellStockVehicleToCustomer}, which no-ops).
+ */
+export async function purchaseVehicleIntoStock(params: {
+  vehicleId: string
+  purchasePrice?: number | string | null
+  purchaseDate: string
+  notes?: string | null
+}): Promise<Vehicle> {
+  const [veh] = await db
+    .select()
+    .from(vehicles)
+    .where(eq(vehicles.id, params.vehicleId))
+    .limit(1)
+  if (!veh) error(404, 'Fahrzeug nicht gefunden.')
+  if (veh.customerId === null)
+    error(409, 'Das Fahrzeug ist bereits im Verkaufsbestand.')
+
+  const sellerId = veh.customerId
+  const [updated] = await db
+    .update(vehicles)
+    .set({
+      previousOwnerCustomerId: sellerId,
+      customerId: null,
+      updatedAt: new Date()
+    })
+    .where(eq(vehicles.id, params.vehicleId))
+    .returning()
+  await recordVehiclePurchase({
+    vehicleId: params.vehicleId,
+    purchaseDate: params.purchaseDate,
+    purchasePrice: params.purchasePrice,
+    previousOwnerCustomerId: sellerId,
+    notes: params.notes
+  })
+  await db
+    .update(vehicleListings)
+    .set({ status: 'available', updatedAt: new Date() })
+    .where(
+      and(
+        eq(vehicleListings.vehicleId, params.vehicleId),
+        eq(vehicleListings.status, 'sold')
+      )
+    )
+  return updated
+}
+
+/**
+ * Purchase history of a vehicle, newest first (detail views, tests).
+ */
+export const listVehiclePurchases = async (
+  vehicleId: string
+): Promise<VehiclePurchase[]> =>
+  db
+    .select()
+    .from(vehiclePurchases)
+    .where(eq(vehiclePurchases.vehicleId, vehicleId))
+    .orderBy(desc(vehiclePurchases.createdAt))
+
+/**
+ * Sale history of a vehicle, newest first (detail views, tests).
+ */
+export const listVehicleSales = async (
+  vehicleId: string
+): Promise<VehicleSale[]> =>
+  db
+    .select()
+    .from(vehicleSales)
+    .where(eq(vehicleSales.vehicleId, vehicleId))
+    .orderBy(desc(vehicleSales.createdAt))
+
+/* ────────────────────────────────────────────────────────────────────── */
 /* Public storefront helpers                                              */
 /* ────────────────────────────────────────────────────────────────────── */
 
@@ -398,10 +627,14 @@ export type PublicUsedCar = {
 
 /**
  * Inventory vehicles available for the public used-car listing:
- * not archived, no customer (i.e. stock), not sold yet, and with a
- * sales listing in `available` state. Each vehicle is enriched with
- * its cover photo plus up to 6 additional photos in `sortOrder`,
- * encoded as data URLs ready to be embedded into a public website.
+ * not archived and no customer (i.e. stock). A stock vehicle is by
+ * definition customer-less — the sale flow sets `customer_id` on the
+ * buyer, so sold cars drop out automatically. Old `vehicle_sales`
+ * rows are pure history and deliberately NOT a filter: a re-purchased
+ * vehicle (Ankauf after an earlier sale) must show up again. Each
+ * vehicle is enriched with its cover photo plus up to 6 additional
+ * photos in `sortOrder`, encoded as data URLs ready to be embedded
+ * into a public website.
  */
 export async function listPublicUsedCars(): Promise<PublicUsedCar[]> {
   const rows = await db
@@ -415,19 +648,11 @@ export async function listPublicUsedCars(): Promise<PublicUsedCar[]> {
       gearbox: vehicles.gearbox,
       salesPriceGross: vehicleListings.salesPriceGross,
       highlights: vehicleListings.highlights,
-      status: vehicleListings.status,
-      saleId: vehicleSales.id
+      status: vehicleListings.status
     })
     .from(vehicles)
     .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-    .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
-    .where(
-      and(
-        eq(vehicles.archived, false),
-        isNull(vehicles.customerId),
-        isNull(vehicleSales.id)
-      )
-    )
+    .where(and(eq(vehicles.archived, false), isNull(vehicles.customerId)))
     .orderBy(desc(vehicles.createdAt))
 
   if (rows.length === 0) return []
@@ -477,9 +702,11 @@ export async function listPublicUsedCars(): Promise<PublicUsedCar[]> {
 /**
  * Single-row equivalent of {@link listPublicUsedCars}. Returns the
  * same `PublicUsedCar` projection for one vehicle, or `null` when the
- * id is unknown, the vehicle is archived, owned by a customer, or
- * already sold. Used by `GET /api/public/used-cars/:id` for the
- * external website's vehicle-detail page.
+ * id is unknown, the vehicle is archived, or owned by a customer
+ * (sold cars carry the buyer's `customer_id` — same "stock =
+ * customer-less" semantics as the list). Used by
+ * `GET /api/public/used-cars/:id` for the external website's
+ * vehicle-detail page.
  */
 export async function getPublicUsedCar(
   id: string
@@ -494,18 +721,15 @@ export async function getPublicUsedCar(
       fuelType: vehicles.fuelType,
       gearbox: vehicles.gearbox,
       salesPriceGross: vehicleListings.salesPriceGross,
-      highlights: vehicleListings.highlights,
-      saleId: vehicleSales.id
+      highlights: vehicleListings.highlights
     })
     .from(vehicles)
     .leftJoin(vehicleListings, eq(vehicleListings.vehicleId, vehicles.id))
-    .leftJoin(vehicleSales, eq(vehicleSales.vehicleId, vehicles.id))
     .where(
       and(
         eq(vehicles.id, id),
         eq(vehicles.archived, false),
-        isNull(vehicles.customerId),
-        isNull(vehicleSales.id)
+        isNull(vehicles.customerId)
       )
     )
     .limit(1)

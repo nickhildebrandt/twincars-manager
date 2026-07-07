@@ -97,6 +97,14 @@
      * customer mode).
      */
     previousOwnerCustomerId?: string | null
+    /**
+     * Ankauf data — only sent in stock mode. `purchaseDate` defaults
+     * to today and triggers a `vehicle_purchases` history row on the
+     * server; `purchasePrice` is the paid gross amount (optional,
+     * recorded as 0,00 when unknown). Never blocks creation.
+     */
+    purchasePrice?: number
+    purchaseDate?: string
     make?: string
     model?: string
     licensePlate?: string
@@ -129,6 +137,8 @@
     customerLabel: string
     previousOwnerCustomerId: string
     previousOwnerLabel: string
+    purchasePrice: number | string
+    purchaseDate: string
     make: string
     model: string
     licensePlate: string
@@ -159,6 +169,10 @@
   let previousOwnerLabel = $state(
     draft?.previousOwnerLabel ?? init.previousOwnerLabel ?? ''
   )
+  const todayIso = (): string => new Date().toISOString().slice(0, 10)
+  /** Ankauf fields — rendered in stock mode only. */
+  let purchasePrice = $state<number | string>(draft?.purchasePrice ?? '')
+  let purchaseDate = $state(draft?.purchaseDate ?? todayIso())
   let make = $state(draft?.make ?? init.make ?? '')
   let model = $state(draft?.model ?? init.model ?? '')
   let licensePlate = $state(draft?.licensePlate ?? init.licensePlate ?? '')
@@ -201,6 +215,8 @@
     customerLabel,
     previousOwnerCustomerId,
     previousOwnerLabel,
+    purchasePrice,
+    purchaseDate,
     make,
     model,
     licensePlate,
@@ -283,6 +299,17 @@
         'Bitte prüfen Sie Ihre Eingaben.'
       return
     }
+    // Click-time check for the optional Ankaufspreis: an empty field
+    // never blocks creation, but a garbled/negative value surfaces a
+    // German error instead of a server 400.
+    if (
+      mode === 'stock' &&
+      purchasePrice !== '' &&
+      (!Number.isFinite(Number(purchasePrice)) || Number(purchasePrice) < 0)
+    ) {
+      errorMsg = 'Bitte einen gültigen Ankaufspreis (mindestens 0) eingeben.'
+      return
+    }
     errorMsg = null
     const resolvedCustomerId =
       mode === 'stock' ? undefined : customerId || undefined
@@ -292,6 +319,14 @@
       previousOwnerCustomerId: showPreviousOwner
         ? previousOwnerCustomerId || null
         : undefined,
+      ...(mode === 'stock'
+        ? {
+            purchaseDate: purchaseDate || todayIso(),
+            ...(purchasePrice !== ''
+              ? { purchasePrice: Number(purchasePrice) }
+              : {})
+          }
+        : {}),
       make: trimOrUndef(make),
       model: trimOrUndef(model),
       licensePlate: trimOrUndef(licensePlate),
@@ -380,6 +415,36 @@
               onCreateNew={canCreateCustomer
                 ? () => startCustomerCreateFor('previousOwnerCustomerId')
                 : undefined}
+            />
+          </FormField>
+        </div>
+      </fieldset>
+    {/if}
+
+    {#if mode === 'stock'}
+      <!--
+        Ankauf data for a fresh stock vehicle: both fields are
+        optional and never block creation. The server writes a
+        vehicle_purchases history row (price 0,00 when left empty,
+        Vorbesitzer name snapshotted from the picker above).
+      -->
+      <fieldset class="fieldset">
+        <legend class="fieldset-legend">Ankauf</legend>
+        <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+          <FormField label="Ankaufspreis (brutto, EUR, optional)">
+            <input
+              class="input input-bordered w-full"
+              type="number"
+              min="0"
+              step="0.01"
+              bind:value={purchasePrice}
+            />
+          </FormField>
+          <FormField label="Ankaufsdatum">
+            <input
+              class="input input-bordered w-full"
+              type="date"
+              bind:value={purchaseDate}
             />
           </FormField>
         </div>

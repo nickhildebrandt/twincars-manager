@@ -16,7 +16,15 @@
     setMainVehiclePhotoRemote
   } from '../vehicles.remote'
   import { getVehicleSaleSignPdfRemote } from '../sale-sign.remote'
-  import { Pencil, Printer, Receipt, ShoppingCart, User } from '@lucide/svelte'
+  import PurchaseIntoStockModal from '../PurchaseIntoStockModal.svelte'
+  import {
+    Pencil,
+    Printer,
+    Receipt,
+    ShoppingCart,
+    User,
+    Warehouse
+  } from '@lucide/svelte'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -36,13 +44,24 @@
    * The documents list is meta-only; bytes travel exclusively through
    * `getVehicleDocumentRemote` inside the VehicleDocuments card.
    */
-  const [v, initialPhotos, initialRelated, initialDocuments] =
+  const [initialVehicle, initialPhotos, initialRelated, initialDocuments] =
     await Promise.all([
       getVehicleRemote({ id }),
       listVehiclePhotosRemote({ vehicleId: id }),
       getVehicleRelatedRemote({ id, invoicesPage: 1 }),
       listVehicleDocumentsRemote({ vehicleId: id })
     ])
+
+  /**
+   * Reactive vehicle read — never memoize the query proxy. The Ankauf
+   * command refreshes `getVehicleRemote({ id })` server-side in the
+   * same flight; reading `.current` here flips the page to the
+   * Verkaufsbestand state (header CTA, Vorbesitzer row) without a
+   * remount. `initialVehicle` bridges until the cache is live.
+   */
+  const v = $derived.by(
+    () => getVehicleRemote({ id }).current ?? initialVehicle
+  )
 
   const relatedQ = $derived(getVehicleRelatedRemote({ id, invoicesPage }))
   const related = $derived(relatedQ.current ?? initialRelated)
@@ -79,6 +98,9 @@
         }
       : { label: 'Bearbeiten', href: `/vehicles/${v.id}/edit`, icon: Pencil }
   )
+
+  /** Ankauf modal (customer vehicles only — see the card below). */
+  let ankaufOpen = $state(false)
 
   /**
    * Imperative state for the photo gallery — same pattern as the
@@ -172,6 +194,36 @@
       </button>
     </div>
   </div>
+
+  <!--
+    Ankauf card — only for customer vehicles. Opens the confirm modal
+    that re-hangs the vehicle into the sales stock (Vorbesitzer +
+    vehicle_purchases history row).
+  -->
+  {#if !isStock}
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
+      <div
+        class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+      >
+        <div class="min-w-0">
+          <h3 class="card-title text-base">Ankauf</h3>
+          <p class="text-base-content/60 text-sm">
+            Fahrzeug vom Kunden ankaufen: der Halter wird als Vorbesitzer
+            vermerkt und das Fahrzeug wandert in den Verkaufsbestand.
+          </p>
+        </div>
+        <button
+          type="button"
+          class="btn btn-sm btn-outline gap-2 sm:w-auto"
+          disabled={busy.active}
+          onclick={() => (ankaufOpen = true)}
+        >
+          <Warehouse size={16} />
+          Ankauf (in Verkaufsbestand übernehmen)
+        </button>
+      </div>
+    </div>
+  {/if}
   <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Stammdaten</h3>
@@ -358,3 +410,18 @@
     <VehicleDocuments vehicleId={id} initial={initialDocuments} />
   </div>
 </div>
+
+<!--
+  buildUpdates hands the modal FRESH query instances built against the
+  exact args this page renders (section 5 rule), so the single-flight
+  response flips `v` (header CTA, Vorbesitzer row) and drops the Kunde
+  card without a reload.
+-->
+<PurchaseIntoStockModal
+  bind:open={ankaufOpen}
+  vehicleId={id}
+  buildUpdates={() => [
+    getVehicleRemote({ id }),
+    getVehicleRelatedRemote({ id, invoicesPage })
+  ]}
+/>
