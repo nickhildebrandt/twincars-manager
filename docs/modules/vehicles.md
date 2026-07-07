@@ -1,7 +1,7 @@
 ---
 title: Module - vehicles (Fahrzeuge)
 tags: [module, vehicles]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # vehicles - "Fahrzeuge"
@@ -16,6 +16,7 @@ Canonical template module (with [[customers]]).
   - `vehicles.remote.ts`: `listVehiclesRemote`, `getVehicleRemote`,
     `countVehiclesRemote`, `getVehicleRelatedRemote`,
     `createVehicleRemote`, `updateVehicleRemote`, `deleteVehicleRemote`,
+    `setVehicleArchivedRemote`, `purchaseVehicleIntoStockRemote`,
     `listVehiclePhotosRemote`, `addVehiclePhotoRemote`,
     `deleteVehiclePhotoRemote`, `setMainVehiclePhotoRemote`.
   - `vehicle-documents.remote.ts`: `listVehicleDocumentsRemote`,
@@ -44,6 +45,36 @@ Canonical template module (with [[customers]]).
     stock vehicles (FK customers, SET NULL, migration 0034). The picker
     shows on `/inventory/new` and on the edit form of stock vehicles;
     the detail page links to the customer.
+  - **Ownership transfers** (see [[inventory]] for the lifecycle):
+    "stock" is defined app-wide as `customerId IS NULL`. The **Ankauf**
+    card on the detail page of a customer vehicle
+    (`purchaseVehicleIntoStockRemote`, guard
+    `requirePermission('inventory')`, confirm modal
+    `PurchaseIntoStockModal.svelte`) re-hangs the FK: the current
+    holder becomes `previousOwnerCustomerId`, `customerId` is cleared,
+    a `vehicle_purchases` history row is written (rename-proof
+    `previousOwner` varchar snapshot via `customerDisplayName`; brutto
+    price, Paragraph 25a UStG differential taxation, `'0.00'` when
+    unknown) and a listing left in `sold` from a previous cycle flips
+    back to `available`. All vehicle-FK data (documents, photos, plate
+    versions, tire storage, work orders) follows the vehicle
+    automatically. The **sale** direction runs through
+    `sellStockVehicleToCustomer` when a stock-sale invoice is marked
+    paid ([[invoices]]): buyer becomes `customerId`, one
+    `vehicle_sales` row (sale price = invoice gross, invoice backlink)
+    is written, the listing flips to `sold`; `previousOwnerCustomerId`
+    stays untouched. Idempotent per stock cycle (a sale row newer than
+    the latest purchase row blocks a second write; older sale rows are
+    history from a previous cycle). `listVehiclePurchases` /
+    `listVehicleSales` feed the detail history.
+  - **Archive is the soft-delete path**: `archived` flag,
+    `setVehicleArchivedRemote`, Archiv tab on the list (hidden by
+    default, ignores the kind filter so every archived vehicle stays
+    findable), "Archiviert" badge, inline "Reaktivieren" on the tab and
+    Archivieren/Reaktivieren via `ConfirmDialog` on the detail page.
+    `deleteVehicle` refuses with a German count of linked
+    Belege/Aufträge/Einlagerungen and points at archiving; archived
+    vehicles are excluded from pickers and global [[search]].
   - Detail page renders document statuses through
     `documentStatusLabel()`/`documentStatusBadge()` (never raw enums).
   - Vehicle photos: base64 data URLs, `isMain` + `sortOrder`.

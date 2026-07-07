@@ -1,7 +1,7 @@
 ---
 title: Full-page creation flow (pickers)
 tags: [architecture, pickers, forms, creation-flow]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Full-page creation flow
@@ -23,18 +23,29 @@ type CreationFlowFrame = {
   originField: string // picker field that started the flow, e.g. 'customerId'
   draft: unknown // JSON-serializable snapshot of the origin form
   createdAt: number // epoch ms; stale flows are dropped
+  leafInitial?: { customerId?: string; customerLabel?: string } // optional leaf prefill
 }
 ```
+
+`leafInitial` lets the host prefill related pickers on the leaf:
+today's only use is a host that already picked a customer starting a
+VEHICLE creation - the vehicle leaf preselects that customer as the
+holder instead of opening empty. The result handed back by `finish` is
+`{ id, label, holder? }`: `holder` carries a created vehicle's holder
+(customer id + picker label, `null` for holderless creations) so the
+host can re-sync a mismatched Kunde picker to the created vehicle's
+holder - the same rule as picking an existing vehicle, which always
+wins over a previously chosen customer.
 
 - Mirrored to `sessionStorage` under `twincars.creation-flow` so it
   survives the full-page navigations (SSR-guarded; quota failures
   degrade to in-memory).
 - A stack untouched for **1 hour** is dropped on load as abandoned
   (all-or-nothing; pruning single levels would corrupt the chain).
-- API: `start(frame)`, `finish({ id, label })` / `cancel()` (both pop
-  the top frame, stash the pending return and hand back `returnUrl`),
-  `pendingReturnFor(url)` (consumed exactly once, only when the URL
-  matches), `top`, `depth`, `activeEntities()`, `reset()`.
+- API: `start(frame)`, `finish({ id, label, holder? })` / `cancel()`
+  (both pop the top frame, stash the pending return and hand back
+  `returnUrl`), `pendingReturnFor(url)` (consumed exactly once, only
+  when the URL matches), `top`, `depth`, `activeEntities()`, `reset()`.
 
 ## The round trip
 

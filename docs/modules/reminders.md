@@ -1,7 +1,7 @@
 ---
 title: Module - reminders (Offene Rechnungen)
 tags: [module, reminders, documents]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # reminders - "Offene Rechnungen"
@@ -35,4 +35,12 @@ updated: 2026-07-06
 - **Special**: reminder status `open` → `sent` → `paid`/`cancelled`;
   PDFs cached like documents ([[pdf-pipeline]]); sends audit into
   `sent_messages` ([[sent]], [[smtp-mail]]).
+- **Open-invoice definition**: `listOpenInvoicesRemote` lists only real
+  open receivables - it excludes `paid`, `cancelled`, **`storno`**,
+  **`draft`** and **`converted`** invoices (storno documents are
+  negative counter-bookings, drafts and converted offers are not
+  dunnable; QA round 2 removed the "Senden" offer on storno rows). The
+  batch candidate query (`listDuePaymentReminderCandidates`) excludes
+  paid/cancelled/draft/converted and additionally requires a due date,
+  which Stornorechnungen never carry (`dueDate` is null).
 - **Tests**: `reminder-service.test.ts`.

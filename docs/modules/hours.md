@@ -1,7 +1,7 @@
 ---
 title: Module - hours (Stundenerfassung)
 tags: [module, hours, time-tracking]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # hours - "Stunden" (time tracking)
@@ -31,7 +31,9 @@ updated: 2026-07-06
 - **Work-order integration** ([[orders]]): the list shows an "Auftrag"
   column and accepts a `workOrderId` deep-link filter
   (`/hours?workOrderId=<uuid>`). Entries written through from a work
-  order (workOrderItemId set) are read-only here - mutations 409 with
+  order (workOrderItemId set) are read-only **everywhere** - on
+  `/hours` AND on the invoice detail's time-entry table, which shows an
+  "Auftrag" badge instead of a delete action; mutations 409 with
   "Dieser Eintrag stammt aus einem Auftrag und wird dort gepflegt." and
   are edited at the order instead. Utilization/monthly reports include
   order hours unchanged; they count as billable once the order is

@@ -1,18 +1,23 @@
 ---
 title: Known constraints and gotchas
 tags: [architecture, constraints, pinning, gotchas]
-updated: 2026-07-05
+updated: 2026-07-07
 ---
 
 # Known constraints and gotchas
 
 ## Pinned versions and why
 
-- `@sveltejs/kit` 2.58.0, `svelte` 5.55.5, `@testing-library/svelte`
+- `@sveltejs/kit` 2.58.0, `svelte` 5.56.4, `@testing-library/svelte`
   5.3.1 are pinned **exact** (no caret) in `package.json`: the
   remote-functions and runes APIs are experimental and change behavior
   between minors. Bump deliberately, then run
   `pnpm check && pnpm test && pnpm build`. See [[adr-012-pnpm-and-exact-pins]].
+- **Svelte must stay >= 5.56.x.** 5.55.5 shipped a framework bug that
+  made every 2nd+ args change on list pages render a stale list in
+  **production builds only** (remote-functions effect probing; dev was
+  unaffected, which is why it survived until the 2026-07 QA rounds).
+  Never pin back below 5.56.
 - pnpm itself is pinned via `packageManager: pnpm@11.8.0` (corepack).
   Never `npm install` (would regenerate a package-lock.json).
 - `pnpm-workspace.yaml` carries the esbuild build-script approval

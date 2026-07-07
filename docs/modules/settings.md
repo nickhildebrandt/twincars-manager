@@ -1,7 +1,7 @@
 ---
 title: Module - settings (Einstellungen)
 tags: [module, settings]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # settings - "Einstellungen"
@@ -45,7 +45,10 @@ intact - [[adr-007-price-snapshots-and-versions]]). Guard
   polling the `access_import_jobs` progress bar); `import` permission.
   See [[import]] and [[kfz-kaufmann-import]].
 - `/settings/workshop-hours` - opening hours per weekday
-  (`workshop-hours.remote.ts`); drives public free slots.
+  (`workshop-hours.remote.ts`); drives public free slots. The input
+  schema enforces a cross-field rule via Valibot `check`: on an open
+  day `opensAt < closesAt` ("Die Öffnungszeit muss vor der
+  Schließzeit liegen."); `closed` days skip the check.
 - `/settings/inquiries` - contact-form inquiries from the website with
   notification retry (`inquiries.remote.ts`, `mailings` permission);
   sidebar entry "Anfragen" in the Kommunikation group.

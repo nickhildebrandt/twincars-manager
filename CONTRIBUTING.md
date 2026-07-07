@@ -57,6 +57,11 @@ committed). Use `pnpm install`, `pnpm <script>`, `pnpm exec <bin>`.
   exact versions**, not caret ranges — the remote-functions / runes APIs
   are not yet stable across minors. Bump them deliberately, never via a
   blind `^` float, and re-run `pnpm check && pnpm test && pnpm build`.
+- **`svelte` must stay at or above 5.56.x** (currently pinned 5.56.4).
+  5.55.5 shipped a framework bug in the remote-functions effect probing
+  that made every 2nd+ args change on list pages render a stale list,
+  in production builds only (dev was unaffected). Never pin back below
+  5.56.
 - The Dockerfile uses `corepack enable` + `pnpm install --frozen-lockfile`
   then `pnpm prune --prod`. `.npmrc` is gitignored / local-only and is
   intentionally not part of the build context.
@@ -193,6 +198,14 @@ Reference implementations: `src/routes/customers/+page.svelte` and
   `undefined` forever, and `refreshAll` / `withOverride` land on an
   unrendered cache entry. Always re-call `listXRemote(queryArgs)` at the
   point of use (`$derived.by`, effect body, mutation handler).
+- **Queries called from EVENT HANDLERS need `.run()`.** A bare
+  `await someQueryRemote(args)` only resolves inside a reactive context
+  (top-level await, `$derived`, `$effect`). In a click handler, a poll
+  callback or a picker `search` function it throws or silently never
+  resolves. Always call `await someQueryRemote(args).run()` there,
+  usually wrapped in `busy.run(...)`. This class produced 7+ real bugs
+  in the 2026-07 QA rounds (XRechnung/DATEV downloads, absences, hours
+  pickers, import progress polling).
 - **Build `queryArgs` with only-set keys** (`...(q ? { q } : {})`).
   `{}` and `{ q: undefined }` are different cache keys; an instance built
   with the wrong shape misses the entry the page renders.
@@ -226,6 +239,14 @@ Reference implementations: `src/routes/customers/+page.svelte` and
   pages, no skeleton-then-data swap.
 - Component re-mounts on every `[id]` change, so the `untrack` snapshot
   is the right call.
+- **Same-route detail-to-detail links need a keyed route layout.** The
+  snapshot above freezes the id at init, and SvelteKit reuses the
+  mounted component when only the param changes, so a link from
+  `/x/[a]` to `/x/[b]` would keep rendering the OLD record under the
+  NEW URL. Add a `[id]/+layout.svelte` that wraps the subtree in
+  `{#key page.params.id}{@render children()}{/key}` to force a clean
+  remount per id. Reference: `src/routes/invoices/[id]/+layout.svelte`
+  (the Storno banner links between an invoice and its Stornorechnung).
 
 ## 6. Loading and busy state (tiered, app-wide)
 
@@ -533,6 +554,24 @@ without anyone having to remember a style guide.
 - The detail view shows everything: stamm­daten, addresses, contact, notes,
   totals — the user should never have to search for a field.
 
+### Archive instead of delete (soft-delete pattern)
+
+Customers and vehicles (and, with less UI, suppliers and employees)
+carry an `archived` flag. Archiving is the sanctioned soft-delete path;
+hard deletes exist only for records without links. The pattern:
+
+- **List page**: an "Archiv" tab, hidden records by default, an
+  "Archiviert" badge on rows and an inline "Reaktivieren" action
+  (optimistic single-flight). The archive view deliberately **ignores
+  kind filters** (an archived eBay customer must stay findable no
+  matter which tab it was archived from).
+- **Detail page**: Archivieren / Reaktivieren through `ConfirmDialog`.
+- **Delete guards**: the delete service refuses with a German count of
+  linked records ("Es sind noch ... verknüpft ...") and points the
+  operator at archiving instead.
+- **Exclusion**: archived records never appear in pickers or in the
+  global search.
+
 ## 9. Picking "the one" out of "the many"
 
 When a form references another record — an invoice referencing a customer,
@@ -839,6 +878,12 @@ inside pickers is also fixed at 25.
   `beforeNavigate` + `window.beforeunload` hooks read the store
   and prompt only when there are real unsaved changes.
 
+  **Clear `formDirty` BEFORE the post-save `goto`, not after.** If
+  the store is still dirty when `goto` runs, the unsaved-changes
+  confirm fires and a dismissed dialog silently cancels the
+  navigation: the record saves but the user never leaves the form
+  (the RoleForm bug class from the 2026-07 QA rounds).
+
 ## 12. Validation and error handling
 
 Error handling is the part of the app that non-technical users most
@@ -891,6 +936,14 @@ issue is surfaced — multi-field error walls confuse non-technical users.
 If the underlying schema didn't supply a German message (i.e. Valibot's
 English default leaked through), we substitute "Bitte prüfen Sie Ihre
 Eingabe." rather than show English.
+
+The `<field>` is translated through the **`FIELD_LABELS`** map exported
+from `src/hooks.server.ts` (roughly 100 German labels), so users see
+"IBAN" instead of `bankIban`. An array index in the issue path renders
+as "(Position N)": `items.0.quantity` becomes "Menge (Position 1)".
+Unknown keys fall back to the raw key, still better than hiding which
+input failed, but a degraded UX: **when you add a new schema field key,
+add its German label to `FIELD_LABELS`.**
 
 #### `handleError`
 
@@ -1016,6 +1069,17 @@ templates are canonical. Reuse the wording when adding new modules.
   co-located next to the source file (`X.svelte` ↔ `X.test.ts`).
 - **No Playwright in the project**. The Claude Code Playwright MCP is the
   E2E harness during development.
+- **`scripts/e2e-smoke.mjs` is the standing E2E entry point**: it drives
+  a headless browser (playwright-core resolved at runtime, never a repo
+  dependency) against a running build and walks the core flows: login,
+  customer CRUD incl. the archive round trip, search, the creation-flow
+  round trip, vehicle + holder, the Ankauf -> sale -> paid -> transfer
+  cycle, the work-order lifecycle with a Kanban instant-render assert,
+  Termin -> Auftrag once-only, offer -> invoice conversion, import
+  page. Env: `BASE_URL`, `E2E_USERNAME`, `E2E_PASSWORD`,
+  `PLAYWRIGHT_CORE_PATH`, `CHROMIUM_PATH`; runtime well under two
+  minutes; exits non-zero on the first failure. Long form in
+  `docs/operations/e2e-smoke.md`.
 - Run `pnpm test`, `pnpm test:cov`, `pnpm dev` + Playwright
   walkthrough before declaring a feature done.
 - Type checking: `pnpm exec svelte-check --tsconfig ./tsconfig.json` must report
@@ -1064,6 +1128,12 @@ templates are canonical. Reuse the wording when adding new modules.
   (`const query = $derived(listXRemote(...))`) or refreshing a
   parameterized list with a fixed-arg server `.refresh()`; see the
   section 5 recipe (`$derived.by` + `requested(...).refreshAll()`).
+- ❌ Awaiting a bare remote-query proxy in an event handler. Outside a
+  reactive context the call throws or silently never resolves; use
+  `await someQueryRemote(args).run()` (section 5).
+- ❌ Clearing `formDirty` after the post-save `goto` (or not at all):
+  the unsaved-changes confirm silently cancels the navigation
+  (section 11).
 - ❌ Disabling a save/submit button because the input is missing or
   invalid. Validation is click-time with a German error summary
   (section 11); only `busy.active` and true mode gates may disable.

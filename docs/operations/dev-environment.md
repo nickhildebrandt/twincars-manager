@@ -1,7 +1,7 @@
 ---
 title: Operations - development environment
 tags: [operations, dev, testing]
-updated: 2026-07-05
+updated: 2026-07-07
 ---
 
 # Development environment
@@ -58,6 +58,9 @@ cache against the cached chromium binary:
 Login selectors and assertion tips: [[dashboard-and-login]]. Remember
 the dev-only hydration recovery on async pages ([[known-constraints]])
 when asserting immediately after navigation.
+
+For a ready-made full walk of the core business flows use the standing
+smoke script `node scripts/e2e-smoke.mjs` - see [[e2e-smoke]].
 
 ## Verification bar before "done"
 

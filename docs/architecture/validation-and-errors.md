@@ -1,7 +1,7 @@
 ---
 title: Validation and error handling
 tags: [architecture, validation, valibot, errors]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Validation and error handling
@@ -23,8 +23,17 @@ sentence, and never sees anything private (stacks, SQL, paths).
   chars, ISO 3779, no I/O/Q, uppercased), `hsnSchema` (4 digits),
   `tsnSchema` (3 alphanumerics, uppercased), `timeHHMMSchema` (24-hour
   HH:MM) and `personnelNumberSchema` (non-empty, max 20 chars).
+- **IBAN / BIC are checksum-validated** (QA round 1): the shared
+  helpers in `src/lib/utils/iban.ts` implement the ISO 13616 **mod-97**
+  IBAN check (iterative remainder, overflow-safe) and the ISO 9362 BIC
+  shape (8 or 11 chars). Shared client/server: `ibanSchema` /
+  `bicSchema` in `validation.ts` call `isValidIban` / `isValidBic`, and
+  forms can reuse the same functions for click-time feedback. Wired
+  into the setup wizard and the customer/supplier/employee remotes.
 - Every pipe step needs a German message; realistic numeric bounds so
-  hostile payloads cannot overflow Postgres ints into 500s.
+  hostile payloads cannot overflow Postgres ints into 500s. Cross-field
+  rules use a Valibot `check` on the object schema (example: workshop
+  hours enforce `opensAt < closesAt` on open days, [[settings]]).
 
 ## Server funnels (`src/hooks.server.ts`)
 
@@ -32,6 +41,13 @@ sentence, and never sees anything private (stacks, SQL, paths).
   `Ungültige Eingabe für „<field>": <reason>`. Heuristic: if the message
   contains no umlauts it is assumed to be an English Valibot default and
   replaced with "Bitte prüfen Sie Ihre Eingabe."
+- **`FIELD_LABELS`** (exported from `hooks.server.ts`, roughly 100
+  entries): `handleValidationError` renders the offending field key
+  through this German label map, so users see "IBAN" instead of
+  `bankIban`. An array index in the issue path becomes "(Position N)",
+  e.g. `items.0.quantity` renders as "Menge (Position 1)". Unknown keys
+  fall back to the raw key. **When you introduce a new schema field
+  key, add its German label to the map.**
 - `handleError`: 5xx → log original, return "Ein interner Fehler ist
   aufgetreten."; curated 4xx (`error(404, 'Kunde nicht gefunden.')`)
   passes through untouched; message-less 4xx → "Die Anfrage konnte nicht

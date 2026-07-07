@@ -1,7 +1,7 @@
 ---
 title: TwinCarsManager Knowledge Base (MOC)
 tags: [moc, index]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # TwinCarsManager - Map of Content
@@ -57,6 +57,7 @@ System: [[settings]] · [[import]] · [[setup]] · [[search]] · [[dashboard-and
 - [[backup-and-restore]] - daily + predeploy pg_dump, Storagebox, restore
 - [[fresh-db-reset]] - runbook for recreating a database (dev and prod)
 - [[dev-environment]] - pnpm, Postgres, mdbtools, mail catcher, headless E2E
+- [[e2e-smoke]] - the standing E2E smoke script (`scripts/e2e-smoke.mjs`)
 
 ## Decisions (ADRs)
 

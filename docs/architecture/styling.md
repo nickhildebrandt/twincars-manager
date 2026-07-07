@@ -1,7 +1,7 @@
 ---
 title: Styling rules (DaisyUI v5 + Tailwind v4)
-tags: [architecture, styling, daisyui, tailwind]
-updated: 2026-07-06
+tags: [architecture, styling, daisyui, tailwind, a11y]
+updated: 2026-07-07
 ---
 
 # Styling - DaisyUI v5 + Tailwind v4, no custom CSS
@@ -44,6 +44,16 @@ borders, zebra striping, custom rounding (exception: `rounded-md` on the
 PdfViewer iframe), header-bar shadow, version footer outside the sidebar,
 piling >3 layout utilities onto a DaisyUI component (pick a better
 variant instead).
+
+## Accessibility (QA round 3 sweep)
+
+- Every click-time form **error summary carries `role="alert"`** so
+  screen readers announce it on render (about 30 forms audited).
+- Dialogs use the **native `<dialog>` with `showModal()`**:
+  `ConfirmDialog` gets Esc handling, focus trapping and focus return
+  for free from the platform - do not rebuild modal semantics with
+  divs.
+- Icon-only buttons carry `aria-label`s.
 
 ## Wording / typography
 

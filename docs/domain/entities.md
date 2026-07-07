@@ -1,7 +1,7 @@
 ---
 title: Entity map
 tags: [domain, entities, schema]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Entity map
@@ -16,13 +16,15 @@ range), `legacyCustomerNumber` (Kfz-Kaufmann "Kunden-Nr"), name/company,
 address, contact, bank data, `paymentTermDays` override. Discriminator
 `kind`: `regular` | `ebay` (eBay marketplace buyers carry only
 `ebayHandle`). Opt-in flags `wantsBroadcast` (Rundschreiben) and
-`wantsTireReminders` (seasonal tire mails). Soft delete via `archived`.
-Module: [[customers]].
+`wantsTireReminders` (seasonal tire mails). Soft delete via `archived`
+(Archiv tab on the list, Reaktivieren, delete guard with German counts
+when links exist). Module: [[customers]].
 
 ## Fahrzeug (vehicle) - `vehicles`
 
 One table for BOTH customer vehicles and stock (used-car) vehicles.
-`customerId` nullable (stock vehicles may have none); optional
+`customerId` nullable - a vehicle is **stock** exactly when
+`customerId IS NULL` (app-wide definition); optional
 `previousOwnerCustomerId` names the Vorbesitzer of a stock vehicle. VIN,
 HSN/TSN, HU/AU dates, technical data (`fuelType`, `gearbox`,
 `displacementCcm`, `powerKw`, `colorCode`, `bodyType`). The license
@@ -31,7 +33,15 @@ changes never alter history). File attachments (Fahrzeugschein etc.)
 live in `vehicle_documents` (bytea inline, meta-only list reads). Stock
 lifecycle adds `vehicle_purchases`, `vehicle_listings` (status,
 `salesPriceGross`, `differentialTax`, equipment JSON), `vehicle_photos`
-and `vehicle_sales`. Modules: [[vehicles]], [[inventory]].
+and `vehicle_sales`. **Ownership transfers** write full history: the
+Ankauf of a customer vehicle re-hangs the holder into
+`previousOwnerCustomerId` plus a rename-proof `vehicle_purchases`
+snapshot (brutto price, Paragraph 25a UStG); paying a stock-sale
+invoice hangs the vehicle onto the buyer and writes a `vehicle_sales`
+row (invoice gross + backlink). All vehicle-FK data (documents,
+photos, plates, tire storage, work orders) follows the vehicle. Soft
+delete via `archived` (Archiv tab, delete guard). Modules:
+[[vehicles]], [[inventory]].
 
 ## Beleg (document) - `documents` + `document_items` + `document_payments`
 

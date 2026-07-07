@@ -1,7 +1,7 @@
 ---
 title: Loading tiers and the busy store
 tags: [architecture, ux, loading]
-updated: 2026-07-05
+updated: 2026-07-07
 ---
 
 # Loading - one global `busy` store, three signals
@@ -31,6 +31,23 @@ change flips the busy state).
 - `Loader` variants: `block` (picker dialogs), `inline`, `overlay`
   (AppShell only). There is intentionally no `bar` variant.
 
+## Audit result (QA round 3, 2026-07)
+
+A full sweep confirmed exactly **four sanctioned indicator types**, and
+every spinner site rides the global store:
+
+1. the header progress bar (`busy.active`),
+2. inline button spinner + disable (`busy.active` read directly),
+3. the >= 250 ms full-area overlay (`busy.slow`),
+4. the `Loader` block spinner inside picker dialogs (the one sanctioned
+   local `loading` state - `SearchablePicker`'s internal search fetch,
+   which deliberately does not flip the global store).
+
+`ConfirmDialog` also rides the global store: its confirm/cancel buttons
+read `busy.active` (callers wrap the confirmed mutation in
+`busy.run(...)`); the storno dialog's former local busy flag was
+removed in the sweep. No other local loading flags exist.
+
 ## Optimistic updates
 
 Deletes and status flips use single-flight
@@ -50,6 +67,9 @@ refetch.
 `$lib/stores/form-dirty.svelte`: forms set `formDirty` via root
 `oninput`/`onchange` handlers; the AppShell's `beforeNavigate` +
 `beforeunload` prompt only with real unsaved edits. Call
-`formDirty.clear()` before the post-save `goto`.
+`formDirty.clear()` **before** the post-save `goto` - if the store is
+still dirty, the unsaved-changes confirm fires and a dismissed dialog
+silently cancels the navigation, so the user saves but never leaves
+the form (the RoleForm bug class from QA round 3).
 
 Related: [[remote-functions]], [[adr-003-pagination-fixed-25]], [[styling]].

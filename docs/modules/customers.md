@@ -1,7 +1,7 @@
 ---
 title: Module - customers (Kunden)
 tags: [module, customers]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # customers - "Kunden"
@@ -17,7 +17,8 @@ for new modules.
 - **Remote** `src/routes/customers/customers.remote.ts`:
   `listCustomersRemote`, `getCustomerRemote`, `getCustomerRelatedRemote`,
   `countCustomersRemote`, `createCustomerRemote`, `updateCustomerRemote`,
-  `deleteCustomerRemote`, `sendAdHocCustomerEmailRemote`. All guarded
+  `setCustomerArchivedRemote`, `deleteCustomerRemote`,
+  `sendAdHocCustomerEmailRemote`. All guarded
   with `requirePermission('customers')`.
 - **Service**: `src/lib/server/services/customer-service.ts`.
 - **Tables**: `customers` (see [[entities]]); relations to `vehicles`,
@@ -27,7 +28,15 @@ for new modules.
     `ebayHandle`.
   - `wantsBroadcast` / `wantsTireReminders` opt-ins feed [[mailings]] and
     the tire reminder job.
-  - Archive instead of delete when references exist (`archived`).
+  - **Archive is the soft-delete path** (`archived` flag,
+    `setCustomerArchivedRemote`): the list has an Archiv tab (hidden by
+    default; the archive view deliberately ignores the kind tabs so
+    archived eBay customers stay findable), an "Archiviert" badge and
+    inline "Reaktivieren"; the detail page offers
+    Archivieren/Reaktivieren through `ConfirmDialog`. `deleteCustomer`
+    refuses with a German count of linked records
+    ("Es sind noch ... verknüpft ...") and points at archiving.
+    Archived customers are excluded from pickers and global [[search]].
   - Ad-hoc mail uses the shared `EmailComposer` with optional HTML
     (`asHtml`) - no unsubscribe footer (transactional), see [[smtp-mail]].
   - Number from the `customer` number range; `legacyCustomerNumber` from

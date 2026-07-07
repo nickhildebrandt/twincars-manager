@@ -1,7 +1,7 @@
 ---
 title: Server transport - remote functions only
 tags: [architecture, sveltekit, transport]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Remote functions - the only server transport
@@ -59,8 +59,22 @@ All are "third-party plumbing or external consumer", never convenience:
   `refreshAll`/`withOverride` land on an unrendered entry. Reference:
   `src/routes/customers/+page.svelte`, `src/routes/orders/+page.svelte`;
   binding long form in `CONTRIBUTING.md` §5.
+- **Queries in event handlers need `.run()`**: `await someQuery(args)`
+  only works in reactive contexts (top-level await, `$derived`,
+  `$effect`). In an event handler (button click, poll callback, picker
+  search) the bare proxy throws or silently never resolves - call
+  `await someQuery(args).run()` instead (usually inside `busy.run`).
+  This class produced 7+ real bugs in the 2026-07 QA rounds
+  (XRechnung/DATEV downloads, absences, hours pickers, import
+  progress polling).
 - **Detail pages**: plain top-level `await getXRemote({ id })`; no
   try/catch (the root `+error.svelte` handles thrown errors).
+  Because the detail page freezes `page.params.id` at init,
+  **same-route detail-to-detail links need a keyed route layout**:
+  `{#key page.params.id}{@render children()}{/key}` in a
+  `[id]/+layout.svelte` forces a clean remount per id (reference:
+  `src/routes/invoices/[id]/+layout.svelte` for the invoice ↔ Storno
+  banner links).
 - **Guards first**: every query/command body starts with `requireUser()` /
   `requirePermission(...)` / `requireAnyPermission(...)` as the FIRST
   statement ([[auth-and-permissions]]). `src/routes/layout.remote.ts` is

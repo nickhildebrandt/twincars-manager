@@ -1,7 +1,7 @@
 ---
 title: Database schema overview
 tags: [architecture, database, drizzle, postgres]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # Database schema overview
@@ -37,16 +37,24 @@ number),
 ### Customers & vehicles
 
 `customers` (kind `regular`|`ebay`, `wantsBroadcast`, `wantsTireReminders`,
-archived), `vehicles` (customer + stock; plate NOT on the table;
+archived), `vehicles` (customer + stock in ONE table - a vehicle is
+stock exactly when `customer_id IS NULL`; plate NOT on the table;
 `previousOwnerCustomerId` FK customers SET NULL - optional Vorbesitzer
 for stock vehicles, migration 0034),
 `vehicle_license_plate_versions` (versioned plates),
-`vehicle_purchases`, `vehicle_listings` (status, salesPriceGross,
+`vehicle_purchases` (Ankauf history: `purchaseDate`, NOT NULL brutto
+`purchasePrice` per Paragraph 25a UStG with `'0.00'` for unknown, and
+a rename-proof `previousOwner` varchar snapshot next to the FK on the
+vehicle), `vehicle_listings` (status, salesPriceGross,
 `differentialTax`, equipment jsonb), `vehicle_photos` (base64 dataUrl,
 isMain, sortOrder), `vehicle_documents` (migration 0034: fileName,
 mime, sizeBytes, `data` bytea inline, note, uploadedAt; FK vehicle
 CASCADE + index; max 15 MB and pdf/jpeg/png/webp enforced in
-`vehicle-document-service.ts`), `vehicle_sales`.
+`vehicle-document-service.ts`), `vehicle_sales` (Verkauf history:
+customer FK restrict, `invoiceId` backlink, `salesPriceGross` = paid
+invoice gross; written by `sellStockVehicleToCustomer` when a
+stock-sale invoice is paid, idempotent per stock cycle - see
+[[vehicles]], [[inventory]]).
 
 ### Catalog
 
@@ -129,7 +137,12 @@ strings, wildcard `*`).
   (single-tenant, no object storage).
 - **Soft delete** via `archived` on customers/vehicles/suppliers/
   employees; hard delete elsewhere; invoices never deleted
-  ([[adr-015-storno-instead-of-delete]]).
+  ([[adr-015-storno-instead-of-delete]]). Since the 2026-07 QA wave
+  customers and vehicles surface the full archive UI (Archiv tab,
+  Reaktivieren, ConfirmDialog on the detail); their delete guards
+  refuse with German counts when links exist and point at archiving;
+  archived rows are excluded from pickers and global search, and the
+  archive list views ignore kind filters ([[customers]], [[vehicles]]).
 - **Legacy keys**: `legacy*` columns keep Kfz-Kaufmann identifiers for
   traceability ([[kfz-kaufmann-import]]).
 - **Raw SQL is limited to exactly two documented `sql` tag sites**; all

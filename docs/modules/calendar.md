@@ -1,7 +1,7 @@
 ---
 title: Module - calendar (Kalender)
 tags: [module, calendar]
-updated: 2026-07-06
+updated: 2026-07-07
 ---
 
 # calendar - "Kalender"
@@ -42,6 +42,10 @@ updated: 2026-07-06
   employee filter (assignees). Timed placement uses the optional
   `scheduledTime` (HH:MM); timeless orders behave like all-day chips.
   See [[orders]].
+- **Employee filter**: the month-view toolbar carries an optional
+  employee picker that narrows appointments (entry employee), absences
+  and work orders (assignee) to one employee; the shared sources
+  (holidays, closures, HU) stay visible.
 - **"Neuer Auftrag" action**: the grid toolbar links to `/orders/new`
   (workshop jobs are created as Aufträge, not as Termine), and
   `/calendar/new` shows an info hint ("Werkstattarbeit geplant?") with
