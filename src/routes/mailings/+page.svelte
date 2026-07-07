@@ -148,7 +148,7 @@
         hint="Empfänger erhalten die Nachricht via BCC, Adressen werden nicht untereinander sichtbar. Eine Abbestellen-Fußzeile wird automatisch angehängt."
       />
       {#if errorMsg}
-        <div class="alert alert-error">
+        <div class="alert alert-error" role="alert">
           <span>{errorMsg}</span>
         </div>
       {/if}

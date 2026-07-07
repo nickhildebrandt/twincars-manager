@@ -165,6 +165,19 @@ describe('pickers.remote', () => {
       expect(res.total).toBe(1)
       expect(res.items[0].label).toContain('Albers')
     })
+
+    it('excludes archived customers', async () => {
+      await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-ARCH',
+          lastName: 'Verstorben',
+          archived: true
+        })
+      const res = await pickCustomersRemote({ ...page, q: 'Verstorben' })
+      expect(res.total).toBe(0)
+      expect(res.items).toEqual([])
+    })
   })
 
   describe('vehicle pickers', () => {
@@ -236,6 +249,28 @@ describe('pickers.remote', () => {
       const res = await pickInventoryVehiclesRemote({ ...page, q: 'Fabia' })
       expect(res.total).toBe(1)
       expect(res.items[0].label).toContain('Fabia')
+    })
+
+    it('pickVehiclesRemote excludes archived vehicles', async () => {
+      await db
+        .insert(vehicles)
+        .values({
+          make: 'Opel',
+          model: 'Corsa',
+          vin: 'WOL333',
+          customerId,
+          archived: true
+        })
+      const res = await pickVehiclesRemote({ ...page, q: 'Corsa' })
+      expect(res.total).toBe(0)
+    })
+
+    it('pickInventoryVehiclesRemote excludes archived stock', async () => {
+      await db
+        .insert(vehicles)
+        .values({ make: 'Fiat', model: 'Panda', archived: true })
+      const res = await pickInventoryVehiclesRemote({ ...page, q: 'Panda' })
+      expect(res.total).toBe(0)
     })
 
     it('pickInventoryVehiclesRemote excludes sold listings', async () => {

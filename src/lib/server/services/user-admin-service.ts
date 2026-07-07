@@ -319,6 +319,20 @@ export async function getRoleById(
 }
 
 /**
+ * Role id carrying an exact name, or `null`. Used by the remote layer
+ * to refuse duplicate role names with a curated 409 before the
+ * `roles_name_idx` unique index would blow up as a generic 500.
+ */
+export async function getRoleIdByName(name: string): Promise<string | null> {
+  const [existing] = await db
+    .select({ id: roles.id })
+    .from(roles)
+    .where(eq(roles.name, name))
+    .limit(1)
+  return existing?.id ?? null
+}
+
+/**
  * Create a role plus its (deduplicated) permission set. Returns `null`
  * when the insert unexpectedly yields no row — the remote turns that
  * into a curated 500.

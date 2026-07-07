@@ -6,8 +6,12 @@
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import EmptyState from '$lib/components/ui/EmptyState.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
-  import { Plus, Users, Pencil, Trash2 } from '@lucide/svelte'
-  import { listCustomersRemote, deleteCustomerRemote } from './customers.remote'
+  import { Plus, Users, Pencil, Trash2, ArchiveRestore } from '@lucide/svelte'
+  import {
+    listCustomersRemote,
+    deleteCustomerRemote,
+    setCustomerArchivedRemote
+  } from './customers.remote'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -15,7 +19,15 @@
   let pageNum = $state(1)
   const size = 25 as const
   let q = $state('')
-  let kindFilter = $state<'all' | 'private' | 'business' | 'ebay'>('all')
+  /**
+   * Filter tab: the three kind views plus the archive view. Archived
+   * customers are hidden everywhere by default; the Archiv tab is the
+   * one surface that lists them (all kinds, with badge + reactivate).
+   */
+  let kindFilter = $state<'all' | 'private' | 'business' | 'ebay' | 'archived'>(
+    'all'
+  )
+  const isArchiveTab = $derived(kindFilter === 'archived')
 
   // Only set filter keys carry into the arg object — `{}` and
   // `{q: undefined}` serialize to different remote-cache keys, and the
@@ -24,7 +36,8 @@
     page: pageNum,
     size,
     ...(q ? { q } : {}),
-    kind: kindFilter
+    kind: kindFilter === 'archived' ? ('all' as const) : kindFilter,
+    ...(kindFilter === 'archived' ? { archived: 'archived' as const } : {})
   })
 
   // Top-level await: SvelteKit suspends rendering until the initial query
@@ -98,6 +111,28 @@
     c.ebayHandle ||
     c.customerNumber
 
+  /**
+   * Reactivate straight from the Archiv tab — optimistic single-flight:
+   * the row leaves the archive list immediately, the same response
+   * refreshes the authoritative list.
+   */
+  const reactivate = async (id: string, name: string) => {
+    try {
+      await busy.run(() =>
+        setCustomerArchivedRemote({ id, archived: false }).updates(
+          listCustomersRemote(queryArgs).withOverride((current) => ({
+            ...current,
+            items: current.items.filter((c) => c.id !== id),
+            total: Math.max(0, current.total - 1)
+          }))
+        )
+      )
+      toast.success(`Kunde „${name}" reaktiviert.`)
+    } catch (err) {
+      handleClientError(err, 'Kunde konnte nicht reaktiviert werden')
+    }
+  }
+
   const setKind = (k: typeof kindFilter) => {
     if (kindFilter === k) return
     kindFilter = k
@@ -161,6 +196,15 @@
           >
             eBay
           </button>
+          <button
+            type="button"
+            role="tab"
+            class="tab"
+            class:tab-active={kindFilter === 'archived'}
+            onclick={() => setKind('archived')}
+          >
+            Archiv
+          </button>
         </div>
       {/snippet}
     </Toolbar>
@@ -170,17 +214,25 @@
 <div class="card border-base-300 bg-base-100 border">
   <div class="card-body p-0">
     {#if items.length === 0}
-      <EmptyState
-        icon={Users}
-        title="Noch keine Kunden"
-        description="Legen Sie Ihren ersten Kunden an, um loszulegen."
-      >
-        {#snippet action()}
-          <a class="btn btn-primary btn-sm gap-2" href="/customers/new">
-            <Plus size={16} /> Neuer Kunde
-          </a>
-        {/snippet}
-      </EmptyState>
+      {#if isArchiveTab}
+        <EmptyState
+          icon={Users}
+          title="Keine archivierten Kunden"
+          description="Archivierte Kunden erscheinen hier und lassen sich jederzeit reaktivieren."
+        />
+      {:else}
+        <EmptyState
+          icon={Users}
+          title="Noch keine Kunden"
+          description="Legen Sie Ihren ersten Kunden an, um loszulegen."
+        >
+          {#snippet action()}
+            <a class="btn btn-primary btn-sm gap-2" href="/customers/new">
+              <Plus size={16} /> Neuer Kunde
+            </a>
+          {/snippet}
+        </EmptyState>
+      {/if}
     {:else}
       <!--
         Desktop / tablet: full table. Hidden below `lg` to avoid
@@ -210,7 +262,14 @@
                 onclick={() => goto(`/customers/${c.id}`)}
               >
                 <td class="font-mono text-xs">{c.customerNumber}</td>
-                <td class="font-medium">{customerLabel(c)}</td>
+                <td class="font-medium">
+                  {customerLabel(c)}
+                  {#if c.archived}
+                    <span class="badge badge-ghost badge-sm ml-1">
+                      Archiviert
+                    </span>
+                  {/if}
+                </td>
                 {#if kindFilter === 'ebay'}
                   <td>{c.ebayHandle ?? '-'}</td>
                   <td>{formatCreatedAt(c.createdAt)}</td>
@@ -221,6 +280,16 @@
                 <td>{c.email ?? ''}</td>
                 <td onclick={(e) => e.stopPropagation()}>
                   <div class="flex justify-end gap-1">
+                    {#if c.archived}
+                      <button
+                        class="btn btn-ghost btn-sm btn-square"
+                        aria-label="Reaktivieren"
+                        title="Reaktivieren"
+                        onclick={() => reactivate(c.id, customerLabel(c))}
+                      >
+                        <ArchiveRestore size={16} />
+                      </button>
+                    {/if}
                     <a
                       class="btn btn-ghost btn-sm btn-square"
                       href="/customers/{c.id}/edit"
@@ -258,6 +327,10 @@
             >
               <span class="truncate text-sm font-medium">
                 {customerLabel(c)}
+                {#if c.archived}
+                  <span class="badge badge-ghost badge-sm ml-1">Archiviert</span
+                  >
+                {/if}
               </span>
               <span class="text-base-content/60 truncate font-mono text-xs">
                 {c.customerNumber}
@@ -273,6 +346,16 @@
               {/if}
             </a>
             <div class="flex shrink-0 items-start gap-1">
+              {#if c.archived}
+                <button
+                  class="btn btn-ghost btn-sm btn-square"
+                  aria-label="Reaktivieren"
+                  title="Reaktivieren"
+                  onclick={() => reactivate(c.id, customerLabel(c))}
+                >
+                  <ArchiveRestore size={16} />
+                </button>
+              {/if}
               <a
                 class="btn btn-ghost btn-sm btn-square"
                 href="/customers/{c.id}/edit"

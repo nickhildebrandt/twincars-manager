@@ -1,6 +1,7 @@
 import { command, query, requested } from '$app/server'
 import { error } from '@sveltejs/kit'
 import {
+  boolean,
   object,
   optional,
   nullable,
@@ -31,6 +32,7 @@ import {
   listVehicles,
   purchaseVehicleIntoStock,
   recordVehiclePurchase,
+  setVehicleArchived,
   updateVehicle
 } from '$lib/server/services/vehicle-service'
 import { listInventoryRemote } from '../inventory/inventory.remote'
@@ -121,12 +123,15 @@ const listSchema = object({
   page: number(),
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
-  kind: optional(picklist(['customer', 'stock', 'all']))
+  kind: optional(picklist(['customer', 'stock', 'all'])),
+  archived: optional(picklist(['active', 'archived']))
 })
 
 /**
  * Paginated, searchable customer-vehicle list. Stock vehicles
- * (customer_id IS NULL) are filtered out by default.
+ * (customer_id IS NULL) are filtered out by default. `archived`
+ * defaults to `'active'`; `'archived'` switches to the archive view,
+ * which spans both kinds (the `kind` filter is ignored there).
  *
  * @group integration
  * @module vehicles
@@ -137,7 +142,8 @@ export const listVehiclesRemote = query(listSchema, async (params) => {
     page: params.page,
     size: params.size,
     q: params.q,
-    kind: params.kind ?? 'customer'
+    kind: params.kind ?? 'customer',
+    archived: params.archived === 'archived'
   })
 })
 
@@ -308,7 +314,9 @@ export const updateVehicleRemote = command(
 )
 
 /**
- * Delete a vehicle.
+ * Delete a vehicle. Refuses with a curated 409 while documents, work
+ * orders or tire storage still link to the vehicle (see
+ * `deleteVehicle`); archiving is the soft path for those.
  *
  * @group integration
  * @module vehicles
@@ -319,6 +327,29 @@ export const deleteVehicleRemote = command(
     requirePermission('vehicles')
     await deleteVehicle(id)
     await refreshListsAndCount()
+  }
+)
+
+/**
+ * Archive or reactivate a vehicle (soft delete). The sanctioned path
+ * for vehicles the delete guard refuses. Refreshes the detail query,
+ * the vehicle lists + count and the inventory list — an archived stock
+ * car must drop out of the Verkaufsbestand in the same flight.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const setVehicleArchivedRemote = command(
+  object({ id: idSchema, archived: boolean() }),
+  async ({ id, archived }) => {
+    requirePermission('vehicles')
+    const data = await setVehicleArchived(id, archived)
+    await Promise.all([
+      getVehicleRemote({ id }).refresh(),
+      refreshListsAndCount(),
+      requested(listInventoryRemote, 4).refreshAll()
+    ])
+    return data
   }
 )
 

@@ -2,12 +2,15 @@ import { error } from '@sveltejs/kit'
 import { db } from '$lib/server/db/client'
 import {
   customers,
+  documents,
+  tireStorage,
   vehicleLicensePlateVersions,
   vehicleListings,
   vehiclePhotos,
   vehiclePurchases,
   vehicleSales,
   vehicles,
+  workOrders,
   type Vehicle,
   type NewVehicle,
   type VehicleLicensePlateVersion,
@@ -180,18 +183,21 @@ export const deleteLicensePlateVersion = async (id: string): Promise<void> => {
 /**
  * List vehicles with server-side pagination + search + kind filter.
  *
- * - Archived rows are always excluded.
+ * - `archived` selects the archive view: `false` (default) lists only
+ *   active rows, `true` lists only archived ones. The archive view
+ *   deliberately ignores the `kind` filter — an archived vehicle must
+ *   stay findable whether it was a customer car or sales stock.
  * - Suche schließt das aktuell gültige Kennzeichen mit ein, indem die
  *   Versionentabelle vorab nach Treffern gefiltert wird und die
  *   gefundenen Vehicle-Ids in den Filter einfließen.
  */
 export async function listVehicles(
-  params: ListParams & { kind?: VehicleKindFilter }
+  params: ListParams & { kind?: VehicleKindFilter; archived?: boolean }
 ): Promise<ListResult<VehicleWithPlate>> {
-  const { page, size, q, kind = 'all' } = params
+  const { page, size, q, kind = 'all', archived = false } = params
   const offset = (page - 1) * size
 
-  const filters = [eq(vehicles.archived, false)]
+  const filters = [eq(vehicles.archived, archived)]
   if (q) {
     const term = `%${q}%`
     // Vehicles, deren aktuelles Kennzeichen den Suchbegriff enthält.
@@ -228,10 +234,12 @@ export async function listVehicles(
       searches.push(inArray(vehicles.customerId, holderIds))
     filters.push(or(...searches)!)
   }
-  if (kind === 'customer') {
-    filters.push(isNotNull(vehicles.customerId))
-  } else if (kind === 'stock') {
-    filters.push(isNull(vehicles.customerId))
+  if (!archived) {
+    if (kind === 'customer') {
+      filters.push(isNotNull(vehicles.customerId))
+    } else if (kind === 'stock') {
+      filters.push(isNull(vehicles.customerId))
+    }
   }
   const where = and(...filters)
 
@@ -298,8 +306,72 @@ export async function updateVehicle(
   return { ...updated, licensePlate: v?.licensePlate ?? null }
 }
 
+/**
+ * Delete a vehicle record.
+ *
+ * Guarded: refuses (409, German message) while documents (invoices,
+ * offers, ...), work orders or tire-storage rows still reference the
+ * vehicle. Without the guard the `ON DELETE SET NULL` FKs would
+ * silently detach invoices (GoBD-relevant) and orphan work orders /
+ * tire storage; photos, documents-uploads and plate history would
+ * cascade away. Plain vehicles without links stay deletable — the
+ * escape hatch for linked ones is {@link setVehicleArchived}.
+ */
 export async function deleteVehicle(id: string): Promise<void> {
+  const [documentCount, workOrderCount, tireStorageCount] = await Promise.all([
+    db
+      .select({ value: count() })
+      .from(documents)
+      .where(eq(documents.vehicleId, id)),
+    db
+      .select({ value: count() })
+      .from(workOrders)
+      .where(eq(workOrders.vehicleId, id)),
+    db
+      .select({ value: count() })
+      .from(tireStorage)
+      .where(eq(tireStorage.vehicleId, id))
+  ])
+  const blockers: string[] = []
+  const documentsN = Number(documentCount[0]?.value ?? 0)
+  const ordersN = Number(workOrderCount[0]?.value ?? 0)
+  const tiresN = Number(tireStorageCount[0]?.value ?? 0)
+  if (documentsN > 0)
+    blockers.push(`${documentsN} Beleg${documentsN === 1 ? '' : 'e'}`)
+  if (ordersN > 0)
+    blockers.push(`${ordersN} Auftr${ordersN === 1 ? 'ag' : 'äge'}`)
+  if (tiresN > 0)
+    blockers.push(`${tiresN} Reifeneinlagerung${tiresN === 1 ? '' : 'en'}`)
+  if (blockers.length > 0) {
+    // Toast prefix already says "konnte nicht gelöscht werden" — keep
+    // the detail to the counts plus the sanctioned soft path.
+    error(
+      409,
+      `Es sind noch ${blockers.join(', ')} mit diesem Fahrzeug verknüpft. Bitte entfernen Sie zuerst die Verknüpfungen oder archivieren Sie das Fahrzeug.`
+    )
+  }
   await db.delete(vehicles).where(eq(vehicles.id, id))
+}
+
+/**
+ * Archive or reactivate a vehicle (soft delete). Archived vehicles
+ * vanish from the default lists, the inventory, all pickers, the
+ * global search and the public used-car API, but keep every linked
+ * record (documents, work orders, tire storage, photos) intact — the
+ * escape hatch for vehicles the hard-delete guard refuses. Throws a
+ * curated 404 for unknown ids.
+ */
+export async function setVehicleArchived(
+  id: string,
+  archived: boolean
+): Promise<Vehicle> {
+  const [updated] = await db
+    .update(vehicles)
+    .set({ archived, updatedAt: new Date() })
+    .where(eq(vehicles.id, id))
+    .returning()
+  if (!updated) error(404, 'Fahrzeug nicht gefunden.')
+  return updated
 }
 
 /**

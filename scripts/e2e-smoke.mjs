@@ -5,7 +5,8 @@
  * exercises the core business flows end to end:
  *
  *   1. Login (username/password, German error on wrong password)
- *   2. Customer CRUD (create with click-time validation, edit, delete)
+ *   2. Customer CRUD (create with click-time validation, edit,
+ *      archive -> Archiv tab -> reactivate, delete)
  *   3. Creation-flow round trip (vehicle form -> "Neuen Kunden anlegen"
  *      -> full-page customer creation -> back with auto-selection)
  *   4. Vehicle + holder (create via the round trip, list search by
@@ -187,6 +188,44 @@ try {
     if (!ernaShown) await page.waitForTimeout(500)
   }
   assert(ernaShown, 'edit persisted (Vorname Erna)')
+
+  // archive round trip: detail action -> vanishes from default list ->
+  // Archiv tab lists it with badge -> reactivate restores it
+  await page.getByRole('button', { name: 'Archivieren' }).first().click()
+  await page
+    .locator('dialog.modal-open button', { hasText: 'Archivieren' })
+    .last()
+    .click()
+  await page.waitForSelector('text=Kunde archiviert.', { timeout: 8000 })
+  assert(true, 'customer archived from detail (ConfirmDialog + toast)')
+  await gotoSettled(`${BASE}/customers`)
+  await page.locator('input[placeholder*=suchen]').first().fill(crudName)
+  await page.waitForTimeout(1500)
+  assert(
+    !(
+      await page
+        .locator('tbody')
+        .first()
+        .innerText()
+        .catch(() => '')
+    ).includes(crudName),
+    'archived customer hidden from the default list'
+  )
+  await page.getByRole('tab', { name: 'Archiv' }).click()
+  await page.waitForTimeout(1500)
+  assert(
+    (await page.locator('tbody').first().innerText()).includes(crudName),
+    'Archiv tab lists the archived customer'
+  )
+  await page
+    .locator('tbody tr', { hasText: crudName })
+    .first()
+    .locator('button[aria-label="Reaktivieren"]')
+    .click()
+  await page.waitForSelector('text=reaktiviert', { timeout: 8000 })
+  assert(true, 'customer reactivated from the Archiv tab')
+  await page.getByRole('tab', { name: 'Alle' }).click()
+  await page.waitForTimeout(1200)
 
   /* 3 ── Search ────────────────────────────────────────────────────── */
   step('Customer search')

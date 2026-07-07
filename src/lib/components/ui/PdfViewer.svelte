@@ -96,7 +96,7 @@
     <h3 class="card-title text-base">PDF-Vorschau</h3>
 
     {#if loadError}
-      <div class="alert alert-error">
+      <div class="alert alert-error" role="alert">
         <span>{loadError}</span>
       </div>
     {:else if iframeSrc}

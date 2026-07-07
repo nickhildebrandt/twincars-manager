@@ -19,7 +19,18 @@
   const id = untrack(() => page.params.id!)
 
   /** Top-level await: SSR carries the data, hydration reuses the cache. */
-  const entry = await getTireStorageRemote({ id })
+  const initialEntry = await getTireStorageRemote({ id })
+
+  /**
+   * Reactive read — never memoize the query proxy (CONTRIBUTING §5).
+   * `markRetrievedRemote` refreshes `getTireStorageRemote({ id })`
+   * server-side in the same flight; reading `.current` here flips the
+   * page to the "Abgeholt am ..." state without a reload.
+   * `initialEntry` bridges until the cache is live.
+   */
+  const entry = $derived.by(
+    () => getTireStorageRemote({ id }).current ?? initialEntry
+  )
 
   let confirmRetrieve = $state(false)
   let confirmDelete = $state(false)

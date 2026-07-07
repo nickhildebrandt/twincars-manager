@@ -113,7 +113,7 @@
       </h3>
       <form onsubmit={submit} novalidate class="mt-3 flex flex-col gap-3">
         {#if errorMsg}
-          <div class="alert alert-error">
+          <div class="alert alert-error" role="alert">
             <span>{errorMsg}</span>
           </div>
         {/if}

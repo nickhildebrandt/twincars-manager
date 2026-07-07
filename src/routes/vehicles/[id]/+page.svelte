@@ -13,11 +13,15 @@
     getVehicleRelatedRemote,
     getVehicleRemote,
     listVehiclePhotosRemote,
-    setMainVehiclePhotoRemote
+    setMainVehiclePhotoRemote,
+    setVehicleArchivedRemote
   } from '../vehicles.remote'
   import { getVehicleSaleSignPdfRemote } from '../sale-sign.remote'
   import PurchaseIntoStockModal from '../PurchaseIntoStockModal.svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
   import {
+    Archive,
+    ArchiveRestore,
     Pencil,
     Printer,
     Receipt,
@@ -107,6 +111,35 @@
   /** Ankauf modal (customer vehicles only — see the card below). */
   let ankaufOpen = $state(false)
 
+  /** Human-readable vehicle label for confirm messages and toasts. */
+  const vehicleLabel = $derived(
+    `${v.make ?? ''} ${v.model ?? ''}`.trim() || v.licensePlate || 'Fahrzeug'
+  )
+
+  /**
+   * Archive / reactivate flow (soft delete). Both directions confirm
+   * via ConfirmDialog; the command's server-side refresh of
+   * `getVehicleRemote({ id })` flips the page state in one flight.
+   */
+  let archiveConfirmOpen = $state(false)
+
+  const toggleArchived = async () => {
+    const next = !v.archived
+    try {
+      await busy.run(() =>
+        setVehicleArchivedRemote({ id: v.id, archived: next })
+      )
+      toast.success(next ? 'Fahrzeug archiviert.' : 'Fahrzeug reaktiviert.')
+    } catch (err) {
+      handleClientError(
+        err,
+        next
+          ? 'Fahrzeug konnte nicht archiviert werden'
+          : 'Fahrzeug konnte nicht reaktiviert werden'
+      )
+    }
+  }
+
   /**
    * Imperative state for the photo gallery — same pattern as the
    * reminders / absences lists. Top-level-await seeds, mutations
@@ -176,6 +209,16 @@
   primaryAction={headerAction}
 />
 
+{#if v.archived}
+  <div class="alert alert-warning mb-4" role="status">
+    <Archive size={18} />
+    <span>
+      Dieses Fahrzeug ist archiviert und erscheint nicht mehr in Listen, Suche
+      und Auswahlfeldern.
+    </span>
+  </div>
+{/if}
+
 <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
   <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
     <div
@@ -229,6 +272,40 @@
       </div>
     </div>
   {/if}
+
+  <!--
+    Archive card — the soft-delete path. Vehicles with linked documents,
+    work orders or tire storage cannot be hard-deleted (409 guard);
+    archiving hides them from lists, pickers and search instead.
+  -->
+  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
+    <div
+      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+    >
+      <div class="min-w-0">
+        <h3 class="card-title text-base">Archiv</h3>
+        <p class="text-base-content/60 text-sm">
+          {v.archived
+            ? 'Das Fahrzeug ist archiviert. Reaktivieren macht es wieder in Listen, Suche und Auswahlfeldern sichtbar.'
+            : 'Archivieren blendet das Fahrzeug aus Listen, Suche und Auswahlfeldern aus; alle verknüpften Daten bleiben erhalten.'}
+        </p>
+      </div>
+      <button
+        type="button"
+        class="btn btn-sm btn-outline gap-2 sm:w-auto"
+        disabled={busy.active}
+        onclick={() => (archiveConfirmOpen = true)}
+      >
+        {#if v.archived}
+          <ArchiveRestore size={16} />
+          Reaktivieren
+        {:else}
+          <Archive size={16} />
+          Archivieren
+        {/if}
+      </button>
+    </div>
+  </div>
   <div class="card border-base-300 bg-base-100 min-w-0 border">
     <div class="card-body">
       <h3 class="card-title text-base">Stammdaten</h3>
@@ -429,4 +506,16 @@
     getVehicleRemote({ id }),
     getVehicleRelatedRemote({ id, invoicesPage })
   ]}
+/>
+
+<ConfirmDialog
+  bind:open={archiveConfirmOpen}
+  title={v.archived ? 'Fahrzeug reaktivieren?' : 'Fahrzeug archivieren?'}
+  message={v.archived
+    ? `Soll das Fahrzeug "${vehicleLabel}" wieder aktiviert werden? Es erscheint danach wieder in Listen, Suche und Auswahlfeldern.`
+    : `Soll das Fahrzeug "${vehicleLabel}" archiviert werden? Es verschwindet aus Listen, Suche und Auswahlfeldern; alle verknüpften Daten bleiben erhalten.`}
+  confirmLabel={v.archived ? 'Reaktivieren' : 'Archivieren'}
+  variant="primary"
+  onConfirm={toggleArchived}
+  onClose={() => (archiveConfirmOpen = false)}
 />

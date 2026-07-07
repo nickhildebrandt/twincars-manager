@@ -188,7 +188,7 @@
       {/if}
 
       {#if errorMsg}
-        <div class="alert alert-error text-sm">
+        <div class="alert alert-error text-sm" role="alert">
           <span>{errorMsg}</span>
         </div>
       {/if}

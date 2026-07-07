@@ -497,7 +497,7 @@
     {/if}
 
     {#if formError}
-      <div class="alert alert-error">
+      <div class="alert alert-error" role="alert">
         <span>{formError}</span>
       </div>
     {/if}

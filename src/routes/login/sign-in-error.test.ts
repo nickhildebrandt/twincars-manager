@@ -23,6 +23,16 @@ describe('signInErrorMessage', () => {
       'Benutzername oder Passwort ist falsch.'
     )
   })
+  it('surfaces the curated deactivated-account 403 body untouched', () => {
+    const msg =
+      'Dieses Konto ist deaktiviert. Bitte wenden Sie sich an die Administration.'
+    expect(signInErrorMessage({ status: 403, message: msg })).toBe(msg)
+  })
+  it("does not surface better-auth's English 403 strings", () => {
+    expect(signInErrorMessage({ status: 403, message: 'Forbidden' })).toBe(
+      'Benutzername oder Passwort ist falsch.'
+    )
+  })
   it('keeps the German rate-limit body on 429', () => {
     expect(
       signInErrorMessage({

@@ -289,7 +289,7 @@
   novalidate
 >
   {#if errorMsg}
-    <div class="alert alert-error"><span>{errorMsg}</span></div>
+    <div class="alert alert-error" role="alert"><span>{errorMsg}</span></div>
   {/if}
 
   <div class="card border-base-300 bg-base-100 border">

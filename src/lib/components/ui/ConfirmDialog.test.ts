@@ -149,4 +149,18 @@ describe('ConfirmDialog', () => {
     )
     expect(onClose).toHaveBeenCalledTimes(1)
   })
+
+  it('the native cancel event (Esc in a real browser) closes without confirming', async () => {
+    const onClose = vi.fn()
+    const onConfirm = vi.fn()
+    const { container } = render(ConfirmDialog, {
+      props: { open: true, title: 'Frage', onConfirm, onClose }
+    })
+    const dialog = container.querySelector('dialog')!
+    dialog.dispatchEvent(new Event('cancel', { cancelable: true }))
+    // Svelte flushes synchronously for DOM events dispatched this way.
+    await Promise.resolve()
+    expect(onClose).toHaveBeenCalledTimes(1)
+    expect(onConfirm).not.toHaveBeenCalled()
+  })
 })

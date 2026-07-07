@@ -306,7 +306,7 @@
 >
   <div class="card-body gap-4">
     {#if errorMsg}
-      <div class="alert alert-error"><span>{errorMsg}</span></div>
+      <div class="alert alert-error" role="alert"><span>{errorMsg}</span></div>
     {/if}
 
     <fieldset class="fieldset">

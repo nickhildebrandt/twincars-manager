@@ -14,6 +14,7 @@ import {
   listCustomers,
   listCustomersForBroadcast,
   nextCustomerNumber,
+  setCustomerArchived,
   updateCustomer
 } from './customer-service'
 import { db } from '$lib/server/db/client'
@@ -265,12 +266,33 @@ describe('customer-service', () => {
       expect(res.items[0].ebayHandle).toBe('foxy-bidder')
     })
 
-    it('always hides archived customers', async () => {
+    it('hides archived customers from the default (active) view', async () => {
       const [first] = await db.select().from(customers).limit(1)
       await updateCustomer(first.id, { archived: true })
       const res = await listCustomers({ page: 1, size: 25 })
       expect(res.total).toBe(2)
       expect(res.items.find((c) => c.id === first.id)).toBeUndefined()
+    })
+
+    it('archived=true lists only archived customers, across all kinds', async () => {
+      const [first] = await db.select().from(customers).limit(1)
+      await setCustomerArchived(first.id, true)
+      // Archived eBay customer must show up in the archive view too —
+      // the kind filter is deliberately skipped there.
+      await db
+        .insert(customers)
+        .values({
+          customerNumber: 'KU-EB-ARCH',
+          kind: 'ebay',
+          ebayHandle: 'gone-bidder',
+          archived: true
+        })
+      const res = await listCustomers({ page: 1, size: 25, archived: true })
+      expect(res.total).toBe(2)
+      expect(res.items.every((c) => c.archived)).toBe(true)
+      expect(res.items.map((c) => c.customerNumber).sort()).toEqual(
+        [first.customerNumber, 'KU-EB-ARCH'].sort()
+      )
     })
 
     it('returns pageCount=1 even when empty', async () => {
@@ -384,6 +406,46 @@ describe('customer-service', () => {
       expect(
         await getCustomer('00000000-0000-0000-0000-000000000000')
       ).toBeNull()
+    })
+  })
+
+  describe('setCustomerArchived', () => {
+    it('archives and reactivates a customer', async () => {
+      const created = await createCustomer({
+        customerNumber: 'KU-ARCH1',
+        lastName: 'Ruhestand'
+      })
+      const archived = await setCustomerArchived(created.id, true)
+      expect(archived.archived).toBe(true)
+      // Linked records survive archiving; the row itself stays loadable.
+      expect((await getCustomer(created.id))?.archived).toBe(true)
+      const restored = await setCustomerArchived(created.id, false)
+      expect(restored.archived).toBe(false)
+    })
+
+    it('archiving works even while linked records exist (unlike delete)', async () => {
+      const created = await createCustomer({
+        customerNumber: 'KU-ARCH2',
+        lastName: 'Verknüpft'
+      })
+      await db
+        .insert(vehicles)
+        .values({ customerId: created.id, make: 'VW', model: 'Polo' })
+      await expect(deleteCustomer(created.id)).rejects.toMatchObject({
+        status: 409
+      })
+      const archived = await setCustomerArchived(created.id, true)
+      expect(archived.archived).toBe(true)
+      await db.delete(vehicles)
+    })
+
+    it('throws a curated 404 for unknown ids', async () => {
+      await expect(
+        setCustomerArchived('00000000-0000-0000-0000-000000000000', true)
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Kunde nicht gefunden.' }
+      })
     })
   })
 

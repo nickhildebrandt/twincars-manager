@@ -34,6 +34,7 @@ import {
   deleteRoleById,
   deleteUserById,
   getRoleById,
+  getRoleIdByName,
   getUserWithRoleIds,
   hasOtherWildcardHolder,
   listRolesWithPermissions,
@@ -332,6 +333,11 @@ export const createRoleRemote = command(
   createRoleSchema,
   async ({ name, description, permissions }) => {
     requirePermission('users')
+    // Curated duplicate check — without it the `roles_name_idx` unique
+    // index surfaces as an uncurated 500.
+    if ((await getRoleIdByName(name)) !== null) {
+      error(409, 'Eine Rolle mit diesem Namen existiert bereits.')
+    }
     const created = await createRoleWithPermissions({
       name,
       description,
@@ -377,6 +383,14 @@ export const updateRoleRemote = command(
     }
 
     if (name !== undefined || description !== undefined) {
+      // Renaming onto an existing role name is refused with a curated
+      // 409 (the unique index would otherwise yield a generic 500).
+      if (name !== undefined) {
+        const clash = await getRoleIdByName(name)
+        if (clash !== null && clash !== id) {
+          error(409, 'Eine Rolle mit diesem Namen existiert bereits.')
+        }
+      }
       await updateRoleFields(id, { name, description })
     }
 

@@ -31,6 +31,7 @@ import {
   deleteCustomer,
   getCustomer,
   listCustomers,
+  setCustomerArchived,
   updateCustomer
 } from '$lib/server/services/customer-service'
 import { sendAdHocCustomerEmail } from '$lib/server/services/mail-service'
@@ -81,7 +82,8 @@ const listSchema = object({
   size: picklist([10, 25, 50, 100]),
   q: optional(pipe(string(), trim(), maxLength(200))),
   sort: optional(pipe(string(), trim(), maxLength(30))),
-  kind: optional(picklist(['all', 'private', 'business', 'ebay']))
+  kind: optional(picklist(['all', 'private', 'business', 'ebay'])),
+  archived: optional(picklist(['active', 'archived']))
 })
 
 /**
@@ -91,8 +93,9 @@ const listSchema = object({
  * The `kind` filter accepts `'all' | 'private' | 'business' | 'ebay'`.
  * `'ebay'` restricts to `customers.kind = 'ebay'`; the other three
  * always restrict to `customers.kind = 'regular'` and additionally
- * narrow by the legacy `customers.company` column. Archived
- * customers are always excluded.
+ * narrow by the legacy `customers.company` column. `archived`
+ * defaults to `'active'`; `'archived'` switches to the archive view,
+ * which spans all customer kinds (the `kind` filter is ignored there).
  *
  * @group integration
  * @module customers
@@ -104,7 +107,8 @@ export const listCustomersRemote = query(listSchema, async (params) => {
     size: params.size,
     q: params.q,
     sort: params.sort,
-    kind: params.kind ?? 'all'
+    kind: params.kind ?? 'all',
+    archived: params.archived === 'archived'
   })
 })
 
@@ -231,6 +235,32 @@ export const updateCustomerRemote = command(
   async ({ id, values }) => {
     requirePermission('customers')
     const data = await updateCustomer(id, values)
+    await Promise.all([
+      getCustomerRemote({ id }).refresh(),
+      refreshListsAndCount()
+    ])
+    return data
+  }
+)
+
+/**
+ * Archive or reactivate a customer (soft delete). The sanctioned path
+ * for customers the delete guard refuses because vehicles, documents
+ * or tire storage still link to them.
+ *
+ * @remarks
+ * Refreshes the matching `getCustomerRemote({ id })` (the detail page
+ * flips its archive state in the same flight), the dashboard count and
+ * any requested list instances.
+ *
+ * @group integration
+ * @module customers
+ */
+export const setCustomerArchivedRemote = command(
+  object({ id: idSchema, archived: boolean() }),
+  async ({ id, archived }) => {
+    requirePermission('customers')
+    const data = await setCustomerArchived(id, archived)
     await Promise.all([
       getCustomerRemote({ id }).refresh(),
       refreshListsAndCount()

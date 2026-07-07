@@ -593,6 +593,28 @@ describe('users.remote', () => {
       ).rejects.toThrow()
     })
 
+    it('createRoleRemote refuses a duplicate role name with a curated 409', async () => {
+      await createRoleRemote({ name: 'Doppelt', permissions: ['customers'] })
+      await expect(
+        createRoleRemote({ name: 'Doppelt', permissions: ['vehicles'] })
+      ).rejects.toMatchObject({
+        status: 409,
+        body: { message: 'Eine Rolle mit diesem Namen existiert bereits.' }
+      })
+    })
+
+    it('updateRoleRemote refuses renaming onto an existing role name', async () => {
+      const a = await createRoleRemote({ name: 'Rolle A', permissions: [] })
+      await createRoleRemote({ name: 'Rolle B', permissions: [] })
+      await expect(
+        updateRoleRemote({ id: a.id, name: 'Rolle B' })
+      ).rejects.toMatchObject({ status: 409 })
+      // Renaming to its own current name stays allowed (no-op rename).
+      await expect(
+        updateRoleRemote({ id: a.id, name: 'Rolle A' })
+      ).resolves.toBeUndefined()
+    })
+
     it('createRoleRemote accepts the wildcard', async () => {
       const result = await createRoleRemote({
         name: 'Super',

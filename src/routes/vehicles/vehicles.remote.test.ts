@@ -75,12 +75,15 @@ import {
   customers,
   vehicleLicensePlateVersions,
   vehiclePurchases,
-  vehicles
+  vehicles,
+  workOrders
 } from '$lib/server/db/schema'
 import {
   createVehicleRemote,
+  deleteVehicleRemote,
   getVehicleRemote,
   purchaseVehicleIntoStockRemote,
+  setVehicleArchivedRemote,
   updateVehicleRemote
 } from './vehicles.remote'
 import { eq } from 'drizzle-orm'
@@ -335,5 +338,82 @@ describe('vehicles.remote — purchaseVehicleIntoStockRemote', () => {
     await expect(
       purchaseVehicleIntoStockRemote({ id: veh.id, purchaseDate: '2026-07-07' })
     ).rejects.toMatchObject({ status: 409 })
+  })
+})
+
+describe('vehicles.remote — setVehicleArchivedRemote + delete guard', () => {
+  let vehicleId: string
+
+  beforeEach(async () => {
+    await db.delete(workOrders)
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+    mockRequestEvent.locals.user = null
+    mockRequestEvent.locals.permissions = new Set()
+    const [row] = await db
+      .insert(vehicles)
+      .values({ make: 'VW', model: 'Golf' })
+      .returning({ id: vehicles.id })
+    vehicleId = row.id
+  })
+
+  it('rejects anonymous archive calls with 401', async () => {
+    await expect(
+      setVehicleArchivedRemote({ id: vehicleId, archived: true })
+    ).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('rejects archive calls without the vehicles module with 403', async () => {
+    withPermissions('customers')
+    await expect(
+      setVehicleArchivedRemote({ id: vehicleId, archived: true })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('archives and reactivates with the vehicles permission', async () => {
+    asVehiclesUser()
+    const archived = (await setVehicleArchivedRemote({
+      id: vehicleId,
+      archived: true
+    })) as { archived: boolean }
+    expect(archived.archived).toBe(true)
+    const [rowAfter] = await db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, vehicleId))
+    expect(rowAfter.archived).toBe(true)
+    const restored = (await setVehicleArchivedRemote({
+      id: vehicleId,
+      archived: false
+    })) as { archived: boolean }
+    expect(restored.archived).toBe(false)
+  })
+
+  it('surfaces the 409 delete guard through the remote layer', async () => {
+    asVehiclesUser()
+    await db
+      .insert(workOrders)
+      .values({ orderNumber: 'AU-R1', title: 'Zahnriemen', vehicleId })
+    await expect(deleteVehicleRemote({ id: vehicleId })).rejects.toMatchObject({
+      status: 409
+    })
+    // Archive still works as the soft path.
+    const archived = (await setVehicleArchivedRemote({
+      id: vehicleId,
+      archived: true
+    })) as { archived: boolean }
+    expect(archived.archived).toBe(true)
+  })
+
+  it('deletes an unlinked vehicle', async () => {
+    asVehiclesUser()
+    await deleteVehicleRemote({ id: vehicleId })
+    const rows = await db
+      .select()
+      .from(vehicles)
+      .where(eq(vehicles.id, vehicleId))
+    expect(rows).toHaveLength(0)
   })
 })

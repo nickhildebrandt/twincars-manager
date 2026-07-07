@@ -255,6 +255,153 @@ export const handle: Handle = async ({ event, resolve }) => {
 }
 
 /**
+ * German labels for the field keys that appear across the remote
+ * function schemas. `handleValidationError` renders the offending
+ * field through this map so users see "IBAN" instead of the raw
+ * `bankIban` identifier. Unknown keys fall back to the raw key —
+ * still better than hiding which input failed.
+ */
+export const FIELD_LABELS: Record<string, string> = {
+  // Person / address
+  company: 'Firma',
+  salutation: 'Anrede',
+  title: 'Titel',
+  firstName: 'Vorname',
+  lastName: 'Nachname',
+  name: 'Name',
+  street: 'Straße',
+  zip: 'PLZ',
+  city: 'Ort',
+  country: 'Land',
+  phone: 'Telefon',
+  privatePhone: 'Telefon (privat)',
+  mobile: 'Mobilnummer',
+  fax: 'Fax',
+  email: 'E-Mail',
+  privateEmail: 'E-Mail (privat)',
+  website: 'Website',
+  notes: 'Notiz',
+  // Finance / tax
+  paymentTermDays: 'Zahlungsziel (Tage)',
+  vatId: 'USt-IdNr.',
+  taxNumber: 'Steuernummer',
+  bankIban: 'IBAN',
+  iban: 'IBAN',
+  bankBic: 'BIC',
+  bic: 'BIC',
+  bankName: 'Bank',
+  bankAccountHolder: 'Kontoinhaber',
+  amount: 'Betrag',
+  taxRate: 'Steuersatz',
+  discountPercent: 'Rabatt (%)',
+  // Customer / vehicle
+  customerNumber: 'Kundennummer',
+  ebayHandle: 'eBay-Name',
+  customerId: 'Kunde',
+  vehicleId: 'Fahrzeug',
+  employeeId: 'Mitarbeiter',
+  supplierId: 'Lieferant',
+  licensePlate: 'Kennzeichen',
+  vin: 'FIN',
+  hsn: 'HSN',
+  tsn: 'TSN',
+  make: 'Marke',
+  model: 'Modell',
+  firstRegistration: 'Erstzulassung',
+  mileageKm: 'km-Stand',
+  nextHu: 'Nächste HU',
+  nextAu: 'Nächste AU',
+  displacementCcm: 'Hubraum (ccm)',
+  powerKw: 'Leistung (kW)',
+  colorCode: 'Farbcode',
+  engineNumber: 'Motornummer',
+  fuelType: 'Kraftstoff',
+  gearbox: 'Getriebe',
+  bodyType: 'Aufbau',
+  purchasePrice: 'Ankaufspreis',
+  purchaseDate: 'Ankaufsdatum',
+  // Employee
+  personnelNumber: 'Personalnummer',
+  birthday: 'Geburtstag',
+  birthplace: 'Geburtsort',
+  nationality: 'Staatsangehörigkeit',
+  hireDate: 'Eintrittsdatum',
+  terminationDate: 'Austrittsdatum',
+  position: 'Position',
+  department: 'Abteilung',
+  employmentType: 'Beschäftigungsart',
+  weeklyHours: 'Wochenstunden',
+  monthlySalary: 'Monatsgehalt',
+  hourlyWage: 'Stundenlohn',
+  vacationDaysPerYear: 'Urlaubstage pro Jahr',
+  taxId: 'Steuer-ID',
+  taxClass: 'Steuerklasse',
+  socialInsuranceNumber: 'Sozialversicherungsnummer',
+  healthInsurance: 'Krankenkasse',
+  // Documents / items
+  documentNumber: 'Belegnummer',
+  issueDate: 'Belegdatum',
+  serviceDate: 'Leistungsdatum',
+  dueDate: 'Fälligkeitsdatum',
+  validFrom: 'Gültig ab',
+  dateFrom: 'Datum von',
+  dateTo: 'Datum bis',
+  from: 'Von',
+  to: 'Bis',
+  items: 'Positionen',
+  quantity: 'Menge',
+  unit: 'Einheit',
+  unitPriceNet: 'Einzelpreis (netto)',
+  purchasePriceNet: 'Einkaufspreis (netto)',
+  description: 'Beschreibung',
+  articleNumber: 'Artikelnummer',
+  brand: 'Hersteller',
+  stockOnHand: 'Bestand',
+  // Mail / auth / settings
+  subject: 'Betreff',
+  body: 'Nachricht',
+  filename: 'Dateiname',
+  attachments: 'Anhänge',
+  username: 'Benutzername',
+  password: 'Passwort',
+  host: 'Server',
+  port: 'Port',
+  fromName: 'Absendername',
+  q: 'Suchbegriff',
+  page: 'Seite'
+}
+
+/**
+ * Render an issue path (already flattened to string segments) as a
+ * German field label. Wrapper keys without user-facing meaning
+ * (`values` from `object({ id, values })` update commands) are
+ * skipped; an array index in the path becomes "(Position N)" so list
+ * rows stay identifiable (1-based). Returns `null` when nothing
+ * meaningful remains.
+ */
+const fieldLabelForPath = (segments: string[]): string | null => {
+  const meaningful = segments.filter((s) => s !== 'values')
+  if (meaningful.length === 0) return null
+  let last = meaningful.pop()!
+  let index: number | null = null
+  if (/^\d+$/.test(last)) {
+    // Path ends on an array index — label the array itself.
+    index = Number(last) + 1
+    const parent = meaningful.pop()
+    if (!parent) return null
+    last = parent
+  } else if (
+    meaningful.length > 0 &&
+    /^\d+$/.test(meaningful[meaningful.length - 1])
+  ) {
+    // `items.0.quantity` → "Menge (Position 1)".
+    index = Number(meaningful[meaningful.length - 1]) + 1
+  }
+  const label = FIELD_LABELS[last] ?? last
+  return index != null ? `${label} (Position ${index})` : label
+}
+
+/**
  * Convert a Valibot validation failure into a single user-safe German
  * message. The shape returned here lands in `App.Error` and is consumed
  * by `+error.svelte` and `handleClientError` — so the message is the
@@ -263,24 +410,24 @@ export const handle: Handle = async ({ event, resolve }) => {
  * Notes:
  * - Only the first issue is surfaced. Showing all issues at once is
  *   noisy and confusing for non-technical users.
- * - The path is rendered as `„field.subField"` so the user sees which
- *   input caused the problem.
+ * - The offending field is rendered through {@link FIELD_LABELS} so
+ *   users see "IBAN" / "Kennzeichen" instead of raw schema keys like
+ *   `bankIban`; unmapped keys keep the raw key as fallback.
  * - If the underlying schema didn't supply a German message (Valibot's
  *   built-in defaults are English), we fall back to a generic German
  *   sentence rather than leaking the English text.
  */
 export const handleValidationError: HandleValidationError = ({ issues }) => {
   const first = issues[0]
-  const path =
+  const segments =
     first && 'path' in first && Array.isArray(first.path) && first.path.length
-      ? first.path
-          .map((p: unknown) =>
-            typeof p === 'object' && p !== null && 'key' in p
-              ? String((p as { key: unknown }).key)
-              : String(p)
-          )
-          .join('.')
-      : null
+      ? first.path.map((p: unknown) =>
+          typeof p === 'object' && p !== null && 'key' in p
+            ? String((p as { key: unknown }).key)
+            : String(p)
+        )
+      : []
+  const label = fieldLabelForPath(segments)
   const raw = first?.message?.trim() ?? ''
   // Heuristic: Valibot's built-in messages are English ASCII without
   // umlauts. If we haven't given the schema a curated German message,
@@ -289,8 +436,8 @@ export const handleValidationError: HandleValidationError = ({ issues }) => {
   const looksGerman = /[äöüÄÖÜß]/.test(raw) || raw === ''
   const detail = looksGerman && raw ? raw : 'Bitte prüfen Sie Ihre Eingabe.'
   return {
-    message: path
-      ? `Ungültige Eingabe für „${path}“: ${detail}`
+    message: label
+      ? `Ungültige Eingabe für „${label}“: ${detail}`
       : `Ungültige Eingabe: ${detail}`
   }
 }

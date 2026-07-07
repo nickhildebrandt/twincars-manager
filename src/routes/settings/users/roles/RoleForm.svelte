@@ -160,6 +160,10 @@
     const trimmedName = name.trim()
     const permissions = wildcard ? [WILDCARD_PERMISSION] : Array.from(selected)
     const trimmedDesc = description.trim()
+    // Clear the dirty flag BEFORE the save round-trip so the host's
+    // post-save `goto` is not blocked by the unsaved-changes guard
+    // (CONTRIBUTING §11 pattern, same as CustomerForm).
+    formDirty.clear()
     await onSave({
       name: trimmedName,
       description: trimmedDesc === '' ? undefined : trimmedDesc,
@@ -177,7 +181,7 @@
 >
   <div class="card-body gap-4">
     {#if errorMsg}
-      <div class="alert alert-error">
+      <div class="alert alert-error" role="alert">
         <span>{errorMsg}</span>
       </div>
     {/if}

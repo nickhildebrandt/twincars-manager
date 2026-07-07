@@ -22,6 +22,7 @@ import {
   purchaseVehicleIntoStock,
   recordVehiclePurchase,
   sellStockVehicleToCustomer,
+  setVehicleArchived,
   updateVehicle,
   upsertLicensePlateVersion,
   withCurrentPlates
@@ -29,13 +30,16 @@ import {
 import { db } from '$lib/server/db/client'
 import {
   customers,
+  documents,
+  tireStorage,
   vehicleDocuments,
   vehicleLicensePlateVersions,
   vehicleListings,
   vehiclePhotos,
   vehiclePurchases,
   vehicleSales,
-  vehicles
+  vehicles,
+  workOrders
 } from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
 
@@ -50,6 +54,11 @@ import { eq } from 'drizzle-orm'
  */
 describe('vehicle-service', () => {
   beforeEach(async () => {
+    // Delete-guard reference tables first (tire_storage has a RESTRICT
+    // FK on customers), then the vehicle satellites, then the roots.
+    await db.delete(workOrders)
+    await db.delete(tireStorage)
+    await db.delete(documents)
     await db.delete(vehicleSales)
     await db.delete(vehicleListings)
     await db.delete(vehiclePurchases)
@@ -213,12 +222,30 @@ describe('vehicle-service', () => {
       expect(res.items.every((v) => v.customerId === null)).toBe(true)
     })
 
-    it('always hides archived vehicles', async () => {
+    it('hides archived vehicles from the default (active) view', async () => {
       const [first] = await db.select().from(vehicles).limit(1)
       await updateVehicle(first.id, { archived: true })
       const res = await listVehicles({ page: 1, size: 25 })
       expect(res.items.find((v) => v.id === first.id)).toBeUndefined()
       expect(res.total).toBe(2)
+    })
+
+    it('archived=true lists only archived vehicles, ignoring kind', async () => {
+      const rows = await db.select().from(vehicles)
+      const customerCar = rows.find((r) => r.customerId !== null)!
+      const stockCar = rows.find((r) => r.customerId === null)!
+      await setVehicleArchived(customerCar.id, true)
+      await setVehicleArchived(stockCar.id, true)
+      // kind='customer' would exclude the stock car — the archive view
+      // must span both kinds so archived stock stays findable.
+      const res = await listVehicles({
+        page: 1,
+        size: 25,
+        kind: 'customer',
+        archived: true
+      })
+      expect(res.total).toBe(2)
+      expect(res.items.every((v) => v.archived)).toBe(true)
     })
 
     it('returns pageCount=1 when empty', async () => {
@@ -277,10 +304,127 @@ describe('vehicle-service', () => {
   })
 
   describe('deleteVehicle', () => {
-    it('removes the row', async () => {
+    it('removes an unlinked row', async () => {
       const created = await createVehicle({ make: 'VW', model: 'Polo' })
       await deleteVehicle(created.id)
       expect(await getVehicle(created.id)).toBeNull()
+    })
+
+    it('refuses (409, German) while a document references the vehicle', async () => {
+      const created = await createVehicle({ make: 'VW', model: 'Polo' })
+      await db
+        .insert(documents)
+        .values({
+          documentNumber: 'RE-V1',
+          type: 'invoice',
+          vehicleId: created.id,
+          issueDate: '2026-01-01'
+        })
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('1 Beleg') }
+      })
+      // The vehicle row must be untouched.
+      expect(await getVehicle(created.id)).not.toBeNull()
+    })
+
+    it('refuses while a work order references the vehicle', async () => {
+      const created = await createVehicle({ make: 'BMW', model: '118i' })
+      await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-V1',
+          title: 'Bremsen erneuern',
+          vehicleId: created.id
+        })
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('1 Auftrag') }
+      })
+    })
+
+    it('refuses while tire storage references the vehicle', async () => {
+      const [holder] = await db
+        .insert(customers)
+        .values({ customerNumber: 'KU-TIRE', lastName: 'Reifenhalter' })
+        .returning()
+      const created = await createVehicle({ make: 'Audi', model: 'A3' })
+      await db
+        .insert(tireStorage)
+        .values({
+          storageNumber: 'RL-V1',
+          customerId: holder.id,
+          vehicleId: created.id,
+          storedAt: '2026-07-01'
+        })
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('1 Reifeneinlagerung') }
+      })
+    })
+
+    it('aggregates all blocker kinds with plural counts', async () => {
+      const created = await createVehicle({ make: 'Ford', model: 'Focus' })
+      await db.insert(documents).values([
+        {
+          documentNumber: 'RE-V2',
+          type: 'invoice',
+          vehicleId: created.id,
+          issueDate: '2026-01-01'
+        },
+        {
+          documentNumber: 'AN-V1',
+          type: 'offer',
+          vehicleId: created.id,
+          issueDate: '2026-01-02'
+        }
+      ])
+      await db.insert(workOrders).values([
+        { orderNumber: 'AU-V2', title: 'Inspektion', vehicleId: created.id },
+        { orderNumber: 'AU-V3', title: 'HU/AU', vehicleId: created.id }
+      ])
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('2 Belege') }
+      })
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        body: { message: expect.stringContaining('2 Aufträge') }
+      })
+    })
+  })
+
+  describe('setVehicleArchived', () => {
+    it('archives and reactivates a vehicle', async () => {
+      const created = await createVehicle({ make: 'VW', model: 'Up' })
+      const archived = await setVehicleArchived(created.id, true)
+      expect(archived.archived).toBe(true)
+      const restored = await setVehicleArchived(created.id, false)
+      expect(restored.archived).toBe(false)
+    })
+
+    it('archiving works even while linked records exist (unlike delete)', async () => {
+      const created = await createVehicle({ make: 'VW', model: 'Caddy' })
+      await db
+        .insert(workOrders)
+        .values({
+          orderNumber: 'AU-V9',
+          title: 'Kupplung',
+          vehicleId: created.id
+        })
+      await expect(deleteVehicle(created.id)).rejects.toMatchObject({
+        status: 409
+      })
+      const archived = await setVehicleArchived(created.id, true)
+      expect(archived.archived).toBe(true)
+    })
+
+    it('throws a curated 404 for unknown ids', async () => {
+      await expect(
+        setVehicleArchived('00000000-0000-0000-0000-000000000000', true)
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Fahrzeug nicht gefunden.' }
+      })
     })
   })
 

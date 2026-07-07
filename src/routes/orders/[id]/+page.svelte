@@ -698,7 +698,7 @@
           </div>
 
           {#if itemError}
-            <div class="alert alert-error">
+            <div class="alert alert-error" role="alert">
               <span>{itemError}</span>
             </div>
           {/if}
@@ -870,7 +870,7 @@
         Auftrag wird danach schreibgeschützt.
       </p>
       {#if completeError}
-        <div class="alert alert-error mb-3">
+        <div class="alert alert-error mb-3" role="alert">
           <span>{completeError}</span>
         </div>
       {/if}

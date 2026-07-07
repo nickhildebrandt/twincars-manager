@@ -33,12 +33,24 @@ const weekdaySchema = pipe(
   check((v) => Number.isInteger(v), 'Wochentag muss ganzzahlig sein.')
 )
 
-const updateInputSchema = object({
-  weekday: weekdaySchema,
-  opensAt: timeStringSchema,
-  closesAt: timeStringSchema,
-  closed: boolean()
-})
+/**
+ * Cross-field rule: on an open day the opening time must lie before
+ * the closing time. Lexicographic comparison is safe for zero-padded
+ * `HH:MM` strings. Closed days skip the check — their times are
+ * ignored by the slot calculation anyway.
+ */
+const updateInputSchema = pipe(
+  object({
+    weekday: weekdaySchema,
+    opensAt: timeStringSchema,
+    closesAt: timeStringSchema,
+    closed: boolean()
+  }),
+  check(
+    (v) => v.closed || v.opensAt < v.closesAt,
+    'Die Öffnungszeit muss vor der Schließzeit liegen.'
+  )
+)
 
 /**
  * Return all 7 weekday rows. Lazily creates missing rows so the

@@ -122,7 +122,7 @@
   >
     <div class="card-body gap-4">
       {#if errorMsg}
-        <div class="alert alert-error">
+        <div class="alert alert-error" role="alert">
           <span>{errorMsg}</span>
         </div>
       {/if}
@@ -208,7 +208,7 @@
           zurück. Der Benutzer wird darüber nicht automatisch informiert.
         </p>
         {#if resetError}
-          <div class="alert alert-error mt-2">
+          <div class="alert alert-error mt-2" role="alert">
             <span>{resetError}</span>
           </div>
         {/if}

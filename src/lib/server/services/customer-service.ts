@@ -27,9 +27,12 @@ export type CustomerKindFilter = 'all' | 'private' | 'business' | 'ebay'
 /**
  * List customers with server-side pagination, search and kind filter.
  *
- * - Archived customers are always hidden from the list — there's no UI
- *   surface for them; archive status is set on the detail page.
- * - `kind` filter:
+ * - `archived` selects the archive view: `false` (default) lists only
+ *   active customers, `true` lists only archived ones. The archive
+ *   view deliberately spans ALL customer kinds (regular + ebay) so an
+ *   archived record is always findable regardless of which tab it was
+ *   archived from — the `kind` narrowing below is skipped for it.
+ * - `kind` filter (active view only):
  *   - `'ebay'` returns rows where `customers.kind = 'ebay'`.
  *   - `'all'`, `'private'`, `'business'` always restrict to non-ebay
  *     rows (`customers.kind = 'regular'`). `private` / `business` then
@@ -40,12 +43,12 @@ export type CustomerKindFilter = 'all' | 'private' | 'business' | 'ebay'
  * @returns { items, total, page, size, pageCount }
  */
 export async function listCustomers(
-  params: ListParams & { kind?: CustomerKindFilter }
+  params: ListParams & { kind?: CustomerKindFilter; archived?: boolean }
 ): Promise<ListResult<Customer>> {
-  const { page, size, q, sort, kind = 'all' } = params
+  const { page, size, q, sort, kind = 'all', archived = false } = params
   const offset = (page - 1) * size
 
-  const filters = [eq(customers.archived, false)]
+  const filters = [eq(customers.archived, archived)]
   if (q && q.length > 0) {
     const term = `%${q}%`
     filters.push(
@@ -64,14 +67,16 @@ export async function listCustomers(
       )!
     )
   }
-  if (kind === 'ebay') {
-    filters.push(eq(customers.kind, 'ebay'))
-  } else {
-    filters.push(eq(customers.kind, 'regular'))
-    if (kind === 'business') {
-      filters.push(isNotNull(customers.company))
-    } else if (kind === 'private') {
-      filters.push(isNull(customers.company))
+  if (!archived) {
+    if (kind === 'ebay') {
+      filters.push(eq(customers.kind, 'ebay'))
+    } else {
+      filters.push(eq(customers.kind, 'regular'))
+      if (kind === 'business') {
+        filters.push(isNotNull(customers.company))
+      } else if (kind === 'private') {
+        filters.push(isNull(customers.company))
+      }
     }
   }
   const where = and(...filters)
@@ -151,6 +156,26 @@ export async function updateCustomer(
 }
 
 /**
+ * Archive or reactivate a customer (soft delete). Archived customers
+ * vanish from the default list, all pickers, the global search and the
+ * broadcast recipient set, but keep every linked record (vehicles,
+ * documents, tire storage) intact — the escape hatch for customers the
+ * hard-delete guard refuses. Throws a curated 404 for unknown ids.
+ */
+export async function setCustomerArchived(
+  id: string,
+  archived: boolean
+): Promise<Customer> {
+  const [updated] = await db
+    .update(customers)
+    .set({ archived, updatedAt: new Date() })
+    .where(eq(customers.id, id))
+    .returning()
+  if (!updated) error(404, 'Kunde nicht gefunden.')
+  return updated
+}
+
+/**
  * Delete a customer record.
  *
  * Guarded: refuses (409, German message) while vehicles, documents or
@@ -187,10 +212,11 @@ export async function deleteCustomer(id: string): Promise<void> {
     blockers.push(`${tiresN} Reifeneinlagerung${tiresN === 1 ? '' : 'en'}`)
   if (blockers.length > 0) {
     // Toast prefix is "Kunde konnte nicht gelöscht werden: …" — keep the
-    // detail free of a second "kann nicht gelöscht werden".
+    // detail free of a second "kann nicht gelöscht werden". Pointing to
+    // the archive action gives the operator the sanctioned soft path.
     error(
       409,
-      `Es sind noch ${blockers.join(', ')} mit diesem Kunden verknüpft. Bitte zuerst die Verknüpfungen entfernen.`
+      `Es sind noch ${blockers.join(', ')} mit diesem Kunden verknüpft. Bitte entfernen Sie zuerst die Verknüpfungen oder archivieren Sie den Kunden.`
     )
   }
   await db.delete(customers).where(eq(customers.id, id))

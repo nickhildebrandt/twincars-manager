@@ -40,7 +40,7 @@ vi.mock('better-auth/svelte-kit', () => ({
   }
 }))
 
-import { handle, resolveClientIp } from './hooks.server'
+import { handle, handleValidationError, resolveClientIp } from './hooks.server'
 
 function makeEvent(
   url: string,
@@ -242,5 +242,87 @@ describe('hooks.server – resolveClientIp', () => {
   it('falls back to getClientAddress when XFF is missing', () => {
     const event = makeEvent('http://localhost/x', { ip: '42.42.42.42' })
     expect(resolveClientIp(event)).toBe('42.42.42.42')
+  })
+})
+
+describe('hooks.server – handleValidationError field labels', () => {
+  type Issue = { message?: string; path?: Array<{ key: string }> }
+  const call = (issues: Issue[]) =>
+    (
+      handleValidationError as unknown as (args: { issues: Issue[] }) => {
+        message: string
+      }
+    )({ issues })
+
+  it('maps known field keys to German labels', () => {
+    const res = call([
+      {
+        message: 'Bitte geben Sie eine gültige IBAN ein.',
+        path: [{ key: 'bankIban' }]
+      }
+    ])
+    expect(res.message).toBe(
+      'Ungültige Eingabe für „IBAN“: Bitte geben Sie eine gültige IBAN ein.'
+    )
+  })
+
+  it('skips the `values` wrapper of update commands', () => {
+    const res = call([
+      {
+        message: 'Bitte ein gültiges Kennzeichen eingeben.',
+        path: [{ key: 'values' }, { key: 'licensePlate' }]
+      }
+    ])
+    expect(res.message).toContain('„Kennzeichen“')
+    expect(res.message).not.toContain('values')
+  })
+
+  it('renders array positions 1-based', () => {
+    const res = call([
+      {
+        message: 'Bitte eine gültige Menge angeben.',
+        path: [{ key: 'items' }, { key: '0' }, { key: 'quantity' }]
+      }
+    ])
+    expect(res.message).toContain('„Menge (Position 1)“')
+  })
+
+  it('labels the array itself when the path ends on an index', () => {
+    const res = call([
+      {
+        message: 'Ungültiger Anhang.',
+        path: [{ key: 'attachments' }, { key: '1' }]
+      }
+    ])
+    expect(res.message).toContain('„Anhänge (Position 2)“')
+  })
+
+  it('falls back to the raw key for unmapped fields', () => {
+    const res = call([
+      {
+        message: 'Bitte prüfen Sie die Länge.',
+        path: [{ key: 'someExoticField' }]
+      }
+    ])
+    expect(res.message).toContain('„someExoticField“')
+  })
+
+  it('replaces English default messages with a generic German sentence', () => {
+    const res = call([
+      {
+        message: 'Invalid type: Expected string but received undefined',
+        path: [{ key: 'email' }]
+      }
+    ])
+    expect(res.message).toBe(
+      'Ungültige Eingabe für „E-Mail“: Bitte prüfen Sie Ihre Eingabe.'
+    )
+  })
+
+  it('handles issues without a path', () => {
+    const res = call([{ message: 'Bitte prüfen Sie Ihre Eingabe.' }])
+    expect(res.message).toBe(
+      'Ungültige Eingabe: Bitte prüfen Sie Ihre Eingabe.'
+    )
   })
 })

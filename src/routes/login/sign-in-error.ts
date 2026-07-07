@@ -23,6 +23,11 @@ export const signInErrorMessage = (error: SignInError): string => {
     )
   }
   if (error.status === 401 || error.status === 403) {
+    // Our own `blockDeactivatedSignIn` hook answers 403 with a curated
+    // German body — surface it instead of the generic credentials
+    // message. better-auth's own English strings fall through.
+    const msg = error.message?.trim() ?? ''
+    if (msg.includes('deaktiviert')) return msg
     return 'Benutzername oder Passwort ist falsch.'
   }
   return 'Anmeldung fehlgeschlagen. Bitte versuchen Sie es erneut.'

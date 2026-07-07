@@ -6,9 +6,11 @@
   import {
     getCustomerRemote,
     getCustomerRelatedRemote,
-    sendAdHocCustomerEmailRemote
+    sendAdHocCustomerEmailRemote,
+    setCustomerArchivedRemote
   } from '../customers.remote'
-  import { Mail, Pencil } from '@lucide/svelte'
+  import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import { Archive, ArchiveRestore, Mail, Pencil } from '@lucide/svelte'
   import {
     documentStatusBadge,
     documentStatusLabel
@@ -27,12 +29,23 @@
    * SSR-friendly parallel load. The customer record + related vehicles
    * and invoices ship in one server round-trip.
    */
-  const [customer, related] = await Promise.all([
+  const [initialCustomer, related] = await Promise.all([
     getCustomerRemote({ id }),
     getCustomerRelatedRemote({ id })
   ])
 
-  const isEbay = customer.kind === 'ebay'
+  /**
+   * Reactive customer read — never memoize the query proxy
+   * (CONTRIBUTING §5). The archive command refreshes
+   * `getCustomerRemote({ id })` server-side in the same flight; reading
+   * `.current` here flips the page between archived / active state
+   * without a remount. `initialCustomer` bridges until the cache is live.
+   */
+  const customer = $derived.by(
+    () => getCustomerRemote({ id }).current ?? initialCustomer
+  )
+
+  const isEbay = $derived(customer.kind === 'ebay')
 
   const labelOf = () =>
     customer.company ||
@@ -67,6 +80,30 @@
   })
 
   let emailErrorMsg = $state<string | null>(null)
+
+  /**
+   * Archive / reactivate flow. Both directions confirm via
+   * ConfirmDialog; the command's server-side refresh of
+   * `getCustomerRemote({ id })` flips the page state in one flight.
+   */
+  let archiveConfirmOpen = $state(false)
+
+  const toggleArchived = async () => {
+    const next = !customer.archived
+    try {
+      await busy.run(() =>
+        setCustomerArchivedRemote({ id: customer.id, archived: next })
+      )
+      toast.success(next ? 'Kunde archiviert.' : 'Kunde reaktiviert.')
+    } catch (err) {
+      handleClientError(
+        err,
+        next
+          ? 'Kunde konnte nicht archiviert werden'
+          : 'Kunde konnte nicht reaktiviert werden'
+      )
+    }
+  }
 
   const openEmailDialog = () => {
     emailSubject = ''
@@ -130,6 +167,16 @@
   }}
 />
 
+{#if customer.archived}
+  <div class="alert alert-warning mb-4" role="status">
+    <Archive size={18} />
+    <span>
+      Dieser Kunde ist archiviert und erscheint nicht mehr in Listen, Suche und
+      Auswahlfeldern.
+    </span>
+  </div>
+{/if}
+
 <div class="mb-4 flex flex-wrap gap-2">
   <button
     type="button"
@@ -142,6 +189,20 @@
   >
     <Mail size={14} />
     E-Mail schreiben
+  </button>
+  <button
+    type="button"
+    class="btn btn-sm gap-2"
+    disabled={busy.active}
+    onclick={() => (archiveConfirmOpen = true)}
+  >
+    {#if customer.archived}
+      <ArchiveRestore size={14} />
+      Reaktivieren
+    {:else}
+      <Archive size={14} />
+      Archivieren
+    {/if}
   </button>
 </div>
 
@@ -339,6 +400,18 @@
   </div>
 </div>
 
+<ConfirmDialog
+  bind:open={archiveConfirmOpen}
+  title={customer.archived ? 'Kunde reaktivieren?' : 'Kunde archivieren?'}
+  message={customer.archived
+    ? `Soll der Kunde "${labelOf()}" wieder aktiviert werden? Er erscheint danach wieder in Listen, Suche und Auswahlfeldern.`
+    : `Soll der Kunde "${labelOf()}" archiviert werden? Er verschwindet aus Listen, Suche und Auswahlfeldern; alle verknüpften Daten bleiben erhalten.`}
+  confirmLabel={customer.archived ? 'Reaktivieren' : 'Archivieren'}
+  variant="primary"
+  onConfirm={toggleArchived}
+  onClose={() => (archiveConfirmOpen = false)}
+/>
+
 {#if emailOpen}
   <div class="modal modal-open" role="dialog" aria-modal="true">
     <div class="modal-box max-w-2xl">
@@ -366,7 +439,7 @@
       {/if}
 
       {#if emailErrorMsg}
-        <div class="alert alert-error mt-3 text-sm">
+        <div class="alert alert-error mt-3 text-sm" role="alert">
           <span>{emailErrorMsg}</span>
         </div>
       {/if}

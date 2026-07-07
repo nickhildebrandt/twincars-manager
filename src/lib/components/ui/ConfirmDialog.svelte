@@ -1,4 +1,6 @@
 <script lang="ts">
+  import { busy } from '$lib/stores/busy.svelte'
+
   type Props = {
     open: boolean
     title: string
@@ -21,34 +23,75 @@
     onClose
   }: Props = $props()
 
-  let busy = $state(false)
+  /**
+   * Re-entrancy guard only — deliberately NOT reactive state and NOT a
+   * loading indicator. The visible disabled state + button spinner are
+   * driven by the global busy store (callers wrap their mutation in
+   * `busy.run(...)`), per the single-loading-source rule.
+   */
+  let inFlight = false
+
+  let dialogEl = $state<HTMLDialogElement | null>(null)
+
+  /**
+   * Native modal semantics: `showModal()` traps Tab inside the dialog,
+   * lets Esc fire the `cancel` event and restores focus to the
+   * triggering element on `close()`. Optional chaining keeps test
+   * environments without a full `<dialog>` implementation working; the
+   * `modal-open` class remains the visual fallback there.
+   */
+  $effect(() => {
+    if (open && dialogEl && !dialogEl.open) {
+      dialogEl.showModal?.()
+    }
+  })
+
+  /** Close natively first so the browser restores focus to the trigger. */
+  const closeDialog = () => {
+    dialogEl?.close?.()
+    open = false
+    onClose()
+  }
 
   const handleConfirm = async () => {
-    busy = true
+    if (inFlight) return
+    inFlight = true
     try {
       await onConfirm()
-      open = false
-      onClose()
+      closeDialog()
     } finally {
-      busy = false
+      inFlight = false
     }
   }
 
   const handleCancel = () => {
-    open = false
-    onClose()
+    closeDialog()
+  }
+
+  /** Esc inside the native modal — route through the cancel path. */
+  const handleNativeCancel = (e: Event) => {
+    e.preventDefault()
+    handleCancel()
   }
 </script>
 
 {#if open}
-  <dialog class="modal modal-open">
+  <dialog
+    bind:this={dialogEl}
+    class="modal modal-open"
+    oncancel={handleNativeCancel}
+  >
     <div class="modal-box">
       <h3 class="text-lg font-semibold">{title}</h3>
       {#if message}
         <p class="text-base-content/80 py-3 text-sm">{message}</p>
       {/if}
       <div class="modal-action">
-        <button class="btn btn-ghost" onclick={handleCancel} disabled={busy}>
+        <button
+          class="btn btn-ghost"
+          onclick={handleCancel}
+          disabled={busy.active}
+        >
           {cancelLabel}
         </button>
         <button
@@ -56,9 +99,9 @@
           class:btn-error={variant === 'danger'}
           class:btn-primary={variant === 'primary'}
           onclick={handleConfirm}
-          disabled={busy}
+          disabled={busy.active}
         >
-          {#if busy}<span class="loading loading-spinner loading-sm"
+          {#if busy.active}<span class="loading loading-spinner loading-sm"
             ></span>{/if}
           {confirmLabel}
         </button>

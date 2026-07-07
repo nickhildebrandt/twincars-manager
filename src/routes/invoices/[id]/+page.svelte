@@ -133,7 +133,6 @@
   /** Stornieren-Dialog state — Begründung ist Pflicht. */
   let stornoOpen = $state(false)
   let stornoReason = $state('')
-  let stornoSubmitting = $state(false)
   /** Löschen-Dialog state — nur für Entwürfe (`status='draft'`). */
   let deleteOpen = $state(false)
 
@@ -175,7 +174,6 @@
       toast.error('Bitte einen Stornogrund angeben.')
       return
     }
-    stornoSubmitting = true
     try {
       const res = await busy.run(() => cancelInvoiceRemote({ id, reason }))
       toast.success(`Stornorechnung ${res.stornoNumber} erstellt.`)
@@ -184,8 +182,6 @@
       goto(`/invoices/${res.stornoId}`)
     } catch (err) {
       handleClientError(err, 'Rechnung konnte nicht storniert werden')
-    } finally {
-      stornoSubmitting = false
     }
   }
 
@@ -862,7 +858,7 @@
           maxlength="500"
           placeholder="Bitte Stornogrund eingeben"
           bind:value={stornoReason}
-          disabled={stornoSubmitting}
+          disabled={busy.active}
         ></textarea>
       </label>
       <div class="text-base-content/60 mt-1 text-right text-xs">
@@ -876,17 +872,22 @@
             stornoOpen = false
             stornoReason = ''
           }}
-          disabled={stornoSubmitting}
+          disabled={busy.active}
         >
           Abbrechen
         </button>
+        <!--
+          Always clickable (rule 1.1): missing-reason validation happens
+          at click time inside `cancelInvoice` (German toast), only the
+          global busy state may disable the button.
+        -->
         <button
           type="button"
           class="btn btn-error"
           onclick={cancelInvoice}
-          disabled={stornoSubmitting || stornoReason.trim().length === 0}
+          disabled={busy.active}
         >
-          {#if stornoSubmitting}
+          {#if busy.active}
             <span class="loading loading-spinner loading-sm"></span>
           {/if}
           Stornieren

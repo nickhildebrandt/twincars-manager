@@ -115,6 +115,22 @@ describe('RoleForm', () => {
     expect(onSave.mock.calls[0][0].permissions).toEqual(['*'])
   })
 
+  it('clears the global dirty flag on submit (post-save goto must not be blocked)', async () => {
+    const user = userEvent.setup()
+    const onSave = vi.fn()
+    render(RoleForm, {
+      props: { onSave, initial: { name: 'Sauber', permissions: ['customers'] } }
+    })
+    // Simulate an edit so the unsaved-changes guard would be armed.
+    formDirty.set(true)
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    // Regression: RoleForm used to leave the flag set, so the host's
+    // post-save `goto('/settings/users?tab=roles')` was cancelled by
+    // the AppShell beforeNavigate confirm.
+    expect(formDirty.dirty).toBe(false)
+  })
+
   it('submits with a selected permission subset when wildcard is off', async () => {
     const user = userEvent.setup()
     const onSave = vi.fn()

@@ -97,8 +97,12 @@ vi.mock('$lib/server/services/mail-service', () => ({
 
 import { db } from '$lib/server/db/client'
 import { customers } from '$lib/server/db/schema'
+import { eq } from 'drizzle-orm'
 import { WILDCARD_PERMISSION } from '$lib/server/auth-permissions'
-import { sendAdHocCustomerEmailRemote } from './customers.remote'
+import {
+  sendAdHocCustomerEmailRemote,
+  setCustomerArchivedRemote
+} from './customers.remote'
 
 async function expectHttpError(
   fn: () => Promise<unknown>,
@@ -289,6 +293,75 @@ describe('customers.remote — sendAdHocCustomerEmailRemote', () => {
           attachments: []
         }),
       400
+    )
+  })
+})
+
+describe('customers.remote — setCustomerArchivedRemote', () => {
+  let customerId: string
+
+  beforeEach(async () => {
+    await resetDb()
+    anonymous()
+    const [row] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-AR-1', lastName: 'Archivfall' })
+      .returning({ id: customers.id })
+    customerId = row.id
+  })
+
+  it('rejects anonymous callers with 401', async () => {
+    await expectHttpError(
+      () => setCustomerArchivedRemote({ id: customerId, archived: true }),
+      401
+    )
+  })
+
+  it('rejects callers without the customers module with 403', async () => {
+    authAs({ permissions: ['vehicles'] })
+    await expectHttpError(
+      () => setCustomerArchivedRemote({ id: customerId, archived: true }),
+      403
+    )
+  })
+
+  it('archives and reactivates with the customers permission', async () => {
+    authAs({ permissions: ['customers'] })
+    const archived = (await setCustomerArchivedRemote({
+      id: customerId,
+      archived: true
+    })) as { archived: boolean }
+    expect(archived.archived).toBe(true)
+    const [rowAfter] = await db
+      .select()
+      .from(customers)
+      .where(eq(customers.id, customerId))
+    expect(rowAfter.archived).toBe(true)
+    const restored = (await setCustomerArchivedRemote({
+      id: customerId,
+      archived: false
+    })) as { archived: boolean }
+    expect(restored.archived).toBe(false)
+  })
+
+  it('accepts the wildcard permission', async () => {
+    authAs({ permissions: [WILDCARD_PERMISSION] })
+    const res = (await setCustomerArchivedRemote({
+      id: customerId,
+      archived: true
+    })) as { archived: boolean }
+    expect(res.archived).toBe(true)
+  })
+
+  it('throws a curated 404 for unknown ids', async () => {
+    authAs({ permissions: ['customers'] })
+    await expectHttpError(
+      () =>
+        setCustomerArchivedRemote({
+          id: '00000000-0000-0000-0000-000000000000',
+          archived: true
+        }),
+      404
     )
   })
 })
