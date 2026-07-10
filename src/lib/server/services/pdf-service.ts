@@ -46,15 +46,13 @@ import { readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import {
   PDFDocument,
-  PageSizes,
   StandardFonts,
-  degrees,
   rgb,
   type PDFFont,
   type PDFImage,
   type PDFPage
 } from 'pdf-lib'
-import { and, eq } from 'drizzle-orm'
+import { eq } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
 import {
   customers,
@@ -106,7 +104,23 @@ const formatEur = (v: number | string): string => {
   return new Intl.NumberFormat('de-DE', {
     style: 'currency',
     currency: 'EUR'
-  }).format(n)
+  }).format(Number.isFinite(n) ? n : 0)
+}
+
+/** German decimal quantity — trims trailing zeros ("1", "2,5", "0,25"). */
+const formatQty = (v: number | string): string => {
+  const n = typeof v === 'string' ? Number(v) : v
+  return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(
+    Number.isFinite(n) ? n : 0
+  )
+}
+
+/** German percentage without unit conversion ("19", "7,5"). */
+const formatPercentDe = (v: number | string): string => {
+  const n = typeof v === 'string' ? Number(v) : v
+  return new Intl.NumberFormat('de-DE', { maximumFractionDigits: 2 }).format(
+    Number.isFinite(n) ? n : 0
+  )
 }
 
 const formatDate = (s: string | null | undefined): string => {
@@ -253,32 +267,182 @@ const documentTypeLabelDe = (type: string): string => {
 /* Renderer helpers                                                   */
 /* ------------------------------------------------------------------ */
 
+/* ------------------------------------------------------------------ */
+/* WinAnsi-safe text + wrapping helpers                                */
+/* ------------------------------------------------------------------ */
+
 /**
- * Estimate how many lines a string wraps to inside `maxW` at `size` pt
- * for the given font. We use this to reserve vertical space when laying
- * out items / paragraphs — pdf-lib's own wrap is hard to measure
- * post-draw, so a generous estimate is the simplest correct option.
+ * Code points of the CP1252 "extra" block (0x80–0x9F) that WinAnsi maps
+ * to real glyphs — €, typographic quotes, dashes, ellipsis, Š/Ž/Œ etc.
+ * Together with printable ASCII (0x20–0x7E) and the Latin-1 supplement
+ * (0xA0–0xFF) this is everything the 14 standard PDF fonts can encode.
  */
-const wrapLineCount = (
-  s: string,
-  size: number,
-  maxW: number,
-  measureFont: PDFFont
-): number => {
-  if (!s) return 1
-  const words = s.split(/\s+/)
-  let line = ''
-  let lines = 1
-  for (const w of words) {
-    const next = line ? `${line} ${w}` : w
-    if (measureFont.widthOfTextAtSize(next, size) > maxW) {
-      lines += 1
-      line = w
-    } else {
-      line = next
+const WIN_ANSI_EXTRA = new Set([
+  0x20ac, 0x201a, 0x0192, 0x201e, 0x2026, 0x2020, 0x2021, 0x02c6, 0x2030,
+  0x0160, 0x2039, 0x0152, 0x017d, 0x2018, 0x2019, 0x201c, 0x201d, 0x2022,
+  0x2013, 0x2014, 0x02dc, 0x2122, 0x0161, 0x203a, 0x0153, 0x017e, 0x0178
+])
+
+const isWinAnsiEncodable = (cp: number): boolean =>
+  (cp >= 0x20 && cp <= 0x7e) ||
+  (cp >= 0xa0 && cp <= 0xff) ||
+  WIN_ANSI_EXTRA.has(cp)
+
+/**
+ * Explicit fallbacks for letters that NFKD cannot decompose to an
+ * encodable base character (stroked/serbo-croatian/turkish letters and
+ * a few typographic symbols). Values must themselves be WinAnsi-safe.
+ */
+const WIN_ANSI_FOLDS: Record<string, string> = {
+  ł: 'l',
+  Ł: 'L',
+  đ: 'd',
+  Đ: 'D',
+  ħ: 'h',
+  Ħ: 'H',
+  ı: 'i',
+  ẞ: 'SS',
+  '№': 'Nr.',
+  '−': '-'
+}
+
+/**
+ * Make a string safe for pdf-lib's StandardFonts (WinAnsi encoding).
+ *
+ * Replacement policy, in order:
+ * 1. Encodable code points pass through unchanged (umlauts, ß, €, § …).
+ * 2. A small explicit fold map handles letters without a decomposable
+ *    base (ł → l, Đ → D, ẞ → SS, …).
+ * 3. Everything else is NFKD-decomposed and stripped of combining
+ *    marks; if the base character is encodable it is kept (ő → o,
+ *    č → c, á → á-via-NFC-composition-loss → a …).
+ * 4. Characters with no encodable representation become `?` so the
+ *    render never throws — a visibly wrong glyph beats a 500.
+ *
+ * Newlines are preserved (`\r\n`/`\r` normalized to `\n`), tabs become
+ * a single space.
+ */
+export const sanitizeWinAnsiText = (value: string): string => {
+  const normalized = (value ?? '')
+    .replace(/\r\n?/g, '\n')
+    .replace(/[\u2028\u2029]/g, '\n')
+    .replace(/\t/g, ' ')
+  let out = ''
+  for (const ch of normalized) {
+    const cp = ch.codePointAt(0) ?? 0
+    if (ch === '\n' || isWinAnsiEncodable(cp)) {
+      out += ch
+      continue
     }
+    const folded = WIN_ANSI_FOLDS[ch]
+    if (folded !== undefined) {
+      out += folded
+      continue
+    }
+    const base = ch.normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
+    let kept = ''
+    for (const b of base) {
+      if (b === '\n' || isWinAnsiEncodable(b.codePointAt(0) ?? 0)) kept += b
+    }
+    out += kept || '?'
   }
-  return lines
+  return out
+}
+
+/**
+ * Exact greedy word wrap for a WinAnsi font: splits on `\n` first, then
+ * wraps words at `maxWidth` measured via `font.widthOfTextAtSize`.
+ * Words wider than the column are hard-broken character by character so
+ * a single unbreakable token (long part numbers, URLs) can never bleed
+ * into a neighbouring column. Always returns at least one line.
+ */
+export const wrapTextLines = (
+  value: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number
+): string[] => {
+  const sanitized = sanitizeWinAnsiText(value ?? '')
+  const lines: string[] = []
+  for (const paragraph of sanitized.split('\n')) {
+    const words = paragraph.split(' ').filter((w) => w.length > 0)
+    if (words.length === 0) {
+      lines.push('')
+      continue
+    }
+    let line = ''
+    for (const word of words) {
+      const candidate = line ? `${line} ${word}` : word
+      if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+        line = candidate
+        continue
+      }
+      if (line) {
+        lines.push(line)
+        line = ''
+      }
+      // Hard-break a word that alone exceeds the column width.
+      let rest = word
+      while (rest.length > 1 && font.widthOfTextAtSize(rest, size) > maxWidth) {
+        let cut = rest.length - 1
+        while (
+          cut > 1 &&
+          font.widthOfTextAtSize(rest.slice(0, cut), size) > maxWidth
+        ) {
+          cut -= 1
+        }
+        lines.push(rest.slice(0, cut))
+        rest = rest.slice(cut)
+      }
+      line = rest
+    }
+    if (line) lines.push(line)
+  }
+  return lines.length > 0 ? lines : ['']
+}
+
+/**
+ * Single-line fit: returns the (sanitized) string unchanged when it
+ * fits `maxWidth`, otherwise truncates with a `…` ellipsis. Newlines
+ * collapse to spaces — this is for one-line labels, not paragraphs.
+ */
+export const fitTextToWidth = (
+  value: string,
+  font: PDFFont,
+  size: number,
+  maxWidth: number
+): string => {
+  const sanitized = sanitizeWinAnsiText(value ?? '').replace(/\n/g, ' ')
+  if (font.widthOfTextAtSize(sanitized, size) <= maxWidth) return sanitized
+  let t = sanitized
+  while (
+    t.length > 1 &&
+    font.widthOfTextAtSize(`${t.trimEnd()}…`, size) > maxWidth
+  ) {
+    t = t.slice(0, -1)
+  }
+  return `${t.trimEnd()}…`
+}
+
+/**
+ * Shrink a font size (integer steps) until `value` fits `maxWidth`,
+ * bounded by `minSize`. Callers still pass the result through
+ * {@link fitTextToWidth} for the pathological case where even
+ * `minSize` does not fit.
+ */
+const shrinkFontSize = (
+  value: string,
+  font: PDFFont,
+  maxSize: number,
+  minSize: number,
+  maxWidth: number
+): number => {
+  const sanitized = sanitizeWinAnsiText(value ?? '').replace(/\n/g, ' ')
+  let size = maxSize
+  while (size > minSize && font.widthOfTextAtSize(sanitized, size) > maxWidth) {
+    size -= 1
+  }
+  return size
 }
 
 /** German item-kind letter as shown in the legacy "Kfz-Kaufmann" output. */
@@ -366,9 +530,20 @@ const monthYearFull = (s: string | null | undefined): string => {
  * - "Zahlbar bis …" line for invoices.
  * - Standard German closing text + optional user PDF footer.
  *
- * Multi-page support: items overflow onto a second page that repeats a
- * slim header (company name, doc title, page number, items table head).
- * Totals always land on the last page, never split.
+ * Multi-page support: items overflow onto follow-up pages that repeat a
+ * slim header (company name, doc title, page number) and the items
+ * table head. Page breaks are row-level (a row never renders half; only
+ * rows taller than an entire page body split line-wise), the totals
+ * block is measured up front and moves to a fresh page in one piece
+ * when it no longer fits, and every page carries a footer rule with
+ * company / document reference and "Seite X von Y".
+ *
+ * Robustness: all text passes through {@link sanitizeWinAnsiText}
+ * (StandardFonts are WinAnsi-only — unsupported characters degrade to a
+ * documented replacement instead of throwing), long header/address
+ * values wrap or ellipsize inside their columns, and the output is
+ * byte-deterministic for identical input (PDF dates derive from
+ * `doc.updatedAt`).
  */
 export const renderDocumentPdf = async (
   input: DocumentRenderInput
@@ -388,7 +563,15 @@ export const renderDocumentPdf = async (
   pdf.setTitle(`${titleLabel} ${input.doc.documentNumber}`)
   pdf.setProducer('TwinCarsManager')
   if (input.settings.companyName) pdf.setAuthor(input.settings.companyName)
-  pdf.setCreationDate(new Date())
+  // Deterministic metadata: derive both PDF dates from the document's
+  // own `updatedAt` instead of wall-clock time so re-rendering the same
+  // input yields byte-identical output (visual regression + caching).
+  // pdf-lib otherwise stamps `new Date()` into /CreationDate AND
+  // /ModDate on `PDFDocument.create()`.
+  const metaDate =
+    input.doc.updatedAt instanceof Date ? input.doc.updatedAt : new Date(0)
+  pdf.setCreationDate(metaDate)
+  pdf.setModificationDate(metaDate)
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const fontItalic = await pdf.embedFont(StandardFonts.HelveticaOblique)
@@ -449,12 +632,15 @@ export const renderDocumentPdf = async (
     ) => {
       const f = opts.font ?? font
       const size = opts.size ?? 10
+      // Sanitize at the draw boundary so user-supplied strings can
+      // never hit WinAnsi encoding errors inside pdf-lib.
+      const safe = sanitizeWinAnsiText(s)
       let drawX = x
       if (opts.align === 'right') {
-        const tw = f.widthOfTextAtSize(s, size)
+        const tw = f.widthOfTextAtSize(safe, size)
         drawX = x - tw
       }
-      page.drawText(s, {
+      page.drawText(safe, {
         x: drawX,
         y: yy,
         size,
@@ -476,7 +662,7 @@ export const renderDocumentPdf = async (
         color: rgb(...color)
       })
     const measure = (s: string, size: number, f: PDFFont = font) =>
-      f.widthOfTextAtSize(s, size)
+      f.widthOfTextAtSize(sanitizeWinAnsiText(s), size)
     return { page, w, h, text, hr, measure }
   }
 
@@ -517,87 +703,76 @@ export const renderDocumentPdf = async (
       const dh = logoImage.height * r
       page.drawImage(logoImage, { x: ml, y: top - dh, width: dw, height: dh })
     } else {
-      // Text fallback: company name big.
-      s.text(co.companyName || 'Firma', ml, top - 14, {
-        size: 14,
-        font: fontBold
-      })
+      // Text fallback: company name big, width-limited so it can never
+      // run into the right-aligned contact block.
+      s.text(
+        fitTextToWidth(co.companyName || 'Firma', fontBold, 14, 220),
+        ml,
+        top - 14,
+        { size: 14, font: fontBold }
+      )
     }
 
-    /* Right column: company contact block, fully right-aligned. */
+    /* Right column: company contact block, fully right-aligned. Every
+       line is width-limited (ellipsis) so extreme settings values can
+       never overlap the logo / left header column. */
     let ry = top
     const rightX = PAGE_W - mr
-    s.text(co.companyName || 'Firma', rightX, ry, {
-      size: 14,
-      font: fontBold,
-      align: 'right'
-    })
+    const RIGHT_BLOCK_MAX_W = 262
+    const coNameSize = shrinkFontSize(
+      co.companyName || 'Firma',
+      fontBold,
+      14,
+      10,
+      RIGHT_BLOCK_MAX_W
+    )
+    s.text(
+      fitTextToWidth(
+        co.companyName || 'Firma',
+        fontBold,
+        coNameSize,
+        RIGHT_BLOCK_MAX_W
+      ),
+      rightX,
+      ry,
+      { size: coNameSize, font: fontBold, align: 'right' }
+    )
     ry -= 16
-    if (co.owner) {
-      s.text(`KFZ Meisterbetrieb Inh. ${co.owner}`, rightX, ry, {
+    const rightLine = (line: string) => {
+      s.text(fitTextToWidth(line, font, 9, RIGHT_BLOCK_MAX_W), rightX, ry, {
         size: 9,
         align: 'right'
       })
       ry -= 11
     }
-    s.text(co.street, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-    s.text(`${co.zip} ${co.city}`.trim(), rightX, ry, {
-      size: 9,
-      align: 'right'
-    })
-    ry -= 11
-    if (co.phone) {
-      s.text(`Tel: ${co.phone}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.mobile) {
-      s.text(`Mobil: ${co.mobile}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.fax) {
-      s.text(`Fax: ${co.fax}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.email) {
-      s.text(`Email: ${co.email}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.website) {
-      s.text(co.website.replace(/^https?:\/\//, ''), rightX, ry, {
-        size: 9,
-        align: 'right'
-      })
-      ry -= 11
-    }
-    if (co.vatId) {
-      s.text(`Ust.ID.Nr.: ${co.vatId}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.taxNumber) {
-      s.text(`St.Nr.: ${co.taxNumber}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.bankName) {
-      s.text(co.bankName, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.bic) {
-      s.text(`BIC: ${co.bic}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
-    if (co.iban) {
-      s.text(`IBAN: ${co.iban}`, rightX, ry, { size: 9, align: 'right' })
-      ry -= 11
-    }
+    if (co.owner) rightLine(`KFZ Meisterbetrieb Inh. ${co.owner}`)
+    rightLine(co.street)
+    rightLine(`${co.zip} ${co.city}`.trim())
+    if (co.phone) rightLine(`Tel: ${co.phone}`)
+    if (co.mobile) rightLine(`Mobil: ${co.mobile}`)
+    if (co.fax) rightLine(`Fax: ${co.fax}`)
+    if (co.email) rightLine(`Email: ${co.email}`)
+    if (co.website) rightLine(co.website.replace(/^https?:\/\//, ''))
+    if (co.vatId) rightLine(`Ust.ID.Nr.: ${co.vatId}`)
+    if (co.taxNumber) rightLine(`St.Nr.: ${co.taxNumber}`)
+    if (co.bankName) rightLine(co.bankName)
+    if (co.bic) rightLine(`BIC: ${co.bic}`)
+    if (co.iban) rightLine(`IBAN: ${co.iban}`)
 
-    /* Customer block (left, below the logo). */
+    /* Customer block (left, below the logo) — the DIN-style address
+       window. Long names / streets wrap inside the window width instead
+       of running under the right meta column. */
+    const ADDRESS_MAX_W = 250
     let cy = top - 90
     if (logoImage) cy = top - 110
     // Return-to-sender mini line, slightly underlined.
     if (cust && (co.companyName || co.street || co.city)) {
-      const rts =
-        `${co.companyName} ° ${co.street} ° ${co.zip} ${co.city}`.trim()
+      const rts = fitTextToWidth(
+        `${co.companyName} ° ${co.street} ° ${co.zip} ${co.city}`.trim(),
+        font,
+        7,
+        ADDRESS_MAX_W
+      )
       s.text(rts, ml, cy, { size: 7, color: [0.3, 0.3, 0.3] })
       const rtsW = s.measure(rts, 7)
       page.drawLine({
@@ -608,20 +783,19 @@ export const renderDocumentPdf = async (
       })
       cy -= 12
     }
+    const addressLine = (value: string) => {
+      for (const line of wrapTextLines(value, font, 10, ADDRESS_MAX_W)) {
+        s.text(line, ml, cy, { size: 10 })
+        cy -= 12
+      }
+    }
     if (cust) {
       s.text(customerHeading(cust), ml, cy, { size: 10 })
       cy -= 12
-      s.text(customerName(cust), ml, cy, { size: 10 })
-      cy -= 12
-      if (cust.street) {
-        s.text(cust.street, ml, cy, { size: 10 })
-        cy -= 12
-      }
+      addressLine(customerName(cust))
+      if (cust.street) addressLine(cust.street)
       if (cust.zip || cust.city) {
-        s.text(`${cust.zip ?? ''} ${cust.city ?? ''}`.trim(), ml, cy, {
-          size: 10
-        })
-        cy -= 12
+        addressLine(`${cust.zip ?? ''} ${cust.city ?? ''}`.trim())
       }
     } else {
       s.text('Kein Kunde hinterlegt', ml, cy, {
@@ -631,32 +805,55 @@ export const renderDocumentPdf = async (
       cy -= 12
     }
 
-    /* Vehicle block (left, italic, two columns). */
+    /* Vehicle block (left, italic, two columns). Column A is fitted to
+       the column-B boundary so long make/model or VIN strings cannot
+       collide with the second column. */
     let vy = Math.min(cy - 24, ry - 30)
     if (veh) {
       const colA = ml
       const colB = ml + 200
-      const txt = (s2: string, x: number, yy: number) =>
-        s.text(s2, x, yy, { size: 9, font: fontItalic })
+      const colAMaxW = colB - colA - 8
+      // Column B may not run under the right-aligned title/meta
+      // block (starts ~x 385) — cap it well short of that.
+      const colBMaxW = 130
+      const txt = (s2: string, x: number, yy: number, maxW: number) =>
+        s.text(fitTextToWidth(s2, fontItalic, 9, maxW), x, yy, {
+          size: 9,
+          font: fontItalic
+        })
       const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '-'
-      txt(`Kfz-Typ: ${kfzTyp}`, colA, vy)
-      if (veh.displacementCcm) txt(`Hubraum: ${veh.displacementCcm}`, colB, vy)
+      txt(`Kfz-Typ: ${kfzTyp}`, colA, vy, colAMaxW)
+      if (veh.displacementCcm)
+        txt(`Hubraum: ${veh.displacementCcm}`, colB, vy, colBMaxW)
       vy -= 11
-      if (veh.licensePlate) txt(`Kennzeichen: ${veh.licensePlate}`, colA, vy)
-      if (veh.powerKw) txt(`Kw: ${veh.powerKw}`, colB, vy)
+      if (veh.licensePlate)
+        txt(`Kennzeichen: ${veh.licensePlate}`, colA, vy, colAMaxW)
+      if (veh.powerKw) txt(`Kw: ${veh.powerKw}`, colB, vy, colBMaxW)
       vy -= 11
       if (veh.firstRegistration)
-        txt(`Erstzulassung: ${monthYear(veh.firstRegistration)}`, colA, vy)
+        txt(
+          `Erstzulassung: ${monthYear(veh.firstRegistration)}`,
+          colA,
+          vy,
+          colAMaxW
+        )
       if (veh.hsn || veh.tsn)
-        txt(`zu2: ${veh.hsn ?? ''} zu3: ${veh.tsn ?? ''}`, colB, vy)
+        txt(`zu2: ${veh.hsn ?? ''} zu3: ${veh.tsn ?? ''}`, colB, vy, colBMaxW)
       vy -= 11
-      if (veh.mileageKm != null) txt(`km-Stand: ${veh.mileageKm}`, colA, vy)
+      if (veh.mileageKm != null)
+        txt(`km-Stand: ${veh.mileageKm}`, colA, vy, colAMaxW)
       if (input.doc.serviceDate)
-        txt(`Leistungsdatum: ${formatDate(input.doc.serviceDate)}`, colB, vy)
+        txt(
+          `Leistungsdatum: ${formatDate(input.doc.serviceDate)}`,
+          colB,
+          vy,
+          colBMaxW
+        )
       vy -= 11
-      if (veh.vin) txt(`Kfz-Ident.Nr.: ${veh.vin}`, colA, vy)
+      if (veh.vin) txt(`Kfz-Ident.Nr.: ${veh.vin}`, colA, vy, colAMaxW)
       vy -= 11
-      if (veh.nextHu) txt(`HU: ${monthYearFull(veh.nextHu)}`, colA, vy)
+      if (veh.nextHu)
+        txt(`HU: ${monthYearFull(veh.nextHu)}`, colA, vy, colAMaxW)
       vy -= 11
     }
 
@@ -675,7 +872,9 @@ export const renderDocumentPdf = async (
     // <Nr>" befüllt.
     if (isStorno) {
       const match = /Stornorechnung zu (\S+)/.exec(input.doc.notes ?? '')
-      const reference = match ? match[1] : null
+      // `cancelInvoice` writes "Stornorechnung zu <Nr>. Grund: …" — the
+      // sentence period is not part of the document number.
+      const reference = match ? match[1].replace(/[.,;:]+$/, '') : null
       if (reference) {
         s.text(`zu Rechnung ${reference}`, rightX, ty, {
           size: 10,
@@ -711,11 +910,12 @@ export const renderDocumentPdf = async (
       ty -= 12
     }
     if (input.doc.paymentMethod) {
-      s.text(input.doc.paymentMethod, rightX, ty, {
-        size: 9,
-        font: fontItalic,
-        align: 'right'
-      })
+      s.text(
+        fitTextToWidth(input.doc.paymentMethod, fontItalic, 9, 220),
+        rightX,
+        ty,
+        { size: 9, font: fontItalic, align: 'right' }
+      )
       ty -= 12
     }
 
@@ -723,6 +923,17 @@ export const renderDocumentPdf = async (
     let y = Math.min(vy, ty) - 14
     s.text(documentIntroLine(docType), ml, y, { size: 10 })
     y -= 8
+
+    /* Optional user Kopftext (doc.header) — wrapped paragraph between
+       the intro line and the items table. */
+    if (input.doc.header) {
+      y -= 6
+      for (const line of wrapTextLines(input.doc.header, font, 10, innerW)) {
+        s.text(line, ml, y, { size: 10 })
+        y -= 12
+      }
+      y += 4
+    }
     return y
   }
 
@@ -764,11 +975,14 @@ export const renderDocumentPdf = async (
 
   const lineHeight = 12
 
-  const pages: PDFPage[] = []
-  const pageItemRanges: Array<{ start: number; end: number }> = []
+  // Bottom geometry: every page reserves a footer zone (thin rule +
+  // company / doc line + "Seite X von Y"), drawn in the final patch
+  // pass once the total page count is known.
+  const FOOTER_RULE_Y = 58
+  const BODY_BOTTOM = 76
+  const TOTALS_BOTTOM = 68
 
-  const FIRST_PAGE_BODY_BOTTOM = 200 // reserve space for totals + closing
-  const FOLLOW_PAGE_BODY_BOTTOM = 90 // smaller reserve when totals continue
+  const pages: PDFPage[] = []
 
   // First page: render header and start placing items.
   let page = pdf.addPage([PAGE_W, PAGE_H])
@@ -777,63 +991,122 @@ export const renderDocumentPdf = async (
   y -= 6
   y = drawItemsTableHeader(page, y)
 
-  let itemIdx = 0
-  let pageStart = 0
-
-  while (itemIdx < input.items.length) {
-    const it = input.items[itemIdx]
-    const lines = wrapLineCount(it.description, 9, descMaxW, font)
-    const itemHeight = Math.max(lineHeight, lines * lineHeight)
-
-    const isLastItem = itemIdx === input.items.length - 1
-    const reservedBottom = isLastItem
-      ? FIRST_PAGE_BODY_BOTTOM
-      : FOLLOW_PAGE_BODY_BOTTOM
-    if (y - itemHeight < reservedBottom) {
-      // Close current page's range and start a new one.
-      pageItemRanges.push({ start: pageStart, end: itemIdx })
-      page = pdf.addPage([PAGE_W, PAGE_H])
-      pages.push(page)
-      y = drawContinuationHeader(page)
-      y = drawItemsTableHeader(page, y)
-      pageStart = itemIdx
-      continue
-    }
-
-    // Draw item on current page.
-    const s = surface(page)
-    const letter = itemKindLetter(it.kind)
-    if (letter)
-      s.text(letter, cols.kindX, y, { size: 8, color: [0.3, 0.3, 0.3] })
-    if (it.articleNumber) s.text(it.articleNumber, cols.artX, y, { size: 9 })
-    s.text(`${Number(it.quantity)}`, cols.qtyX, y, { size: 9 })
-    s.text(it.unit ?? '', cols.unitX, y, { size: 9 })
-    s.text(it.description, cols.descX, y, {
-      size: 9,
-      width: descMaxW,
-      lineHeight
-    })
-    s.text(formatEur(it.unitPriceNet), cols.priceRight, y, {
-      size: 9,
-      align: 'right'
-    })
-    s.text(formatEur(it.lineTotalGross), cols.totalRight, y, {
-      size: 9,
-      align: 'right'
-    })
-
-    y -= itemHeight
-    itemIdx += 1
+  /** Open a fresh continuation page; optionally repeat the table head. */
+  const newBodyPage = (withTableHeader: boolean): void => {
+    page = pdf.addPage([PAGE_W, PAGE_H])
+    pages.push(page)
+    y = drawContinuationHeader(page)
+    if (withTableHeader) y = drawItemsTableHeader(page, y)
   }
-  pageItemRanges.push({ start: pageStart, end: itemIdx })
 
-  /* — Totals box + closing on last page. — */
-  const lastPage = pages[pages.length - 1]
-  const ls = surface(lastPage)
-  ls.hr(y)
-  y -= 14
+  // Body capacity of a fresh continuation page — decides whether a row
+  // moves to the next page as a whole or (only when taller than an
+  // entire page body) must split line-wise.
+  const CONT_BODY_TOP = PAGE_H - 40 - 30 - 16 // slim header + table head
+  const FRESH_PAGE_CAPACITY = CONT_BODY_TOP - BODY_BOTTOM
 
-  /* Item-kind summary row (Leistung / Material / Artikel). */
+  /* — Items table: exact greedy wrap (same measurement the renderer
+       draws with), row-level page breaks. A row that no longer fits
+       moves to the next page as a whole; a per-line "abzügl. x %
+       Rabatt" note is appended for discounted positions. — */
+  type RowLine = { text: string; muted?: boolean }
+  const rowLinesFor = (it: DocumentItem): RowLine[] => {
+    const lines: RowLine[] = wrapTextLines(
+      it.description,
+      font,
+      9,
+      descMaxW
+    ).map((text) => ({ text }))
+    const discount = Number(it.discountPercent)
+    if (Number.isFinite(discount) && discount > 0) {
+      lines.push({
+        text: `abzügl. ${formatPercentDe(discount)} % Rabatt`,
+        muted: true
+      })
+    }
+    return lines
+  }
+
+  for (const it of input.items) {
+    const lines = rowLinesFor(it)
+    const rowH = lines.length * lineHeight
+    if (y - rowH < BODY_BOTTOM && rowH <= FRESH_PAGE_CAPACITY) {
+      newBodyPage(true)
+    }
+    let first = true
+    for (const line of lines) {
+      // Only rows taller than a whole page body ever hit this mid-row
+      // break — everything else was moved above in one piece.
+      if (y < BODY_BOTTOM) newBodyPage(true)
+      const s = surface(page)
+      if (first) {
+        const letter = itemKindLetter(it.kind)
+        if (letter)
+          s.text(letter, cols.kindX, y, { size: 8, color: [0.3, 0.3, 0.3] })
+        if (it.articleNumber)
+          s.text(
+            fitTextToWidth(
+              it.articleNumber,
+              font,
+              9,
+              cols.qtyX - cols.artX - 6
+            ),
+            cols.artX,
+            y,
+            { size: 9 }
+          )
+        const qtyText = formatQty(it.quantity)
+        const qtyColW = cols.unitX - cols.qtyX - 4
+        if (font.widthOfTextAtSize(qtyText, 9) <= qtyColW) {
+          s.text(qtyText, cols.qtyX, y, { size: 9 })
+          s.text(
+            fitTextToWidth(it.unit ?? '', font, 9, cols.descX - cols.unitX - 4),
+            cols.unitX,
+            y,
+            { size: 9 }
+          )
+        } else {
+          // Very wide quantity: draw "qty unit" as one fitted string
+          // across both sub-columns instead of overlapping the unit.
+          s.text(
+            fitTextToWidth(
+              `${qtyText} ${it.unit ?? ''}`.trim(),
+              font,
+              9,
+              cols.descX - cols.qtyX - 4
+            ),
+            cols.qtyX,
+            y,
+            { size: 9 }
+          )
+        }
+        s.text(formatEur(it.unitPriceNet), cols.priceRight, y, {
+          size: 9,
+          align: 'right'
+        })
+        s.text(formatEur(it.lineTotalGross), cols.totalRight, y, {
+          size: 9,
+          align: 'right'
+        })
+      }
+      if (line.muted) {
+        s.text(line.text, cols.descX, y, {
+          size: 9,
+          font: fontItalic,
+          color: [0.35, 0.35, 0.35]
+        })
+      } else {
+        s.text(line.text, cols.descX, y, { size: 9 })
+      }
+      y -= lineHeight
+      first = false
+    }
+  }
+
+  /* — Totals box + closing: measured first, kept together. When the
+       block no longer fits under the last item row it moves to a fresh
+       continuation page in one piece — totals are never split. — */
+
   const sumByKind = (k: string) =>
     input.items
       .filter((i) => i.kind === k)
@@ -842,134 +1115,255 @@ export const renderDocumentPdf = async (
   const material = sumByKind('material')
   const artikel = sumByKind('article')
   const passThrough = sumByKind('pass_through')
-  if (leistung || material || artikel) {
-    const split = `Leistung: ${formatEur(leistung)}    Material: ${formatEur(material)}    Artikel: ${formatEur(artikel)}`
-    ls.text(split, ml, y, { size: 9 })
-  }
-  /* Totals — right-aligned, label / value with `right` alignment on a
-     consistent x-rail. */
-  const labelRight = ml + innerW - 90
-  const valueRight = cols.totalRight
-  const totalRow = (
-    label: string,
-    value: string,
-    opts: { bold?: boolean; italic?: boolean; size?: number } = {}
-  ) => {
-    const f = opts.bold
-      ? opts.italic
-        ? fontBoldItalic
-        : fontBold
-      : opts.italic
-        ? fontItalic
-        : font
-    const size = opts.size ?? 10
-    ls.text(label, labelRight, y, { size, font: f, align: 'right' })
-    ls.text(value, valueRight, y, { size, font: f, align: 'right' })
-    y -= 14
-  }
+  const discountTotal = Number(input.doc.discountTotal)
 
+  // Per-rate VAT lines: a document with mixed item tax rates gets one
+  // MwSt row per rate (the doc-level `taxRate` is just the first
+  // item's rate and would misrepresent the split); the single-rate
+  // case keeps the legacy one-line output.
+  const rateGroups = new Map<number, { net: number; tax: number }>()
+  for (const it of input.items) {
+    if (it.kind === 'pass_through') continue
+    const rate = Number(it.taxRate)
+    if (!Number.isFinite(rate)) continue
+    const net = Number(it.lineTotalNet)
+    const tax = Number(it.lineTotalGross) - net
+    const group = rateGroups.get(rate) ?? { net: 0, tax: 0 }
+    group.net += Number.isFinite(net) ? net : 0
+    group.tax += Number.isFinite(tax) ? tax : 0
+    rateGroups.set(rate, group)
+  }
+  const distinctRates = [...rateGroups.entries()].sort((a, b) => a[0] - b[0])
+
+  type TotalsRow = {
+    label: string
+    value: string
+    bold?: boolean
+    italic?: boolean
+    size?: number
+    underline?: boolean
+    gapBefore?: number
+  }
+  const totalsRows: TotalsRow[] = []
   if (input.settings.smallBusinessExempt) {
-    y -= 4
-    totalRow('Gesamtbetrag:', formatEur(input.doc.grossTotal), { bold: true })
-    // Double underline under Gesamtbetrag value.
-    lastPage.drawLine({
-      start: { x: valueRight - 70, y: y + 11 },
-      end: { x: valueRight, y: y + 11 },
-      thickness: 0.6,
-      color: rgb(0, 0, 0)
+    totalsRows.push({
+      label: 'Gesamtbetrag:',
+      value: formatEur(input.doc.grossTotal),
+      bold: true,
+      underline: true,
+      gapBefore: 4
     })
-    lastPage.drawLine({
-      start: { x: valueRight - 70, y: y + 9 },
-      end: { x: valueRight, y: y + 9 },
-      thickness: 0.6,
-      color: rgb(0, 0, 0)
-    })
-    y -= 6
-    ls.text('Gemäß § 19 UStG wird keine Umsatzsteuer ausgewiesen.', ml, y, {
-      size: 9,
-      font: fontItalic,
-      color: [0.4, 0.4, 0.4],
-      width: innerW
-    })
-    y -= 18
   } else {
-    totalRow(
-      'Summe MwStpflichtiger Positionen:',
-      formatEur(input.doc.netTotal),
-      { italic: true, size: 9 }
-    )
-    totalRow(
-      `zzgl. AT Steuer: ${formatEur(0)}      zzgl. MwSt. ${Number(input.doc.taxRate)} %`,
-      formatEur(input.doc.taxTotal),
-      { italic: true, size: 9 }
-    )
-    totalRow('Zwischensumme:', formatEur(input.doc.grossTotal), {
+    totalsRows.push({
+      label: 'Summe MwStpflichtiger Positionen:',
+      value: formatEur(input.doc.netTotal),
       italic: true,
       size: 9
     })
-    totalRow('Summe durchlaufender Posten:', formatEur(passThrough), {
+    if (distinctRates.length > 1) {
+      for (const [rate, group] of distinctRates) {
+        totalsRows.push({
+          label: `zzgl. MwSt. ${formatPercentDe(rate)} % auf ${formatEur(group.net)}:`,
+          value: formatEur(group.tax),
+          italic: true,
+          size: 9
+        })
+      }
+    } else {
+      totalsRows.push({
+        label: `zzgl. AT Steuer: ${formatEur(0)}      zzgl. MwSt. ${Number(input.doc.taxRate)} %`,
+        value: formatEur(input.doc.taxTotal),
+        italic: true,
+        size: 9
+      })
+    }
+    totalsRows.push({
+      label: 'Zwischensumme:',
+      value: formatEur(input.doc.grossTotal),
       italic: true,
       size: 9
     })
-    y -= 4
-    totalRow('Gesamtbetrag:', formatEur(input.doc.grossTotal), {
+    totalsRows.push({
+      label: 'Summe durchlaufender Posten:',
+      value: formatEur(passThrough),
+      italic: true,
+      size: 9
+    })
+    totalsRows.push({
+      label: 'Gesamtbetrag:',
+      value: formatEur(input.doc.grossTotal),
       bold: true,
       italic: true,
-      size: 11
+      size: 11,
+      underline: true,
+      gapBefore: 4
     })
-    // Double underline.
-    lastPage.drawLine({
-      start: { x: valueRight - 70, y: y + 12 },
-      end: { x: valueRight, y: y + 12 },
-      thickness: 0.6,
-      color: rgb(0, 0, 0)
-    })
-    lastPage.drawLine({
-      start: { x: valueRight - 70, y: y + 10 },
-      end: { x: valueRight, y: y + 10 },
-      thickness: 0.6,
-      color: rgb(0, 0, 0)
-    })
-    y -= 6
   }
 
-  /* "Zahlbar bis …" for invoices. */
-  if (docType === 'invoice' && input.doc.dueDate) {
-    ls.text(
-      `Zahlbar bis zum ${formatDate(input.doc.dueDate)} ohne Abzug`,
-      ml,
-      y,
-      { size: 10 }
+  // Rails: the label column keeps its legacy x-position but yields
+  // further left when very large amounts need the room, so values can
+  // never overprint their labels.
+  const valueRight = cols.totalRight
+  const totalsFontFor = (row: TotalsRow): PDFFont =>
+    row.bold
+      ? row.italic
+        ? fontBoldItalic
+        : fontBold
+      : row.italic
+        ? fontItalic
+        : font
+  const measureTotals = (s2: string, size: number, f: PDFFont) =>
+    f.widthOfTextAtSize(sanitizeWinAnsiText(s2), size)
+  const maxValueW = totalsRows.reduce(
+    (acc, row) =>
+      Math.max(
+        acc,
+        measureTotals(row.value, row.size ?? 10, totalsFontFor(row))
+      ),
+    0
+  )
+  const labelRight = Math.min(cols.priceRight, valueRight - maxValueW - 12)
+  const minLabelStartX = totalsRows.reduce(
+    (acc, row) =>
+      Math.min(
+        acc,
+        labelRight -
+          measureTotals(row.label, row.size ?? 10, totalsFontFor(row))
+      ),
+    labelRight
+  )
+
+  // Left-hand info stack (kind split + discount note): rendered beside
+  // the totals rail, stacked above it when the two would collide.
+  const leftLines: string[] = []
+  if (leistung || material || artikel) {
+    leftLines.push(
+      `Leistung: ${formatEur(leistung)}    Material: ${formatEur(material)}    Artikel: ${formatEur(artikel)}`
     )
-    y -= 18
   }
+  if (Number.isFinite(discountTotal) && discountTotal > 0) {
+    leftLines.push(`enthaltener Rabatt: ${formatEur(discountTotal)}`)
+  }
+  const maxLeftW = leftLines.reduce(
+    (acc, line) => Math.max(acc, measureTotals(line, 9, font)),
+    0
+  )
+  const leftCollides = ml + maxLeftW + 12 > minLabelStartX
 
-  /* User-supplied footer text (Werbe-/Endtext). */
   const customFooter = input.doc.footer || co.pdfFooter
-  if (customFooter) {
-    ls.text(customFooter, ml, y, { size: 10, width: innerW, lineHeight: 12 })
-    const lines = wrapLineCount(customFooter, 10, innerW, font)
-    y -= lines * 12 + 6
-  }
+  const footerLines = customFooter
+    ? wrapTextLines(customFooter, font, 10, innerW)
+    : []
+  const noteLines = input.settings.smallBusinessExempt
+    ? wrapTextLines(
+        'Gemäß § 19 UStG wird keine Umsatzsteuer ausgewiesen.',
+        fontItalic,
+        9,
+        innerW
+      )
+    : []
 
-  /* Standard German closing. */
-  if (y > 90) {
-    ls.text(documentClosingLine(docType), ml, y, {
+  /**
+   * Draw (or, with `target === null`, only measure) the totals block +
+   * closing texts starting at `startY`. Returns the y below the block —
+   * the measure pass feeds the keep-together decision.
+   */
+  const renderTotalsBlock = (
+    target: PDFPage | null,
+    startY: number
+  ): number => {
+    const s = target ? surface(target) : null
+    let ty = startY
+    s?.hr(ty)
+    ty -= 14
+    if (leftCollides) {
+      for (const line of leftLines) {
+        s?.text(line, ml, ty, { size: 9 })
+        ty -= 12
+      }
+      if (leftLines.length > 0) ty -= 2
+    } else {
+      let ly = ty
+      for (const line of leftLines) {
+        s?.text(line, ml, ly, { size: 9 })
+        ly -= 12
+      }
+    }
+    for (const row of totalsRows) {
+      if (row.gapBefore) ty -= row.gapBefore
+      const size = row.size ?? 10
+      const f = totalsFontFor(row)
+      s?.text(row.label, labelRight, ty, { size, font: f, align: 'right' })
+      s?.text(row.value, valueRight, ty, { size, font: f, align: 'right' })
+      ty -= 14
+      if (row.underline) {
+        // Double underline under the Gesamtbetrag value, sized to it.
+        const vw = measureTotals(row.value, size, f)
+        const lineW = Math.max(70, vw + 4)
+        const offsets = size >= 11 ? [12, 10] : [11, 9]
+        for (const off of offsets) {
+          target?.drawLine({
+            start: { x: valueRight - lineW, y: ty + off },
+            end: { x: valueRight, y: ty + off },
+            thickness: 0.6,
+            color: rgb(0, 0, 0)
+          })
+        }
+        ty -= 6
+      }
+    }
+    if (noteLines.length > 0) {
+      for (const line of noteLines) {
+        s?.text(line, ml, ty, {
+          size: 9,
+          font: fontItalic,
+          color: [0.4, 0.4, 0.4]
+        })
+        ty -= 12
+      }
+      ty -= 6
+    }
+    /* "Zahlbar bis …" for invoices. */
+    if (docType === 'invoice' && input.doc.dueDate) {
+      s?.text(
+        `Zahlbar bis zum ${formatDate(input.doc.dueDate)} ohne Abzug`,
+        ml,
+        ty,
+        { size: 10 }
+      )
+      ty -= 18
+    }
+    /* User-supplied footer text (Werbe-/Endtext). */
+    for (const line of footerLines) {
+      s?.text(line, ml, ty, { size: 10 })
+      ty -= 12
+    }
+    if (footerLines.length > 0) ty -= 6
+    /* Standard German closing. */
+    s?.text(documentClosingLine(docType), ml, ty, {
       size: 10,
-      font: fontItalic,
-      width: innerW
+      font: fontItalic
     })
-    y -= 14
-    ls.text(
+    ty -= 14
+    s?.text(
       'Der Gesetzgeber schreibt vor, für private Personen die Rechnung 2 Jahre aufzubewahren!',
       ml,
-      y,
-      { size: 10, font: fontItalic, width: innerW }
+      ty,
+      { size: 10, font: fontItalic }
     )
+    ty -= 12
+    return ty
   }
 
-  /* — Now that we know the final page count, draw the "Seite X von N"
-       lines using the y-positions stashed during header rendering. — */
+  const totalsHeight = y - renderTotalsBlock(null, y)
+  if (y - totalsHeight < TOTALS_BOTTOM) {
+    newBodyPage(false)
+  }
+  renderTotalsBlock(page, y)
+
+  /* — Final patch pass: the top "Seite X von N" meta lines (positions
+       stashed during header rendering) plus a footer rule with the
+       company / document line and page number on EVERY page. — */
   const totalPages = pages.length
   for (let i = 0; i < pages.length; i++) {
     const ps = surface(pages[i])
@@ -978,10 +1372,26 @@ export const renderDocumentPdf = async (
       font: fontItalic,
       align: 'right'
     })
+    ps.hr(FOOTER_RULE_Y, 0.5, [0.75, 0.75, 0.75])
+    const pageLabel = `Seite ${i + 1} von ${totalPages}`
+    ps.text(pageLabel, PAGE_W - mr, FOOTER_RULE_Y - 12, {
+      size: 8,
+      color: [0.45, 0.45, 0.45],
+      align: 'right'
+    })
+    const pageLabelW = font.widthOfTextAtSize(pageLabel, 8)
+    ps.text(
+      fitTextToWidth(
+        `${co.companyName ?? ''} · ${title} ${input.doc.documentNumber}`,
+        font,
+        8,
+        innerW - pageLabelW - 16
+      ),
+      ml,
+      FOOTER_RULE_Y - 12,
+      { size: 8, color: [0.45, 0.45, 0.45] }
+    )
   }
-  // pageItemRanges is intentionally tracked but unused for now —
-  // it's the hook we'd need if we wanted per-page Zwischensummen.
-  void pageItemRanges
 
   return await pdf.save()
 }
@@ -1247,7 +1657,13 @@ export const renderReminderPdf = async (
   )
   pdf.setProducer('TwinCarsManager')
   if (input.settings.companyName) pdf.setAuthor(input.settings.companyName)
-  pdf.setCreationDate(new Date())
+  // Deterministic metadata — see renderDocumentPdf.
+  const metaDate =
+    input.reminder.updatedAt instanceof Date
+      ? input.reminder.updatedAt
+      : new Date(0)
+  pdf.setCreationDate(metaDate)
+  pdf.setModificationDate(metaDate)
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const fontBold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const fontItalic = await pdf.embedFont(StandardFonts.HelveticaOblique)
@@ -1300,12 +1716,13 @@ export const renderReminderPdf = async (
   ) => {
     const f = opts.font ?? font
     const size = opts.size ?? 10
+    const safe = sanitizeWinAnsiText(s)
     let drawX = x
     if (opts.align === 'right') {
-      const tw = f.widthOfTextAtSize(s, size)
+      const tw = f.widthOfTextAtSize(safe, size)
       drawX = x - tw
     }
-    page.drawText(s, {
+    page.drawText(safe, {
       x: drawX,
       y: yy,
       size,
@@ -1335,72 +1752,58 @@ export const renderReminderPdf = async (
 
   let ry = top
   const rightX = PAGE_W - mr
-  text(co.companyName || 'Firma', rightX, ry, {
-    size: 14,
-    font: fontBold,
-    align: 'right'
-  })
+  const RIGHT_BLOCK_MAX_W = 262
+  const coNameSize = shrinkFontSize(
+    co.companyName || 'Firma',
+    fontBold,
+    14,
+    10,
+    RIGHT_BLOCK_MAX_W
+  )
+  text(
+    fitTextToWidth(
+      co.companyName || 'Firma',
+      fontBold,
+      coNameSize,
+      RIGHT_BLOCK_MAX_W
+    ),
+    rightX,
+    ry,
+    { size: coNameSize, font: fontBold, align: 'right' }
+  )
   ry -= 16
-  if (co.owner) {
-    text(`KFZ Meisterbetrieb Inh. ${co.owner}`, rightX, ry, {
+  const rightLine = (line: string) => {
+    text(fitTextToWidth(line, font, 9, RIGHT_BLOCK_MAX_W), rightX, ry, {
       size: 9,
       align: 'right'
     })
     ry -= 11
   }
-  text(co.street, rightX, ry, { size: 9, align: 'right' })
-  ry -= 11
-  text(`${co.zip} ${co.city}`.trim(), rightX, ry, { size: 9, align: 'right' })
-  ry -= 11
-  if (co.phone) {
-    text(`Tel: ${co.phone}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.mobile) {
-    text(`Mobil: ${co.mobile}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.fax) {
-    text(`Fax: ${co.fax}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.email) {
-    text(`Email: ${co.email}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.website) {
-    text(co.website.replace(/^https?:\/\//, ''), rightX, ry, {
-      size: 9,
-      align: 'right'
-    })
-    ry -= 11
-  }
-  if (co.vatId) {
-    text(`Ust.ID.Nr.: ${co.vatId}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.taxNumber) {
-    text(`St.Nr.: ${co.taxNumber}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.bankName) {
-    text(co.bankName, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.bic) {
-    text(`BIC: ${co.bic}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
-  if (co.iban) {
-    text(`IBAN: ${co.iban}`, rightX, ry, { size: 9, align: 'right' })
-    ry -= 11
-  }
+  if (co.owner) rightLine(`KFZ Meisterbetrieb Inh. ${co.owner}`)
+  rightLine(co.street)
+  rightLine(`${co.zip} ${co.city}`.trim())
+  if (co.phone) rightLine(`Tel: ${co.phone}`)
+  if (co.mobile) rightLine(`Mobil: ${co.mobile}`)
+  if (co.fax) rightLine(`Fax: ${co.fax}`)
+  if (co.email) rightLine(`Email: ${co.email}`)
+  if (co.website) rightLine(co.website.replace(/^https?:\/\//, ''))
+  if (co.vatId) rightLine(`Ust.ID.Nr.: ${co.vatId}`)
+  if (co.taxNumber) rightLine(`St.Nr.: ${co.taxNumber}`)
+  if (co.bankName) rightLine(co.bankName)
+  if (co.bic) rightLine(`BIC: ${co.bic}`)
+  if (co.iban) rightLine(`IBAN: ${co.iban}`)
 
   /* ── Customer block (left) with return-to-sender ──────────────── */
+  const ADDRESS_MAX_W = 250
   let cy = top - 90
   if (logoImage) cy = top - 110
   if (co.companyName || co.street || co.city) {
-    const rts = `${co.companyName} ° ${co.street} ° ${co.zip} ${co.city}`.trim()
+    const rts = fitTextToWidth(
+      `${co.companyName} ° ${co.street} ° ${co.zip} ${co.city}`.trim(),
+      font,
+      7,
+      ADDRESS_MAX_W
+    )
     text(rts, ml, cy, { size: 7, color: [0.3, 0.3, 0.3] })
     const rtsW = font.widthOfTextAtSize(rts, 7)
     page.drawLine({
@@ -1411,18 +1814,19 @@ export const renderReminderPdf = async (
     })
     cy -= 12
   }
+  const addressLine = (value: string) => {
+    for (const line of wrapTextLines(value, font, 10, ADDRESS_MAX_W)) {
+      text(line, ml, cy, { size: 10 })
+      cy -= 12
+    }
+  }
   if (cust) {
     text(customerHeading(cust), ml, cy, { size: 10 })
     cy -= 12
-    text(customerName(cust), ml, cy, { size: 10 })
-    cy -= 12
-    if (cust.street) {
-      text(cust.street, ml, cy, { size: 10 })
-      cy -= 12
-    }
+    addressLine(customerName(cust))
+    if (cust.street) addressLine(cust.street)
     if (cust.zip || cust.city) {
-      text(`${cust.zip ?? ''} ${cust.city ?? ''}`.trim(), ml, cy, { size: 10 })
-      cy -= 12
+      addressLine(`${cust.zip ?? ''} ${cust.city ?? ''}`.trim())
     }
   } else {
     text('Kein Kunde hinterlegt', ml, cy, { size: 10, color: [0.6, 0.6, 0.6] })
@@ -1434,25 +1838,39 @@ export const renderReminderPdf = async (
   if (veh) {
     const colA = ml
     const colB = ml + 200
-    const ti = (s2: string, x: number, yy: number) =>
-      text(s2, x, yy, { size: 9, font: fontItalic })
+    const colAMaxW = colB - colA - 8
+    // Cap column B short of the right-aligned title/meta block.
+    const colBMaxW = 130
+    const ti = (s2: string, x: number, yy: number, maxW: number) =>
+      text(fitTextToWidth(s2, fontItalic, 9, maxW), x, yy, {
+        size: 9,
+        font: fontItalic
+      })
     const kfzTyp = `${veh.make ?? ''} ${veh.model ?? ''}`.trim() || '-'
-    ti(`Kfz-Typ: ${kfzTyp}`, colA, vy)
-    if (veh.displacementCcm) ti(`Hubraum: ${veh.displacementCcm}`, colB, vy)
+    ti(`Kfz-Typ: ${kfzTyp}`, colA, vy, colAMaxW)
+    if (veh.displacementCcm)
+      ti(`Hubraum: ${veh.displacementCcm}`, colB, vy, colBMaxW)
     vy -= 11
-    if (veh.licensePlate) ti(`Kennzeichen: ${veh.licensePlate}`, colA, vy)
-    if (veh.powerKw) ti(`Kw: ${veh.powerKw}`, colB, vy)
+    if (veh.licensePlate)
+      ti(`Kennzeichen: ${veh.licensePlate}`, colA, vy, colAMaxW)
+    if (veh.powerKw) ti(`Kw: ${veh.powerKw}`, colB, vy, colBMaxW)
     vy -= 11
     if (veh.firstRegistration)
-      ti(`Erstzulassung: ${monthYear(veh.firstRegistration)}`, colA, vy)
+      ti(
+        `Erstzulassung: ${monthYear(veh.firstRegistration)}`,
+        colA,
+        vy,
+        colAMaxW
+      )
     if (veh.hsn || veh.tsn)
-      ti(`zu2: ${veh.hsn ?? ''} zu3: ${veh.tsn ?? ''}`, colB, vy)
+      ti(`zu2: ${veh.hsn ?? ''} zu3: ${veh.tsn ?? ''}`, colB, vy, colBMaxW)
     vy -= 11
-    if (veh.mileageKm != null) ti(`km-Stand: ${veh.mileageKm}`, colA, vy)
+    if (veh.mileageKm != null)
+      ti(`km-Stand: ${veh.mileageKm}`, colA, vy, colAMaxW)
     vy -= 11
-    if (veh.vin) ti(`Kfz-Ident.Nr.: ${veh.vin}`, colA, vy)
+    if (veh.vin) ti(`Kfz-Ident.Nr.: ${veh.vin}`, colA, vy, colAMaxW)
     vy -= 11
-    if (veh.nextHu) ti(`HU: ${monthYearFull(veh.nextHu)}`, colA, vy)
+    if (veh.nextHu) ti(`HU: ${monthYearFull(veh.nextHu)}`, colA, vy, colAMaxW)
     vy -= 11
   }
 
@@ -1497,10 +1915,14 @@ export const renderReminderPdf = async (
   let y = Math.min(vy, ty) - 14
   text('Sehr geehrte Damen und Herren,', ml, y, { size: 10 })
   y -= 18
+  // Exact wrap (measured, not estimated) so the settlement table below
+  // can never overlap the body paragraph.
   const body = reminderBodyDe(r.level, inv.documentNumber)
-  text(body, ml, y, { size: 10, width: innerW, lineHeight: 14 })
-  const approxLines = Math.max(1, Math.ceil(body.length / 70))
-  y -= approxLines * 14 + 18
+  for (const line of wrapTextLines(body, font, 10, innerW)) {
+    text(line, ml, y, { size: 10 })
+    y -= 14
+  }
+  y -= 4
 
   /* ── Forderungsaufstellung (settlement table) ──────────────────── */
   const labelRight = ml + innerW - 90
@@ -1564,9 +1986,11 @@ export const renderReminderPdf = async (
 
   /* ── Optional company-wide PDF footer / Werbe-/Endtext ─────────── */
   if (co.pdfFooter && y > 110) {
-    text(co.pdfFooter, ml, y, { size: 10, width: innerW, lineHeight: 12 })
-    const lines = wrapLineCount(co.pdfFooter, 10, innerW, font)
-    y -= lines * 12 + 6
+    for (const line of wrapTextLines(co.pdfFooter, font, 10, innerW)) {
+      text(line, ml, y, { size: 10 })
+      y -= 12
+    }
+    y -= 6
   }
 
   /* ── Standard closing ──────────────────────────────────────────── */
@@ -1710,6 +2134,11 @@ export async function renderTireStorageLabelPdf(
   const qr = await renderQrPng(scanUrl ?? entry.storageNumber, { size: 320 })
 
   const doc = await PDFDocument.create()
+  // Deterministic metadata — see renderDocumentPdf.
+  const metaDate =
+    entry.updatedAt instanceof Date ? entry.updatedAt : new Date(0)
+  doc.setCreationDate(metaDate)
+  doc.setModificationDate(metaDate)
   const page = doc.addPage([419.5, 297.6])
   const font = await doc.embedFont(StandardFonts.Helvetica)
   const bold = await doc.embedFont(StandardFonts.HelveticaBold)
@@ -1717,18 +2146,30 @@ export async function renderTireStorageLabelPdf(
 
   page.drawImage(qrImage, { x: 16, y: 40, width: 220, height: 220 })
 
+  // Text column right of the QR: width-fitted (not char-count-trimmed)
+  // so long values can never run off the label edge.
+  const textX = 250
+  const textMaxW = 419.5 - textX - 14
   let y = 260
-  page.drawText(entry.storageNumber, {
-    x: 250,
-    y,
-    size: 20,
-    font: bold,
-    color: rgb(0, 0, 0)
-  })
+  page.drawText(
+    fitTextToWidth(
+      entry.storageNumber,
+      bold,
+      shrinkFontSize(entry.storageNumber, bold, 20, 12, textMaxW),
+      textMaxW
+    ),
+    {
+      x: textX,
+      y,
+      size: shrinkFontSize(entry.storageNumber, bold, 20, 12, textMaxW),
+      font: bold,
+      color: rgb(0, 0, 0)
+    }
+  )
   if (entry.customerName) {
     y -= 30
-    page.drawText(truncate(entry.customerName, 30), {
-      x: 250,
+    page.drawText(fitTextToWidth(entry.customerName, font, 12, textMaxW), {
+      x: textX,
       y,
       size: 12,
       font,
@@ -1738,17 +2179,19 @@ export async function renderTireStorageLabelPdf(
   if (entry.brand || entry.size) {
     y -= 22
     page.drawText(
-      truncate(
+      fitTextToWidth(
         [entry.brand, entry.model, entry.size].filter(Boolean).join(' '),
-        30
+        font,
+        10,
+        textMaxW
       ),
-      { x: 250, y, size: 10, font, color: rgb(0.3, 0.3, 0.3) }
+      { x: textX, y, size: 10, font, color: rgb(0.3, 0.3, 0.3) }
     )
   }
   if (entry.season) {
     y -= 18
-    page.drawText(entry.season, {
-      x: 250,
+    page.drawText(fitTextToWidth(entry.season, font, 10, textMaxW), {
+      x: textX,
       y,
       size: 10,
       font,
@@ -1891,6 +2334,11 @@ export async function renderVehicleSaleSignPdf(input: {
 
   const doc = await PDFDocument.create()
   doc.setTitle(`Verkaufsschild ${title}`)
+  // Deterministic metadata — see renderDocumentPdf.
+  const metaDate =
+    vehicle.updatedAt instanceof Date ? vehicle.updatedAt : new Date(0)
+  doc.setCreationDate(metaDate)
+  doc.setModificationDate(metaDate)
   // A4 landscape: 297 × 210 mm → 841.89 × 595.28 pt
   const W = 841.89
   const H = 595.28
@@ -1907,8 +2355,9 @@ export async function renderVehicleSaleSignPdf(input: {
     f: typeof font,
     color: ReturnType<typeof rgb>
   ) => {
-    const w = f.widthOfTextAtSize(text, size)
-    page.drawText(text, { x: xRight - w, y, size, font: f, color })
+    const safe = sanitizeWinAnsiText(text)
+    const w = f.widthOfTextAtSize(safe, size)
+    page.drawText(safe, { x: xRight - w, y, size, font: f, color })
   }
   const textCentered = (
     text: string,
@@ -1918,18 +2367,16 @@ export async function renderVehicleSaleSignPdf(input: {
     f: typeof font,
     color: ReturnType<typeof rgb>
   ) => {
-    const w = f.widthOfTextAtSize(text, size)
-    page.drawText(text, { x: xCenter - w / 2, y, size, font: f, color })
+    const safe = sanitizeWinAnsiText(text)
+    const w = f.widthOfTextAtSize(safe, size)
+    page.drawText(safe, { x: xCenter - w / 2, y, size, font: f, color })
   }
-  /** Truncate `text` with an ellipsis until it fits `maxW` points. */
-  const fit = (text: string, f: typeof font, size: number, maxW: number) => {
-    if (f.widthOfTextAtSize(text, size) <= maxW) return text
-    let t = text
-    while (t.length > 4 && f.widthOfTextAtSize(`${t}…`, size) > maxW) {
-      t = t.slice(0, -1)
-    }
-    return `${t.trimEnd()}…`
-  }
+  /**
+   * Ellipsis-fit into `maxW` points — WinAnsi-sanitizing, so measuring
+   * user text (make/model, highlights, colors) can never throw.
+   */
+  const fit = (text: string, f: typeof font, size: number, maxW: number) =>
+    fitTextToWidth(text, f, size, maxW)
 
   // ── Helpers: legacy-friendly value formatting ────────────────────
   const nf = new Intl.NumberFormat('de-DE')
