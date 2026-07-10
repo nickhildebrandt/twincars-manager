@@ -356,4 +356,39 @@ describe('import-service · full pipeline (mocked mdb-export)', () => {
     expect(await db.select().from(vehicles)).toHaveLength(0)
     expect(await db.select().from(items)).toHaveLength(0)
   })
+
+  it("imports customers whose name contains 'ebay' with kind='ebay' (requirement 5)", async () => {
+    csvByTable = {
+      Kunden: [
+        'Kunden-Nr;Firma;Vorname;Nachname',
+        // Company variants (any casing, embedded anywhere).
+        '3001;eBay-Autohandel;;',
+        '3002;Firma EBAY Berlin;;',
+        // First / last name variants.
+        '3003;;eBay;Meier',
+        '3004;;Max;eBay-Käufer',
+        '3005;;Max eBay;Mustermann',
+        // Documented substring edge: "Ebayer" contains "ebay" → ebay.
+        '3006;;;Ebayer',
+        // Negatives: "Bayer" does NOT contain "ebay"; plain names stay
+        // regular.
+        '3007;;Hans;Bayer',
+        '3008;Müller GmbH;Erika;Musterfrau'
+      ].join('\n')
+    }
+
+    const summary = await importMdb(Buffer.from('fake-mdb'))
+    expect(summary.customers).toBe(8)
+
+    const rows = await db.select().from(customers)
+    const kindByNr = new Map(rows.map((r) => [r.customerNumber, r.kind]))
+    expect(kindByNr.get('3001')).toBe('ebay')
+    expect(kindByNr.get('3002')).toBe('ebay')
+    expect(kindByNr.get('3003')).toBe('ebay')
+    expect(kindByNr.get('3004')).toBe('ebay')
+    expect(kindByNr.get('3005')).toBe('ebay')
+    expect(kindByNr.get('3006')).toBe('ebay')
+    expect(kindByNr.get('3007')).toBe('regular')
+    expect(kindByNr.get('3008')).toBe('regular')
+  })
 })

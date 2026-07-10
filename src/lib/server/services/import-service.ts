@@ -32,6 +32,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { parse as parseCsv } from 'csv-parse/sync'
 import { eq } from 'drizzle-orm'
+import { isEbayCustomerName } from '$lib/utils/ebay-detection'
 import { db } from '$lib/server/db/client'
 import {
   accessImportJobs,
@@ -602,10 +603,24 @@ async function runImportSteps(
     }
     const id = crypto.randomUUID()
     customerIdByLegacy.set(legacyNr, id)
+    // Requirement 5: legacy eBay buyers exist as plain customer rows
+    // whose name carries "ebay" somewhere (any casing). Classify them
+    // ONCE at import time — nothing at runtime derives `kind` from
+    // names. `Name` is checked defensively (the column does not exist
+    // in every KFZ-Kaufmann version; missing → undefined → no match).
+    const kind = isEbayCustomerName([
+      trim(k['Name']),
+      trim(k['Firma']),
+      trim(k['Vorname']),
+      trim(k['Nachname'])
+    ])
+      ? 'ebay'
+      : 'regular'
     customerRows.push({
       id,
       customerNumber: legacyNr,
       legacyCustomerNumber: legacyNr,
+      kind,
       company: clip(trim(k['Firma']), 200),
       firstName: clip(trim(k['Vorname']), 100),
       lastName: clip(trim(k['Nachname']), 100),
