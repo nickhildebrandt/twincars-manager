@@ -74,14 +74,17 @@ import { db } from '$lib/server/db/client'
 import {
   customers,
   vehicleLicensePlateVersions,
+  vehiclePhotos,
   vehiclePurchases,
   vehicles,
   workOrders
 } from '$lib/server/db/schema'
 import {
+  addVehiclePhotoRemote,
   createVehicleRemote,
   deleteVehicleRemote,
   getVehicleRemote,
+  listVehiclePhotosRemote,
   purchaseVehicleIntoStockRemote,
   setVehicleArchivedRemote,
   updateVehicleRemote
@@ -415,5 +418,83 @@ describe('vehicles.remote — setVehicleArchivedRemote + delete guard', () => {
       .from(vehicles)
       .where(eq(vehicles.id, vehicleId))
     expect(rows).toHaveLength(0)
+  })
+})
+
+describe('vehicles.remote — photo remotes (stock-only guard)', () => {
+  let stockVehicleId: string
+  let customerVehicleId: string
+
+  const pngDataUrl = 'data:image/png;base64,AA=='
+
+  beforeEach(async () => {
+    await db.delete(vehiclePhotos)
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+    mockRequestEvent.locals.user = null
+    mockRequestEvent.locals.permissions = new Set()
+
+    const ownerId = await seedCustomer()
+    const [stock] = await db
+      .insert(vehicles)
+      .values({ make: 'VW', model: 'Golf', customerId: null })
+      .returning({ id: vehicles.id })
+    const [owned] = await db
+      .insert(vehicles)
+      .values({ make: 'BMW', model: '320d', customerId: ownerId })
+      .returning({ id: vehicles.id })
+    stockVehicleId = stock.id
+    customerVehicleId = owned.id
+  })
+
+  it('adds a photo to a stock vehicle (positive path)', async () => {
+    asVehiclesUser()
+    const row = (await addVehiclePhotoRemote({
+      vehicleId: stockVehicleId,
+      mime: 'image/png',
+      dataUrl: pngDataUrl
+    })) as { isMain: boolean }
+    expect(row.isMain).toBe(true)
+    const list = (await listVehiclePhotosRemote({
+      vehicleId: stockVehicleId
+    })) as unknown[]
+    expect(list).toHaveLength(1)
+  })
+
+  it('rejects a photo upload on a customer-owned vehicle with a curated 409', async () => {
+    asVehiclesUser()
+    await expect(
+      addVehiclePhotoRemote({
+        vehicleId: customerVehicleId,
+        mime: 'image/png',
+        dataUrl: pngDataUrl
+      })
+    ).rejects.toMatchObject({
+      status: 409,
+      body: {
+        message: 'Fotos können nur bei Verkaufsfahrzeugen hinterlegt werden.'
+      }
+    })
+    expect(await db.select().from(vehiclePhotos)).toHaveLength(0)
+  })
+
+  it('listing photos of a customer-owned vehicle stays allowed (empty result)', async () => {
+    asVehiclesUser()
+    const list = (await listVehiclePhotosRemote({
+      vehicleId: customerVehicleId
+    })) as unknown[]
+    expect(list).toEqual([])
+  })
+
+  it('rejects anonymous photo uploads (401)', async () => {
+    await expect(
+      addVehiclePhotoRemote({
+        vehicleId: stockVehicleId,
+        mime: 'image/png',
+        dataUrl: pngDataUrl
+      })
+    ).rejects.toMatchObject({ status: 401 })
   })
 })

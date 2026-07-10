@@ -63,12 +63,14 @@ vi.mock('@sveltejs/kit/internal', () => ({ init_remote_functions: () => {} }))
 import { db } from '$lib/server/db/client'
 import {
   companySettings,
+  customers,
   vehicleListings,
   vehiclePhotos,
   vehicles
 } from '$lib/server/db/schema'
 import { WILDCARD_PERMISSION } from '$lib/server/auth-permissions'
 import { getVehicleSaleSignPdfRemote } from './sale-sign.remote'
+import { eq } from 'drizzle-orm'
 
 async function expectHttpError(
   fn: () => Promise<unknown>,
@@ -107,6 +109,7 @@ describe('vehicles.sale-sign.remote — getVehicleSaleSignPdfRemote', () => {
     await db.delete(vehiclePhotos)
     await db.delete(vehicleListings)
     await db.delete(vehicles)
+    await db.delete(customers)
     await db.delete(companySettings)
     anonymous()
 
@@ -170,6 +173,29 @@ describe('vehicles.sale-sign.remote — getVehicleSaleSignPdfRemote', () => {
         }),
       404
     )
+  })
+
+  it('rejects a customer-owned vehicle with a curated 409 (stock only)', async () => {
+    authAs({ permissions: ['vehicles'] })
+    const [owner] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-SIGN1', lastName: 'Halter' })
+      .returning()
+    await db
+      .update(vehicles)
+      .set({ customerId: owner.id })
+      .where(eq(vehicles.id, vehicleId))
+
+    let caught: unknown = null
+    try {
+      await getVehicleSaleSignPdfRemote({ id: vehicleId })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toMatchObject({
+      status: 409,
+      body: { message: 'Verkaufsschilder gibt es nur für Verkaufsfahrzeuge.' }
+    })
   })
 
   it('returns a base64 PDF for an authorized caller', async () => {

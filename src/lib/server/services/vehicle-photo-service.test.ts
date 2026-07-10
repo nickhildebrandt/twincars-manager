@@ -13,11 +13,13 @@ import {
   setMainVehiclePhoto
 } from './vehicle-photo-service'
 import { db } from '$lib/server/db/client'
-import { vehiclePhotos, vehicles } from '$lib/server/db/schema'
+import { customers, vehiclePhotos, vehicles } from '$lib/server/db/schema'
 
 /**
  * Integration tests for the vehicle-photo service — add, list,
- * cover-flag handling, delete-with-promotion.
+ * cover-flag handling, delete-with-promotion, plus the
+ * stock-vehicle-only guard (photos exist only while
+ * `customer_id IS NULL`).
  *
  * @group integration
  * @module vehicle-photo-service
@@ -25,6 +27,7 @@ import { vehiclePhotos, vehicles } from '$lib/server/db/schema'
 describe('vehicle-photo-service', () => {
   let vehicleId: string
   let otherVehicleId: string
+  let customerVehicleId: string
 
   // Tiny base64 data-URL stand-in. The service is storage-agnostic; we
   // only need a non-empty payload to exercise round-trip behaviour.
@@ -34,6 +37,11 @@ describe('vehicle-photo-service', () => {
   beforeEach(async () => {
     await db.delete(vehiclePhotos)
     await db.delete(vehicles)
+    await db.delete(customers)
+    const [owner] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-PH001', lastName: 'Fotohalter' })
+      .returning()
     const [v1] = await db
       .insert(vehicles)
       .values({ make: 'VW', model: 'Golf' })
@@ -42,8 +50,13 @@ describe('vehicle-photo-service', () => {
       .insert(vehicles)
       .values({ make: 'BMW', model: '320i' })
       .returning()
+    const [v3] = await db
+      .insert(vehicles)
+      .values({ make: 'Audi', model: 'A4', customerId: owner.id })
+      .returning()
     vehicleId = v1.id
     otherVehicleId = v2.id
+    customerVehicleId = v3.id
   })
 
   describe('addVehiclePhoto', () => {
@@ -96,6 +109,36 @@ describe('vehicle-photo-service', () => {
       expect(otherFirst.isMain).toBe(true)
       expect(otherFirst.sortOrder).toBe(0)
     })
+
+    it('rejects a customer-owned vehicle with a curated 409', async () => {
+      await expect(
+        addVehiclePhoto({
+          vehicleId: customerVehicleId,
+          mime: 'image/png',
+          dataUrl: dataUrl('forbidden')
+        })
+      ).rejects.toMatchObject({
+        status: 409,
+        body: {
+          message: 'Fotos können nur bei Verkaufsfahrzeugen hinterlegt werden.'
+        }
+      })
+      // Nothing persisted.
+      expect(await listVehiclePhotos(customerVehicleId)).toEqual([])
+    })
+
+    it('rejects an unknown vehicle with a curated 404', async () => {
+      await expect(
+        addVehiclePhoto({
+          vehicleId: '00000000-0000-0000-0000-000000000000',
+          mime: 'image/png',
+          dataUrl: dataUrl('nowhere')
+        })
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Fahrzeug nicht gefunden.' }
+      })
+    })
   })
 
   describe('listVehiclePhotos', () => {
@@ -125,6 +168,23 @@ describe('vehicle-photo-service', () => {
       const list = await listVehiclePhotos(otherVehicleId)
       expect(list).toEqual([])
     })
+
+    it('stays readable for customer-owned vehicles (no guard on list)', async () => {
+      // Listing is deliberately unguarded so the detail page of a sold
+      // vehicle keeps rendering; legacy rows (pre-migration-0035) are
+      // returned as-is.
+      await db
+        .insert(vehiclePhotos)
+        .values({
+          vehicleId: customerVehicleId,
+          mime: 'image/png',
+          dataUrl: dataUrl('legacy'),
+          isMain: true
+        })
+      const list = await listVehiclePhotos(customerVehicleId)
+      expect(list).toHaveLength(1)
+      expect(await listVehiclePhotos(vehicleId)).toEqual([])
+    })
   })
 
   describe('setMainVehiclePhoto', () => {
@@ -146,10 +206,13 @@ describe('vehicle-photo-service', () => {
       expect(byId.get(b.id)?.isMain).toBe(true)
     })
 
-    it('throws when the photo does not exist', async () => {
+    it('throws a curated 404 when the photo does not exist', async () => {
       await expect(
         setMainVehiclePhoto('00000000-0000-0000-0000-000000000000')
-      ).rejects.toThrow('Foto nicht gefunden.')
+      ).rejects.toMatchObject({
+        status: 404,
+        body: { message: 'Foto nicht gefunden.' }
+      })
     })
   })
 

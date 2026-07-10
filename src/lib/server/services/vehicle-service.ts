@@ -519,10 +519,20 @@ export async function recordVehiclePurchase(params: {
  *     ownership cycle and does not block a re-sale).
  *
  * Writes, in order: `vehicles.customer_id` = buyer (+`updated_at`),
- * one `vehicle_sales` history row, and — when a listing row exists —
- * `vehicle_listings.status` = `'sold'`. `previous_owner_customer_id`
- * stays untouched: it records who the workshop bought the car from,
- * not who it was sold to.
+ * one `vehicle_sales` history row, deletion of ALL `vehicle_photos`
+ * rows, and — when a listing row exists — `vehicle_listings.status`
+ * = `'sold'`. `previous_owner_customer_id` stays untouched: it
+ * records who the workshop bought the car from, not who it was sold
+ * to.
+ *
+ * Photo lifecycle decision: listing photos are sales artifacts of the
+ * CURRENT stock cycle, not vehicle history — a customer-owned vehicle
+ * must never carry a listing gallery (app-wide invariant "photos only
+ * for stock vehicles"). They are therefore deleted here, in the same
+ * sequential write step as the ownership flip (the service layer
+ * deliberately avoids `db.transaction`, see document-service). A
+ * later re-purchase (Ankauf) starts with a fresh, empty gallery.
+ * Vehicle documents (Fahrzeugbrief etc.) are history and survive.
  */
 export async function sellStockVehicleToCustomer(params: {
   vehicleId: string
@@ -581,6 +591,12 @@ export async function sellStockVehicleToCustomer(params: {
       salesPriceGross: toMoneyString(params.salesPriceGross),
       notes: params.notes ?? null
     })
+  // Listing photos belong to the stock cycle that just ended — delete
+  // them so the sold (customer-owned) vehicle carries no gallery and a
+  // future Ankauf starts fresh (see the JSDoc above for the rationale).
+  await db
+    .delete(vehiclePhotos)
+    .where(eq(vehiclePhotos.vehicleId, params.vehicleId))
   await db
     .update(vehicleListings)
     .set({ status: 'sold', updatedAt: new Date() })
@@ -595,15 +611,20 @@ export async function sellStockVehicleToCustomer(params: {
  * the `vehicle_purchases` row) and `customer_id` is cleared, which by
  * definition puts the vehicle into the Verkaufsbestand lists.
  *
- * All vehicle-associated data (documents, photos, plate versions,
- * tire storage, work orders) is vehicle-FK'd and follows
- * automatically. Sale rows from a previous ownership cycle stay as
- * history. A listing row left in `'sold'` state from that previous
- * cycle flips back to `'available'` so the car is immediately
- * pickable for a re-sale.
+ * All vehicle-associated data (documents, plate versions, tire
+ * storage, work orders) is vehicle-FK'd and follows automatically.
+ * Listing photos do NOT carry over: the previous cycle's gallery was
+ * deleted at sale time ({@link sellStockVehicleToCustomer}), so every
+ * Ankauf starts with a fresh, empty gallery. Sale rows from a
+ * previous ownership cycle stay as history. A listing row left in
+ * `'sold'` state from that previous cycle flips back to
+ * `'available'` so the car is immediately pickable for a re-sale.
  *
  * Throws a curated 404/409 — this is a deliberate operator action
- * (unlike {@link sellStockVehicleToCustomer}, which no-ops).
+ * (unlike {@link sellStockVehicleToCustomer}, which no-ops). Archived
+ * vehicles are refused: they are soft-deleted and would silently
+ * enter the Verkaufsbestand while staying invisible in the inventory
+ * list and the public used-car API — reactivate first.
  */
 export async function purchaseVehicleIntoStock(params: {
   vehicleId: string
@@ -619,6 +640,11 @@ export async function purchaseVehicleIntoStock(params: {
   if (!veh) error(404, 'Fahrzeug nicht gefunden.')
   if (veh.customerId === null)
     error(409, 'Das Fahrzeug ist bereits im Verkaufsbestand.')
+  if (veh.archived)
+    error(
+      409,
+      'Das Fahrzeug ist archiviert und kann nicht angekauft werden. Bitte reaktivieren Sie es zuerst.'
+    )
 
   const sellerId = veh.customerId
   const [updated] = await db

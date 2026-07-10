@@ -26,6 +26,7 @@
 <script lang="ts">
   import { untrack, type Snippet } from 'svelte'
   import { goto } from '$app/navigation'
+  import { ArrowRight, ClipboardList, Users2 } from '@lucide/svelte'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
   import CustomerVehiclePicker from '$lib/components/ui/CustomerVehiclePicker.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
@@ -52,7 +53,11 @@
    * via the `deleteAction` snippet.
    *
    * Mitarbeiter-Urlaub und Krankheit *nicht* hier — die werden im
-   * Mitarbeiterbereich gepflegt.
+   * Mitarbeiterbereich gepflegt. In `new` mode two clearly separated
+   * cross-module cards below the form point to the right module for
+   * workshop jobs (orders) and absences (employees) — each its own
+   * card with a German group heading, never intermingled with the
+   * closure/absence choices of the form itself.
    */
   type Props = {
     mode: 'new' | 'edit'
@@ -594,6 +599,53 @@
     </div>
   </div>
 </form>
+
+{#if mode === 'new'}
+  <!--
+    Cross-module affordances as two SEPARATE groups, each its own card
+    with a German heading — visually distinct from the entry form (and
+    from each other), no buttons intermingled with the form fields.
+  -->
+  <div class="mt-4 grid grid-cols-1 gap-4 lg:grid-cols-2">
+    <section class="card border-base-300 bg-base-100 border">
+      <div class="card-body gap-2">
+        <h2 class="card-title text-base">
+          <ClipboardList size={16} />
+          Werkstattauftrag
+        </h2>
+        <p class="text-base-content/70 text-sm">
+          Werkstattarbeiten werden als Auftrag angelegt. Geplante Aufträge
+          erscheinen automatisch im Kalender und erzeugen beim Abschluss die
+          Rechnung.
+        </p>
+        <div class="card-actions justify-end">
+          <a class="btn btn-sm gap-1" href="/orders/new">
+            Neuer Auftrag
+            <ArrowRight size={14} />
+          </a>
+        </div>
+      </div>
+    </section>
+    <section class="card border-base-300 bg-base-100 border">
+      <div class="card-body gap-2">
+        <h2 class="card-title text-base">
+          <Users2 size={16} />
+          Urlaub &amp; Krankheit
+        </h2>
+        <p class="text-base-content/70 text-sm">
+          Mitarbeiter-Abwesenheiten werden direkt im Mitarbeiter-Datenblatt
+          gepflegt und erscheinen anschließend automatisch im Kalender.
+        </p>
+        <div class="card-actions justify-end">
+          <a class="btn btn-sm gap-1" href="/employees">
+            Zu den Mitarbeitern
+            <ArrowRight size={14} />
+          </a>
+        </div>
+      </div>
+    </section>
+  </div>
+{/if}
 
 <ConfirmDialog
   bind:open={overlapOpen}

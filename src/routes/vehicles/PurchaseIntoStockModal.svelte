@@ -107,8 +107,8 @@
       </h3>
       <p class="text-base-content/70 py-2 text-sm">
         Der aktuelle Halter wird als Vorbesitzer vermerkt und das Fahrzeug
-        erscheint anschließend unter "Zu verkaufende Fahrzeuge". Fotos,
-        Dokumente und Historie bleiben am Fahrzeug erhalten.
+        erscheint anschließend unter "Zu verkaufende Fahrzeuge". Dokumente und
+        Historie bleiben am Fahrzeug erhalten; die Fotogalerie startet leer.
       </p>
       <form onsubmit={submit} novalidate class="mt-1 flex flex-col gap-3">
         {#if errorMsg}

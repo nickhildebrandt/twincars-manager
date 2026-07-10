@@ -37,6 +37,11 @@ export const getVehicleSaleSignPdfRemote = query(
 
     const vehicle = await getVehicle(id)
     if (!vehicle) error(404, 'Fahrzeug nicht gefunden.')
+    // Business guard: sale signs exist only for STOCK vehicles
+    // (customer_id IS NULL). A customer-owned car is not for sale, so
+    // direct remote calls are rejected regardless of what the UI shows.
+    if (vehicle.customerId !== null)
+      error(409, 'Verkaufsschilder gibt es nur für Verkaufsfahrzeuge.')
 
     const [listing] = await db
       .select()

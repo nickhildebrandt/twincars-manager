@@ -6,8 +6,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 /**
  * Component tests for the shared CalendarForm — kind selector only in
  * `new` mode, the validity gate, the appointment payload including the
- * overlap-confirm flow (with `excludeId` in edit mode) and the closure
- * branch (no overlap check, all-day payload).
+ * overlap-confirm flow (with `excludeId` in edit mode), the closure
+ * branch (no overlap check, all-day payload) and the two separated
+ * cross-module cards (Werkstattauftrag / Urlaub & Krankheit) that
+ * exist only in `new` mode.
  *
  * @group component
  * @module CalendarForm
@@ -189,6 +191,50 @@ describe('CalendarForm', () => {
       notes: undefined
     })
     expect(overlapsMock).not.toHaveBeenCalled()
+  })
+
+  it('new mode renders the order and absence affordances as separate groups', () => {
+    render(CalendarForm, { props: { mode: 'new', onSave: vi.fn() } })
+
+    // Two distinct group headings, each in its own card.
+    const orderHeading = screen.getByRole('heading', {
+      name: /werkstattauftrag/i
+    })
+    const absenceHeading = screen.getByRole('heading', {
+      name: /urlaub & krankheit/i
+    })
+    expect(orderHeading).toBeInTheDocument()
+    expect(absenceHeading).toBeInTheDocument()
+    expect(orderHeading.closest('.card')).not.toBe(
+      absenceHeading.closest('.card')
+    )
+
+    // The order-creation link lives in the order group, the employees
+    // link in the absence group — never intermingled.
+    const orderLink = screen.getByRole('link', { name: /neuer auftrag/i })
+    expect(orderLink).toHaveAttribute('href', '/orders/new')
+    expect(orderHeading.closest('.card')).toContainElement(orderLink)
+    const employeesLink = screen.getByRole('link', {
+      name: /zu den mitarbeitern/i
+    })
+    expect(employeesLink).toHaveAttribute('href', '/employees')
+    expect(absenceHeading.closest('.card')).toContainElement(employeesLink)
+
+    // Neither link sits inside the entry form itself.
+    expect(orderLink.closest('form')).toBeNull()
+    expect(employeesLink.closest('form')).toBeNull()
+  })
+
+  it('edit mode hides the cross-module affordance cards', () => {
+    render(CalendarForm, {
+      props: { mode: 'edit', initial: appointmentInitial, onSave: vi.fn() }
+    })
+    expect(
+      screen.queryByRole('link', { name: /neuer auftrag/i })
+    ).not.toBeInTheDocument()
+    expect(
+      screen.queryByRole('link', { name: /zu den mitarbeitern/i })
+    ).not.toBeInTheDocument()
   })
 
   it('rejects a closure whose end date is before the start at click time', async () => {

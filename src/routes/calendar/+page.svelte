@@ -2,12 +2,7 @@
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
-  import {
-    ChevronLeft,
-    ChevronRight,
-    ClipboardList,
-    Plus
-  } from '@lucide/svelte'
+  import { ChevronLeft, ChevronRight, Plus } from '@lucide/svelte'
   import { listCalendarEventsRemote } from './calendar.remote'
   import { pickEmployeesRemote } from '../pickers.remote'
   import SearchablePicker from '$lib/components/ui/SearchablePicker.svelte'
@@ -223,7 +218,9 @@
   characters.
 -->
 <div class="flex flex-col gap-4">
-  <!-- Toolbar: month nav + order shortcut (left), month label (right) -->
+  <!-- Toolbar: month nav + employee filter (left), month label (right).
+       Order creation deliberately has NO shortcut here — it lives in
+       the orders module; the Termin form links to it where relevant. -->
   <div class="card border-base-300 bg-base-100 border">
     <div class="card-body flex flex-row flex-wrap items-center gap-2 p-3">
       <div class="join">
@@ -235,11 +232,6 @@
           <ChevronRight size={14} />
         </button>
       </div>
-      <!-- Werkstattarbeiten werden als Auftrag angelegt, nicht als Termin. -->
-      <a href="/orders/new" class="btn btn-sm gap-1">
-        <ClipboardList size={14} />
-        Neuer Auftrag
-      </a>
       <div class="w-full sm:w-64">
         <SearchablePicker
           bind:value={employeeId}

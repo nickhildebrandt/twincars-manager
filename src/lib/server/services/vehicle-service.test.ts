@@ -27,6 +27,7 @@ import {
   upsertLicensePlateVersion,
   withCurrentPlates
 } from './vehicle-service'
+import { addVehiclePhoto, listVehiclePhotos } from './vehicle-photo-service'
 import { db } from '$lib/server/db/client'
 import {
   customers,
@@ -859,6 +860,54 @@ describe('vehicle-service', () => {
       expect(await listVehicleSales(v.id)).toHaveLength(0)
     })
 
+    it('deletes the listing photos with the sale (stock-only invariant)', async () => {
+      const buyerId = await seedCustomer({ customerNumber: 'KU-S0010' })
+      const v = await createVehicle({ make: 'VW', model: 'Golf' })
+      const other = await createVehicle({ make: 'BMW', model: 'X1' })
+      // pg-mem cannot mix `default` and explicit values for the same
+      // column across a multi-row insert — set every column explicitly.
+      await db.insert(vehiclePhotos).values([
+        {
+          vehicleId: v.id,
+          mime: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,AA==',
+          isMain: true,
+          sortOrder: 0
+        },
+        {
+          vehicleId: v.id,
+          mime: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,BB==',
+          isMain: false,
+          sortOrder: 1
+        },
+        {
+          vehicleId: other.id,
+          mime: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,CC==',
+          isMain: true,
+          sortOrder: 0
+        }
+      ])
+      await sellStockVehicleToCustomer({
+        vehicleId: v.id,
+        customerId: buyerId,
+        salesPriceGross: 9990,
+        saleDate: '2026-07-07'
+      })
+      const sold = await db
+        .select({ id: vehiclePhotos.id })
+        .from(vehiclePhotos)
+        .where(eq(vehiclePhotos.vehicleId, v.id))
+      expect(sold).toHaveLength(0)
+      // Photos of OTHER stock vehicles are untouched.
+      const untouched = await db
+        .select({ id: vehiclePhotos.id })
+        .from(vehiclePhotos)
+        .where(eq(vehiclePhotos.vehicleId, other.id))
+      expect(untouched).toHaveLength(1)
+    })
+
     it('is idempotent — a second call writes no second sale row', async () => {
       const buyerId = await seedCustomer({ customerNumber: 'KU-S0008' })
       const v = await createVehicle({ make: 'VW', model: 'Golf' })
@@ -964,7 +1013,57 @@ describe('vehicle-service', () => {
           vehicleId: v.id,
           purchaseDate: '2026-07-01'
         })
+      ).rejects.toMatchObject({
+        status: 409,
+        body: { message: 'Das Fahrzeug ist bereits im Verkaufsbestand.' }
+      })
+      expect(await listVehiclePurchases(v.id)).toHaveLength(0)
+    })
+
+    it('double call: the second Ankauf is rejected without a duplicate history row', async () => {
+      const ownerId = await seedCustomer({ customerNumber: 'KU-A0005' })
+      const v = await createVehicle({
+        make: 'VW',
+        model: 'Golf',
+        customerId: ownerId
+      })
+      await purchaseVehicleIntoStock({
+        vehicleId: v.id,
+        purchaseDate: '2026-07-01'
+      })
+      await expect(
+        purchaseVehicleIntoStock({
+          vehicleId: v.id,
+          purchaseDate: '2026-07-01'
+        })
       ).rejects.toMatchObject({ status: 409 })
+      // Exactly one purchase row; the Vorbesitzer re-hang is stable.
+      expect(await listVehiclePurchases(v.id)).toHaveLength(1)
+      const after = await getVehicle(v.id)
+      expect(after?.customerId).toBeNull()
+      expect(after?.previousOwnerCustomerId).toBe(ownerId)
+    })
+
+    it('throws 409 for an archived vehicle (reactivate first)', async () => {
+      const ownerId = await seedCustomer({ customerNumber: 'KU-A0006' })
+      const v = await createVehicle({
+        make: 'Opel',
+        model: 'Astra',
+        customerId: ownerId
+      })
+      await setVehicleArchived(v.id, true)
+      await expect(
+        purchaseVehicleIntoStock({
+          vehicleId: v.id,
+          purchaseDate: '2026-07-01'
+        })
+      ).rejects.toMatchObject({
+        status: 409,
+        body: { message: expect.stringContaining('archiviert') }
+      })
+      // Ownership untouched, no history row written.
+      const after = await getVehicle(v.id)
+      expect(after?.customerId).toBe(ownerId)
       expect(await listVehiclePurchases(v.id)).toHaveLength(0)
     })
 
@@ -1089,7 +1188,8 @@ describe('vehicle-service', () => {
         .where(eq(vehicleListings.vehicleId, v.id))
       expect(listingAfterSale.status).toBe('sold')
 
-      // Associated data follows the vehicle FK — nothing re-hung.
+      // Documents follow the vehicle FK — nothing re-hung. Listing
+      // photos are cycle artifacts and were deleted with the sale.
       const docs = await db
         .select({ id: vehicleDocuments.id })
         .from(vehicleDocuments)
@@ -1099,7 +1199,7 @@ describe('vehicle-service', () => {
         .select({ id: vehiclePhotos.id })
         .from(vehiclePhotos)
         .where(eq(vehiclePhotos.vehicleId, v.id))
-      expect(photos).toHaveLength(1)
+      expect(photos).toHaveLength(0)
 
       // Sold car is out of every stock view.
       const stock2 = await listVehicles({ page: 1, size: 25, kind: 'stock' })
@@ -1132,6 +1232,16 @@ describe('vehicle-service', () => {
         .where(eq(vehicleListings.vehicleId, v.id))
       expect(listingAfterRepurchase.status).toBe('available')
 
+      // The re-purchase starts with a fresh, empty gallery — the
+      // stock-only invariant allows adding new listing photos now.
+      expect(await listVehiclePhotos(v.id)).toEqual([])
+      const cyclePhoto = await addVehiclePhoto({
+        vehicleId: v.id,
+        mime: 'image/jpeg',
+        dataUrl: 'data:image/jpeg;base64,BB=='
+      })
+      expect(cyclePhoto.isMain).toBe(true)
+
       // 4) The re-purchased car can be sold again (second cycle).
       const afterSale2 = await sellStockVehicleToCustomer({
         vehicleId: v.id,
@@ -1142,7 +1252,8 @@ describe('vehicle-service', () => {
       expect(afterSale2?.customerId).toBe(customerA)
       expect(await listVehicleSales(v.id)).toHaveLength(2)
 
-      // Documents and photos survived both cycles.
+      // Documents survived both cycles; the second-cycle gallery was
+      // deleted with the second sale (photos never outlive a cycle).
       const docsFinal = await db
         .select({ id: vehicleDocuments.id })
         .from(vehicleDocuments)
@@ -1152,7 +1263,16 @@ describe('vehicle-service', () => {
         .select({ id: vehiclePhotos.id })
         .from(vehiclePhotos)
         .where(eq(vehiclePhotos.vehicleId, v.id))
-      expect(photosFinal).toHaveLength(1)
+      expect(photosFinal).toHaveLength(0)
+
+      // Photo uploads on the now customer-owned car are rejected.
+      await expect(
+        addVehiclePhoto({
+          vehicleId: v.id,
+          mime: 'image/jpeg',
+          dataUrl: 'data:image/jpeg;base64,CC=='
+        })
+      ).rejects.toMatchObject({ status: 409 })
     })
   })
 })
