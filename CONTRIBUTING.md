@@ -102,6 +102,14 @@ committed). Use `pnpm install`, `pnpm <script>`, `pnpm exec <bin>`.
   `requested(listX, N).refreshAll()` on the server and
   `await mutate(...).updates(listX)` on the client so writes return with the
   refreshed list inside the same response.
+  **Both halves are required.** A server-side
+  `requested(...).refreshAll()` alone is a **NO-OP on the client**:
+  the refreshed data only rides back for query instances the client
+  declared via `.updates(...)`. This exact misunderstanding shipped
+  as a live bug (the 2026-07 absences silent-list class — mutations
+  "refreshed" on the server, the UI never changed). When a mutation
+  touches several parameterized instances (e.g. two calendar years),
+  pass each one to `.updates(...)`.
 
 ### Remote function file layout
 
@@ -336,6 +344,11 @@ This is the standard pattern for every list-page delete. Always build a
 **fresh** instance from the exact `queryArgs` currently rendered (see
 section 5), so the override acts on the user's view.
 
+Remember: the client-side `.updates(...)` is not just for the
+optimistic override — it is what makes the server's
+`requested(...).refreshAll()` reach the client at all (section 4).
+A mutation without `.updates(...)` leaves the rendered list stale.
+
 ### Stale-while-revalidate for filter / pagination
 
 List pages keep the previously-resolved data via a `lastResult` snapshot
@@ -531,6 +544,33 @@ re-introduce them:
   find yourself adding more than three layout/spacing classes to a
   card / button / badge / alert, you probably picked the wrong DaisyUI
   variant. Stop and check the Blueprint MCP.
+
+### Tabs (binding standard)
+
+`src/lib/components/ui/TabGroup.svelte` is the **one app-wide tab
+implementation** — the DaisyUI v5 `tabs tabs-lift` radio pattern with
+a unique radio name per group, aria-labels, arrow-key switching,
+`?tab=` deep links (mirrored via `replaceState`), panels that stay
+mounted, and auto-reset when a conditional tab disappears. Two modes:
+
+- **State mode** (default, bindable active id + `?tab=`): detail
+  pages (customers, vehicles, orders) and content areas
+  (`/hours/reports`).
+- **Nav mode** (inferred when every tab carries an `href`): tabs are
+  routes — the active tab derives from the pathname, selecting
+  navigates, and a cancelled navigation (unsaved-changes confirm)
+  snaps back. Used by the settings layout.
+
+Rules:
+
+- **Content switching uses `TabGroup`.** Never hand-roll
+  `tabs tabs-lift` markup or a second tab implementation.
+- **Mutually exclusive list filters (Alle / Archiv / kind tabs) stay
+  simple filter tabs** — they filter one list, they don't switch
+  content panels, and they deliberately do NOT use `TabGroup`.
+- **No nested tab groups anywhere.** A page has at most one tab
+  level; if a tab's content wants tabs of its own, restructure
+  (own route or stacked card sections, like `/settings/users`).
 
 ### Why so strict?
 
@@ -1070,12 +1110,27 @@ templates are canonical. Reuse the wording when adding new modules.
   Scoped runs: `pnpm test:unit` (src/lib/server, stores, utils, hooks),
   `pnpm test:components` (src/lib/components), `pnpm test:integration`
   (src/routes remote/endpoint tests). `pnpm test` runs everything.
-- **`pnpm test:e2e` is the real E2E suite**: `@playwright/test` specs in
+- **PDF visual regression** is part of the unit scope:
+  `pdf-service/pdf-visual.test.ts` rasterizes 15 fixture documents via
+  `pdftoppm` and pixel-diffs them against committed snapshots in
+  `src/lib/server/services/__pdf_snapshots__/` (channel delta > 32,
+  page fails above 0.5 % differing pixels). Refresh snapshots after an
+  intended layout change with
+  `PDF_SNAPSHOTS=update pnpm exec vitest run pdf-visual` and commit the
+  PNGs; the suite skips itself when `pdftoppm` is not installed.
+  Renders are byte-deterministic (dates derive from the entity's
+  `updatedAt`) — keep them that way or the snapshots flake.
+- **`pnpm test:e2e` is the real E2E suite** (currently 55 tests in 12
+  spec files, ~30 s): `@playwright/test` specs in
   `e2e/` against a production build (`node build`) and the committed,
   anonymized fixture database (`e2e/fixtures/seed.sql.gz`; reset via
   `node scripts/seed-test-db.mjs`, regeneration via
   `scripts/generate-test-seed.mjs` — needs the local MDB, which never
-  enters the repo). Browsers are never downloaded: the config resolves
+  enters the repo). Use the helpers in `e2e/helpers.ts` (`gotoHydrated`
+  against the hydration race, `fillFieldVerified`,
+  `pickFromSearchablePicker`, `clickDialogButton`, `openDetailTab`) and
+  clean up GoBD-compliantly (mark created invoices paid, archive
+  created customers — never try to delete documents). Browsers are never downloaded: the config resolves
   the cached Chromium (`CHROMIUM_PATH`). `E2E_WEB_SERVER=1 SEED=1
 pnpm test:e2e` is the fully managed workflow. Long form in
   `docs/operations/test-database.md`.
@@ -1143,6 +1198,12 @@ pnpm test:e2e` is the fully managed workflow. Long form in
 - ❌ Awaiting a bare remote-query proxy in an event handler. Outside a
   reactive context the call throws or silently never resolves; use
   `await someQueryRemote(args).run()` (section 5).
+- ❌ A mutation without client-side `.updates(...)` that relies on the
+  server's `requested(...).refreshAll()` to update the page — the
+  server refresh alone never reaches the client (section 4).
+- ❌ Hand-rolled `tabs tabs-lift` markup, a second tab implementation,
+  or nested tab groups. Content switching uses `TabGroup`; list
+  filters stay simple filter tabs (section 7).
 - ❌ Clearing `formDirty` after the post-save `goto` (or not at all):
   the unsaved-changes confirm silently cancels the navigation
   (section 11).
@@ -1240,6 +1301,21 @@ Vergangene Belege/Abrechnungen halten ihren damals verwendeten Wert
 als Snapshot (z.B. `document_items.unit_price_net`,
 `payroll_entries.net_total`); spätere Versionierungen wirken nur auf
 zukünftige Auflösungen.
+
+### Other binding domain invariants (long form in `docs/`)
+
+- **Order ↔ invoice rule set** (`docs/domain/order-invoice-rules.md`):
+  an order has at most ONE active (non-cancelled) invoice, derived
+  solely from `getActiveInvoiceForOrder`; work-order items lock while
+  it exists; `done` only via `completeWorkOrder`; cancelling the
+  active invoice auto-reopens the order; billed orders and
+  order-linked invoices are undeletable (GoBD — Storno is the only
+  correction).
+- **Stock-only vehicle artifacts** (`docs/modules/vehicles.md`):
+  photos and Verkaufsschilder exist only for stock vehicles
+  (`customer_id IS NULL`) — server-enforced 409s; selling deletes the
+  gallery, an Ankauf starts with an empty one; archived vehicles
+  cannot be angekauft.
 
 ## 17. Database migrations
 

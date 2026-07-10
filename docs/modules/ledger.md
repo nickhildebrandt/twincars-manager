@@ -1,7 +1,7 @@
 ---
 title: Module - ledger (Buchhaltung)
 tags: [module, ledger, accounting]
-updated: 2026-07-05
+updated: 2026-07-10
 ---
 
 # ledger - "Buchhaltung"
@@ -23,9 +23,12 @@ updated: 2026-07-05
   `recurringTemplateId`), `ledger_categories` (seeded with
   `defaultTaxRate`), `recurring_entries` (intervalKind/Every,
   nextRunDate, paused, occurrence limits).
-- **Special**: invoice payments can flow into the ledger via the
-  document FK; recurring templates materialize entries when due
-  (operator-triggered, [[adr-009-no-in-process-scheduler]]).
+- **Special**: entries are created manually (`source: 'manual'` is the
+  only value written today), optionally linked to a document, customer
+  or supplier. The `recurring_entries` table is **dormant**: it exists
+  in the schema (and is wiped by the import) but no service or UI
+  materializes entries from it - if that automation is built, it must
+  stay operator-triggered ([[adr-009-no-in-process-scheduler]]).
 - **Related view**: [[sales-ledger]] is the separate read-only
   Rechnungsausgangsbuch over `documents`.
 - **Tests**: `ledger-service.test.ts`, `datev-export-service.test.ts`.

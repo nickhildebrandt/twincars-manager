@@ -1,7 +1,7 @@
 ---
 title: Styling rules (DaisyUI v5 + Tailwind v4)
-tags: [architecture, styling, daisyui, tailwind, a11y]
-updated: 2026-07-07
+tags: [architecture, styling, daisyui, tailwind, a11y, tabs]
+updated: 2026-07-10
 ---
 
 # Styling - DaisyUI v5 + Tailwind v4, no custom CSS
@@ -55,13 +55,31 @@ variant instead).
   divs.
 - Icon-only buttons carry `aria-label`s.
 
+## Tabs standard (2026-07, binding)
+
+`src/lib/components/ui/TabGroup.svelte` is the ONE app-wide tab
+implementation - the DaisyUI v5 `tabs tabs-lift` radio pattern with a
+unique radio name per group, aria-labels, arrow-key switching, `?tab=`
+deep links (mirrored via `replaceState`), panels that stay mounted, and
+auto-reset when a conditional tab disappears. It has two modes:
+
+- **State mode** (default): bindable active tab id, `?tab=` in the URL.
+  Used by detail pages ([[customers]], [[vehicles]], `/orders/[id]`)
+  and content areas like `/hours/reports`.
+- **Nav mode** (inferred when every tab carries an `href`): tabs are
+  routes; the active tab derives from the pathname, selecting
+  navigates, and a cancelled navigation (unsaved-changes confirm)
+  snaps back. Drives the flat settings layout ([[settings]]).
+
+Rules: **content switching = TabGroup; mutually exclusive list filters
+(Alle/Archiv etc.) = simple filter tabs** (deliberately NOT TabGroup).
+**No nested tab groups anywhere** - a page has at most one tab level
+(the settings flattening removed the last nesting).
+
 ## Wording / typography
 
 - UI strings German; no em-dashes or en-dashes in user-visible strings -
   plain hyphens or rewording.
-- Settings pages use browser-style attached tabs
-  (`tabs tabs-lift` with `<label class="tab">` + `tab-content`), tab
-  state mirrored in `?tab=` (see `/settings`).
 
 Related: [[loading-and-busy]], [[remote-functions]] (page patterns),
 `CONTRIBUTING.md` §7-§10 for the authoritative long form.

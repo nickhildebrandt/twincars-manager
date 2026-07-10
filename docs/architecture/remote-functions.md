@@ -1,7 +1,7 @@
 ---
 title: Server transport - remote functions only
 tags: [architecture, sveltekit, transport]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # Remote functions - the only server transport
@@ -47,6 +47,14 @@ All are "third-party plumbing or external consumer", never convenience:
   client renders); client side
   `await mutate(...).updates(listX.withOverride(...))` for optimistic
   deletes/status flips (the standard, not pessimistic refresh).
+  **Both halves are required**: the server-side `refreshAll()` alone
+  is a NO-OP on the client - the refreshed data only rides back for
+  query instances the CLIENT declared via `.updates(...)`. This exact
+  misunderstanding was live in shipped code (the 2026-07 absences
+  silent-list bug: mutations refreshed on the server, the UI never
+  updated). If a mutation must refresh several parameterized
+  instances (e.g. two touched years), the client passes each one to
+  `.updates(...)`.
 - **List pages**: only-set-key `queryArgs` (`{}` and `{ q: undefined }`
   are different cache keys), `await untrack(() => listXRemote(queryArgs))`
   SSR seed, read via

@@ -1,7 +1,7 @@
 ---
 title: Entity map
 tags: [domain, entities, schema]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # Entity map
@@ -91,16 +91,21 @@ Module: [[tire-storage]].
 HR master data incl. tax/social insurance/bank fields,
 `vacationDaysPerYear`. Salaries versioned in `employee_salary_versions`
 (`getEffectiveSalary`). Absences in `employee_absences`
-(`vacation`|`sick`|`other`, optional attachment). Time logging in
+(`vacation`|`sick`|`other`, `halfDay`, optional attachment;
+holiday-aware server-side workday math and a hard vacation-budget gate
+since 2026-07). Time logging in
 `time_entries` (effort in hours, not punch-clock). Modules: [[employees]],
-[[hours]]. Note: a richer vacation model (carryover, workday service) is
-designed but NOT implemented - `archive/specs/2026-06-23-employee-absences-vacation-design.md`.
+[[hours]]. Note: carryover (Übertrag) and Betriebsschließungs-Anrechnung
+from the 2026-06-23 design remain NOT implemented -
+`archive/specs/2026-06-23-employee-absences-vacation-design.md`.
 
-## Kalender - `calendar_entries` + `public_holidays`
+## Kalender - `calendar_entries`
 
 Single table discriminated by `kind`: `appointment` (customer/vehicle/
 employee links, status) | `closure` (Betriebsschließung, forced allDay).
-See [[adr-011-unified-calendar-entries]]. Module: [[calendar]].
+See [[adr-011-unified-calendar-entries]]. Public holidays are computed
+at read time, not stored ([[holidays]]; the `public_holidays` table is
+dormant). Module: [[calendar]].
 
 ## Auftrag (work order) - `work_orders` + `work_order_assignees` + `work_order_items`
 
@@ -109,7 +114,10 @@ Workshop job from intake to invoice. `orderNumber` (unique, number range
 vehicle until manually edited), status `open` | `in_progress` | `done`
 (Kanban), customer/vehicle links (each optional, at least one required),
 `appointmentId` backlink to the source Termin (one order per Termin),
-`invoiceId` set on completion, `scheduledDate` + optional
+`invoiceId` = pointer to the single ACTIVE invoice (set on completion,
+cleared on Storno; the permanent history lives on
+`documents.work_order_id` - [[order-invoice-rules]]), `scheduledDate` +
+optional
 `scheduledTime` (HH:MM) for calendar placement. Assignees are m:n to
 `employees`. Work items (`labor` | `material`) snapshot their net price
 at entry time ([[adr-007-price-snapshots-and-versions]]); labor items
@@ -151,6 +159,8 @@ public surface in [[public-rest-api]].
   ([[kfz-kaufmann-import]]).
 - `tire_reminder_log` - idempotency log for seasonal tire mails.
 - `workshop_hours` - opening hours per weekday, drives free-slot booking.
-- `ebay_credentials` - encrypted OAuth tokens ([[ebay]]).
+- `ebay_credentials` - encrypted OAuth tokens; `ebay_listings` +
+  `ebay_import_runs` - imported seller listings and the import run log
+  ([[ebay]]).
 - `users`, `sessions`, `accounts`, `verifications`, `roles`, `user_roles`,
   `role_permissions` - [[auth-and-permissions]].

@@ -1,7 +1,7 @@
 ---
 title: Module - vehicles (Fahrzeuge)
 tags: [module, vehicles]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # vehicles - "Fahrzeuge"
@@ -15,6 +15,9 @@ Canonical template module (with [[customers]]).
 - **Remotes**:
   - `vehicles.remote.ts`: `listVehiclesRemote`, `getVehicleRemote`,
     `countVehiclesRemote`, `getVehicleRelatedRemote`,
+    `listVehicleWorkOrdersRemote` (Aufträge tab, paginated 25, guard
+    `requireAnyPermission('vehicles', 'orders')`),
+    `getVehicleHistoryRemote` (Historie tab),
     `createVehicleRemote`, `updateVehicleRemote`, `deleteVehicleRemote`,
     `setVehicleArchivedRemote`, `purchaseVehicleIntoStockRemote`,
     `listVehiclePhotosRemote`, `addVehiclePhotoRemote`,
@@ -32,6 +35,29 @@ Canonical template module (with [[customers]]).
   `vehicle_purchases`, `vehicle_listings`, `vehicle_sales` (surfaced by
   [[inventory]]).
 - **Special**:
+  - **Tabbed detail page** (2026-07, standard `TabGroup` -
+    [[styling]]): Übersicht / Halter (customer-owned only: read-only
+    `CompactCustomerCard` + link to the customer, never an embedded
+    customer page) / Rechnungen / Aufträge / Fotos (stock only) /
+    Dokumente / Historie. The tab set flips in place after an Ankauf.
+    The **Historie** tab (`getVehicleHistoryRemote`) merges
+    `vehicle_purchases` (rename-proof `previousOwner` snapshot,
+    deliberately never linked), `vehicle_sales` (live customer link
+    while the buyer exists) and the plate versions, newest first
+    (createdAt tie-break); unpaginated by design (a handful of rows
+    per ownership cycle).
+  - **Stock-only invariants** (2026-07, server-enforced 409s):
+    photos AND the Verkaufsschild exist only for stock vehicles
+    (`customer_id IS NULL`). `addVehiclePhoto` rejects customer-owned
+    vehicles ("Fotos können nur bei Verkaufsfahrzeugen hinterlegt
+    werden."), the sale-sign remote likewise. Galleries are **sales
+    artifacts**: selling a stock vehicle deletes its photo gallery in
+    the same write step, and an Ankauf starts with an empty gallery
+    (migration 0035 cleaned up pre-rule rows). The Fotos tab and the
+    Verkaufsschild action render only for stock vehicles (photos are
+    not even fetched for customer-owned ones).
+  - **Ankauf hardening**: archived vehicles cannot be angekauft (409
+    with a reactivation hint); double-call safe.
   - License plates are versioned; documents reference the vehicle, not a
     plate, so plate changes never rewrite history
     ([[adr-007-price-snapshots-and-versions]] pattern).
@@ -85,6 +111,10 @@ Canonical template module (with [[customers]]).
 - **Picker**: `pickVehiclesRemote`, `pickInventoryVehiclesRemote`
   (search: plate via the versions table, VIN, make, model, HSN, TSN,
   plus holder name on `pickVehiclesRemote`).
-- **Tests**: `vehicle-service.test.ts`, `vehicle-photo-service.test.ts`,
+- **Tests**: `vehicle-service.test.ts`, `vehicle-photo-service.test.ts`
+  (stock-only guard, gallery deletion on sale),
   `vehicle-document-service.test.ts`, `vehicle-documents.remote.test.ts`,
-  `VehicleForm.test.ts`, `sale-sign.remote.test.ts`.
+  `vehicles.remote.test.ts` (history merge, Aufträge tab guards),
+  `detail-tabs.test.ts`, `VehicleForm.test.ts`,
+  `sale-sign.remote.test.ts`, `e2e/vehicles.spec.ts` (tab/action
+  gating, Ankauf modal, archive round trip).

@@ -2,7 +2,7 @@
 
 Moderne Web-App für einen kleinen Kfz-Betrieb mit Werkstatt **und** Gebrauchtwagen-Handel — Nachfolger der alten Access-basierten "Kfz-Kaufmann"-Software.
 
-Diese Anwendung verwaltet Kunden, Fahrzeuge, Angebote, Rechnungen, Mahnungen, Termine, Mitarbeiter, Lohn, Buchhaltung, Fahrzeugbestand mit Verkaufsschildern, Serienbriefe und liefert Controlling-Auswertungen. Außerdem importiert sie alte `.mdb`-Datenbanken aus dem Vorgängersystem.
+Diese Anwendung verwaltet Kunden, Fahrzeuge, Aufträge (Kanban), Angebote, Rechnungen (inkl. Storno und Zahlungserinnerungen), Termine, Mitarbeiter mit Abwesenheiten, Zeiterfassung, Buchhaltung, Fahrzeugbestand mit Verkaufsschildern, Reifenkatalog und Reifeneinlagerung, Rundschreiben und News-Beiträge für die Website. Außerdem importiert sie alte `.mdb`-Datenbanken aus dem Vorgängersystem und bindet eBay an. Die ausführliche Wissensbasis liegt unter `docs/` (`docs/INDEX.md`).
 
 ## Inhaltsverzeichnis
 
@@ -80,6 +80,10 @@ Beim ersten Aufruf von `http://localhost:5173/` werden Sie automatisch zum **Fir
 | `APP_SECRET`   | ja      | HMAC-Geheimnis für better-auth Session-Cookies (Signatur, keine Datenverschlüsselung)                                                                                                       |
 | `API_TOKENS`   | nein    | Komma-separierte Liste der Bearer-Tokens für `/api/public/*`. Mindestens 8 Zeichen je Eintrag, ideal: kryptographisch zufällige ≥ 16 Zeichen. Leer/unset = öffentliche API blockiert alles. |
 | `NODE_ENV`     | nein    | `development` / `production`                                                                                                                                                                |
+
+Weitere optionale Variablen (`APP_ENCRYPTION_KEY` für Secrets-Verschlüsselung,
+`EBAY_*` für die eBay-Anbindung, `BODY_SIZE_LIMIT=64M` für den MDB-Upload, …)
+sind vollständig in `docs/operations/environment-variables.md` dokumentiert.
 
 Beispiel `.env`:
 
@@ -217,9 +221,9 @@ ausweisen, sodass Ops vor dem Deploy entscheiden kann.
 
 ## PWA-Hinweise
 
-Die Anwendung kann als PWA erweitert werden (Service Worker via SvelteKit nativ, kein
-zusätzliches Paket). Aktuell ist noch kein Manifest und Service Worker ausgeliefert — diese
-Bausteine werden in einer Folgeiteration ergänzt.
+Die Anwendung ist eine installierbare PWA: Web-App-Manifest + Service Worker via
+SvelteKit-nativem `src/service-worker.ts` (Precache der Build-Assets, im Dev-Modus
+deregistriert). Details in `docs/architecture/pwa-service-worker.md`.
 
 ## First Setup Wizard
 
@@ -243,12 +247,13 @@ src/
 ├── app.css                       Tailwind + DaisyUI-Imports
 ├── app.d.ts / app.html
 ├── hooks.ts                      Remote-Function-Transport-Map
-├── hooks.server.ts               Migrationen & Seed beim Start
+├── hooks.server.ts               Auth/Session, Setup-Gate, Rate-Limits, Seed beim 1. Request
 ├── lib/
 │   ├── components/
 │   │   ├── layout/               AppShell, PageHeader, Navigation
 │   │   └── ui/                   Pagination, Toolbar, EmptyState, ConfirmDialog,
-│   │                             StatCard, ToastTray, ComingSoon
+│   │                             StatCard, ToastTray, TabGroup, SearchablePicker,
+│   │                             MultiSearchablePicker, PdfViewer, ImageUploader
 │   ├── server/
 │   │   ├── db/
 │   │   │   ├── client.ts         Drizzle-Client (Postgres-Pool)
@@ -257,16 +262,16 @@ src/
 │   │   │   ├── migrate.ts        Migrationsläufer
 │   │   │   └── seed-defaults.ts  Default-Daten (Mailvorlagen, Kategorien, Nummernkreise)
 │   │   ├── services/             Repository/Service-Layer pro Domäne
-│   │   └── utils/crypto.ts       AES-GCM für SMTP-Passwort
-│   ├── stores/                   $state-basierte Stores (Toast)
-│   └── utils/                    money, numbering, pagination, client-error
+│   │   └── crypto.ts             AES-256-GCM für Secrets (SMTP-Passwort, eBay-Tokens)
+│   ├── stores/                   $state-basierte Stores (busy, toast, formDirty, creation-flow)
+│   └── utils/                    money, numbering, pagination, client-error, status-labels
 └── routes/
-    ├── +layout.{server.ts,svelte}     Setup-Gate / AppShell
+    ├── +layout.svelte                 AppShell (Setup-Gate/Session via hooks.server.ts)
     ├── +page.svelte                   Dashboard
     ├── setup/                         First Setup Wizard
     ├── customers/                     Kunden (List/Detail/New/Edit)
     ├── vehicles/                      Fahrzeuge (List/Detail/New/Edit)
-    └── … weitere Module (Stub-Pages mit `ComingSoon`)
+    └── … weitere Module (alle vollständig umgesetzt, keine Stubs)
 ```
 
 **Remote Functions** (`*.remote.ts`):
@@ -291,9 +296,9 @@ Vollständiges Schema in `src/lib/server/db/schema.ts`. Auswahl der wichtigsten 
 | `documents` + `document_items`                               | Gemeinsames Dokumentenmodell (Rechnung, Angebot, Mahnung …)                             |
 | `document_payments`                                          | Zahlungseingänge je Dokument                                                            |
 | `items` / `suppliers`                                        | Artikel/Leistungen, Lieferantenstamm                                                    |
-| `calendar_entries` / `public_holidays`                       | Diskriminierter Kalender (Termine + Betriebsschließungen) + Feiertage                   |
-| `employees` / `employee_absences`                            | Mitarbeiter mit Abwesenheiten (Urlaub, Krank)                                           |
-| `payroll_periods` / `payroll_entries`                        | Lohnperioden und Lohnabrechnungen                                                       |
+| `calendar_entries`                                           | Diskriminierter Kalender (Termine + Betriebsschließungen); Feiertage werden berechnet   |
+| `employees` / `employee_absences`                            | Mitarbeiter mit Abwesenheiten (Urlaub, Krank, halbe Tage)                               |
+| `work_orders` / `work_order_items` / `time_entries`          | Aufträge (Kanban), Arbeitspositionen und Zeiterfassung                                  |
 | `ledger_categories` / `ledger_entries` / `recurring_entries` | Buchhaltung mit wiederkehrenden Vorlagen                                                |
 | `sent_messages`                                              | Versand-Historie für E-Mails                                                            |
 | `access_import_jobs`                                         | Lauf-Protokoll des MDB-Imports                                                          |
@@ -324,108 +329,182 @@ Buttons wegen fehlender Eingaben, w-full, unsaved-changes-Guard via
 
 ### Start (Dashboard)
 
-KPI-Kacheln (Kunden, Fahrzeuge, Umsatz/Ausgaben/Saldo dieser Monat, offene Rechnungen,
-Mahnungen, Termine heute), Karte mit Schnell-Aktionen, und eine "Anstehende Termine"-Karte
-mit den nächsten 10 fälligen HU-Terminen + Werkstatt-Terminen, sortiert nach Datum.
+KPI-Kacheln (Kunden, Fahrzeuge, Monatsumsatz/-ausgaben/-saldo, offene Rechnungen,
+Zahlungserinnerungen, Termine heute), Karte mit Schnell-Aktionen, und eine
+"Anstehende Termine"-Karte mit den nächsten 10 fälligen HU-Terminen +
+Werkstatt-Terminen, sortiert nach Datum.
 
 ### Kunden
 
 - Liste mit serverseitiger Pagination (fix 25 pro Seite), Volltextsuche über
-  Name/Kundennr./Ort/Telefon/E-Mail, Filter Privatkunden/Firmenkunden/Alle.
-  Archivierte Kunden sind aus der Liste ausgeschlossen.
-- Detailansicht mit Anschrift, Kontakt, Notizen.
-- Form für Neu und Bearbeiten mit Inline-Validierung (mind. Firma oder Nachname, gültige E-Mail).
-- Lösch-Bestätigung über `ConfirmDialog`, anschließend Toast-Erfolg.
-- Komplett über Remote Functions.
+  Nummer/Name/Firma/Ort/PLZ/Straße/Telefon/E-Mail/eBay-Handle, Filter-Tabs
+  Alle/Privatkunden/Firmenkunden/eBay plus **Archiv**-Tab (archivierte
+  Kunden sind sonst überall ausgeblendet).
+- Detailansicht mit Tabs Übersicht / Fahrzeuge / Rechnungen / Aufträge,
+  Ad-hoc-E-Mail-Versand direkt vom Kunden.
+- **Archivieren statt Löschen**: der Lösch-Guard verweigert mit deutscher
+  Zählung verknüpfter Datensätze und verweist auf das Archiv.
+- Form für Neu und Bearbeiten mit Klick-Zeitpunkt-Validierung; komplett
+  über Remote Functions.
 
 ### Fahrzeuge
 
-- Eine Stammdatentabelle für Kunden- und Bestandsfahrzeuge (`customerId` ist nullable).
-- Liste mit Suche über Kennzeichen, FIN, Marke, Modell.
-- Form mit allen Kfz-Daten: Erstzulassung, km-Stand, HU, HSN/TSN, Hubraum, kW, Kraftstoff, Getriebe.
-- Detailansicht mit getrennten Kacheln für Stammdaten und Technik.
+- Eine Stammdatentabelle für Kunden- und Bestandsfahrzeuge (`customerId` ist nullable;
+  NULL = Bestand).
+- Liste mit Suche über Kennzeichen (versioniert), FIN, Marke, Modell, HSN/TSN, Halter.
+- Detailansicht mit Tabs Übersicht / Halter / Rechnungen / Aufträge / Fotos (nur
+  Bestand) / Dokumente / Historie (Ankäufe, Verkäufe, Kennzeichen-Wechsel).
+- Kennzeichen sind versioniert — alte Belege behalten das damals gültige Kennzeichen.
 
 ### Fahrzeugbestand / Gebrauchtwagen-Handel
 
-Bestandsliste, Foto-Galerie, Fahrzeug-Dokumente (PDF/JPEG/PNG/WebP, max.
-15 MB je Datei), optionaler Vorbesitzer-Bezug und "Verkaufen"-Aktion mit
-Übergabe Bestand → Kunde (`vehicle_purchases`, `vehicle_listings`,
-`vehicle_photos`, `vehicle_documents`, `vehicle_sales`). Das
+Bestandsliste, Foto-Galerie (nur für Bestandsfahrzeuge; beim Verkauf wird
+die Galerie gelöscht, ein Ankauf startet leer), Fahrzeug-Dokumente
+(PDF/JPEG/PNG/WebP, max. 15 MB je Datei), optionaler Vorbesitzer-Bezug.
+**Ankauf** übernimmt ein Kundenfahrzeug in den Bestand (Historienzeile mit
+umbenennungssicherem Vorbesitzer-Snapshot, §25a UStG Differenzbesteuerung);
+der **Verkauf** läuft über die bezahlte Verkaufs-Rechnung (Fahrzeug wandert
+zum Käufer, `vehicle_sales`-Zeile mit Rechnungs-Backlink). Das
 **A4-Verkaufsschild als PDF** (ein Klick auf der Detailseite) trägt
 roten Kopfbalken, Logo-Chip, Preisbox, Faktenraster, Highlights in zwei
 Spalten und einen QR-Code "Online ansehen".
 
-### Lohn und Gehalt
+### Aufträge (Werkstatt, Kanban)
 
-- Mitarbeiter-Stammdaten mit Steuer/SV, Bankverbindung, Beschäftigungsart, Wochenstunden.
-- Abwesenheiten (Urlaub, Krankheit) via `employee_absences`.
-- Periodenverwaltung über `payroll_periods` + `payroll_entries` (Brutto/Abzüge/Netto).
-- **Lohnzettel-PDF** im deutschen Standard wird in einer Folgeiteration aus diesen Daten erzeugt.
-- Bei vorhandener `private_email` des Mitarbeiters wird der Lohnzettel automatisch per SMTP versendet
-  (Eintrag in `sent_messages`). Wiederversand erfordert ausdrückliche Bestätigung.
+Dreispaltiges Kanban (offen / in Bearbeitung / abgeschlossen) mit Drag & Drop,
+Mehrfach-Zuweisung von Mitarbeitern, Arbeitspositionen (Arbeitszeit zum
+konfigurierten Stundensatz, Material mit Preis-Snapshot) und Termin-Verknüpfung
+(ein Auftrag pro Termin). **Abschließen erzeugt die Rechnung** aus den erfassten
+Positionen; pro Auftrag existiert höchstens eine aktive Rechnung, Korrekturen
+laufen über den Storno-Zyklus (Storno öffnet den Auftrag automatisch wieder;
+Aufträge mit Rechnungshistorie sind GoBD-konform unlöschbar). Details in
+`docs/domain/order-invoice-rules.md`.
+
+### Kalender
+
+Monatsraster + Terminliste über eine gemeinsame Tabelle (`Termin` |
+`Betriebsschließung`), überlagert mit **berechneten Feiertagen** (Gauß-Formel,
+alle 16 Bundesländer — `docs/architecture/holidays.md`), Mitarbeiter-Abwesenheiten,
+HU-Fälligkeiten und geplanten Aufträgen. Website-Buchungen kommen über die
+öffentliche API herein (freie Slots aus Öffnungszeiten minus Schließungen und
+Feiertagen).
+
+### Personal und Zeiterfassung
+
+- Mitarbeiter-Stammdaten mit Steuer/SV und Bankverbindung; Gehälter
+  **versioniert** (`employee_salary_versions`, stichtagsgenau).
+- Abwesenheiten (Urlaub / Krankheit / Sonstiges) mit serverseitig berechneten,
+  **feiertagsbewussten Arbeitstagen**, hartem Urlaubsbudget pro Kalenderjahr,
+  halben Tagen und Konflikt-Logik (Ersetzen-Dialog bei Urlaub↔Krankheit).
+- **Zeiterfassung** (`/hours`): Mitarbeiter erfassen Stunden (Selbst-Service über
+  die Berechtigung `hours:write_own`), Auftrags-Arbeitspositionen schreiben
+  automatisch durch; Auswertungen unter `/hours/reports` (Monatsbericht,
+  Auslastung). Ein Payroll-Modul gibt es bewusst nicht mehr.
 
 ### Buchhaltung / Ein- und Ausgaben
 
-- Eine Tabelle `ledger_entries` für alle Bewegungen, kategorisiert über `ledger_categories`.
-- **App-interne** Vorgänge (Rechnungen, Lohnabrechnung, Fahrzeug-Verkauf/Ankauf) erzeugen automatisch
-  `ledger_entries` mit `source` ungleich `'manual'`.
-- **Manuelle externe** Buchungen für Ausgaben/Einnahmen, die nicht aus App-Modulen stammen.
-- **Wiederkehrende** Buchungen mit Intervall (täglich/wöchentlich/monatlich/quartal/halbjährlich/jährlich)
-  über `recurring_entries`. Ein Server-Job erzeugt fällige Einträge zum Stichtag.
+- Eine Tabelle `ledger_entries` für alle Bewegungen (Einnahme/Ausgabe, brutto/
+  netto/Steuer, Zahlungsart), kategorisiert über die beim Setup geseedeten
+  `ledger_categories`.
+- Buchungen werden **manuell erfasst** (`source='manual'`), optional verknüpft
+  mit Beleg, Kunde oder Lieferant.
+- Die Tabelle `recurring_entries` (wiederkehrende Vorlagen) existiert im Schema,
+  hat aber noch keine UI/Automatik — geplante Automatisierung bliebe ohnehin
+  bedienergesteuert (`docs/decisions/adr-009-no-in-process-scheduler.md`).
+- Das **Rechnungsausgangsbuch** (`/sales-ledger`) ist eine Lese-Sicht über die
+  Rechnungen; Export für den Steuerberater als **DATEV-Buchungsstapel-CSV**.
 
-### Controlling / Statistik
+### Reifen
 
-Eigenes Modul: KPI-Kacheln, Pflicht-Charts (Einnahmen/Ausgaben, Cashflow,
-Kategorien, Top-Kunden/Lieferanten, Mahnstufen, Auftragsvolumen, Fahrzeugmargen, Auslastungs-Heatmap,
-Lohnaufwand, USt/Vorsteuer-Verlauf), Forecast mit What-if-Slider, Drill-Down, PDF-Bericht.
+**Reifenkatalog** (`/tires`): eigene Reifen-Stammdaten mit typisierten
+EU-Label-Feldern, versionierten Preisen und `onlineSellable`-Flag für den
+Web-Shop. **Reifeneinlagerung** (`/tire-storage`): Einlagerungen mit
+Nummernkreis, A6-QR-Etikett (Scan öffnet die Detailseite) und saisonalen
+Erinnerungs-Mails an Kunden mit Opt-in.
 
 ### Gesendet
 
-Zentrale Versand-Historie aller per E-Mail rausgehenden Dokumente (Rechnung, KV, Mahnung, Serienbrief,
-Lohnzettel, Bericht). Wiederversand fordert eine ausdrückliche Bestätigung.
+Zentrale Versand-Historie aller per E-Mail rausgehenden Nachrichten (Rechnung,
+Angebot/KV, Zahlungserinnerung, Rundschreiben je Empfänger, Ad-hoc-Mails,
+Terminbestätigungen) — nur Metadaten und Plain-Text-Audit, nie Anhang-Bytes.
+
+### Aktuelle Informationen und öffentliche API
+
+News-Beiträge (`/posts`) für die Website; ausgeliefert über die
+Bearer-Token-geschützte REST-API `/api/public/*` (Gebrauchtwagen, Leistungen,
+Reifen, Termine/freie Slots, Kontakt, Firma, Beiträge) — Tokens kommen aus der
+Env-Variable `API_TOKENS`. Details in `docs/integrations/public-rest-api.md`.
+
+### eBay
+
+Anbindung des Verkäuferkontos unter `/settings/ebay`: OAuth-Connect
+(Tokens AES-256-GCM-verschlüsselt), Compliance-Endpoint für
+Marketplace-Account-Deletion und der **Angebots-Import** über die Trading-API
+(idempotent, Beendet/Wiederaufleben-Semantik). Bidirektionale Reifen-Sync ist
+Phase 3 und zurückgestellt. Details in `docs/integrations/ebay.md`.
 
 ### Einstellungen
 
-Untergliedert in: Firmendaten, Erscheinungsbild, Bank/Zahlung, Steuern, Nummernkreise,
-Textbausteine/Mailvorlagen, Kfz-Freifelder, Fahrzeugbestand/Verkaufsschild, E-Mail/SMTP, Controlling,
-Lohn, Buchhaltung, Import, PDF, Backup/Export, System.
+Eine flache, berechtigungsgefilterte Tab-Leiste (`/settings/*`):
+**Allgemein** (Firmendaten, §19 UStG, Logo, Stundensatz), **Mailvorlagen**,
+**Zahlungserinnerung**, **SMTP** (inkl. Testversand), **Benutzer & Rollen**,
+**Öffnungszeiten**, **Reifen-Erinnerungen**, **Anfragen**, **eBay**, **Import**
+und **Konto** (eigenes Passwort). Alte `?tab=`-Links leiten auf die neuen
+Routen um.
 
 ### MDB-Import
 
-Strikt **In-Memory** — die hochgeladene Datei wird nicht persistiert.
+Der Kfz-Kaufmann-Import lebt unter `/settings/import` (Berechtigung `import`):
 
-1. `.mdb` hochladen (max. 200 MB; Magic-Bytes-Check)
-2. Schema analysieren, Mapping-Vorschau anzeigen
-3. Daten-Vorschau mit Beispielzeilen, Validierungsfehler markiert
-4. Nutzer bestätigt → Import läuft, Fehlerprotokoll
-5. Datei wird verworfen
+1. `.mdb` hochladen (Base64-Upload, reale MDB ~25-30 MB; benötigt
+   `BODY_SIZE_LIMIT=64M` und `mdbtools`)
+2. **"Vorschau (ohne Speichern)"** — Dry-Run parst, mappt und validiert alles,
+   ohne zu schreiben
+3. "Jetzt wirklich importieren" — alle 13 Tabellen werden **vor** dem Wipe
+   gelesen (Read-before-Wipe), dann gemappt und eingefügt; Live-Fortschrittsbalken
+4. Ergebnis-Modal mit Zählern je Tabelle und aufklappbarer Drop-Tabelle
+   (Tabelle / Legacy-Schlüssel / deutscher Grund); Audit-Zeile in
+   `access_import_jobs` auch bei Fehlschlag
 
+Kunden mit "ebay" im Namen werden automatisch als `kind='ebay'` importiert.
+Details in `docs/integrations/kfz-kaufmann-import.md`.
 Test-Datei für die Entwicklung: `Daten/kfz-kaufmann-test.mdb` (nicht im Repo).
 
 ## E-Mail-Versand
 
 Ausschließlich SMTP via **nodemailer** — kein IMAP/POP. Konfiguration in `smtp_settings`,
-Passwort AES-GCM-verschlüsselt.
+Passwort AES-256-GCM-verschlüsselt; unter `/settings/smtp` gibt es einen **Testversand**
+mit kuratierten deutschen Fehlermeldungen (DNS, Verbindung, Auth, TLS, Timeout, Empfänger).
 
 Beim Klick auf "Per E-Mail senden" öffnet sich ein **Sende-Dialog**, vollständig
 **vorausgefüllt** aus der jeweiligen Mailvorlage (`mail_templates`) mit aufgelösten Platzhaltern
-(`{firma}`, `{kundeAnredeName}`, `{rechnungNummer}`, `{fahrzeugKennzeichen}`, `{periode}`, …).
+(`{firma}`, `{kundeAnredeName}`, `{rechnungNummer}`, `{fahrzeugKennzeichen}`, …).
 
+Weitere Pfade: Ad-hoc-Mail vom Kundendatenblatt (optional HTML),
+**Rundschreiben** an Opt-in-Kunden (BCC-Batches à 50, Abbestellen-Fußzeile +
+`List-Unsubscribe`-Header) und Terminbestätigungen der öffentlichen API.
 Ist das Dokument bereits versendet, wird ein Hinweis angezeigt und eine ausdrückliche
-Bestätigung verlangt. Jeder Versand wird in `sent_messages` protokolliert.
+Bestätigung verlangt. Jeder Versand wird in `sent_messages` protokolliert
+(Testversand bewusst nicht). Details in `docs/integrations/smtp-mail.md`.
 
 ## PDF-Erstellung und Vorschau
 
-`pdf-lib` für Erstellung, Vorschau über den nativen PDF-Viewer des Browsers (Blob-URL im iframe). Vorgesehene Typen:
+`pdf-lib` für Erstellung, Vorschau über den nativen PDF-Viewer des Browsers
+(Blob-URL im iframe). Gerenderte Typen (`src/lib/server/services/pdf-service.ts`,
+gecacht in Postgres, ausgeliefert über das globale `pdfs.remote.ts`):
 
-- Rechnung, Kostenvoranschlag, Angebot, Auftragsbestätigung, Mahnung, Serienbrief
-- Verkaufsschild Fahrzeugbestand (1 Seite A4)
-- Bestandsliste Fahrzeuge
-- Lohnzettel
-- Lohnjournal je Periode, Jahreslohnkonto
-- Einnahmen-/Ausgabenliste, Saldenübersicht, Kategorien-Auswertung
-- USt/Vorsteuer-Auswertung, Lohnaufwand-Auswertung, Belegjournal
-- Controlling-Bericht (Monats-/Quartals-Bericht)
+- Rechnung (inkl. Storno), Angebot, Kostenvoranschlag, Auftragsbestätigung
+  — mehrseitig mit wiederholten Tabellenköpfen, gemischten MwSt-Sätzen und
+  "Seite X von Y"
+- Zahlungserinnerung
+- Verkaufsschild Fahrzeugbestand (1 Seite A4, quer)
+- Reifeneinlagerungs-Etikett (A6 mit QR-Code)
+
+Die Renderer sind byte-deterministisch und durch eine visuelle
+Regressions-Suite abgesichert (`pdf-visual.test.ts`, Snapshots im Repo).
+Keine PDFs, aber verwandte Exporte: **XRechnung**-XML (EN 16931) je Rechnung
+und **DATEV**-CSV für die Buchhaltung. Details in
+`docs/architecture/pdf-pipeline.md`.
 
 ## Validierung
 
@@ -433,7 +512,8 @@ Bestätigung verlangt. Jeder Versand wird in `sent_messages` protokolliert.
 - Wiederverwendbare Schemas in `src/lib/server/db/validation.ts`:
   `nameSchema`, `emailSchema`, `phoneSchema`, `ibanSchema`, `bicSchema`, `addressLineSchema`,
   `zipSchema`, `citySchema`, `notesSchema`, `longTextSchema`, `subjectSchema`,
-  `dateStringSchema`, `moneySchema`, `percentSchema`, `listParamsSchema`, `searchQuerySchema`
+  `dateStringSchema`, `moneySchema`, `percentSchema`, `licensePlateSchema`, `vinSchema`,
+  `hsnSchema`, `tsnSchema`, `timeHHMMSchema`, `listParamsSchema`, `searchQuerySchema`, …
 - Fehlermeldungen auf Deutsch, technische Logs auf Englisch.
 
 ## Listen, Pagination, Suche, Filter
@@ -449,17 +529,24 @@ Jede Liste lädt **serverseitig** über eine Remote Function mit `{ items, total
 
 ## Eingabe- und Upload-Limits
 
-- Strings haben harte `maxLength`-Limits gemäß `validation.ts`.
-- Datei-Uploads:
-  - Logo: max. 5 MB, MIME `image/png|jpeg|svg+xml`
-  - MDB: max. 200 MB, In-Memory, Magic-Bytes-Check
+- Strings haben harte `maxLength`-Limits gemäß `validation.ts`; numerische
+  Felder realistische Obergrenzen (kein Integer-Overflow zum 500er).
+- Datei-Uploads (jeweils Base64 durch die Remote Function):
+  - Logo: Base64 auf ~7 MB gedeckelt
+  - MDB-Import: Base64 auf 60 Mio. Zeichen gedeckelt (reale MDB ~30 MB);
+    der Server braucht `BODY_SIZE_LIMIT=64M`
+  - Fahrzeug-Dokumente: max. 15 MB je Datei, nur PDF/JPEG/PNG/WebP
 - Pagination wird geclippt, wenn der Client unsinnige Werte sendet.
 - Eingaben werden mit höflichen deutschen Meldungen abgewiesen.
 
 ## Globale Ladeanzeige
 
-Skeleton-Loader und kleine Spinner an den jeweiligen Ladestellen; Toast-Tray oben rechts für
-Erfolgs- und Fehlermeldungen (`src/lib/stores/toast.svelte.ts`).
+Ein einziger globaler `busy`-Store (`src/lib/stores/busy.svelte.ts`) treibt drei
+gestufte Signale: dünner Fortschrittsbalken im Header (die **einzige**
+Ladeleiste der App), deaktivierte Submit-Buttons mit Inline-Spinner und — erst
+ab 250 ms — ein Overlay über dem Inhaltsbereich. Keine Skeleton-Loader, keine
+lokalen Busy-Flags (CONTRIBUTING §6). Toast-Tray oben rechts für Erfolgs- und
+Fehlermeldungen (`src/lib/stores/toast.svelte.ts`).
 
 ## Backup / Export
 
@@ -481,12 +568,20 @@ Die App selbst, der Migration-Runner und das Container-Image führen
   - `src/lib/utils/pagination.test.ts` – Clamp + Buttons
   - `src/lib/server/utils/crypto.test.ts` – AES-GCM Round-Trip
   - `src/routes/customers/CustomerForm.test.ts` – Komponententest mit user-event
-- E2E erfolgt **extern** durch das Playwright-Plugin des AI-Coding-Agents — **kein** Playwright im Projekt.
+- **E2E**: echte `@playwright/test`-Suite im Repo (`e2e/`, 55 Tests / 12 Specs) gegen
+  einen Production-Build und die committete anonymisierte Fixture-DB
+  (`e2e/fixtures/seed.sql.gz`); Browser werden nie heruntergeladen (gecachtes Chromium).
+  Details in `docs/operations/test-database.md` und `CONTRIBUTING.md` §13. Zusätzlich
+  bleibt die interaktive Playwright-Begehung während der Entwicklung verpflichtend.
 
 ```bash
-pnpm test           # einmalig
-pnpm test:watch # Watch-Modus
-pnpm test:cov   # mit Coverage-Report
+pnpm test               # einmalig (gesamte Vitest-Suite)
+pnpm test:watch         # Watch-Modus
+pnpm test:cov           # mit Coverage-Report
+pnpm test:unit          # src/lib/server|stores|utils, hooks
+pnpm test:components    # src/lib/components
+pnpm test:integration   # src/routes
+pnpm test:e2e           # Playwright-Suite (E2E_WEB_SERVER=1 SEED=1 für den Voll-Automatik-Lauf)
 ```
 
 ## Code-Formatierung mit Prettier + Husky
@@ -498,10 +593,14 @@ pnpm test:cov   # mit Coverage-Report
 
 ## Bekannte Einschränkungen
 
-- Stub-Module sind funktional **nicht** ausgeliefert (die Datenstruktur und Routen stehen).
-- Lohnabrechnung übernimmt aktuell keine zertifizierte deutsche Lohnberechnung — die Sätze
-  sind konfigurierbar; Brutto/Netto-Berechnung ist als Schema vorbereitet.
-- Service Worker / PWA-Manifest sind noch nicht eingebunden.
+- Keine zertifizierte deutsche Lohnabrechnung — das Payroll-Modul wurde bewusst durch die
+  Zeiterfassung (`/hours`) ersetzt (Migration 0015).
+- eBay-Integration: Phase 3 (bidirektionale Reifen-Synchronisation) ist per ADR-014
+  zurückgestellt; der Angebots-Import (Phase 2) ist gebaut, die Betreiber-Freigabe
+  (Consent) steht noch aus.
+- Urlaubs-Übertrag (Carryover) und automatische Betriebsschließungs-Anrechnung aus dem
+  Abwesenheits-Design 2026-06-23 sind noch nicht umgesetzt (siehe
+  `docs/modules/employees.md`).
 
 ## Hinweise zur Weiterentwicklung
 

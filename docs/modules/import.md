@@ -1,7 +1,7 @@
 ---
 title: Module - import (Kfz-Kaufmann Import UI)
 tags: [module, import]
-updated: 2026-07-05
+updated: 2026-07-10
 ---
 
 # import - "Import (Kfz-Kaufmann)"
@@ -26,5 +26,9 @@ rules and quirks live in [[kfz-kaufmann-import]].
 - **Service**: `import-service.ts` (see [[kfz-kaufmann-import]]).
 - **Safety**: read-before-wipe, dry-run, structured skip report, audit
   row even on failure ([[adr-004-import-wipe-first-read-before-wipe]]).
+- **eBay customer detection** (2026-07): the customer mapping sets
+  `kind='ebay'` via `isEbayCustomerName`
+  (`src/lib/utils/ebay-detection.ts`) - import-time only, details in
+  [[kfz-kaufmann-import]].
 - **Tests**: `import-service.test.ts` (transform helpers + full pipeline
   through a mocked `mdb-export` boundary).

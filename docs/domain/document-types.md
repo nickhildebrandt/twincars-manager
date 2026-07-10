@@ -1,7 +1,7 @@
 ---
 title: Beleg types (document types)
 tags: [domain, documents, billing]
-updated: 2026-07-05
+updated: 2026-07-10
 ---
 
 # Beleg types
@@ -31,7 +31,9 @@ number range `ZE-{YYYY}-{NNNN}` - deliberately NOT in `documents`
 
 - Invoices: `created` → `paid` (via `document_payments` covering the gross
   total) or `cancelled`/`storno` chain; `reminderLevel` counts sent
-  Zahlungserinnerungen.
+  Zahlungserinnerungen. Invoices billing a work order additionally
+  follow the order ↔ invoice rule set (`documents.work_order_id`,
+  auto-reopen on Storno) - [[order-invoice-rules]].
 - Offers/KV/AB: `created` → `converted` (or cancelled). The offer detail
   page offers "In Rechnung umwandeln" (`/offers/[id]/convert`).
 - Reminders: `open` → `sent` → `paid` / `cancelled`.
@@ -57,4 +59,5 @@ on the document. The legacy import backfills zero header totals from line
 sums because ~73 % of legacy invoices carried no header total
 ([[kfz-kaufmann-import]]).
 
-Related: [[invoices]], [[offers]], [[pdf-pipeline]], [[sales-ledger]].
+Related: [[invoices]], [[offers]], [[order-invoice-rules]],
+[[pdf-pipeline]], [[sales-ledger]].

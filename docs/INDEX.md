@@ -1,7 +1,7 @@
 ---
 title: TwinCarsManager Knowledge Base (MOC)
 tags: [moc, index]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # TwinCarsManager - Map of Content
@@ -17,6 +17,7 @@ rulebooks; these notes explain, connect and locate - they do not override.
 - [[business-overview]] - TwinCast: Kfz-Werkstatt, Reifenhandel, Gebrauchtwagen
 - [[entities]] - the entity map (Kunde, Fahrzeug, Beleg, Reifen, ...)
 - [[document-types]] - Beleg types: Rechnung, Angebot, KV, AB, Storno, Zahlungserinnerung
+- [[order-invoice-rules]] - the Auftrag ↔ Rechnung rule set: aktive Rechnung, item lock, Storno cycle, GoBD
 - [[glossary]] - German domain terms used in UI and data
 
 ## Architecture
@@ -28,7 +29,8 @@ rulebooks; these notes explain, connect and locate - they do not override.
 - [[loading-and-busy]] - the single `busy` store and the three loading tiers
 - [[creation-flow]] - full-page create from pickers, draft stack store, MultiSearchablePicker
 - [[styling]] - DaisyUI v5 + Tailwind v4 rules, card baseline, forbidden patterns
-- [[pdf-pipeline]] - pdf-lib rendering, bytea cache, `pdfs.remote.ts`, labels/signs
+- [[pdf-pipeline]] - pdf-lib rendering, bytea cache, `pdfs.remote.ts`, labels/signs, visual regression
+- [[holidays]] - computed German public holidays (Gauss Easter, 16 Bundesländer, no year limit)
 - [[pwa-service-worker]] - installable PWA, precache strategy, dev unregistration
 - [[known-constraints]] - pinned versions and why, dev-only hydration issue, otel shim
 
@@ -43,7 +45,7 @@ System: [[settings]] · [[import]] · [[setup]] · [[search]] · [[dashboard-and
 
 ## Integrations
 
-- [[ebay]] - compliance endpoint, OAuth connect, encrypted tokens, next phases
+- [[ebay]] - compliance endpoint, OAuth connect, encrypted tokens, Phase-2 listing import
 - [[public-rest-api]] - Bearer-token REST API for the website (all endpoints)
 - [[xrechnung]] - EN 16931 / UBL 2.1 e-invoice XML sidecar
 - [[datev]] - DATEV Buchungsstapel CSV export for the Steuerberater
@@ -59,6 +61,10 @@ System: [[settings]] · [[import]] · [[setup]] · [[search]] · [[dashboard-and
 - [[dev-environment]] - pnpm, Postgres, mdbtools, mail catcher, headless E2E
 - [[e2e-smoke]] - the standing E2E smoke script (`scripts/e2e-smoke.mjs`)
 - [[test-database]] - reproducible seeded test DB + the Playwright E2E suite (`pnpm test:e2e`)
+
+## Releases
+
+- [[v1.4.0]] - 2026-07-10: computed holidays, SMTP Testversand, PDF hardening + visual regression, order-invoice rule set, absences (Teil A), stock invariants, eBay Phase 2, tabs standard, E2E suite (migrations 0035-0037)
 
 ## Decisions (ADRs)
 
@@ -89,7 +95,7 @@ Superseded plan trackers and design specs, moved verbatim (do not update):
 - `archive/ebay-integration-spec.md` - original eBay spec; current state now lives in [[ebay]]
 - `archive/specs/2026-05-02-unified-calendar-entries-design.md` - see [[adr-011-unified-calendar-entries]]
 - `archive/specs/2026-05-26-hetzner-podman-deployment-design.md` - see [[deployment]]
-- `archive/specs/2026-06-23-employee-absences-vacation-design.md` - approved but NOT yet implemented design (Resturlaub, carryover, workday-service); see [[employees]]
+- `archive/specs/2026-06-23-employee-absences-vacation-design.md` - absence design; the core rules (holiday-aware workday counts, hard vacation gate, overlap semantics) shipped 2026-07, carryover (Übertrag) + Betriebsschließungs-Anrechnung still unimplemented; see [[employees]]
 - `archive/plans/2026-05-26-hetzner-podman-deployment.md` - task-level deployment plan
 
 ## Conventions for this knowledge base

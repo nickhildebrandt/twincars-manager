@@ -1,14 +1,14 @@
 ---
 title: Database schema overview
 tags: [architecture, database, drizzle, postgres]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # Database schema overview
 
 PostgreSQL (>= 14 dev, 18-alpine in prod) + Drizzle ORM. Single schema file
-`src/lib/server/db/schema.ts`; migrations in `drizzle/` (0000..0034 as of
-2026-07-06). Migrations run OUTSIDE the request lifecycle: `scripts/migrate.js`
+`src/lib/server/db/schema.ts`; migrations in `drizzle/` (0000..0037 as of
+2026-07-10). Migrations run OUTSIDE the request lifecycle: `scripts/migrate.js`
 before `node build` (Dockerfile CMD), `pnpm db:migrate` in dev. Hand-edit
 generated SQL to be idempotent (`IF NOT EXISTS`, `DO $$ ... EXCEPTION`
 blocks) per `CONTRIBUTING.md` §17. Tests run against **pg-mem** (the whole
@@ -67,7 +67,10 @@ unit_price_net since 0008, NO discontinued/stockMin/stockMax since 0026 -
 ### Documents & billing
 
 `documents` (shared model, [[document-types]]; storno FK pair set by raw
-SQL in the migration, not `.references()`), `document_items` (snapshots +
+SQL in the migration, not `.references()`; `work_order_id` FK SET NULL +
+index since migration 0037 - the permanent backlink from every invoice
+that billed a work order, Stornos included, [[order-invoice-rules]]),
+`document_items` (snapshots +
 optional itemId/tireId back-links), `document_payments`, `document_pdfs`
 (bytea + inputHash cache, [[pdf-pipeline]]), `reminders`,
 `reminder_pdfs`, `sent_messages` (audit of every mail, [[sent]]).
@@ -85,7 +88,10 @@ opensAt/closesAt/closed).
 `work_orders` (orderNumber unique from the `work_order` range, status
 open|in_progress|done, optional customer/vehicle - at least one
 required, enforced in code, `appointmentId` unique partial - one order
-per Termin, `invoiceId` set on completion, `scheduledDate` +
+per Termin, `invoiceId` = pointer to the single ACTIVE invoice, set on
+completion and cleared when that invoice is cancelled - the permanent
+history lives on `documents.work_order_id`
+([[order-invoice-rules]]), `scheduledDate` +
 optional `scheduledTime` HH:MM for calendar placement - migration 0034
 split the former `scheduled_at` timestamptz into these two columns,
 converting existing values as Europe/Berlin wall-clock),
@@ -99,7 +105,10 @@ partial indexes); production DDL is unaffected.
 ### Calendar
 
 `calendar_entries` (kind `appointment`|`closure`,
-[[adr-011-unified-calendar-entries]]), `public_holidays`.
+[[adr-011-unified-calendar-entries]]), `public_holidays` - **dormant**
+since 2026-07: holidays are computed by `holiday-service.ts`
+([[holidays]]); nothing reads or writes the table anymore, dropping it
+is a future migration candidate.
 
 ### Ledger
 
@@ -115,7 +124,11 @@ pending/sent/failed), `access_import_jobs` (status, progress 0-100 +
 progressLabel for the live import bar, row counts, notes),
 `tire_storage`, `tire_reminder_log` (unique customer+season+year),
 `ebay_credentials` (single-row semantics, AES-256-GCM encrypted tokens,
-environment production|sandbox).
+environment production|sandbox), `ebay_listings` (migration 0036:
+Trading-API import rows, unique per (environment, ebay_item_id),
+status active|ended, picture URLs jsonb, prepared `tire_id` FK SET NULL
+for Phase 3 - [[ebay]]), `ebay_import_runs` (append-only import run
+log, curated German errors only).
 
 ### Auth (better-auth + RBAC overlay)
 
@@ -176,4 +189,8 @@ hours ELSE 0 END` - no builder for CASE WHEN). New raw SQL needs the
 0030 ebay_credentials · 0031 import job progress · 0032 shipping module
 removed · 0033 work orders (Aufträge) + labor rate · 0034 scheduling
 split (scheduled_date + scheduled_time, Berlin wall-clock conversion) +
-vehicles.previous_owner_customer_id + vehicle_documents.
+vehicles.previous_owner_customer_id + vehicle_documents ·
+0035 stock-only vehicle-photo cleanup (deletes gallery rows on
+customer-owned vehicles, [[vehicles]]) · 0036 ebay_listings +
+ebay_import_runs ([[ebay]]) · 0037 documents.work_order_id backlink +
+guarded two-pass backfill ([[order-invoice-rules]]).

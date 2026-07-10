@@ -1,7 +1,7 @@
 ---
 title: Module - invoices (Rechnungen)
 tags: [module, invoices, documents]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # invoices - "Rechnungen"
@@ -28,7 +28,16 @@ updated: 2026-07-07
     ([[adr-015-storno-instead-of-delete]]). The Storno PDF is rendered
     and persisted at cancel time inside `cancelInvoice` (like every
     other document PDF at creation; the view path reads only from the
-    cache and would otherwise 404 forever).
+    cache and would otherwise 404 forever). Since 2026-07 the generic
+    `setInvoiceStatusRemote` accepts only
+    `created`/`sent`/`paid` - a status can no longer be flipped to
+    `cancelled` outside the Storno flow.
+  - **Order link** (migration 0037, [[order-invoice-rules]]): invoices
+    that bill a work order carry the permanent
+    `documents.work_order_id` backlink (Storno documents inherit it);
+    cancelling the ACTIVE invoice of an order auto-reopens the order
+    (in_progress, time entries un-billed); order-linked invoices are
+    undeletable; the invoice detail links back to its Auftrag.
   - **Lifecycle CTAs**: the header CTA follows created → "Versenden" →
     sent → "Als bezahlt markieren". Additionally, "Als bezahlt
     markieren" is available already from `created` as a body action

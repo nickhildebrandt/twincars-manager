@@ -1,7 +1,7 @@
 ---
 title: Module - inventory (Zu verkaufende Fahrzeuge)
 tags: [module, inventory, used-cars]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # inventory - "Zu verkaufende Fahrzeuge"
@@ -32,7 +32,9 @@ updated: 2026-07-07
     customer link is detached, the history row snapshots the seller's
     display name rename-proof and the brutto price (Paragraph 25a UStG
     differential taxation), and a `sold` listing from an earlier cycle
-    reopens as `available`.
+    reopens as `available`. Archived vehicles cannot be angekauft (409
+    with a reactivation hint). An Ankauf always starts with an EMPTY
+    photo gallery - galleries are sales artifacts ([[vehicles]]).
   - **Verkauf out**: a sale invoice carries the vehicle as a position
     AND as `documents.vehicleId` (both the `?vehicleId` preload from
     the stock panel and a manually picked vehicle position set the
@@ -40,8 +42,10 @@ updated: 2026-07-07
     `transferStockVehicleOnPayment`
     ([[invoices]]) calls `sellStockVehicleToCustomer`: buyer FK set,
     `vehicle_sales` row with the invoice gross + backlink, listing
-    flips to `sold`. Vorbesitzer stays untouched. The transfer is
-    idempotent per stock cycle and no-ops for ordinary repair invoices.
+    flips to `sold`, and the photo gallery is deleted in the same
+    write step (stock-only invariant, migration 0035 - [[vehicles]]).
+    Vorbesitzer stays untouched. The transfer is idempotent per stock
+    cycle and no-ops for ordinary repair invoices.
 - **Special**:
   - One-click "Verkaufsschild" A4 PDF from the detail
     (`sale-sign.remote.ts` in [[vehicles]]): redesigned 2026-07 (red

@@ -1,7 +1,7 @@
 ---
 title: PDF pipeline
-tags: [architecture, pdf, pdf-lib]
-updated: 2026-07-06
+tags: [architecture, pdf, pdf-lib, visual-regression]
+updated: 2026-07-10
 ---
 
 # PDF pipeline
@@ -52,6 +52,48 @@ reminders are not `documents` rows.
 
 QR codes come from `src/lib/server/services/qr-service.ts`
 (`renderQrPng`, `renderQrSvg`; `qrcode` package).
+
+## Rendering robustness (2026-07 hardening)
+
+All four renderers share these guarantees:
+
+- **WinAnsi sanitizing at every draw/measure boundary**:
+  `sanitizeWinAnsiText` (CP1252 passthrough, fold map, NFKD fallback) -
+  pdf-lib's standard fonts throw on non-WinAnsi code points, so no
+  string reaches `drawText`/`widthOfTextAtSize` unsanitized.
+- **Exact greedy wrapping**: `wrapTextLines(value, font, size, maxW)`
+  measures with the real font metrics and hard-breaks over-long words
+  char-level (replaced the old estimated `wrapLineCount`).
+- **Row-level page breaks with repeated table heads**: position tables
+  break BETWEEN rows and re-draw the head on the continuation page;
+  only rows taller than a whole page body split line-wise.
+- **Measured totals block**: the totals/summary block is measured first
+  and moves to a continuation page in one piece rather than splitting.
+- **Per-rate MwSt lines** for mixed-tax invoices; Kopftext
+  (`documents.header`) and discount notes are rendered.
+- **Shrink-to-fit header rails** (company / meta / address / vehicle
+  columns).
+- **"Seite X von Y" on every page** (patched in a final pass once the
+  page count is known).
+- **Byte-deterministic renders**: PDF-internal dates derive from the
+  entity's `updatedAt`, so the same input always yields identical bytes
+  (required by the `inputHash` cache AND the visual snapshots below).
+
+## Visual regression harness
+
+`src/lib/server/services/pdf-visual.test.ts` - a 15-fixture snapshot
+matrix (invoices incl. 45-position/3-page, mixed tax + discount, long
+descriptions, special chars, storno, from-order; offer with Kopftext;
+order confirmation; reminder; sale sign; tire label) plus
+pagination-structure and determinism tests:
+
+- Pages are rasterized with poppler's `pdftoppm` (72 dpi) and compared
+  by a pure-node pixel differ: a pixel counts as different above a
+  channel delta of 32; a page fails above 0.5 % differing pixels.
+- Committed snapshots live in
+  `src/lib/server/services/__pdf_snapshots__/*.png`; refresh via
+  `PDF_SNAPSHOTS=update pnpm exec vitest run pdf-visual`.
+- The suite skips itself when `pdftoppm` is not installed (CI-safe).
 
 ## Related outputs that are NOT PDFs
 

@@ -1,7 +1,7 @@
 ---
 title: Module - hours (Stundenerfassung)
 tags: [module, hours, time-tracking]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # hours - "Stunden" (time tracking)
@@ -11,7 +11,8 @@ updated: 2026-07-07
   utilization. Replaced the removed payroll module (migration 0015).
 - **Routes**: `/hours` (list; "Alle" tab only for full-`hours` holders),
   `/hours/new`, `/hours/[id]`, `/hours/[id]/edit`, `/hours/reports`
-  (monthly report / utilization).
+  (monthly report / utilization; content tabs use the standard
+  `TabGroup` with `?tab=` deep links - [[styling]]).
 - **Remote** `hours.remote.ts`: `listTimeEntriesRemote`,
   `getTimeEntryRemote`, `createTimeEntryRemote`,
   `updateTimeEntryRemote`, `deleteTimeEntryRemote`,

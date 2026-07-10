@@ -114,6 +114,29 @@ pnpm build
 E2E_WEB_SERVER=1 SEED=1 pnpm test:e2e
 ```
 
+**Scratch-DB recipe** (recommended - keeps the dev database intact):
+point `DATABASE_URL` at a dedicated database whose pathname is
+`/twincars-e2e` and let the harness seed + serve against it:
+
+```sh
+DATABASE_URL='postgres://admin:…@localhost:5432/twincars-e2e' \
+  E2E_WEB_SERVER=1 SEED=1 pnpm test:e2e
+```
+
+The suite currently runs **55 tests in 12 spec files in ~30 s**:
+navigation walk + global search, customers (validation negatives, kind
+tabs, pagination reset, detail tabs, unsaved-changes, delete-guard →
+archive round trip), vehicles (holder picker create, stock vs
+customer-owned tab/action gating, Ankauf modal, archive), the complete
+order-invoice storno cycle through the real UI
+([[order-invoice-rules]]), employees + absences (holiday-aware day
+counts, half-day rule, overlap semantics, replace-confirm, year
+balance), calendar, settings (11 tabs with exactly-one-tablist asserts,
+legacy `?tab=` redirect, SMTP click-time validation, import file
+validation, eBay disconnected path), users + permissions (limited login
+in a fresh context, nav filtering, 403), hours, PDF viewer blob
+iframes, auth, and smoke coverage for the remaining modules.
+
 - The suite always targets a **production build** — several past bug
   classes only reproduced there ([[known-constraints]]).
 - Global setup (`e2e/global-setup.ts`) seeds on `SEED=1`, verifies the
@@ -132,15 +155,40 @@ E2E_WEB_SERVER=1 SEED=1 pnpm test:e2e
 ### Writing specs
 
 - Accessible locators first (`getByRole`, `getByLabel`,
-  `getByPlaceholder`); shared helpers in `e2e/helpers.ts`
-  (`login`, `expectToast`, `fillField`, `uniqueTag`, `SEEDED`).
+  `getByPlaceholder`); shared helpers in `e2e/helpers.ts`.
+- Helper inventory: `login`, `expectToast`, `expectErrorSummary`
+  (the click-time `role="alert"` summary), `expectPageTitle`,
+  `fillField`, **`fillFieldVerified`** (fill + assert the value stuck,
+  retried - guards against a late-resolving remote query
+  re-initializing a bound input right after the fill),
+  **`gotoHydrated`** (goto + `networkidle` - hydration attaches
+  handlers after `load`, clicks/fills in that window are silently
+  lost), `openDetailTab` / `detailTab` (the standard TabGroup radios),
+  **`pickFromSearchablePicker`**, **`clickDialogButton`** (scoped to
+  the open `<dialog>`), `uniqueTag` / `uniqueName`, `isoDate`,
+  `SEEDED` (anchor records).
+- Spec pitfalls (hard-won):
+  - **Hydration race**: always `gotoHydrated`, never a bare
+    `page.goto` followed by interaction.
+  - **Async-navigation old-page fill hazard**: after an action that
+    navigates, anchor on content of the TARGET page (after
+    `waitForURL`) before filling anything - otherwise the fill lands
+    on the old page's identically-labeled field.
+  - **FormField-wrapped pickers**: the accessible name of the picker
+    trigger comes from the `FormField` label - use `getByLabel` with
+    the field label, not the placeholder.
 - Specs are independent: they rely only on the seeded baseline plus
   records they create themselves with a unique prefix
   (`E2e-…-<tag>`) — and they clean those up again.
+- **Self-cleaning respects GoBD**: documents a spec created are marked
+  paid and their customers archived instead of deleted (invoices are
+  never deletable). Warm runs without reseed stay green, but the DB
+  accumulates these retained records — reseed occasionally
+  (`node scripts/seed-test-db.mjs`).
 - Never mutate the `SEEDED` anchor records.
-- Exemplary specs: `e2e/auth.spec.ts` (login/logout, German error),
-  `e2e/customers.spec.ts` (seeded list, search, create → archive →
-  reactivate → delete round trip).
+- Exemplary specs: `e2e/customers.spec.ts` (validation negatives, kind
+  tabs, archive round trip), `e2e/orders-invoices.spec.ts` (the full
+  order → invoice → storno → reopen cycle).
 
 ## Vitest script taxonomy
 
@@ -158,6 +206,13 @@ Convention: component tests co-located under `src/routes` (e.g.
 `CustomerForm.test.ts`, `login/page.test.ts`) count as integration
 scope — they exercise route modules and their remotes; the components
 scope is the shared `$lib/components` library.
+
+Counts as of 2026-07-10: `pnpm test` = **2051 passed + 1 skipped in
+140 files (~40 s)**; `pnpm test:components` = **250 tests** (incl.
+`AppShell.test.ts` and `PdfViewer.test.ts`). The unit scope includes
+the PDF **visual regression** suite (`pdf-visual.test.ts`,
+[[pdf-pipeline]]) which self-skips when `pdftoppm` is not installed;
+refresh its committed snapshots with `PDF_SNAPSHOTS=update`.
 
 Related: [[e2e-smoke]], [[dev-environment]], [[fresh-db-reset]],
 [[kfz-kaufmann-import]].

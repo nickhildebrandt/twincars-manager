@@ -1,7 +1,7 @@
 ---
 title: Module - orders (Aufträge)
 tags: [module, orders, work-orders, kanban]
-updated: 2026-07-06
+updated: 2026-07-10
 ---
 
 # orders - "Aufträge"
@@ -47,11 +47,24 @@ updated: 2026-07-06
     `MultiSearchablePicker` over `pickEmployeesRemote`
     ([[creation-flow]]) - transactional "Übernehmen", server search +
     pagination.
+  - **Order ↔ invoice rule set** (2026-07, migration 0037 - full
+    write-up in [[order-invoice-rules]]): the "aktive Rechnung" is
+    derived from `getActiveInvoiceForOrder` (linked invoice via the
+    `documents.work_order_id` backlink whose status is not
+    cancelled/storno); max ONE active invoice per order; a second
+    invoice while one is active is rejected with the invoice number
+    and a Storno hint; work-order items lock (add/update/delete 409,
+    UI lock hint) while an active invoice exists; cancelling the
+    active invoice auto-reopens the order (in_progress, `completed_at`
+    cleared, time entries un-billed) while Stornos stay linked
+    forever; orders with any invoice history are undeletable (GoBD).
+    The order detail shows the full invoice-history card
+    (`listOrderInvoices`); every linked invoice links back.
   - **Status flow**: open ⇄ in_progress via `moveWorkOrderStatusRemote`;
-    `done` is reachable ONLY through `completeWorkOrderRemote`; reopen
-    (done → in_progress) only while `invoice_id IS NULL`; delete 409s
-    once the invoice exists (GoBD - corrections go through the
-    invoice's Storno flow, [[invoices]]).
+    `done` is reachable ONLY through `completeWorkOrderRemote` - Kanban
+    drops into "Abgeschlossen" without an active invoice are rejected
+    server-side with a German toast and the card reverts (done cards
+    are not draggable).
   - **time_entries write-through**: every labor item with employee +
     hours mirrors exactly ONE `time_entries` row (task = description,
     date = done_at); deleting the item removes the entry. In [[hours]]
@@ -77,6 +90,12 @@ updated: 2026-07-06
 - **Permission** `orders` - seeded to Mitarbeiter AND Werkstattleiter
   (shop floor is the point of the module); migration 0033 also grants
   it to the existing roles on deployed instances.
+- **Status labels**: shared `workOrderStatusLabel` /
+  `workOrderStatusBadge` helpers in `src/lib/utils/status-labels.ts`
+  (never raw enums in the UI) - also used by the Aufträge tabs on the
+  customer/vehicle detail pages ([[customers]], [[vehicles]]).
 - **Tests**: `work-order-service.test.ts`, `orders.remote.test.ts`,
-  `WorkOrderForm.test.ts`, `seed-defaults.test.ts` (labor item +
-  `work_order` number range).
+  `WorkOrderForm.test.ts`, `src/routes/orders/[id]/page.test.ts`
+  (rule-set UI), `seed-defaults.test.ts` (labor item + `work_order`
+  number range), `e2e/orders-invoices.spec.ts` (full storno cycle
+  through the real UI).

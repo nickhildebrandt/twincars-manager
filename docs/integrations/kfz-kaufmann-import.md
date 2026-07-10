@@ -1,7 +1,7 @@
 ---
 title: Integration - KFZ-Kaufmann import (legacy Access MDB)
 tags: [integration, import, legacy, mdb]
-updated: 2026-07-05
+updated: 2026-07-10
 ---
 
 # KFZ-Kaufmann import
@@ -32,7 +32,7 @@ the host / in the container. Test corpus:
 
 | MDB table                     | Target                      | Notes                                                                                                                                                                                                                                                                             |
 | ----------------------------- | --------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `Kunden`                      | `customers`                 | `Kunden-Nr` → `legacyCustomerNumber`; rows without Kunden-Nr skipped with reason                                                                                                                                                                                                  |
+| `Kunden`                      | `customers`                 | `Kunden-Nr` → `legacyCustomerNumber`; rows without Kunden-Nr skipped with reason; `kind` = `ebay` when `isEbayCustomerName` matches, else `regular` (see rule below)                                                                                                              |
 | `Autos`                       | `vehicles`                  | all as customer vehicles; holder resolved via Kunden-Nr; `id_auto` map kept for reifenlager                                                                                                                                                                                       |
 | `Lieferanten`                 | `suppliers`                 | `Kundennummer` → `customerNumberAtSupplier`                                                                                                                                                                                                                                       |
 | `Artikel`                     | `items`                     | tire articles currently land in `items` too (routing them into `tires` is an open backlog item)                                                                                                                                                                                   |
@@ -58,6 +58,18 @@ the host / in the container. Test corpus:
 - **Legacy dates are dirty**: parser handles `0297-20-01`-style
   month-20 garbage, `MM.YYYY`, `MM-YY`, `DD.MM.YYYY` (see
   `__transforms` tests).
+- **eBay customer detection** (2026-07): `isEbayCustomerName` in
+  `src/lib/utils/ebay-detection.ts` - a customer whose legacy `Name`,
+  `Firma`, `Vorname` or `Nachname` contains the substring "ebay"
+  anywhere, case-insensitively (fields checked independently, never
+  combined across fields), is imported with `customers.kind = 'ebay'`;
+  everyone else `'regular'`. Applied EXCLUSIVELY in this import
+  mapping; nothing at runtime derives `kind` from names, and existing
+  rows are never rewritten. Documented edge cases: "Bayer" no,
+  "Ebayer" / "Sebayn" yes; false positives of the "Sebayn" kind are
+  accepted (the operator flips the Kundenart on the customer form),
+  whereas a missed eBay buyer would silently pollute the regular
+  customer base.
 - Documents reference no vehicle in the MDB → `documents.vehicle_id`
   stays NULL.
 - Imported documents are `paid` (or `cancelled` for "storniert") and do

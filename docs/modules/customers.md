@@ -1,7 +1,7 @@
 ---
 title: Module - customers (Kunden)
 tags: [module, customers]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # customers - "Kunden"
@@ -16,16 +16,26 @@ for new modules.
   ad-hoc mail modal), `/customers/[id]/edit`.
 - **Remote** `src/routes/customers/customers.remote.ts`:
   `listCustomersRemote`, `getCustomerRemote`, `getCustomerRelatedRemote`,
+  `listCustomerWorkOrdersRemote` (Aufträge tab, paginated 25, guard
+  `requireAnyPermission('customers', 'orders')`),
   `countCustomersRemote`, `createCustomerRemote`, `updateCustomerRemote`,
   `setCustomerArchivedRemote`, `deleteCustomerRemote`,
-  `sendAdHocCustomerEmailRemote`. All guarded
-  with `requirePermission('customers')`.
+  `sendAdHocCustomerEmailRemote`. Guarded
+  with `requirePermission('customers')` unless noted.
 - **Service**: `src/lib/server/services/customer-service.ts`.
 - **Tables**: `customers` (see [[entities]]); relations to `vehicles`,
   `documents`, `tire_storage`, `time_entries`, `customer_inquiries`.
 - **Special**:
+  - **Tabbed detail page** (2026-07, standard `TabGroup` -
+    [[styling]]): Übersicht / Fahrzeuge / Rechnungen / Aufträge, each
+    with a count badge; the Aufträge tab paginates server-side and
+    renders statuses via the shared `workOrderStatusLabel/Badge`
+    helpers ([[orders]]).
   - `kind: 'regular' | 'ebay'` discriminator; eBay buyers carry only
-    `ebayHandle`.
+    `ebayHandle`. The Kfz-Kaufmann import sets `kind='ebay'`
+    automatically via `isEbayCustomerName`
+    ([[kfz-kaufmann-import]]); at runtime `kind` is only ever set
+    explicitly on the form.
   - `wantsBroadcast` / `wantsTireReminders` opt-ins feed [[mailings]] and
     the tire reminder job.
   - **Archive is the soft-delete path** (`archived` flag,

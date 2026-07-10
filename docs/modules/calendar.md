@@ -1,7 +1,7 @@
 ---
 title: Module - calendar (Kalender)
 tags: [module, calendar]
-updated: 2026-07-07
+updated: 2026-07-10
 ---
 
 # calendar - "Kalender"
@@ -20,8 +20,10 @@ updated: 2026-07-07
   `requirePermission('calendar')`.
 - **Service**: `calendar-service.ts` (merged; the old
   appointment-service is gone - [[adr-011-unified-calendar-entries]]).
-- **Tables**: `calendar_entries` (kind `appointment` | `closure`),
-  `public_holidays`; grid also UNIONs `employee_absences`.
+- **Tables**: `calendar_entries` (kind `appointment` | `closure`); grid
+  also UNIONs `employee_absences`. Public holidays are **computed** by
+  `holiday-service.ts` since 2026-07 (the `public_holidays` table is
+  dormant) - [[holidays]].
 - **Validation invariants** (enforced in the remote inputSchema, not
   the DB): appointment needs status
   scheduled/completed/cancelled and optional customer/vehicle/employee
@@ -46,14 +48,21 @@ updated: 2026-07-07
   employee picker that narrows appointments (entry employee), absences
   and work orders (assignee) to one employee; the shared sources
   (holidays, closures, HU) stay visible.
-- **"Neuer Auftrag" action**: the grid toolbar links to `/orders/new`
-  (workshop jobs are created as Aufträge, not as Termine), and
-  `/calendar/new` shows an info hint ("Werkstattarbeit geplant?") with
-  the same link above the Termin form.
+- **No order-creation shortcut in the calendar view** (2026-07): the
+  grid toolbar no longer links to `/orders/new`. Instead the Termin
+  form (`CalendarForm.svelte`, create mode) shows two clearly SEPARATED
+  cross-module card groups below the form: "Werkstattauftrag" (link to
+  `/orders/new` - workshop jobs are created as Aufträge, not as
+  Termine) and "Urlaub & Krankheit" (link to `/employees` - absences
+  are maintained on the employee detail and appear in the calendar
+  automatically). Never intermingled with the form fields.
 - **Appointment ↔ order**: the appointment edit page offers "Auftrag
   erstellen" (`createWorkOrderFromAppointmentRemote`, one order per
   Termin) and turns into a "Zum Auftrag" link once the order exists.
 - **Public booking**: appointments can also be created by the website
   through `POST /api/public/appointments` (tire-change services only,
   free slots from `workshop_hours` minus closures) - [[public-rest-api]].
-- **Tests**: `calendar-service.test.ts`.
+- **Tests**: `calendar-service.test.ts` (incl. holiday events and
+  active sick/other absence events), `CalendarForm.test.ts`,
+  `e2e/calendar.spec.ts` (holiday chip, separated form groups,
+  employee filter).
