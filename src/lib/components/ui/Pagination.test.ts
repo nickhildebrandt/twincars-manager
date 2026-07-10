@@ -93,6 +93,92 @@ describe('Pagination', () => {
     expect(compactNumbers.length).toBeLessThan(fullNumbers.length)
   })
 
+  it('exposes a navigation landmark with a German label', () => {
+    render(Pagination, {
+      props: { page: 1, pageCount: 5, total: 100, size: 25, onPage: vi.fn() }
+    })
+    expect(
+      screen.getByRole('navigation', { name: 'Seitennavigation' })
+    ).toBeInTheDocument()
+  })
+
+  it('marks the active page with aria-current="page" in both joins', () => {
+    render(Pagination, {
+      props: { page: 2, pageCount: 5, total: 100, size: 25, onPage: vi.fn() }
+    })
+    const active = screen.getAllByRole('button', { name: '2' })
+    expect(active).toHaveLength(2)
+    for (const btn of active) {
+      expect(btn).toHaveAttribute('aria-current', 'page')
+      expect(btn).toHaveClass('btn-primary')
+    }
+    for (const btn of screen.getAllByRole('button', { name: '3' })) {
+      expect(btn).not.toHaveAttribute('aria-current')
+      expect(btn).not.toHaveClass('btn-primary')
+    }
+  })
+
+  it('renders inert ellipsis buttons for a large page window', async () => {
+    const user = userEvent.setup()
+    const onPage = vi.fn()
+    render(Pagination, {
+      props: { page: 200, pageCount: 424, total: 10600, size: 25, onPage }
+    })
+    const dots = screen.getAllByRole('button', { name: '…' })
+    expect(dots.length).toBeGreaterThan(0)
+    for (const d of dots) expect(d).toHaveClass('btn-disabled')
+    await user.click(dots[0])
+    expect(onPage).not.toHaveBeenCalled()
+    // Full join shows first + last page as jump targets around the dots.
+    const full = screen.getByTestId('pagination-full')
+    const labels = Array.from(full.querySelectorAll('button')).map(
+      (b) => b.textContent
+    )
+    expect(labels).toContain('1')
+    expect(labels).toContain('424')
+  })
+
+  it('first/prev/next/last chevrons fire onPage with the right targets', async () => {
+    const user = userEvent.setup()
+    const onPage = vi.fn()
+    render(Pagination, {
+      props: { page: 3, pageCount: 10, total: 250, size: 25, onPage }
+    })
+    await user.click(screen.getByLabelText(/erste seite/i))
+    expect(onPage).toHaveBeenLastCalledWith(1)
+    await user.click(screen.getAllByLabelText(/vorherige seite/i)[0])
+    expect(onPage).toHaveBeenLastCalledWith(2)
+    await user.click(screen.getAllByLabelText(/nächste seite/i)[0])
+    expect(onPage).toHaveBeenLastCalledWith(4)
+    await user.click(screen.getByLabelText(/letzte seite/i))
+    expect(onPage).toHaveBeenLastCalledWith(10)
+  })
+
+  it('formats the total in German locale', () => {
+    render(Pagination, {
+      props: {
+        page: 1,
+        pageCount: 424,
+        total: 10600,
+        size: 25,
+        onPage: vi.fn()
+      }
+    })
+    expect(screen.getByText('10.600')).toBeInTheDocument()
+  })
+
+  it('clamps the page count display to at least 1 for an empty result', () => {
+    render(Pagination, {
+      props: { page: 1, pageCount: 0, total: 0, size: 25, onPage: vi.fn() }
+    })
+    expect(screen.getByText(/Seite 1 von 1/)).toBeInTheDocument()
+    // Nothing to page through — both directions disabled.
+    for (const btn of screen.getAllByLabelText(/vorherige seite/i))
+      expect(btn).toBeDisabled()
+    for (const btn of screen.getAllByLabelText(/nächste seite/i))
+      expect(btn).toBeDisabled()
+  })
+
   it('does not render a size selector', () => {
     render(Pagination, {
       props: { page: 1, pageCount: 5, total: 100, size: 25, onPage: vi.fn() }

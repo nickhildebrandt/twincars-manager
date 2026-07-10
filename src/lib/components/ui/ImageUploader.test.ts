@@ -251,4 +251,178 @@ describe('ImageUploader', () => {
     expect(toast.current?.variant).toBe('error')
     expect(toast.current?.message).toMatch(/keine Bilddatei/)
   })
+
+  it('shows the German drop-overlay copy while a file drag is active', async () => {
+    const { container } = render(ImageUploader, {
+      props: { images: [], onUpload: vi.fn().mockResolvedValue(undefined) }
+    })
+    const zone = getDropZone(container)
+    expect(screen.queryByText('Dateien hier ablegen')).not.toBeInTheDocument()
+    await fireEvent.dragEnter(zone, { dataTransfer: makeDataTransfer([]) })
+    expect(screen.getByText('Dateien hier ablegen')).toBeInTheDocument()
+  })
+
+  it('accepts only PNG/JPG/WebP and toggles multiple by mode', async () => {
+    const { container, rerender } = render(ImageUploader, {
+      props: { images: [], onUpload: vi.fn().mockResolvedValue(undefined) }
+    })
+    const input = getFileInput(container)
+    expect(input).toHaveAttribute('accept', 'image/png,image/jpeg,image/webp')
+    // Gallery mode allows picking several photos at once…
+    expect(input).toHaveAttribute('multiple')
+    // …single mode (logo) does not.
+    await rerender({
+      images: [],
+      single: true,
+      onUpload: vi.fn().mockResolvedValue(undefined)
+    })
+    expect(getFileInput(container)).not.toHaveAttribute('multiple')
+  })
+
+  it('uploads every file of a multi-selection in order', async () => {
+    const onUpload = vi.fn().mockResolvedValue(undefined)
+    const { container } = render(ImageUploader, {
+      props: { images: [], onUpload }
+    })
+    const files = [
+      new File(['a'], 'one.png', { type: 'image/png' }),
+      new File(['b'], 'two.webp', { type: 'image/webp' })
+    ]
+    await fireEvent.change(getFileInput(container), { target: { files } })
+    await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(2))
+    expect(onUpload.mock.calls[0][0].mime).toBe('image/png')
+    expect(onUpload.mock.calls[1][0].mime).toBe('image/webp')
+  })
+
+  it('rejects the whole multi-selection when one file is invalid', async () => {
+    const onUpload = vi.fn().mockResolvedValue(undefined)
+    const { container } = render(ImageUploader, {
+      props: { images: [], onUpload }
+    })
+    const files = [
+      new File(['a'], 'one.png', { type: 'image/png' }),
+      new File(['b'], 'two.txt', { type: 'text/plain' })
+    ]
+    await fireEvent.change(getFileInput(container), { target: { files } })
+    expect(onUpload).not.toHaveBeenCalled()
+    expect(toast.current?.message).toMatch(/keine Bilddatei/)
+  })
+
+  it('single mode ingests only the first file of a multi-file drop', async () => {
+    const onUpload = vi.fn().mockResolvedValue(undefined)
+    const { container } = render(ImageUploader, {
+      props: { images: [], single: true, onUpload }
+    })
+    const zone = getDropZone(container)
+    const files = [
+      new File(['a'], 'logo.png', { type: 'image/png' }),
+      new File(['b'], 'extra.png', { type: 'image/png' })
+    ]
+    await fireEvent.drop(zone, { dataTransfer: makeDataTransfer(files) })
+    await waitFor(() => expect(onUpload).toHaveBeenCalledTimes(1))
+    expect(onUpload.mock.calls[0][0].dataUrl).toMatch(/^data:image\/png/)
+  })
+
+  describe('gallery mode', () => {
+    const gallery = [
+      { id: 'img-1', dataUrl: PNG_DATA_URL, isMain: true },
+      { id: 'img-2', dataUrl: PNG_DATA_URL }
+    ]
+
+    it('marks the cover with the Titelbild badge and hides its promote button', () => {
+      render(ImageUploader, {
+        props: {
+          images: gallery,
+          onUpload: vi.fn().mockResolvedValue(undefined),
+          onDelete: vi.fn(),
+          onSetMain: vi.fn()
+        }
+      })
+      expect(screen.getByText('Titelbild')).toBeInTheDocument()
+      // Exactly one promote affordance — on the non-cover image only.
+      expect(
+        screen.getAllByRole('button', { name: 'Als Titelbild festlegen' })
+      ).toHaveLength(1)
+      // Actions are permanently visible: one delete button per image.
+      expect(
+        screen.getAllByRole('button', { name: 'Foto löschen' })
+      ).toHaveLength(2)
+    })
+
+    it('promotes an image to cover via onSetMain', async () => {
+      const user = userEvent.setup()
+      const onSetMain = vi.fn().mockResolvedValue(undefined)
+      render(ImageUploader, {
+        props: {
+          images: gallery,
+          onUpload: vi.fn().mockResolvedValue(undefined),
+          onSetMain
+        }
+      })
+      await user.click(
+        screen.getByRole('button', { name: 'Als Titelbild festlegen' })
+      )
+      await waitFor(() => expect(onSetMain).toHaveBeenCalledWith('img-2'))
+    })
+
+    it('deletes a gallery image via onDelete', async () => {
+      const user = userEvent.setup()
+      const onDelete = vi.fn().mockResolvedValue(undefined)
+      render(ImageUploader, {
+        props: {
+          images: gallery,
+          onUpload: vi.fn().mockResolvedValue(undefined),
+          onDelete
+        }
+      })
+      const deleteButtons = screen.getAllByRole('button', {
+        name: 'Foto löschen'
+      })
+      await user.click(deleteButtons[1])
+      await waitFor(() => expect(onDelete).toHaveBeenCalledWith('img-2'))
+    })
+
+    it('hides the promote buttons when allowSetMain=false', () => {
+      render(ImageUploader, {
+        props: {
+          images: gallery,
+          allowSetMain: false,
+          onUpload: vi.fn().mockResolvedValue(undefined),
+          onSetMain: vi.fn()
+        }
+      })
+      expect(
+        screen.queryByRole('button', { name: 'Als Titelbild festlegen' })
+      ).not.toBeInTheDocument()
+    })
+  })
+
+  it('disables every action while the app is busy (global busy store)', async () => {
+    const { busy } = await import('$lib/stores/busy.svelte')
+    const end = busy.begin()
+    try {
+      const { container } = render(ImageUploader, {
+        props: {
+          images: [
+            { id: 'img-1', dataUrl: PNG_DATA_URL, isMain: true },
+            { id: 'img-2', dataUrl: PNG_DATA_URL }
+          ],
+          onUpload: vi.fn().mockResolvedValue(undefined),
+          onDelete: vi.fn(),
+          onSetMain: vi.fn()
+        }
+      })
+      expect(
+        screen.getByRole('button', { name: /Bilder hinzufügen/i })
+      ).toBeDisabled()
+      expect(
+        screen.getByRole('button', { name: 'Als Titelbild festlegen' })
+      ).toBeDisabled()
+      for (const btn of screen.getAllByRole('button', { name: 'Foto löschen' }))
+        expect(btn).toBeDisabled()
+      expect(getFileInput(container)).toBeDisabled()
+    } finally {
+      end()
+    }
+  })
 })

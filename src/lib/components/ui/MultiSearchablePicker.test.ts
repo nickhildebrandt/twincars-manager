@@ -249,6 +249,91 @@ describe('MultiSearchablePicker', () => {
     expect(search).not.toHaveBeenCalled()
   })
 
+  it('typing triggers a debounced search with the query and page 1', async () => {
+    const user = userEvent.setup()
+    const search = twoPageSearch()
+    render(MultiSearchablePicker, { props: { values: [], search } })
+    await user.click(trigger())
+    await waitFor(() => expect(search).toHaveBeenCalledTimes(1))
+
+    await user.type(screen.getByPlaceholderText('Suchen…'), 'anna')
+    await waitFor(
+      () =>
+        expect(search).toHaveBeenLastCalledWith(
+          expect.objectContaining({ q: 'anna', page: 1, size: 25 })
+        ),
+      { timeout: 1000 }
+    )
+  })
+
+  it('shows the German empty text when the search returns nothing', async () => {
+    const user = userEvent.setup()
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items: [], total: 0, pageCount: 1 })
+    render(MultiSearchablePicker, { props: { values: [], search } })
+    await user.click(trigger())
+    expect(
+      await screen.findByText('Keine passenden Einträge gefunden.')
+    ).toBeVisible()
+  })
+
+  it('shows the loader while the search is in flight', async () => {
+    const user = userEvent.setup()
+    let resolve!: (v: {
+      items: Item[]
+      total: number
+      pageCount: number
+    }) => void
+    const search = vi.fn().mockReturnValue(
+      new Promise<{ items: Item[]; total: number; pageCount: number }>((r) => {
+        resolve = r
+      })
+    )
+    render(MultiSearchablePicker, { props: { values: [], search } })
+    await user.click(trigger())
+    expect(await screen.findByText('Inhalte werden geladen')).toBeVisible()
+    resolve({ items: pageOne, total: 2, pageCount: 1 })
+    expect(
+      await screen.findByRole('checkbox', { name: /Anna/ })
+    ).toBeInTheDocument()
+  })
+
+  it('clears the selection via keyboard on the focused clear affordance', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    const search = vi.fn()
+    render(MultiSearchablePicker, {
+      props: {
+        values: ['a'],
+        valueLabels: new Map([['a', 'Anna Admin · P-1']]),
+        search,
+        onChange
+      }
+    })
+    const clear = screen.getByRole('button', { name: 'Auswahl entfernen' })
+    expect(clear.tagName).toBe('SPAN')
+    expect(clear).toHaveAttribute('tabindex', '0')
+    clear.focus()
+    await user.keyboard('{Enter}')
+    expect(onChange).toHaveBeenCalledWith([])
+    // The keypress must not open the dialog / run a search.
+    expect(search).not.toHaveBeenCalled()
+  })
+
+  it('the backdrop discards the working selection like Abbrechen', async () => {
+    const user = userEvent.setup()
+    const onChange = vi.fn()
+    render(MultiSearchablePicker, {
+      props: { values: [], search: twoPageSearch(), onChange }
+    })
+    await user.click(trigger())
+    await user.click(await screen.findByRole('checkbox', { name: /Anna/ }))
+    await user.click(screen.getByRole('button', { name: 'Dialog schließen' }))
+    expect(onChange).not.toHaveBeenCalled()
+    expect(trigger().textContent).toContain('Bitte wählen')
+  })
+
   it('renders the header create button once and forwards clicks', async () => {
     const user = userEvent.setup()
     const onCreateNew = vi.fn()

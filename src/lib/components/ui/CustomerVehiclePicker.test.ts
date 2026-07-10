@@ -262,6 +262,32 @@ describe('CustomerVehiclePicker', () => {
     expect(onCreateVehicle).toHaveBeenCalledTimes(1)
   })
 
+  it('renders the curated customerError in red under the customer field', () => {
+    render(CustomerVehiclePicker, {
+      props: { customerError: 'Bitte einen Kunden wählen.' }
+    })
+    const error = screen.getByText('Bitte einen Kunden wählen.')
+    expect(error).toBeInTheDocument()
+    expect(error).toHaveClass('text-error')
+  })
+
+  it('shows no error element when customerError is null', () => {
+    const { container } = render(CustomerVehiclePicker, { props: {} })
+    expect(container.querySelector('.text-error')).toBeNull()
+  })
+
+  it('disabled=true disables both triggers and never searches', async () => {
+    const user = userEvent.setup()
+    render(CustomerVehiclePicker, { props: { disabled: true } })
+    const [customer, vehicle] = triggers()
+    expect(customer).toBeDisabled()
+    expect(vehicle).toBeDisabled()
+    await user.click(customer)
+    await user.click(vehicle)
+    expect(pickCustomersMock).not.toHaveBeenCalled()
+    expect(pickVehiclesMock).not.toHaveBeenCalled()
+  })
+
   it('renders required markers and the vehicle hint when configured', () => {
     render(CustomerVehiclePicker, {
       props: {

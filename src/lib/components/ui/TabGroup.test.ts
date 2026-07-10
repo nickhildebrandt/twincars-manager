@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/svelte'
+import { render, screen, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
@@ -125,6 +125,21 @@ describe('TabGroup — state mode', () => {
     await rerender({ name: 'g9', tabs: stateTabs.slice(0, 2) })
     expect(screen.getByRole('radio', { name: 'Erster Tab' })).toBeChecked()
   })
+
+  it('updates a tab badge when its count changes', async () => {
+    const { rerender } = render(Harness, { name: 'g10', tabs: stateTabs })
+    expect(screen.getByText('7')).toBeInTheDocument()
+    await rerender({
+      name: 'g10',
+      tabs: [
+        stateTabs[0],
+        stateTabs[1],
+        { id: 'three', label: 'Dritter Tab', badge: 12 }
+      ]
+    })
+    expect(screen.getByText('12')).toBeInTheDocument()
+    expect(screen.queryByText('7')).not.toBeInTheDocument()
+  })
 })
 
 describe('TabGroup — navigation mode', () => {
@@ -160,5 +175,23 @@ describe('TabGroup — navigation mode', () => {
     expect(screen.getByTestId('panel-smtp')).toBeInTheDocument()
     expect(screen.queryByTestId('panel-general')).not.toBeInTheDocument()
     expect(screen.queryByTestId('panel-mail')).not.toBeInTheDocument()
+  })
+
+  it('snaps the radio back when the navigation is cancelled', async () => {
+    // The unsaved-changes confirm cancels the goto — the tab must not
+    // stay on the target it never reached.
+    const user = userEvent.setup()
+    pageMock.url = new URL('http://localhost/settings')
+    gotoMock.mockRejectedValueOnce(new Error('navigation cancelled'))
+    render(Harness, { name: 'n5', tabs: navTabs })
+    expect(screen.getByRole('radio', { name: 'Allgemein' })).toBeChecked()
+
+    await user.click(screen.getByRole('radio', { name: 'SMTP' }))
+    expect(gotoMock).toHaveBeenCalledWith('/settings/smtp')
+    // Still on /settings — the radio re-syncs from the URL.
+    await waitFor(() =>
+      expect(screen.getByRole('radio', { name: 'Allgemein' })).toBeChecked()
+    )
+    expect(screen.getByRole('radio', { name: 'SMTP' })).not.toBeChecked()
   })
 })

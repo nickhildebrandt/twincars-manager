@@ -1,4 +1,4 @@
-import { render, screen, cleanup } from '@testing-library/svelte'
+import { render, screen, cleanup, waitFor } from '@testing-library/svelte'
 import userEvent from '@testing-library/user-event'
 import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
@@ -46,6 +46,29 @@ describe('ToastTray', () => {
     // border-base-300 + shadow-md, matching the AppShell dropdown.
     expect(alert).toHaveClass('border', 'border-base-300', 'shadow-md')
     expect(alert).not.toHaveClass('shadow-lg')
+  })
+
+  it('announces politely via role=status + aria-live', async () => {
+    render(ToastTray)
+    toast.success('Gespeichert.')
+    await Promise.resolve()
+    const alert = await screen.findByRole('status')
+    expect(alert).toHaveAttribute('aria-live', 'polite')
+  })
+
+  it('maps success and warning variants to their alert classes', async () => {
+    render(ToastTray)
+    toast.success('Kunde angelegt.')
+    await Promise.resolve()
+    expect(await screen.findByRole('status')).toHaveClass('alert-success')
+    expect(screen.getByText('Kunde angelegt.')).toBeInTheDocument()
+
+    toast.warning('Achtung, Bestand niedrig.')
+    await Promise.resolve()
+    await waitFor(() =>
+      expect(screen.getByRole('status')).toHaveClass('alert-warning')
+    )
+    expect(screen.getByText('Achtung, Bestand niedrig.')).toBeInTheDocument()
   })
 
   it('dismiss button removes the toast', async () => {

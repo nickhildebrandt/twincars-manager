@@ -69,6 +69,27 @@ describe('FormField', () => {
     expect(screen.getByText('Pflichtfeld.')).toBeInTheDocument()
   })
 
+  it('associates the label with the first labelable descendant (house behavior)', () => {
+    // The whole field is ONE <label> wrapping the input — clicking the
+    // label text activates/focuses the wrapped control. Pickers rely on
+    // this: their trigger <button> must stay the first labelable
+    // descendant (documented in SearchablePicker's trigger anatomy).
+    const { container } = render(FormFieldHarness, {
+      props: { label: 'Vorname' }
+    })
+    const label = container.querySelector('label') as HTMLLabelElement
+    const input = screen.getByRole('textbox')
+    expect(label.control).toBe(input)
+  })
+
+  it('applies the colSpan modifier to the wrapper label', () => {
+    const { container } = render(FormFieldHarness, {
+      props: { label: 'Stadt', colSpan: 'sm:col-span-2' }
+    })
+    const label = container.querySelector('label') as HTMLLabelElement
+    expect(label).toHaveClass('sm:col-span-2', 'w-full')
+  })
+
   // Ensure the actual FormField (not just the harness) is exercised.
   it('exports a Svelte component', () => {
     expect(FormField).toBeDefined()

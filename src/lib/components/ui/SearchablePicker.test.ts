@@ -258,6 +258,131 @@ describe('SearchablePicker', () => {
     expect(trigger().className).toContain('input-sm')
   })
 
+  it('selecting an item closes the dialog and updates the trigger label', async () => {
+    const user = userEvent.setup()
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items, total: items.length, pageCount: 1 })
+    const { container } = render(SearchablePicker, {
+      props: { value: '', valueLabel: '', search, onSelect: vi.fn() }
+    })
+    await user.click(trigger())
+    await user.click(await screen.findByRole('button', { name: /Gamma KG/ }))
+
+    const dialog = container.querySelector('dialog') as HTMLDialogElement
+    expect(dialog.hasAttribute('open')).toBe(false)
+    expect(trigger().textContent).toContain('Gamma KG')
+  })
+
+  it('marks the currently selected item with the "ausgewählt" badge', async () => {
+    const user = userEvent.setup()
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items, total: items.length, pageCount: 1 })
+    render(SearchablePicker, {
+      props: { value: 'b', valueLabel: 'Beta AG', search, onSelect: vi.fn() }
+    })
+    await user.click(trigger())
+    const badge = await screen.findByText('ausgewählt')
+    // The badge sits inside the Beta AG row only.
+    expect(badge.closest('button')).toHaveTextContent('Beta AG')
+    expect(screen.getAllByText('ausgewählt')).toHaveLength(1)
+  })
+
+  it('shows the loader while the first search is in flight', async () => {
+    const user = userEvent.setup()
+    let resolve!: (v: {
+      items: Item[]
+      total: number
+      pageCount: number
+    }) => void
+    const search = vi.fn().mockReturnValue(
+      new Promise<{ items: Item[]; total: number; pageCount: number }>((r) => {
+        resolve = r
+      })
+    )
+    render(SearchablePicker, {
+      props: { value: '', valueLabel: '', search, onSelect: vi.fn() }
+    })
+    await user.click(trigger())
+    expect(await screen.findByText('Inhalte werden geladen')).toBeVisible()
+
+    resolve({ items, total: items.length, pageCount: 1 })
+    expect(await screen.findByText('Alpha GmbH')).toBeInTheDocument()
+    expect(screen.queryByText('Inhalte werden geladen')).not.toBeInTheDocument()
+  })
+
+  it('renders a custom emptyText when the search comes back empty', async () => {
+    const user = userEvent.setup()
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items: [], total: 0, pageCount: 1 })
+    render(SearchablePicker, {
+      props: {
+        value: '',
+        valueLabel: '',
+        emptyText: 'Keine Kunden gefunden.',
+        search,
+        onSelect: vi.fn()
+      }
+    })
+    await user.click(trigger())
+    expect(await screen.findByText('Keine Kunden gefunden.')).toBeVisible()
+  })
+
+  it('paging inside the dialog re-searches with the new page number', async () => {
+    const user = userEvent.setup()
+    const pageTwo: Item[] = [{ id: 'z', label: 'Zeta SE' }]
+    const search = vi
+      .fn()
+      .mockImplementation(async ({ page }: { page: number }) => ({
+        items: page === 1 ? items : pageTwo,
+        total: 26,
+        pageCount: 2
+      }))
+    render(SearchablePicker, {
+      props: { value: '', valueLabel: '', search, onSelect: vi.fn() }
+    })
+    await user.click(trigger())
+    await screen.findByText('Alpha GmbH')
+
+    // Pagination renders a compact and a full join; click the first.
+    await user.click(
+      screen.getAllByRole('button', { name: /nächste seite/i })[0]
+    )
+    expect(await screen.findByText('Zeta SE')).toBeInTheDocument()
+    expect(search).toHaveBeenLastCalledWith(
+      expect.objectContaining({ page: 2 })
+    )
+
+    // A new query resets pagination back to page 1.
+    await user.type(screen.getByPlaceholderText('Suchen…'), 'zeta')
+    await waitFor(
+      () =>
+        expect(search).toHaveBeenLastCalledWith(
+          expect.objectContaining({ q: 'zeta', page: 1 })
+        ),
+      { timeout: 1000 }
+    )
+  })
+
+  it('the header close button closes the dialog without selecting', async () => {
+    const user = userEvent.setup()
+    const onSelect = vi.fn()
+    const search = vi
+      .fn()
+      .mockResolvedValue({ items, total: items.length, pageCount: 1 })
+    const { container } = render(SearchablePicker, {
+      props: { value: '', valueLabel: '', search, onSelect }
+    })
+    await user.click(trigger())
+    await screen.findByText('Alpha GmbH')
+    await user.click(screen.getByRole('button', { name: 'Schließen' }))
+    const dialog = container.querySelector('dialog') as HTMLDialogElement
+    expect(dialog.hasAttribute('open')).toBe(false)
+    expect(onSelect).not.toHaveBeenCalled()
+  })
+
   describe('create affordance (header only)', () => {
     it('hides the create button when createLabel/onCreateNew are not set', async () => {
       const user = userEvent.setup()
