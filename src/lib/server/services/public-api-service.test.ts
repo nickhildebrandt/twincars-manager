@@ -10,7 +10,7 @@ import { findFreeSlots } from './public-api-service'
 import { db } from '$lib/server/db/client'
 import {
   calendarEntries,
-  publicHolidays,
+  companySettings,
   workshopHours
 } from '$lib/server/db/schema'
 
@@ -23,7 +23,7 @@ import {
 describe('public-api-service', () => {
   beforeEach(async () => {
     await db.delete(calendarEntries)
-    await db.delete(publicHolidays)
+    await db.delete(companySettings)
     await db.delete(workshopHours)
   })
 
@@ -152,17 +152,39 @@ describe('public-api-service', () => {
     expect(slots).toHaveLength(0)
   })
 
-  it('excludes German public holidays', async () => {
+  it('excludes German public holidays (movable feast, computed)', async () => {
     await seedHoursMonFri()
-    await db
-      .insert(publicHolidays)
-      .values({ state: 'Berlin', date: '2026-06-01', name: 'Pfingstmontag' })
+    await db.insert(companySettings).values({ state: 'Berlin' })
+    // Pfingstmontag 2026 (Easter + 50) falls on Monday 2026-05-25 —
+    // an otherwise open weekday, blocked by the computed holiday.
     const slots = await findFreeSlots({
-      from: at(2026, 6, 1, 0, 0),
-      to: at(2026, 6, 1, 23, 59),
+      from: at(2026, 5, 25, 0, 0),
+      to: at(2026, 5, 25, 23, 59),
       durationMinutes: 30
     })
     expect(slots).toHaveLength(0)
+  })
+
+  it('holiday blocking follows the company Bundesland', async () => {
+    await seedHoursMonFri()
+    // Fronleichnam 2026 (Easter + 60) is Thursday 2026-06-04 — a
+    // holiday in NRW, an ordinary working day in Berlin.
+    await db.insert(companySettings).values({ state: 'Nordrhein-Westfalen' })
+    const blocked = await findFreeSlots({
+      from: at(2026, 6, 4, 0, 0),
+      to: at(2026, 6, 4, 23, 59),
+      durationMinutes: 30
+    })
+    expect(blocked).toHaveLength(0)
+
+    await db.delete(companySettings)
+    await db.insert(companySettings).values({ state: 'Berlin' })
+    const open = await findFreeSlots({
+      from: at(2026, 6, 4, 0, 0),
+      to: at(2026, 6, 4, 23, 59),
+      durationMinutes: 30
+    })
+    expect(open.length).toBeGreaterThan(0)
   })
 
   it('supports a multi-day range and counts each open day independently', async () => {

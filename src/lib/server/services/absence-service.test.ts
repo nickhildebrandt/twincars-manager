@@ -19,7 +19,11 @@ import {
   updateAbsence
 } from './absence-service'
 import { db } from '$lib/server/db/client'
-import { employeeAbsences, employees } from '$lib/server/db/schema'
+import {
+  companySettings,
+  employeeAbsences,
+  employees
+} from '$lib/server/db/schema'
 
 /**
  * Integration tests for the absence service — CRUD, range queries,
@@ -35,6 +39,7 @@ describe('absence-service', () => {
   beforeEach(async () => {
     await db.delete(employeeAbsences)
     await db.delete(employees)
+    await db.delete(companySettings)
     const [e1] = await db
       .insert(employees)
       .values({
@@ -406,6 +411,49 @@ describe('absence-service', () => {
         '2026-06-30'
       )
       expect(days).toBe(0)
+    })
+
+    it('excludes computed public holidays (2031, company Bundesland)', async () => {
+      await db.insert(companySettings).values({ state: 'Berlin' })
+      // Easter 2031 is Sunday 2031-04-13: Karfreitag 04-11 (Fri) and
+      // Ostermontag 04-14 (Mon) are holidays. 2031-04-07..2031-04-14
+      // spans 6 weekdays, two of which are holidays → 4 working days.
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2031-04-07',
+        dateTo: '2031-04-14',
+        halfDay: false,
+        status: 'approved'
+      })
+      const days = await absenceDaysInPeriod(
+        employeeId,
+        'vacation',
+        '2031-01-01',
+        '2031-12-31'
+      )
+      expect(days).toBe(4)
+    })
+
+    it('falls back to federal holidays when no Bundesland is set', async () => {
+      // No company_settings row: only the nine federal holidays apply.
+      // 2031-04-28 (Mon) .. 2031-05-02 (Fri) contains Tag der Arbeit
+      // (Thu 2031-05-01) → 5 weekdays minus 1 holiday = 4.
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2031-04-28',
+        dateTo: '2031-05-02',
+        halfDay: false,
+        status: 'approved'
+      })
+      const days = await absenceDaysInPeriod(
+        employeeId,
+        'vacation',
+        '2031-01-01',
+        '2031-12-31'
+      )
+      expect(days).toBe(4)
     })
 
     it('clamps absences to the requested window', async () => {

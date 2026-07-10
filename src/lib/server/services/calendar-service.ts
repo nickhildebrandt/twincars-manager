@@ -36,7 +36,6 @@ import {
   customers,
   employeeAbsences,
   employees,
-  publicHolidays,
   vehicles,
   workOrderAssignees,
   workOrders,
@@ -45,6 +44,10 @@ import {
 } from '$lib/server/db/schema'
 import type { ListParams, ListResult } from '$lib/server/db/validation'
 import { latestPlateSubquery } from './vehicle-service'
+import {
+  getCompanyHolidayState,
+  getPublicHolidaysInRange
+} from './holiday-service'
 
 export type CalendarEventKind =
   | 'appointment'
@@ -93,7 +96,9 @@ const expandDays = (fromIso: string, toIsoStr: string): string[] => {
 /**
  * Pull every event that overlaps `[fromIso, toIso]`. Sources:
  * `calendar_entries` (split into appointment / closure rows by `kind`),
- * `employee_absences` (vacation / sick / other), `public_holidays`,
+ * `employee_absences` (vacation / sick / other), algorithmically
+ * computed German public holidays (holiday-service, keyed on the
+ * company's Bundesland — no year limit),
  * HU due dates derived from `vehicles`, and scheduled `work_orders`.
  * Scheduled orders ALWAYS render as `work_order` events regardless of
  * status — completed ones stay visible as history and carry
@@ -121,7 +126,7 @@ export const listCalendarEvents = async (
     .from(workOrders)
     .where(isNotNull(workOrders.appointmentId))
 
-  const [entries, absences, holidays, empRows, huRows, woRows] =
+  const [entries, absences, holidayState, empRows, huRows, woRows] =
     await Promise.all([
       db
         .select({
@@ -156,15 +161,10 @@ export const listCalendarEvents = async (
             employeeId ? eq(employeeAbsences.employeeId, employeeId) : undefined
           )
         ),
-      db
-        .select()
-        .from(publicHolidays)
-        .where(
-          and(
-            gte(publicHolidays.date, fromIso),
-            lte(publicHolidays.date, toIso)
-          )
-        ),
+      // Public holidays are computed, not stored — only the company's
+      // Bundesland comes from the DB (the legacy `public_holidays`
+      // table is dormant and no longer read).
+      getCompanyHolidayState(),
       db
         .select({
           id: employees.id,
@@ -297,13 +297,13 @@ export const listCalendarEvents = async (
       })
     }
   }
-  for (const h of holidays) {
+  for (const h of getPublicHolidaysInRange(fromIso, toIso, holidayState)) {
     out.push({
-      id: `hol-${h.id}`,
+      id: `hol-${h.date}`,
       kind: 'public_holiday',
       dateIso: h.date,
       title: h.name,
-      sourceId: h.id
+      sourceId: h.date
     })
   }
   for (const v of huRows) {

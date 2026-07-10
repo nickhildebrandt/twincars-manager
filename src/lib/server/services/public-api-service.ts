@@ -1,8 +1,10 @@
 /**
  * Helpers for the token-authenticated public REST API. Currently
  * exposes a slot-finder that combines workshop opening hours, existing
- * calendar appointments / business closures and German public
- * holidays into a list of free windows of the requested duration.
+ * calendar appointments / business closures and German public holidays
+ * (computed algorithmically per the company's Bundesland — see
+ * holiday-service) into a list of free windows of the requested
+ * duration.
  *
  * The function is intentionally pure-logic-around-DB-reads so it can
  * be unit-tested via pg-mem (see `public-api-service.test.ts`).
@@ -12,11 +14,11 @@
  */
 import { and, eq, gte, lte } from 'drizzle-orm'
 import { db } from '$lib/server/db/client'
+import { calendarEntries, workshopHours } from '$lib/server/db/schema'
 import {
-  calendarEntries,
-  publicHolidays,
-  workshopHours
-} from '$lib/server/db/schema'
+  getCompanyHolidayState,
+  getPublicHolidaysInRange
+} from './holiday-service'
 
 export type FreeSlot = { startsAt: Date; endsAt: Date }
 
@@ -49,7 +51,8 @@ const parseHHMM = (value: string): { h: number; m: number } => {
  * generated in 15-minute increments inside the configured opening
  * hours for each weekday and filtered against existing appointments
  * (`calendar_entries.kind='appointment'` that are not cancelled),
- * business closures (`kind='closure'`) and German public holidays.
+ * business closures (`kind='closure'`) and German public holidays
+ * (holiday-service, keyed on the company's Bundesland).
  *
  * Range bounded to {@link MAX_RANGE_DAYS} days — longer ranges throw,
  * the caller surfaces a 400.
@@ -89,7 +92,7 @@ export async function findFreeSlots(
   const overlapWindowStart = new Date(from.getTime() - ONE_DAY_MS)
   const overlapWindowEnd = new Date(to.getTime() + ONE_DAY_MS)
 
-  const [apptRows, closures, holidays] = await Promise.all([
+  const [apptRows, closures, holidayState] = await Promise.all([
     db
       .select({
         startsAt: calendarEntries.startsAt,
@@ -117,18 +120,19 @@ export async function findFreeSlots(
           gte(calendarEntries.endsAt, overlapWindowStart)
         )
       ),
-    db
-      .select({ date: publicHolidays.date })
-      .from(publicHolidays)
-      .where(
-        and(
-          gte(publicHolidays.date, toLocalIso(from)),
-          lte(publicHolidays.date, toLocalIso(to))
-        )
-      )
+    // Holidays are computed algorithmically per the company's
+    // Bundesland (holiday-service) — the dormant `public_holidays`
+    // table is no longer read.
+    getCompanyHolidayState()
   ])
 
-  const holidaySet = new Set(holidays.map((h) => h.date))
+  const holidaySet = new Set(
+    getPublicHolidaysInRange(
+      toLocalIso(from),
+      toLocalIso(to),
+      holidayState
+    ).map((h) => h.date)
+  )
 
   // Normalize blockers to plain ms intervals. Cancelled appointments
   // are filtered out in JS (small volumes) so we don't have to chase

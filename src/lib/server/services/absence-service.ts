@@ -8,11 +8,11 @@
  * - drive the remaining-vacation calculation (Resturlaub) on the
  *   employee detail view.
  *
- * Working-day model: weekends are skipped, half-days count as 0.5. The
- * model is intentionally conservative (no Feiertags-Awareness yet) — it
- * stays correct enough for typical Werkstatt-Schichtpläne and we leave
- * holiday-aware counting as a future iteration once the public-holidays
- * source becomes authoritative.
+ * Working-day model: weekends and public holidays are skipped,
+ * half-days count as 0.5. Holidays come from the algorithmic
+ * holiday-service (no year limit), keyed on the company's Bundesland
+ * from `company_settings.state` — unknown/unset Bundesland falls back
+ * to the nine federal holidays.
  */
 
 import { and, eq, gte, inArray, lte, ne } from 'drizzle-orm'
@@ -23,36 +23,52 @@ import {
   type EmployeeAbsence,
   type NewEmployeeAbsence
 } from '$lib/server/db/schema'
+import {
+  getCompanyHolidayState,
+  isPublicHoliday,
+  type GermanState
+} from './holiday-service'
 
 /* ── Helpers ─────────────────────────────────────────────────────── */
 
 const toDate = (s: string): Date => new Date(`${s}T00:00:00Z`)
 
-/** Count business days (Mon–Fri) inclusive between two YYYY-MM-DD dates. */
-const businessDaysBetween = (fromIso: string, toIso: string): number => {
+/**
+ * Count working days inclusive between two YYYY-MM-DD dates: Mon–Fri,
+ * minus the public holidays of `state`.
+ */
+const businessDaysBetween = (
+  fromIso: string,
+  toIso: string,
+  state: GermanState
+): number => {
   const start = toDate(fromIso).getTime()
   const end = toDate(toIso).getTime()
   if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0
   const oneDay = 24 * 60 * 60 * 1000
   let n = 0
   for (let t = start; t <= end; t += oneDay) {
-    const d = new Date(t).getUTCDay()
-    if (d !== 0 && d !== 6) n += 1
+    const day = new Date(t)
+    const d = day.getUTCDay()
+    if (d === 0 || d === 6) continue
+    if (isPublicHoliday(day.toISOString().slice(0, 10), state)) continue
+    n += 1
   }
   return n
 }
 
-/** Number of (business) days that fall inside `[periodStart, periodEnd]`. */
+/** Number of working days that fall inside `[periodStart, periodEnd]`. */
 const overlapBusinessDays = (
   absFrom: string,
   absTo: string,
   periodStart: string,
-  periodEnd: string
+  periodEnd: string,
+  state: GermanState
 ): number => {
   const from = absFrom < periodStart ? periodStart : absFrom
   const to = absTo > periodEnd ? periodEnd : absTo
   if (from > to) return 0
-  return businessDaysBetween(from, to)
+  return businessDaysBetween(from, to, state)
 }
 
 /* ── Queries ─────────────────────────────────────────────────────── */
@@ -136,8 +152,9 @@ export const listAbsencesInRange = async (
     )
 
 /**
- * Sum business days an employee was absent inside a period for a given
- * type. Half-day rows count as 0.5. Cancelled absences are skipped —
+ * Sum working days an employee was absent inside a period for a given
+ * type — weekends and the company Bundesland's public holidays don't
+ * count. Half-day rows count as 0.5. Cancelled absences are skipped —
  * only `planned` and `approved` count toward the period balance.
  */
 export const absenceDaysInPeriod = async (
@@ -146,19 +163,28 @@ export const absenceDaysInPeriod = async (
   fromIso: string,
   toIso: string
 ): Promise<number> => {
-  const rows = await db
-    .select()
-    .from(employeeAbsences)
-    .where(
-      and(
-        eq(employeeAbsences.employeeId, employeeId),
-        eq(employeeAbsences.type, type)
-      )
-    )
+  const [rows, holidayState] = await Promise.all([
+    db
+      .select()
+      .from(employeeAbsences)
+      .where(
+        and(
+          eq(employeeAbsences.employeeId, employeeId),
+          eq(employeeAbsences.type, type)
+        )
+      ),
+    getCompanyHolidayState()
+  ])
   let days = 0
   for (const a of rows) {
     if (a.status === 'cancelled') continue
-    const span = overlapBusinessDays(a.dateFrom, a.dateTo, fromIso, toIso)
+    const span = overlapBusinessDays(
+      a.dateFrom,
+      a.dateTo,
+      fromIso,
+      toIso,
+      holidayState
+    )
     days += a.halfDay ? Math.min(0.5, span) : span
   }
   return days

@@ -18,10 +18,10 @@ import {
 import { db } from '$lib/server/db/client'
 import {
   calendarEntries,
+  companySettings,
   customers,
   employeeAbsences,
   employees,
-  publicHolidays,
   vehicleLicensePlateVersions,
   vehicles,
   workOrderAssignees,
@@ -41,7 +41,7 @@ describe('calendar-service', () => {
     await db.delete(workOrders)
     await db.delete(calendarEntries)
     await db.delete(employeeAbsences)
-    await db.delete(publicHolidays)
+    await db.delete(companySettings)
     await db.delete(vehicleLicensePlateVersions)
     await db.delete(vehicles)
     await db.delete(customers)
@@ -207,10 +207,9 @@ describe('calendar-service', () => {
           halfDay: false,
           status: 'approved'
         })
-      // Public holiday
-      await db
-        .insert(publicHolidays)
-        .values({ state: 'Berlin', date: '2026-06-08', name: 'Pfingstmontag' })
+      // Public holidays are computed from the company Bundesland —
+      // NRW puts Fronleichnam (2026-06-04) inside the June window.
+      await db.insert(companySettings).values({ state: 'Nordrhein-Westfalen' })
 
       const events = await listCalendarEvents('2026-06-01', '2026-06-30')
 
@@ -219,6 +218,11 @@ describe('calendar-service', () => {
       expect(kinds).toContain('business_closure')
       expect(kinds).toContain('employee_vacation')
       expect(kinds).toContain('public_holiday')
+
+      const holidays = events.filter((e) => e.kind === 'public_holiday')
+      expect(holidays).toHaveLength(1)
+      expect(holidays[0].dateIso).toBe('2026-06-04')
+      expect(holidays[0].title).toBe('Fronleichnam')
 
       // Closure spans 2 days, vacation spans 3 days.
       const closures = events.filter((e) => e.kind === 'business_closure')
@@ -325,8 +329,34 @@ describe('calendar-service', () => {
       expect(vac[0].dateIso).toBe('2026-06-22')
     })
 
+    it('renders algorithmically computed holidays for far-future years (2033)', async () => {
+      // No seed rows exist for 2033 — the holiday source is computed.
+      await db.insert(companySettings).values({ state: 'Berlin' })
+      const events = await listCalendarEvents('2033-04-01', '2033-04-30')
+      const holidays = events.filter((e) => e.kind === 'public_holiday')
+      // Easter 2033 is 2033-04-17: Karfreitag 04-15, Ostermontag 04-18.
+      expect(holidays.map((h) => ({ date: h.dateIso, name: h.title }))).toEqual(
+        [
+          { date: '2033-04-15', name: 'Karfreitag' },
+          { date: '2033-04-18', name: 'Ostermontag' }
+        ]
+      )
+    })
+
+    it('includes holidays of both years when the range spans a year boundary', async () => {
+      const events = await listCalendarEvents('2032-12-20', '2033-01-10')
+      const holidays = events
+        .filter((e) => e.kind === 'public_holiday')
+        .map((h) => h.dateIso)
+        .sort()
+      // Federal fallback (no company settings row): Weihnachten + Neujahr.
+      expect(holidays).toEqual(['2032-12-25', '2032-12-26', '2033-01-01'])
+    })
+
     it('returns an empty array when no source has data in range', async () => {
-      const events = await listCalendarEvents('2030-01-01', '2030-01-31')
+      // February 2030 contains no federal holiday (Easter 2030 is in
+      // April), so the computed holiday source is empty too.
+      const events = await listCalendarEvents('2030-02-01', '2030-02-28')
       expect(events).toEqual([])
     })
 

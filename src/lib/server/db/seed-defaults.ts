@@ -15,7 +15,6 @@ import {
   MODULE_PERMISSIONS,
   WILDCARD_PERMISSION
 } from '$lib/server/auth-permissions'
-import { seedDefaultHolidays } from './seed-holidays'
 import { eq } from 'drizzle-orm'
 
 export const defaultMailTemplates: Array<{
@@ -227,9 +226,12 @@ export async function seedDefaults() {
       .onConflictDoNothing({ target: ledgerCategories.name })
   }
 
+  // NOTE: public holidays are no longer seeded — they are computed
+  // algorithmically at read time by `holiday-service.ts` (no year
+  // limit). The `public_holidays` table is dormant; dropping it is
+  // left to a future migration.
   await seedDefaultRoles()
   await seedDefaultWorkshopHours()
-  await seedDefaultHolidays()
   await seedLaborItem()
 }
 
