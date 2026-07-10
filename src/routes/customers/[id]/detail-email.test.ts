@@ -18,9 +18,13 @@ const sendEmailMock = vi.hoisted(() =>
 )
 
 vi.mock('$app/state', () => ({
-  page: { url: new URL('http://localhost/customers/c1'), params: { id: 'c1' } }
+  page: {
+    url: new URL('http://localhost/customers/c1'),
+    params: { id: 'c1' },
+    state: {}
+  }
 }))
-vi.mock('$app/navigation', () => ({ goto: vi.fn() }))
+vi.mock('$app/navigation', () => ({ goto: vi.fn(), replaceState: vi.fn() }))
 
 vi.mock('../customers.remote', () => ({
   getCustomerRemote: async () => ({

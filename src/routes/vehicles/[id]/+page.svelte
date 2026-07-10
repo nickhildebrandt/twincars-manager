@@ -6,6 +6,8 @@
   import Pagination from '$lib/components/ui/Pagination.svelte'
   import ImageUploader from '$lib/components/ui/ImageUploader.svelte'
   import VehicleDocuments from '$lib/components/ui/VehicleDocuments.svelte'
+  import CompactCustomerCard from '$lib/components/ui/CompactCustomerCard.svelte'
+  import TabGroup, { type TabItem } from '$lib/components/ui/TabGroup.svelte'
   import { listVehicleDocumentsRemote } from '../vehicle-documents.remote'
   import {
     addVehiclePhotoRemote,
@@ -22,6 +24,9 @@
   import {
     Archive,
     ArchiveRestore,
+    Car,
+    FileText,
+    Images,
     Pencil,
     Printer,
     Receipt,
@@ -43,25 +48,33 @@
   let invoicesPage = $state(1)
 
   /**
-   * Parallel SSR-friendly load — vehicle stamm data + photos +
-   * customer/invoices + document metadata arrive in one round-trip.
-   * The documents list is meta-only; bytes travel exclusively through
+   * Parallel SSR-friendly load — vehicle stamm data, customer/invoices
+   * and document metadata arrive in one round-trip. The documents list
+   * is meta-only; bytes travel exclusively through
    * `getVehicleDocumentRemote` inside the VehicleDocuments card.
    */
-  const [initialVehicle, initialPhotos, initialRelated, initialDocuments] =
-    await Promise.all([
-      getVehicleRemote({ id }),
-      listVehiclePhotosRemote({ vehicleId: id }),
-      getVehicleRelatedRemote({ id, invoicesPage: 1 }),
-      listVehicleDocumentsRemote({ vehicleId: id })
-    ])
+  const [initialVehicle, initialRelated, initialDocuments] = await Promise.all([
+    getVehicleRemote({ id }),
+    getVehicleRelatedRemote({ id, invoicesPage: 1 }),
+    listVehicleDocumentsRemote({ vehicleId: id })
+  ])
+
+  /**
+   * Photos are a stock-vehicle feature (sale listing gallery), so they
+   * are only fetched for stock vehicles — the server guards the photo
+   * remotes the same way. Customer vehicles get no Fotos tab.
+   */
+  const initialPhotos = initialVehicle.customerId
+    ? []
+    : await listVehiclePhotosRemote({ vehicleId: id })
 
   /**
    * Reactive vehicle read — never memoize the query proxy. The Ankauf
    * command refreshes `getVehicleRemote({ id })` server-side in the
    * same flight; reading `.current` here flips the page to the
-   * Verkaufsbestand state (header CTA, Vorbesitzer row) without a
-   * remount. `initialVehicle` bridges until the cache is live.
+   * Verkaufsbestand state (header CTA, tab set, Vorbesitzer row)
+   * without a remount. `initialVehicle` bridges until the cache is
+   * live.
    */
   const v = $derived.by(
     () => getVehicleRemote({ id }).current ?? initialVehicle
@@ -87,11 +100,6 @@
     })
   }
 
-  const customerLabel = (c: NonNullable<typeof customer>): string =>
-    c.company ||
-    `${c.firstName ?? ''} ${c.lastName ?? ''}`.trim() ||
-    c.customerNumber
-
   /**
    * Bestandsfahrzeug = kein Kunde verknüpft. Auf solchen Detailseiten
    * blenden wir oben den "Verkaufen"-CTA ein, der wie aus der
@@ -107,6 +115,28 @@
         }
       : { label: 'Bearbeiten', href: `/vehicles/${v.id}/edit`, icon: Pencil }
   )
+
+  /**
+   * Detail tabs (standard TabGroup, `?tab=` deep links). The tab set is
+   * conditional: Halter exists only for customer vehicles, Fotos only
+   * for stock vehicles — after an Ankauf the set flips in place and
+   * TabGroup falls back to Übersicht if the active tab disappears.
+   */
+  const detailTabs = $derived.by((): TabItem[] => {
+    const tabs: TabItem[] = [
+      { id: 'uebersicht', label: 'Übersicht', icon: Car }
+    ]
+    if (customer) tabs.push({ id: 'halter', label: 'Halter', icon: User })
+    tabs.push({
+      id: 'rechnungen',
+      label: 'Rechnungen',
+      icon: Receipt,
+      badge: invoices.total
+    })
+    if (isStock) tabs.push({ id: 'fotos', label: 'Fotos', icon: Images })
+    tabs.push({ id: 'dokumente', label: 'Dokumente', icon: FileText })
+    return tabs
+  })
 
   /** Ankauf modal (customer vehicles only — see the card below). */
   let ankaufOpen = $state(false)
@@ -187,9 +217,9 @@
   }
 
   /**
-   * Render and open the A4-landscape sale sign in a new tab. Available
-   * for any vehicle — stock cars get the price + highlights, customer
-   * cars still get a clean sign that the workshop can use ad-hoc.
+   * Render and open the A4-landscape sale sign in a new tab. A sale
+   * sign is a stock-vehicle artifact — the button (and the server
+   * guard) exists only while the vehicle is in the Verkaufsbestand.
    */
   const printSaleSign = async () => {
     try {
@@ -219,203 +249,207 @@
   </div>
 {/if}
 
-<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div
-      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div class="min-w-0">
-        <h3 class="card-title text-base">Verkaufsschild</h3>
-        <p class="text-base-content/60 text-sm">
-          A4-Querformat zum Aushängen am Fahrzeug, mit QR-Code zur
-          Online-Ansicht.
-        </p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline gap-2 sm:w-auto"
-        disabled={busy.active}
-        onclick={printSaleSign}
-      >
-        <Printer size={16} />
-        Verkaufsschild drucken
-      </button>
-    </div>
-  </div>
-
-  <!--
-    Ankauf card — only for customer vehicles. Opens the confirm modal
-    that re-hangs the vehicle into the sales stock (Vorbesitzer +
-    vehicle_purchases history row).
-  -->
-  {#if !isStock}
-    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-      <div
-        class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
-      >
-        <div class="min-w-0">
-          <h3 class="card-title text-base">Ankauf</h3>
-          <p class="text-base-content/60 text-sm">
-            Fahrzeug vom Kunden ankaufen: der Halter wird als Vorbesitzer
-            vermerkt und das Fahrzeug wandert in den Verkaufsbestand.
-          </p>
-        </div>
-        <button
-          type="button"
-          class="btn btn-sm btn-outline gap-2 sm:w-auto"
-          disabled={busy.active}
-          onclick={() => (ankaufOpen = true)}
-        >
-          <Warehouse size={16} />
-          Ankauf (in Verkaufsbestand übernehmen)
-        </button>
-      </div>
-    </div>
-  {/if}
-
-  <!--
-    Archive card — the soft-delete path. Vehicles with linked documents,
-    work orders or tire storage cannot be hard-deleted (409 guard);
-    archiving hides them from lists, pickers and search instead.
-  -->
-  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div
-      class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
-    >
-      <div class="min-w-0">
-        <h3 class="card-title text-base">Archiv</h3>
-        <p class="text-base-content/60 text-sm">
-          {v.archived
-            ? 'Das Fahrzeug ist archiviert. Reaktivieren macht es wieder in Listen, Suche und Auswahlfeldern sichtbar.'
-            : 'Archivieren blendet das Fahrzeug aus Listen, Suche und Auswahlfeldern aus; alle verknüpften Daten bleiben erhalten.'}
-        </p>
-      </div>
-      <button
-        type="button"
-        class="btn btn-sm btn-outline gap-2 sm:w-auto"
-        disabled={busy.active}
-        onclick={() => (archiveConfirmOpen = true)}
-      >
-        {#if v.archived}
-          <ArchiveRestore size={16} />
-          Reaktivieren
+<TabGroup name="vehicle_detail_tabs" tabs={detailTabs} contentClass="p-0">
+  {#snippet content(tabId)}
+    {#if tabId === 'uebersicht'}
+      <div class="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+        <!--
+          Sale sign card — stock vehicles only. Customer vehicles get
+          neither the button nor the server-side render.
+        -->
+        {#if isStock}
+          <div
+            class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
+          >
+            <div
+              class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div class="min-w-0">
+                <h3 class="card-title text-base">Verkaufsschild</h3>
+                <p class="text-base-content/60 text-sm">
+                  A4-Querformat zum Aushängen am Fahrzeug, mit QR-Code zur
+                  Online-Ansicht.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline gap-2 sm:w-auto"
+                disabled={busy.active}
+                onclick={printSaleSign}
+              >
+                <Printer size={16} />
+                Verkaufsschild drucken
+              </button>
+            </div>
+          </div>
         {:else}
-          <Archive size={16} />
-          Archivieren
-        {/if}
-      </button>
-    </div>
-  </div>
-  <div class="card border-base-300 bg-base-100 min-w-0 border">
-    <div class="card-body">
-      <h3 class="card-title text-base">Stammdaten</h3>
-      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-        <dt class="text-base-content/60">Marke</dt>
-        <dd class="break-words sm:col-span-2">{v.make ?? '-'}</dd>
-        <dt class="text-base-content/60">Modell</dt>
-        <dd class="break-words sm:col-span-2">{v.model ?? '-'}</dd>
-        <dt class="text-base-content/60">Kennzeichen</dt>
-        <dd class="font-mono break-all sm:col-span-2"
-          >{v.licensePlate ?? '-'}</dd
-        >
-        <dt class="text-base-content/60">FIN</dt>
-        <dd class="font-mono break-all sm:col-span-2">{v.vin ?? '-'}</dd>
-        <dt class="text-base-content/60">Erstzulassung</dt>
-        <dd class="sm:col-span-2">{v.firstRegistration ?? '-'}</dd>
-        <dt class="text-base-content/60">km-Stand</dt>
-        <dd class="sm:col-span-2">
-          {v.mileageKm ? v.mileageKm.toLocaleString('de-DE') + ' km' : '-'}
-        </dd>
-        <dt class="text-base-content/60">Nächste HU</dt>
-        <dd class="sm:col-span-2">{v.nextHu ?? '-'}</dd>
-        {#if v.previousOwnerCustomerId}
-          <dt class="text-base-content/60">Vorbesitzer</dt>
-          <dd class="break-words sm:col-span-2">
-            <a class="link" href={`/customers/${v.previousOwnerCustomerId}`}>
-              {v.previousOwnerLabel ?? 'Zum Kunden'}
-            </a>
-          </dd>
-        {/if}
-      </dl>
-    </div>
-  </div>
-  <div class="card border-base-300 bg-base-100 min-w-0 border">
-    <div class="card-body">
-      <h3 class="card-title text-base">Technik</h3>
-      <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-        <dt class="text-base-content/60">HSN/TSN</dt>
-        <dd class="break-all sm:col-span-2"
-          >{[v.hsn, v.tsn].filter(Boolean).join(' / ') || '-'}</dd
-        >
-        <dt class="text-base-content/60">Hubraum</dt>
-        <dd class="sm:col-span-2"
-          >{v.displacementCcm ? `${v.displacementCcm} ccm` : '-'}</dd
-        >
-        <dt class="text-base-content/60">kW</dt>
-        <dd class="sm:col-span-2">{v.powerKw ?? '-'}</dd>
-        <dt class="text-base-content/60">Kraftstoff</dt>
-        <dd class="sm:col-span-2">{v.fuelType ?? '-'}</dd>
-        <dt class="text-base-content/60">Getriebe</dt>
-        <dd class="sm:col-span-2">{v.gearbox ?? '-'}</dd>
-        <dt class="text-base-content/60">Aufbau</dt>
-        <dd class="break-words sm:col-span-2">{v.bodyType ?? '-'}</dd>
-      </dl>
-    </div>
-  </div>
-  {#if v.notes}
-    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-      <div class="card-body">
-        <h3 class="card-title text-base">Notiz</h3>
-        <p class="text-sm whitespace-pre-line">{v.notes}</p>
-      </div>
-    </div>
-  {/if}
-
-  <!--
-    Owner card — only rendered for customer-vehicles. Stock vehicles
-    (customer_id IS NULL) get no owner row from the related query.
-  -->
-  {#if customer}
-    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-      <div class="card-body">
-        <div class="flex flex-wrap items-center justify-between gap-2">
-          <h3 class="card-title text-base">
-            <User size={18} class="text-base-content/60" />
-            Kunde
-          </h3>
-          <a
-            class="btn btn-ghost btn-sm"
-            href={`/customers/${customer.customerId}`}
+          <!--
+            Ankauf card — only for customer vehicles. Opens the confirm
+            modal that re-hangs the vehicle into the sales stock
+            (Vorbesitzer + vehicle_purchases history row).
+          -->
+          <div
+            class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
           >
-            Zum Kunden
-          </a>
+            <div
+              class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+            >
+              <div class="min-w-0">
+                <h3 class="card-title text-base">Ankauf</h3>
+                <p class="text-base-content/60 text-sm">
+                  Fahrzeug vom Kunden ankaufen: der Halter wird als Vorbesitzer
+                  vermerkt und das Fahrzeug wandert in den Verkaufsbestand.
+                </p>
+              </div>
+              <button
+                type="button"
+                class="btn btn-sm btn-outline gap-2 sm:w-auto"
+                disabled={busy.active}
+                onclick={() => (ankaufOpen = true)}
+              >
+                <Warehouse size={16} />
+                Ankauf (in Verkaufsbestand übernehmen)
+              </button>
+            </div>
+          </div>
+        {/if}
+
+        <!--
+          Archive card — the soft-delete path. Vehicles with linked
+          documents, work orders or tire storage cannot be hard-deleted
+          (409 guard); archiving hides them from lists, pickers and
+          search instead.
+        -->
+        <div
+          class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
+        >
+          <div
+            class="card-body flex-col items-stretch gap-3 sm:flex-row sm:items-center sm:justify-between"
+          >
+            <div class="min-w-0">
+              <h3 class="card-title text-base">Archiv</h3>
+              <p class="text-base-content/60 text-sm">
+                {v.archived
+                  ? 'Das Fahrzeug ist archiviert. Reaktivieren macht es wieder in Listen, Suche und Auswahlfeldern sichtbar.'
+                  : 'Archivieren blendet das Fahrzeug aus Listen, Suche und Auswahlfeldern aus; alle verknüpften Daten bleiben erhalten.'}
+              </p>
+            </div>
+            <button
+              type="button"
+              class="btn btn-sm btn-outline gap-2 sm:w-auto"
+              disabled={busy.active}
+              onclick={() => (archiveConfirmOpen = true)}
+            >
+              {#if v.archived}
+                <ArchiveRestore size={16} />
+                Reaktivieren
+              {:else}
+                <Archive size={16} />
+                Archivieren
+              {/if}
+            </button>
+          </div>
         </div>
-        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-          <dt class="text-base-content/60">Kundennr.</dt>
-          <dd class="font-mono break-all sm:col-span-2"
-            >{customer.customerNumber}</dd
-          >
-          <dt class="text-base-content/60">Name</dt>
-          <dd class="break-words sm:col-span-2">{customerLabel(customer)}</dd>
-          <dt class="text-base-content/60">Telefon</dt>
-          <dd class="break-all sm:col-span-2">{customer.phone ?? '-'}</dd>
-          <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="break-all sm:col-span-2">{customer.email ?? '-'}</dd>
-        </dl>
-      </div>
-    </div>
-  {/if}
 
-  <!-- Paginated invoice history for this vehicle. -->
-  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div class="card-body p-0">
+        <div class="card border-base-300 bg-base-100 min-w-0 border">
+          <div class="card-body">
+            <h3 class="card-title text-base">Stammdaten</h3>
+            <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+              <dt class="text-base-content/60">Marke</dt>
+              <dd class="break-words sm:col-span-2">{v.make ?? '-'}</dd>
+              <dt class="text-base-content/60">Modell</dt>
+              <dd class="break-words sm:col-span-2">{v.model ?? '-'}</dd>
+              <dt class="text-base-content/60">Kennzeichen</dt>
+              <dd class="font-mono break-all sm:col-span-2"
+                >{v.licensePlate ?? '-'}</dd
+              >
+              <dt class="text-base-content/60">FIN</dt>
+              <dd class="font-mono break-all sm:col-span-2">{v.vin ?? '-'}</dd>
+              <dt class="text-base-content/60">Erstzulassung</dt>
+              <dd class="sm:col-span-2">{v.firstRegistration ?? '-'}</dd>
+              <dt class="text-base-content/60">km-Stand</dt>
+              <dd class="sm:col-span-2">
+                {v.mileageKm
+                  ? v.mileageKm.toLocaleString('de-DE') + ' km'
+                  : '-'}
+              </dd>
+              <dt class="text-base-content/60">Nächste HU</dt>
+              <dd class="sm:col-span-2">{v.nextHu ?? '-'}</dd>
+              {#if v.previousOwnerCustomerId}
+                <dt class="text-base-content/60">Vorbesitzer</dt>
+                <dd class="break-words sm:col-span-2">
+                  <a
+                    class="link"
+                    href={`/customers/${v.previousOwnerCustomerId}`}
+                  >
+                    {v.previousOwnerLabel ?? 'Zum Kunden'}
+                  </a>
+                </dd>
+              {/if}
+            </dl>
+          </div>
+        </div>
+
+        <div class="card border-base-300 bg-base-100 min-w-0 border">
+          <div class="card-body">
+            <h3 class="card-title text-base">Technik</h3>
+            <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+              <dt class="text-base-content/60">HSN/TSN</dt>
+              <dd class="break-all sm:col-span-2"
+                >{[v.hsn, v.tsn].filter(Boolean).join(' / ') || '-'}</dd
+              >
+              <dt class="text-base-content/60">Hubraum</dt>
+              <dd class="sm:col-span-2"
+                >{v.displacementCcm ? `${v.displacementCcm} ccm` : '-'}</dd
+              >
+              <dt class="text-base-content/60">kW</dt>
+              <dd class="sm:col-span-2">{v.powerKw ?? '-'}</dd>
+              <dt class="text-base-content/60">Kraftstoff</dt>
+              <dd class="sm:col-span-2">{v.fuelType ?? '-'}</dd>
+              <dt class="text-base-content/60">Getriebe</dt>
+              <dd class="sm:col-span-2">{v.gearbox ?? '-'}</dd>
+              <dt class="text-base-content/60">Aufbau</dt>
+              <dd class="break-words sm:col-span-2">{v.bodyType ?? '-'}</dd>
+            </dl>
+          </div>
+        </div>
+
+        {#if v.notes}
+          <div
+            class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
+          >
+            <div class="card-body">
+              <h3 class="card-title text-base">Notiz</h3>
+              <p class="text-sm whitespace-pre-line">{v.notes}</p>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {:else if tabId === 'halter'}
+      <!--
+        Holder tab — customer vehicles only. A compact read-only card
+        with a link to the customer detail; never an embedded full
+        customer page.
+      -->
+      {#if customer}
+        <div class="p-4">
+          <CompactCustomerCard
+            customerNumber={customer.customerNumber}
+            company={customer.company}
+            firstName={customer.firstName}
+            lastName={customer.lastName}
+            phone={customer.phone}
+            email={customer.email}
+            href={`/customers/${customer.customerId}`}
+          />
+        </div>
+      {/if}
+    {:else if tabId === 'rechnungen'}
+      <!-- Paginated invoice history for this vehicle. -->
       <div
         class="border-base-300 flex items-center justify-between border-b px-4 py-3"
       >
-        <h3 class="text-base font-semibold">
-          <Receipt size={18} class="text-base-content/60 mr-1 inline" />
-          Rechnungen
-        </h3>
+        <h3 class="text-base font-semibold">Rechnungen</h3>
         <span class="text-base-content/60 text-sm">
           {invoices.total}
           {invoices.total === 1 ? 'Eintrag' : 'Einträge'}
@@ -469,35 +503,38 @@
           onPage={(p) => (invoicesPage = p)}
         />
       {/if}
-    </div>
-  </div>
-
-  <div class="lg:col-span-2">
-    <ImageUploader
-      title="Fotos"
-      hint="Beliebig viele Fotos; ein Bild lässt sich als Cover auszeichnen."
-      images={photos.map((p) => ({
-        id: p.id,
-        dataUrl: p.dataUrl,
-        isMain: p.isMain
-      }))}
-      {onUpload}
-      {onDelete}
-      {onSetMain}
-    />
-  </div>
-
-  <!-- Documents area — available for customer AND stock vehicles. -->
-  <div class="lg:col-span-2">
-    <VehicleDocuments vehicleId={id} initial={initialDocuments} />
-  </div>
-</div>
+    {:else if tabId === 'fotos'}
+      <!-- Photo gallery — stock vehicles only (sale listing images). -->
+      {#if isStock}
+        <div class="p-4">
+          <ImageUploader
+            title="Fotos"
+            hint="Beliebig viele Fotos; ein Bild lässt sich als Cover auszeichnen."
+            images={photos.map((p) => ({
+              id: p.id,
+              dataUrl: p.dataUrl,
+              isMain: p.isMain
+            }))}
+            {onUpload}
+            {onDelete}
+            {onSetMain}
+          />
+        </div>
+      {/if}
+    {:else if tabId === 'dokumente'}
+      <!-- Documents area — available for customer AND stock vehicles. -->
+      <div class="p-4">
+        <VehicleDocuments vehicleId={id} initial={initialDocuments} />
+      </div>
+    {/if}
+  {/snippet}
+</TabGroup>
 
 <!--
   buildUpdates hands the modal FRESH query instances built against the
   exact args this page renders (section 5 rule), so the single-flight
-  response flips `v` (header CTA, Vorbesitzer row) and drops the Kunde
-  card without a reload.
+  response flips `v` (header CTA, tab set, Vorbesitzer row) and drops
+  the Halter tab without a reload.
 -->
 <PurchaseIntoStockModal
   bind:open={ankaufOpen}

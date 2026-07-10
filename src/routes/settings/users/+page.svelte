@@ -1,8 +1,12 @@
 <script lang="ts">
+  /**
+   * Benutzer & Rollen — one page with two stacked sections (users on
+   * top, roles below). The former inner users/roles tabs were
+   * flattened: the settings area has exactly ONE tab level (the
+   * section layout) and no tabs inside a settings tab.
+   */
   import { untrack } from 'svelte'
   import { goto } from '$app/navigation'
-  import { page as pageStore } from '$app/state'
-  import { replaceState } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import Toolbar from '$lib/components/ui/Toolbar.svelte'
   import Pagination from '$lib/components/ui/Pagination.svelte'
@@ -30,31 +34,7 @@
 
   const ADMIN_ROLE_NAME = 'Administrator'
 
-  type Tab = 'users' | 'roles'
-  const tabs: { id: Tab; label: string; icon: typeof Users }[] = [
-    { id: 'users', label: 'Benutzer', icon: Users },
-    { id: 'roles', label: 'Rollen', icon: ShieldCheck }
-  ]
-
-  /**
-   * Active tab is mirrored in the URL (?tab=) so a reload returns to
-   * the same panel. `replaceState` keeps the browser back-button from
-   * snapping between tabs.
-   */
-  const initialTabFromUrl = (() => {
-    const t = pageStore.url.searchParams.get('tab')
-    return tabs.some((x) => x.id === t) ? (t as Tab) : 'users'
-  })()
-  let activeTab = $state<Tab>(initialTabFromUrl)
-
-  $effect(() => {
-    const url = new URL(pageStore.url)
-    if (activeTab === 'users') url.searchParams.delete('tab')
-    else url.searchParams.set('tab', activeTab)
-    if (url.search !== pageStore.url.search) replaceState(url, pageStore.state)
-  })
-
-  /* — Users tab — */
+  /* — Users section — */
 
   let pageNum = $state(1)
   const size = 25 as const
@@ -83,7 +63,7 @@
     if (usersQuery.error) handleClientError(usersQuery.error)
   })
 
-  /* — Roles tab — */
+  /* — Roles section — */
 
   const initialRoles = await untrack(() => listRolesRemote())
   let lastRoles = $state<typeof initialRoles>(initialRoles)
@@ -194,356 +174,368 @@
       year: 'numeric'
     })
   }
-
-  /** Primary action mirrors the active tab. */
-  const primaryAction = $derived(
-    activeTab === 'users'
-      ? { label: 'Neuer Benutzer', href: '/settings/users/new', icon: Plus }
-      : { label: 'Neue Rolle', href: '/settings/users/roles/new', icon: Plus }
-  )
 </script>
 
-<PageHeader title="Benutzer & Rollen" back="/settings" {primaryAction}>
+<PageHeader
+  title="Benutzer & Rollen"
+  back="/settings"
+  primaryAction={{
+    label: 'Neuer Benutzer',
+    href: '/settings/users/new',
+    icon: Plus
+  }}
+>
   {#snippet toolbar()}
-    {#if activeTab === 'users'}
-      <Toolbar
-        bind:query={q}
-        placeholder="Benutzer suchen: Benutzername, Name ..."
-        onQuery={() => (pageNum = 1)}
-      />
-    {/if}
+    <Toolbar
+      bind:query={q}
+      placeholder="Benutzer suchen: Benutzername, Name ..."
+      onQuery={() => (pageNum = 1)}
+    />
   {/snippet}
 </PageHeader>
 
-<div role="tablist" class="tabs tabs-lift">
-  {#each tabs as t (t.id)}
-    {@const Icon = t.icon}
-    <label class="tab gap-2">
-      <input
-        type="radio"
-        name="users_tabs"
-        bind:group={activeTab}
-        value={t.id}
-      />
-      <Icon size={16} />
-      <span>{t.label}</span>
-    </label>
-    <div class="tab-content border-base-300 bg-base-100 border p-0">
-      {#if t.id === 'users'}
-        {#if users.length === 0}
-          <EmptyState
-            icon={Users}
-            title="Noch keine Benutzer"
-            description="Legen Sie den ersten Benutzer an, um den Zugriff zu vergeben."
-          >
-            {#snippet action()}
-              <a
-                class="btn btn-primary btn-sm gap-2"
-                href="/settings/users/new"
-              >
-                <Plus size={16} /> Neuer Benutzer
-              </a>
-            {/snippet}
-          </EmptyState>
-        {:else}
-          <!-- Desktop / tablet: full table. Hidden below `lg`. -->
-          <div class="hidden overflow-x-auto lg:block">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Benutzername</th>
-                  <th>Name</th>
-                  <th>Rollen</th>
-                  <th>Status</th>
-                  <th>Erstellt</th>
-                  <th class="w-40 text-right">Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each users as u (u.id)}
-                  <tr
-                    class="hover:bg-base-200 cursor-pointer"
-                    onclick={() => goto(`/settings/users/${u.id}/edit`)}
-                  >
-                    <td class="font-mono text-xs">{u.username}</td>
-                    <td class="font-medium">{u.name}</td>
-                    <td>
-                      <div class="flex flex-wrap gap-1">
-                        {#each u.roles as r (r.id)}
-                          <span class="badge badge-ghost badge-sm"
-                            >{r.name}</span
-                          >
-                        {:else}
-                          <span class="text-base-content/50 text-xs">
-                            keine
-                          </span>
-                        {/each}
-                      </div>
-                    </td>
-                    <td>
-                      {#if u.active}
-                        <span class="badge badge-success badge-sm">Aktiv</span>
-                      {:else}
-                        <span class="badge badge-error badge-sm"
-                          >Deaktiviert</span
-                        >
-                      {/if}
-                    </td>
-                    <td class="text-sm">{fmtDate(u.createdAt)}</td>
-                    <td onclick={(e) => e.stopPropagation()}>
-                      <div class="flex justify-end gap-1">
-                        <button
-                          class="btn btn-ghost btn-sm btn-square"
-                          aria-label={u.active ? 'Deaktivieren' : 'Aktivieren'}
-                          title={u.active ? 'Deaktivieren' : 'Aktivieren'}
-                          onclick={() => toggleActive(u)}
-                        >
-                          {#if u.active}
-                            <UserX size={16} />
-                          {:else}
-                            <UserCheck size={16} class="text-success" />
-                          {/if}
-                        </button>
-                        <a
-                          class="btn btn-ghost btn-sm btn-square"
-                          href="/settings/users/{u.id}/edit"
-                          aria-label="Bearbeiten"
-                        >
-                          <Pencil size={16} />
-                        </a>
-                        <button
-                          class="btn btn-ghost btn-sm btn-square text-error"
-                          aria-label="Löschen"
-                          onclick={() => askDeleteUser(u.id, u.name)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-          <!-- Phone / small tablet: stacked card list with the essentials. -->
-          <ul class="divide-base-300 divide-y lg:hidden">
-            {#each users as u (u.id)}
-              <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
-                <a
-                  href={`/settings/users/${u.id}/edit`}
-                  class="flex min-w-0 flex-1 flex-col gap-0.5"
+<div class="flex flex-col gap-4">
+  <!-- Users section -->
+  <div class="card border-base-300 bg-base-100 border">
+    <div class="card-body p-0">
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">
+          <Users size={18} class="text-base-content/60 mr-1 inline" />
+          Benutzer
+        </h3>
+        <span class="text-base-content/60 text-sm">
+          {usersTotal}
+          {usersTotal === 1 ? 'Eintrag' : 'Einträge'}
+        </span>
+      </div>
+      {#if users.length === 0}
+        <EmptyState
+          icon={Users}
+          title="Noch keine Benutzer"
+          description="Legen Sie den ersten Benutzer an, um den Zugriff zu vergeben."
+        >
+          {#snippet action()}
+            <a class="btn btn-primary btn-sm gap-2" href="/settings/users/new">
+              <Plus size={16} /> Neuer Benutzer
+            </a>
+          {/snippet}
+        </EmptyState>
+      {:else}
+        <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+        <div class="hidden overflow-x-auto lg:block">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Benutzername</th>
+                <th>Name</th>
+                <th>Rollen</th>
+                <th>Status</th>
+                <th>Erstellt</th>
+                <th class="w-40 text-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each users as u (u.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/settings/users/${u.id}/edit`)}
                 >
-                  <span class="truncate text-sm font-medium">{u.name}</span>
-                  <span class="text-base-content/60 truncate font-mono text-xs">
-                    {u.username}
-                  </span>
-                  <span class="mt-0.5 flex flex-wrap items-center gap-1">
-                    {#each u.roles as r (r.id)}
-                      <span class="badge badge-ghost badge-sm">{r.name}</span>
-                    {:else}
-                      <span class="text-base-content/50 text-xs">keine</span>
-                    {/each}
+                  <td class="font-mono text-xs">{u.username}</td>
+                  <td class="font-medium">{u.name}</td>
+                  <td>
+                    <div class="flex flex-wrap gap-1">
+                      {#each u.roles as r (r.id)}
+                        <span class="badge badge-ghost badge-sm">{r.name}</span>
+                      {:else}
+                        <span class="text-base-content/50 text-xs">
+                          keine
+                        </span>
+                      {/each}
+                    </div>
+                  </td>
+                  <td>
                     {#if u.active}
                       <span class="badge badge-success badge-sm">Aktiv</span>
                     {:else}
-                      <span class="badge badge-error badge-sm">
-                        Deaktiviert
-                      </span>
+                      <span class="badge badge-error badge-sm">Deaktiviert</span
+                      >
                     {/if}
-                  </span>
-                </a>
-                <div class="flex shrink-0 items-start gap-1">
-                  <button
-                    class="btn btn-ghost btn-sm btn-square"
-                    aria-label={u.active ? 'Deaktivieren' : 'Aktivieren'}
-                    title={u.active ? 'Deaktivieren' : 'Aktivieren'}
-                    onclick={() => toggleActive(u)}
-                  >
-                    {#if u.active}
-                      <UserX size={16} />
-                    {:else}
-                      <UserCheck size={16} class="text-success" />
-                    {/if}
-                  </button>
-                  <a
-                    class="btn btn-ghost btn-sm btn-square"
-                    href="/settings/users/{u.id}/edit"
-                    aria-label="Bearbeiten"
-                  >
-                    <Pencil size={16} />
-                  </a>
-                  <button
-                    class="btn btn-ghost btn-sm btn-square text-error"
-                    aria-label="Löschen"
-                    onclick={() => askDeleteUser(u.id, u.name)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-          <Pagination
-            total={usersTotal}
-            page={pageNum}
-            pageCount={usersPageCount}
-            {size}
-            onPage={(p) => (pageNum = p)}
-          />
-        {/if}
-      {:else if t.id === 'roles'}
-        {#if rolesList.length === 0}
-          <EmptyState
-            icon={ShieldCheck}
-            title="Noch keine Rollen"
-            description="Legen Sie die erste Rolle an, um Berechtigungen zu bündeln."
-          >
-            {#snippet action()}
-              <a
-                class="btn btn-primary btn-sm gap-2"
-                href="/settings/users/roles/new"
-              >
-                <Plus size={16} /> Neue Rolle
-              </a>
-            {/snippet}
-          </EmptyState>
-        {:else}
-          <!-- Desktop / tablet: full table. Hidden below `lg`. -->
-          <div class="hidden overflow-x-auto lg:block">
-            <table class="table">
-              <thead>
-                <tr>
-                  <th>Name</th>
-                  <th>Beschreibung</th>
-                  <th>Berechtigungen</th>
-                  <th class="w-32 text-right">Aktion</th>
-                </tr>
-              </thead>
-              <tbody>
-                {#each rolesList as r (r.id)}
-                  {@const isAdmin = r.name === ADMIN_ROLE_NAME}
-                  {@const isWildcard = r.permissions.includes('*')}
-                  <tr
-                    class="hover:bg-base-200 cursor-pointer"
-                    onclick={() => goto(`/settings/users/roles/${r.id}/edit`)}
-                  >
-                    <td class="font-medium">
-                      {r.name}
-                      {#if isAdmin}
-                        <span class="badge badge-ghost badge-sm ml-2">
-                          System
-                        </span>
-                      {/if}
-                    </td>
-                    <td class="text-base-content/70 text-sm">
-                      {r.description ?? '-'}
-                    </td>
-                    <td>
-                      <div class="flex flex-wrap items-center gap-1">
-                        {#if isWildcard}
-                          <span class="badge badge-primary badge-sm">
-                            Voller Zugriff (*)
-                          </span>
+                  </td>
+                  <td class="text-sm">{fmtDate(u.createdAt)}</td>
+                  <td onclick={(e) => e.stopPropagation()}>
+                    <div class="flex justify-end gap-1">
+                      <button
+                        class="btn btn-ghost btn-sm btn-square"
+                        aria-label={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                        title={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                        onclick={() => toggleActive(u)}
+                      >
+                        {#if u.active}
+                          <UserX size={16} />
                         {:else}
-                          {#each r.permissions.slice(0, 3) as p (p)}
-                            <span class="badge badge-ghost badge-sm font-mono">
-                              {p}
-                            </span>
-                          {/each}
-                          {#if r.permissions.length > 3}
-                            <span class="text-base-content/60 text-xs">
-                              +{r.permissions.length - 3}
-                            </span>
-                          {/if}
-                          {#if r.permissions.length === 0}
-                            <span class="text-base-content/50 text-xs">
-                              keine
-                            </span>
-                          {/if}
+                          <UserCheck size={16} class="text-success" />
                         {/if}
-                      </div>
-                    </td>
-                    <td onclick={(e) => e.stopPropagation()}>
-                      <div class="flex justify-end gap-1">
-                        <a
-                          class="btn btn-ghost btn-sm btn-square"
-                          href="/settings/users/roles/{r.id}/edit"
-                          aria-label="Bearbeiten"
-                        >
-                          <Pencil size={16} />
-                        </a>
-                        <button
-                          class="btn btn-ghost btn-sm btn-square text-error"
-                          aria-label="Löschen"
-                          disabled={isAdmin}
-                          onclick={() => askDeleteRole(r.id, r.name)}
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                {/each}
-              </tbody>
-            </table>
-          </div>
-          <!-- Phone / small tablet: stacked card list with the essentials. -->
-          <ul class="divide-base-300 divide-y lg:hidden">
-            {#each rolesList as r (r.id)}
-              {@const isAdmin = r.name === ADMIN_ROLE_NAME}
-              {@const isWildcard = r.permissions.includes('*')}
-              <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
-                <a
-                  href={`/settings/users/roles/${r.id}/edit`}
-                  class="flex min-w-0 flex-1 flex-col gap-0.5"
+                      </button>
+                      <a
+                        class="btn btn-ghost btn-sm btn-square"
+                        href="/settings/users/{u.id}/edit"
+                        aria-label="Bearbeiten"
+                      >
+                        <Pencil size={16} />
+                      </a>
+                      <button
+                        class="btn btn-ghost btn-sm btn-square text-error"
+                        aria-label="Löschen"
+                        onclick={() => askDeleteUser(u.id, u.name)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <!-- Phone / small tablet: stacked card list with the essentials. -->
+        <ul class="divide-base-300 divide-y lg:hidden">
+          {#each users as u (u.id)}
+            <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+              <a
+                href={`/settings/users/${u.id}/edit`}
+                class="flex min-w-0 flex-1 flex-col gap-0.5"
+              >
+                <span class="truncate text-sm font-medium">{u.name}</span>
+                <span class="text-base-content/60 truncate font-mono text-xs">
+                  {u.username}
+                </span>
+                <span class="mt-0.5 flex flex-wrap items-center gap-1">
+                  {#each u.roles as r (r.id)}
+                    <span class="badge badge-ghost badge-sm">{r.name}</span>
+                  {:else}
+                    <span class="text-base-content/50 text-xs">keine</span>
+                  {/each}
+                  {#if u.active}
+                    <span class="badge badge-success badge-sm">Aktiv</span>
+                  {:else}
+                    <span class="badge badge-error badge-sm">
+                      Deaktiviert
+                    </span>
+                  {/if}
+                </span>
+              </a>
+              <div class="flex shrink-0 items-start gap-1">
+                <button
+                  class="btn btn-ghost btn-sm btn-square"
+                  aria-label={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                  title={u.active ? 'Deaktivieren' : 'Aktivieren'}
+                  onclick={() => toggleActive(u)}
                 >
-                  <span class="flex items-center gap-2">
-                    <span class="truncate text-sm font-medium">{r.name}</span>
+                  {#if u.active}
+                    <UserX size={16} />
+                  {:else}
+                    <UserCheck size={16} class="text-success" />
+                  {/if}
+                </button>
+                <a
+                  class="btn btn-ghost btn-sm btn-square"
+                  href="/settings/users/{u.id}/edit"
+                  aria-label="Bearbeiten"
+                >
+                  <Pencil size={16} />
+                </a>
+                <button
+                  class="btn btn-ghost btn-sm btn-square text-error"
+                  aria-label="Löschen"
+                  onclick={() => askDeleteUser(u.id, u.name)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
+        <Pagination
+          total={usersTotal}
+          page={pageNum}
+          pageCount={usersPageCount}
+          {size}
+          onPage={(p) => (pageNum = p)}
+        />
+      {/if}
+    </div>
+  </div>
+
+  <!-- Roles section -->
+  <div class="card border-base-300 bg-base-100 border">
+    <div class="card-body p-0">
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">
+          <ShieldCheck size={18} class="text-base-content/60 mr-1 inline" />
+          Rollen
+        </h3>
+        <a
+          class="btn btn-primary btn-sm gap-2"
+          href="/settings/users/roles/new"
+        >
+          <Plus size={16} /> Neue Rolle
+        </a>
+      </div>
+      {#if rolesList.length === 0}
+        <EmptyState
+          icon={ShieldCheck}
+          title="Noch keine Rollen"
+          description="Legen Sie die erste Rolle an, um Berechtigungen zu bündeln."
+        >
+          {#snippet action()}
+            <a
+              class="btn btn-primary btn-sm gap-2"
+              href="/settings/users/roles/new"
+            >
+              <Plus size={16} /> Neue Rolle
+            </a>
+          {/snippet}
+        </EmptyState>
+      {:else}
+        <!-- Desktop / tablet: full table. Hidden below `lg`. -->
+        <div class="hidden overflow-x-auto lg:block">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Beschreibung</th>
+                <th>Berechtigungen</th>
+                <th class="w-32 text-right">Aktion</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each rolesList as r (r.id)}
+                {@const isAdmin = r.name === ADMIN_ROLE_NAME}
+                {@const isWildcard = r.permissions.includes('*')}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/settings/users/roles/${r.id}/edit`)}
+                >
+                  <td class="font-medium">
+                    {r.name}
                     {#if isAdmin}
-                      <span class="badge badge-ghost badge-sm shrink-0">
+                      <span class="badge badge-ghost badge-sm ml-2">
                         System
                       </span>
                     {/if}
-                  </span>
-                  <span class="mt-0.5 flex items-center gap-1">
-                    {#if isWildcard}
-                      <span class="badge badge-primary badge-sm">
-                        Voller Zugriff (*)
-                      </span>
-                    {:else}
-                      <span class="text-base-content/70 text-xs">
-                        {r.permissions.length}
-                        {r.permissions.length === 1
-                          ? 'Berechtigung'
-                          : 'Berechtigungen'}
-                      </span>
-                    {/if}
-                  </span>
+                  </td>
+                  <td class="text-base-content/70 text-sm">
+                    {r.description ?? '-'}
+                  </td>
+                  <td>
+                    <div class="flex flex-wrap items-center gap-1">
+                      {#if isWildcard}
+                        <span class="badge badge-primary badge-sm">
+                          Voller Zugriff (*)
+                        </span>
+                      {:else}
+                        {#each r.permissions.slice(0, 3) as p (p)}
+                          <span class="badge badge-ghost badge-sm font-mono">
+                            {p}
+                          </span>
+                        {/each}
+                        {#if r.permissions.length > 3}
+                          <span class="text-base-content/60 text-xs">
+                            +{r.permissions.length - 3}
+                          </span>
+                        {/if}
+                        {#if r.permissions.length === 0}
+                          <span class="text-base-content/50 text-xs">
+                            keine
+                          </span>
+                        {/if}
+                      {/if}
+                    </div>
+                  </td>
+                  <td onclick={(e) => e.stopPropagation()}>
+                    <div class="flex justify-end gap-1">
+                      <a
+                        class="btn btn-ghost btn-sm btn-square"
+                        href="/settings/users/roles/{r.id}/edit"
+                        aria-label="Bearbeiten"
+                      >
+                        <Pencil size={16} />
+                      </a>
+                      <button
+                        class="btn btn-ghost btn-sm btn-square text-error"
+                        aria-label="Löschen"
+                        disabled={isAdmin}
+                        onclick={() => askDeleteRole(r.id, r.name)}
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </div>
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <!-- Phone / small tablet: stacked card list with the essentials. -->
+        <ul class="divide-base-300 divide-y lg:hidden">
+          {#each rolesList as r (r.id)}
+            {@const isAdmin = r.name === ADMIN_ROLE_NAME}
+            {@const isWildcard = r.permissions.includes('*')}
+            <li class="hover:bg-base-200 flex items-stretch gap-2 p-3">
+              <a
+                href={`/settings/users/roles/${r.id}/edit`}
+                class="flex min-w-0 flex-1 flex-col gap-0.5"
+              >
+                <span class="flex items-center gap-2">
+                  <span class="truncate text-sm font-medium">{r.name}</span>
+                  {#if isAdmin}
+                    <span class="badge badge-ghost badge-sm shrink-0">
+                      System
+                    </span>
+                  {/if}
+                </span>
+                <span class="mt-0.5 flex items-center gap-1">
+                  {#if isWildcard}
+                    <span class="badge badge-primary badge-sm">
+                      Voller Zugriff (*)
+                    </span>
+                  {:else}
+                    <span class="text-base-content/70 text-xs">
+                      {r.permissions.length}
+                      {r.permissions.length === 1
+                        ? 'Berechtigung'
+                        : 'Berechtigungen'}
+                    </span>
+                  {/if}
+                </span>
+              </a>
+              <div class="flex shrink-0 items-start gap-1">
+                <a
+                  class="btn btn-ghost btn-sm btn-square"
+                  href="/settings/users/roles/{r.id}/edit"
+                  aria-label="Bearbeiten"
+                >
+                  <Pencil size={16} />
                 </a>
-                <div class="flex shrink-0 items-start gap-1">
-                  <a
-                    class="btn btn-ghost btn-sm btn-square"
-                    href="/settings/users/roles/{r.id}/edit"
-                    aria-label="Bearbeiten"
-                  >
-                    <Pencil size={16} />
-                  </a>
-                  <button
-                    class="btn btn-ghost btn-sm btn-square text-error"
-                    aria-label="Löschen"
-                    disabled={isAdmin}
-                    onclick={() => askDeleteRole(r.id, r.name)}
-                  >
-                    <Trash2 size={16} />
-                  </button>
-                </div>
-              </li>
-            {/each}
-          </ul>
-        {/if}
+                <button
+                  class="btn btn-ghost btn-sm btn-square text-error"
+                  aria-label="Löschen"
+                  disabled={isAdmin}
+                  onclick={() => askDeleteRole(r.id, r.name)}
+                >
+                  <Trash2 size={16} />
+                </button>
+              </div>
+            </li>
+          {/each}
+        </ul>
       {/if}
     </div>
-  {/each}
+  </div>
 </div>
 
 <ConfirmDialog

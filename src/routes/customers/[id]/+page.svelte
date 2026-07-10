@@ -10,7 +10,16 @@
     setCustomerArchivedRemote
   } from '../customers.remote'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
-  import { Archive, ArchiveRestore, Mail, Pencil } from '@lucide/svelte'
+  import TabGroup, { type TabItem } from '$lib/components/ui/TabGroup.svelte'
+  import {
+    Archive,
+    ArchiveRestore,
+    Car,
+    Contact,
+    Mail,
+    Pencil,
+    Receipt
+  } from '@lucide/svelte'
   import {
     documentStatusBadge,
     documentStatusLabel
@@ -46,6 +55,27 @@
   )
 
   const isEbay = $derived(customer.kind === 'ebay')
+
+  /**
+   * Detail tabs (standard TabGroup, `?tab=` deep links). Übersicht
+   * carries the contact/master data, the related records get one tab
+   * each with a count badge.
+   */
+  const detailTabs: TabItem[] = [
+    { id: 'uebersicht', label: 'Übersicht', icon: Contact },
+    {
+      id: 'fahrzeuge',
+      label: 'Fahrzeuge',
+      icon: Car,
+      badge: related.vehicles.length
+    },
+    {
+      id: 'rechnungen',
+      label: 'Rechnungen',
+      icon: Receipt,
+      badge: related.invoices.length
+    }
+  ]
 
   const labelOf = () =>
     customer.company ||
@@ -206,94 +236,111 @@
   </button>
 </div>
 
-<div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
-  {#if isEbay}
-    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-      <div class="card-body">
-        <h3 class="card-title text-base">eBay-Kunde</h3>
-        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-          <dt class="text-base-content/60">Kundennr.</dt>
-          <dd class="font-mono text-xs break-all sm:col-span-2">
-            {customer.customerNumber}
-          </dd>
-          <dt class="text-base-content/60">eBay-Name</dt>
-          <dd class="break-words sm:col-span-2">{customer.ebayHandle ?? '-'}</dd
+<TabGroup name="customer_detail_tabs" tabs={detailTabs} contentClass="p-0">
+  {#snippet content(tabId)}
+    {#if tabId === 'uebersicht'}
+      <div class="grid grid-cols-1 gap-4 p-4 lg:grid-cols-2">
+        {#if isEbay}
+          <div
+            class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
           >
-          <dt class="text-base-content/60">Name</dt>
-          <dd class="break-words sm:col-span-2">
-            {[customer.firstName, customer.lastName]
-              .filter(Boolean)
-              .join(' ') || '-'}
-          </dd>
-          <dt class="text-base-content/60">Newsletter</dt>
-          <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
-          <dt class="text-base-content/60">Reifenwechsel-Erinnerung</dt>
-          <dd class="sm:col-span-2">{yesNo(customer.wantsTireReminders)}</dd>
-        </dl>
-      </div>
-    </div>
-  {:else}
-    <div class="card border-base-300 bg-base-100 min-w-0 border">
-      <div class="card-body">
-        <h3 class="card-title text-base">Anschrift</h3>
-        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-          <dt class="text-base-content/60">Kundennr.</dt>
-          <dd class="font-mono break-words sm:col-span-2">
-            {customer.customerNumber}
-          </dd>
-          <dt class="text-base-content/60">Firma</dt>
-          <dd class="break-words sm:col-span-2">{customer.company ?? '-'}</dd>
-          <dt class="text-base-content/60">Name</dt>
-          <dd class="break-words sm:col-span-2">
-            {[customer.salutation, customer.firstName, customer.lastName]
-              .filter(Boolean)
-              .join(' ') || '-'}
-          </dd>
-          <dt class="text-base-content/60">Straße</dt>
-          <dd class="break-words sm:col-span-2">{customer.street ?? '-'}</dd>
-          <dt class="text-base-content/60">PLZ / Ort</dt>
-          <dd class="break-words sm:col-span-2">
-            {[customer.zip, customer.city].filter(Boolean).join(' ') || '-'}
-          </dd>
-        </dl>
-      </div>
-    </div>
+            <div class="card-body">
+              <h3 class="card-title text-base">eBay-Kunde</h3>
+              <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+                <dt class="text-base-content/60">Kundennr.</dt>
+                <dd class="font-mono text-xs break-all sm:col-span-2">
+                  {customer.customerNumber}
+                </dd>
+                <dt class="text-base-content/60">eBay-Name</dt>
+                <dd class="break-words sm:col-span-2"
+                  >{customer.ebayHandle ?? '-'}</dd
+                >
+                <dt class="text-base-content/60">Name</dt>
+                <dd class="break-words sm:col-span-2">
+                  {[customer.firstName, customer.lastName]
+                    .filter(Boolean)
+                    .join(' ') || '-'}
+                </dd>
+                <dt class="text-base-content/60">Newsletter</dt>
+                <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
+                <dt class="text-base-content/60">Reifenwechsel-Erinnerung</dt>
+                <dd class="sm:col-span-2"
+                  >{yesNo(customer.wantsTireReminders)}</dd
+                >
+              </dl>
+            </div>
+          </div>
+        {:else}
+          <div class="card border-base-300 bg-base-100 min-w-0 border">
+            <div class="card-body">
+              <h3 class="card-title text-base">Anschrift</h3>
+              <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+                <dt class="text-base-content/60">Kundennr.</dt>
+                <dd class="font-mono break-words sm:col-span-2">
+                  {customer.customerNumber}
+                </dd>
+                <dt class="text-base-content/60">Firma</dt>
+                <dd class="break-words sm:col-span-2"
+                  >{customer.company ?? '-'}</dd
+                >
+                <dt class="text-base-content/60">Name</dt>
+                <dd class="break-words sm:col-span-2">
+                  {[customer.salutation, customer.firstName, customer.lastName]
+                    .filter(Boolean)
+                    .join(' ') || '-'}
+                </dd>
+                <dt class="text-base-content/60">Straße</dt>
+                <dd class="break-words sm:col-span-2"
+                  >{customer.street ?? '-'}</dd
+                >
+                <dt class="text-base-content/60">PLZ / Ort</dt>
+                <dd class="break-words sm:col-span-2">
+                  {[customer.zip, customer.city].filter(Boolean).join(' ') ||
+                    '-'}
+                </dd>
+              </dl>
+            </div>
+          </div>
 
-    <div class="card border-base-300 bg-base-100 min-w-0 border">
-      <div class="card-body">
-        <h3 class="card-title text-base">Kontakt</h3>
-        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
-          <dt class="text-base-content/60">Telefon</dt>
-          <dd class="break-all sm:col-span-2">{customer.phone ?? '-'}</dd>
-          <dt class="text-base-content/60">Mobil</dt>
-          <dd class="break-all sm:col-span-2">{customer.mobile ?? '-'}</dd>
-          <dt class="text-base-content/60">E-Mail</dt>
-          <dd class="break-all sm:col-span-2">{customer.email ?? '-'}</dd>
-          <dt class="text-base-content/60">Website</dt>
-          <dd class="break-all sm:col-span-2">{customer.website ?? '-'}</dd>
-          <dt class="text-base-content/60">Newsletter</dt>
-          <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
-          <dt class="text-base-content/60">Reifenwechsel-Erinnerung</dt>
-          <dd class="sm:col-span-2">{yesNo(customer.wantsTireReminders)}</dd>
-        </dl>
-      </div>
-    </div>
+          <div class="card border-base-300 bg-base-100 min-w-0 border">
+            <div class="card-body">
+              <h3 class="card-title text-base">Kontakt</h3>
+              <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+                <dt class="text-base-content/60">Telefon</dt>
+                <dd class="break-all sm:col-span-2">{customer.phone ?? '-'}</dd>
+                <dt class="text-base-content/60">Mobil</dt>
+                <dd class="break-all sm:col-span-2">{customer.mobile ?? '-'}</dd
+                >
+                <dt class="text-base-content/60">E-Mail</dt>
+                <dd class="break-all sm:col-span-2">{customer.email ?? '-'}</dd>
+                <dt class="text-base-content/60">Website</dt>
+                <dd class="break-all sm:col-span-2"
+                  >{customer.website ?? '-'}</dd
+                >
+                <dt class="text-base-content/60">Newsletter</dt>
+                <dd class="sm:col-span-2">{yesNo(customer.wantsBroadcast)}</dd>
+                <dt class="text-base-content/60">Reifenwechsel-Erinnerung</dt>
+                <dd class="sm:col-span-2"
+                  >{yesNo(customer.wantsTireReminders)}</dd
+                >
+              </dl>
+            </div>
+          </div>
 
-    {#if customer.notes}
-      <div
-        class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
-      >
-        <div class="card-body">
-          <h3 class="card-title text-base">Notiz</h3>
-          <p class="text-sm whitespace-pre-line">{customer.notes}</p>
-        </div>
+          {#if customer.notes}
+            <div
+              class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2"
+            >
+              <div class="card-body">
+                <h3 class="card-title text-base">Notiz</h3>
+                <p class="text-sm whitespace-pre-line">{customer.notes}</p>
+              </div>
+            </div>
+          {/if}
+        {/if}
       </div>
-    {/if}
-  {/if}
-
-  <!-- Fahrzeuge des Kunden -->
-  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div class="card-body p-0">
+    {:else if tabId === 'fahrzeuge'}
+      <!-- Fahrzeuge des Kunden -->
       <div class="border-base-300 border-b px-4 py-3">
         <h3 class="text-base font-semibold">Fahrzeuge</h3>
         <p class="text-base-content/60 text-sm">
@@ -340,12 +387,8 @@
           </table>
         </div>
       {/if}
-    </div>
-  </div>
-
-  <!-- Rechnungen des Kunden (Email-Dialog folgt am Seitenende) -->
-  <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-2">
-    <div class="card-body p-0">
+    {:else if tabId === 'rechnungen'}
+      <!-- Rechnungen des Kunden (Email-Dialog folgt am Seitenende) -->
       <div class="border-base-300 border-b px-4 py-3">
         <h3 class="text-base font-semibold">Rechnungen</h3>
         <p class="text-base-content/60 text-sm">
@@ -396,9 +439,9 @@
           </table>
         </div>
       {/if}
-    </div>
-  </div>
-</div>
+    {/if}
+  {/snippet}
+</TabGroup>
 
 <ConfirmDialog
   bind:open={archiveConfirmOpen}
