@@ -141,6 +141,39 @@ export const appointmentStatusBadge = (
   }
 }
 
+/**
+ * Work order (Auftrag) status — the three Kanban columns. Mirrors the
+ * board/detail rendering in `src/routes/orders`.
+ */
+export type WorkOrderUiStatus = 'open' | 'in_progress' | 'done'
+
+const workOrderStatusMap: Record<WorkOrderUiStatus, string> = {
+  open: 'Offen',
+  in_progress: 'In Bearbeitung',
+  done: 'Abgeschlossen'
+}
+
+export const workOrderStatusLabel = (
+  status: string | null | undefined
+): string =>
+  status && status in workOrderStatusMap
+    ? workOrderStatusMap[status as WorkOrderUiStatus]
+    : '-'
+
+export const workOrderStatusBadge = (
+  status: string | null | undefined
+): string => {
+  switch (status) {
+    case 'done':
+      return 'badge-success'
+    case 'in_progress':
+      return 'badge-info'
+    case 'open':
+    default:
+      return 'badge-ghost'
+  }
+}
+
 /** Sent-message status (E-Mail history). */
 export type SentMessageStatus = 'sent' | 'failed' | 'pending'
 

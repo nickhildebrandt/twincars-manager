@@ -48,6 +48,13 @@ vi.mock('../customers.remote', () => ({
     wantsTireReminders: false
   }),
   getCustomerRelatedRemote: async () => ({ vehicles: [], invoices: [] }),
+  listCustomerWorkOrdersRemote: async () => ({
+    items: [],
+    total: 0,
+    page: 1,
+    size: 25,
+    pageCount: 1
+  }),
   sendAdHocCustomerEmailRemote: (input: unknown) => sendEmailMock(input)
 }))
 

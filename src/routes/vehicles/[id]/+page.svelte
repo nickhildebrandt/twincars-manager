@@ -12,9 +12,11 @@
   import {
     addVehiclePhotoRemote,
     deleteVehiclePhotoRemote,
+    getVehicleHistoryRemote,
     getVehicleRelatedRemote,
     getVehicleRemote,
     listVehiclePhotosRemote,
+    listVehicleWorkOrdersRemote,
     setMainVehiclePhotoRemote,
     setVehicleArchivedRemote
   } from '../vehicles.remote'
@@ -25,7 +27,9 @@
     Archive,
     ArchiveRestore,
     Car,
+    ClipboardList,
     FileText,
+    History,
     Images,
     Pencil,
     Printer,
@@ -40,22 +44,34 @@
   import { formatEuro } from '$lib/utils/money'
   import {
     documentStatusLabel,
-    documentStatusBadge
+    documentStatusBadge,
+    workOrderStatusBadge,
+    workOrderStatusLabel
   } from '$lib/utils/status-labels'
   import { openPdfInNewTab } from '$lib/utils/pdf-download'
 
   const id = untrack(() => page.params.id!)
   let invoicesPage = $state(1)
+  let ordersPage = $state(1)
 
   /**
-   * Parallel SSR-friendly load — vehicle stamm data, customer/invoices
-   * and document metadata arrive in one round-trip. The documents list
-   * is meta-only; bytes travel exclusively through
-   * `getVehicleDocumentRemote` inside the VehicleDocuments card.
+   * Parallel SSR-friendly load — vehicle stamm data, customer/invoices,
+   * work orders, ownership/plate history and document metadata arrive
+   * in one round-trip. The documents list is meta-only; bytes travel
+   * exclusively through `getVehicleDocumentRemote` inside the
+   * VehicleDocuments card.
    */
-  const [initialVehicle, initialRelated, initialDocuments] = await Promise.all([
+  const [
+    initialVehicle,
+    initialRelated,
+    initialOrders,
+    initialHistory,
+    initialDocuments
+  ] = await Promise.all([
     getVehicleRemote({ id }),
     getVehicleRelatedRemote({ id, invoicesPage: 1 }),
+    listVehicleWorkOrdersRemote({ id, page: 1 }),
+    getVehicleHistoryRemote({ id }),
     listVehicleDocumentsRemote({ vehicleId: id })
   ])
 
@@ -89,6 +105,17 @@
   )
   const customer = $derived(related.customer)
   const invoices = $derived(related.invoices)
+
+  // Same rule for the Aufträge tab and the Historie tab — the Ankauf
+  // command refreshes the history in the same flight (new purchase row).
+  const orders = $derived.by(
+    () =>
+      listVehicleWorkOrdersRemote({ id, page: ordersPage }).current ??
+      initialOrders
+  )
+  const history = $derived.by(
+    () => getVehicleHistoryRemote({ id }).current ?? initialHistory
+  )
 
   const fmtDate = (d: string | Date | null | undefined) => {
     if (!d) return ''
@@ -133,8 +160,20 @@
       icon: Receipt,
       badge: invoices.total
     })
+    tabs.push({
+      id: 'auftraege',
+      label: 'Aufträge',
+      icon: ClipboardList,
+      badge: orders.total
+    })
     if (isStock) tabs.push({ id: 'fotos', label: 'Fotos', icon: Images })
     tabs.push({ id: 'dokumente', label: 'Dokumente', icon: FileText })
+    tabs.push({
+      id: 'historie',
+      label: 'Historie',
+      icon: History,
+      badge: history.length
+    })
     return tabs
   })
 
@@ -503,6 +542,65 @@
           onPage={(p) => (invoicesPage = p)}
         />
       {/if}
+    {:else if tabId === 'auftraege'}
+      <!-- Paginated work-order history for this vehicle. -->
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">Aufträge</h3>
+        <span class="text-base-content/60 text-sm">
+          {orders.total}
+          {orders.total === 1 ? 'Eintrag' : 'Einträge'}
+        </span>
+      </div>
+      {#if orders.items.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Keine Aufträge für dieses Fahrzeug.
+        </div>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Nummer</th>
+                <th>Titel</th>
+                <th>Status</th>
+                <th>Termin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each orders.items as o (o.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/orders/${o.id}`)}
+                >
+                  <td class="font-mono">{o.orderNumber}</td>
+                  <td class="break-words">{o.title}</td>
+                  <td>
+                    <span
+                      class="badge badge-sm {workOrderStatusBadge(o.status)}"
+                    >
+                      {workOrderStatusLabel(o.status)}
+                    </span>
+                  </td>
+                  <td>
+                    {o.scheduledDate
+                      ? `${fmtDate(o.scheduledDate)}${o.scheduledTime ? `, ${o.scheduledTime}` : ''}`
+                      : '-'}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          total={orders.total}
+          page={orders.page}
+          pageCount={orders.pageCount}
+          size={orders.size}
+          onPage={(p) => (ordersPage = p)}
+        />
+      {/if}
     {:else if tabId === 'fotos'}
       <!-- Photo gallery — stock vehicles only (sale listing images). -->
       {#if isStock}
@@ -526,6 +624,73 @@
       <div class="p-4">
         <VehicleDocuments vehicleId={id} initial={initialDocuments} />
       </div>
+    {:else if tabId === 'historie'}
+      <!--
+        Ownership + plate history: vehicle_purchases (Ankauf, with the
+        rename-proof Vorbesitzer snapshot), vehicle_sales (Verkauf, with
+        a live customer link) and the Kennzeichen versions — merged and
+        sorted newest first on the server.
+      -->
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">Historie</h3>
+        <span class="text-base-content/60 text-sm">
+          {history.length}
+          {history.length === 1 ? 'Eintrag' : 'Einträge'}
+        </span>
+      </div>
+      {#if history.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Noch keine Historie für dieses Fahrzeug.
+        </div>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Datum</th>
+                <th>Ereignis</th>
+                <th class="text-right">Betrag</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each history as ev (ev.id)}
+                <tr>
+                  <td class="whitespace-nowrap">{fmtDate(ev.date)}</td>
+                  <td class="break-words">
+                    {#if ev.kind === 'purchase'}
+                      {ev.counterpartLabel
+                        ? `Ankauf von ${ev.counterpartLabel}`
+                        : 'Ankauf'}
+                    {:else if ev.kind === 'sale'}
+                      {#if ev.customerId}
+                        Verkauf an <a
+                          class="link"
+                          href={`/customers/${ev.customerId}`}
+                          >{ev.counterpartLabel}</a
+                        >
+                      {:else}
+                        {ev.counterpartLabel
+                          ? `Verkauf an ${ev.counterpartLabel}`
+                          : 'Verkauf'}
+                      {/if}
+                    {:else}
+                      Kennzeichen <span class="font-mono"
+                        >{ev.licensePlate}</span
+                      >
+                      ab {fmtDate(ev.date)}
+                    {/if}
+                  </td>
+                  <td class="text-right font-mono">
+                    {ev.amount != null ? formatEuro(Number(ev.amount)) : '-'}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      {/if}
     {/if}
   {/snippet}
 </TabGroup>
@@ -541,7 +706,8 @@
   vehicleId={id}
   buildUpdates={() => [
     getVehicleRemote({ id }),
-    getVehicleRelatedRemote({ id, invoicesPage })
+    getVehicleRelatedRemote({ id, invoicesPage }),
+    getVehicleHistoryRemote({ id })
   ]}
 />
 

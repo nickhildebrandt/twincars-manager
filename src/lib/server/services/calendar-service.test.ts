@@ -277,6 +277,49 @@ describe('calendar-service', () => {
       expect(events.find((e) => e.kind === 'employee_sick')).toBeUndefined()
     })
 
+    it('emits employee_sick / employee_other events for ACTIVE absences', async () => {
+      // Positive counterpart to the cancelled-skip case above: an
+      // approved sick absence expands into one employee_sick event per
+      // day, and the non-vacation/non-sick type maps to employee_other.
+      await db
+        .insert(employeeAbsences)
+        .values({
+          employeeId,
+          type: 'sick',
+          dateFrom: '2026-06-10',
+          dateTo: '2026-06-11',
+          halfDay: false,
+          status: 'approved'
+        })
+      await db
+        .insert(employeeAbsences)
+        .values({
+          employeeId: otherEmployeeId,
+          type: 'other',
+          dateFrom: '2026-06-15',
+          dateTo: '2026-06-15',
+          halfDay: false,
+          status: 'approved'
+        })
+
+      const events = await listCalendarEvents('2026-06-01', '2026-06-30')
+
+      const sick = events.filter((e) => e.kind === 'employee_sick')
+      expect(sick).toHaveLength(2)
+      expect(sick.map((e) => e.dateIso).sort()).toEqual([
+        '2026-06-10',
+        '2026-06-11'
+      ])
+      expect(sick[0].title).toMatch(/Krankheit · Anna Mustermann/)
+      expect(sick[0].employeeId).toBe(employeeId)
+
+      const other = events.filter((e) => e.kind === 'employee_other')
+      expect(other).toHaveLength(1)
+      expect(other[0].dateIso).toBe('2026-06-15')
+      expect(other[0].title).toMatch(/Abwesenheit · Bert Beispiel/)
+      expect(other[0].employeeId).toBe(otherEmployeeId)
+    })
+
     it('filters by employee id, both for calendar entries and absences', async () => {
       await createCalendarEntry({
         kind: 'appointment',

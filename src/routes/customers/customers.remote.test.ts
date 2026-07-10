@@ -96,10 +96,11 @@ vi.mock('$lib/server/services/mail-service', () => ({
 }))
 
 import { db } from '$lib/server/db/client'
-import { customers } from '$lib/server/db/schema'
+import { customers, workOrders } from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { WILDCARD_PERMISSION } from '$lib/server/auth-permissions'
 import {
+  listCustomerWorkOrdersRemote,
   sendAdHocCustomerEmailRemote,
   setCustomerArchivedRemote
 } from './customers.remote'
@@ -363,5 +364,117 @@ describe('customers.remote — setCustomerArchivedRemote', () => {
         }),
       404
     )
+  })
+})
+
+describe('customers.remote — listCustomerWorkOrdersRemote (Aufträge tab)', () => {
+  let customerId: string
+  let otherCustomerId: string
+
+  type OrdersResult = {
+    items: Array<{
+      id: string
+      orderNumber: string
+      title: string
+      status: string
+      customerLabel: string | null
+    }>
+    total: number
+    page: number
+    size: number
+    pageCount: number
+  }
+
+  beforeEach(async () => {
+    await db.delete(workOrders)
+    await resetDb()
+    anonymous()
+
+    const [a] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-WO-1', company: 'Werkstattkunde GmbH' })
+      .returning({ id: customers.id })
+    const [b] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-WO-2', lastName: 'Anderer' })
+      .returning({ id: customers.id })
+    customerId = a.id
+    otherCustomerId = b.id
+
+    await db.insert(workOrders).values([
+      { orderNumber: 'AU-K1', title: 'Inspektion', customerId, status: 'open' },
+      {
+        orderNumber: 'AU-K2',
+        title: 'Reifenwechsel',
+        customerId,
+        status: 'done',
+        scheduledDate: '2026-07-03',
+        scheduledTime: '09:00'
+      },
+      {
+        orderNumber: 'AU-K3',
+        title: 'Fremder Auftrag',
+        customerId: otherCustomerId,
+        status: 'open'
+      }
+    ])
+  })
+
+  it('rejects anonymous callers with 401', async () => {
+    await expectHttpError(
+      () => listCustomerWorkOrdersRemote({ id: customerId, page: 1 }),
+      401
+    )
+  })
+
+  it('rejects callers with neither customers nor orders with 403', async () => {
+    authAs({ permissions: ['vehicles'] })
+    await expectHttpError(
+      () => listCustomerWorkOrdersRemote({ id: customerId, page: 1 }),
+      403
+    )
+  })
+
+  it('lists only the orders of the requested customer (customers permission)', async () => {
+    authAs({ permissions: ['customers'] })
+    const res = (await listCustomerWorkOrdersRemote({
+      id: customerId,
+      page: 1
+    })) as OrdersResult
+    expect(res.total).toBe(2)
+    expect(res.items).toHaveLength(2)
+    expect(res.items.map((o) => o.orderNumber).sort()).toEqual([
+      'AU-K1',
+      'AU-K2'
+    ])
+    // Fixed 25-page shape (project pagination rule).
+    expect(res.page).toBe(1)
+    expect(res.size).toBe(25)
+    expect(res.pageCount).toBe(1)
+  })
+
+  it('is readable with the orders permission alone (shop floor)', async () => {
+    authAs({ permissions: ['orders'] })
+    const res = (await listCustomerWorkOrdersRemote({
+      id: customerId,
+      page: 1
+    })) as OrdersResult
+    expect(res.total).toBe(2)
+    expect(res.items[0].customerLabel).toBe('Werkstattkunde GmbH')
+  })
+
+  it('returns an empty page for a customer without orders', async () => {
+    authAs({ permissions: ['customers'] })
+    const [fresh] = await db
+      .insert(customers)
+      .values({ customerNumber: 'KU-WO-3', lastName: 'Ohne' })
+      .returning({ id: customers.id })
+    const res = (await listCustomerWorkOrdersRemote({
+      id: fresh.id,
+      page: 1
+    })) as OrdersResult
+    expect(res.items).toEqual([])
+    expect(res.total).toBe(0)
+    expect(res.pageCount).toBe(1)
   })
 })

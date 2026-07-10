@@ -76,6 +76,7 @@ import {
   vehicleLicensePlateVersions,
   vehiclePhotos,
   vehiclePurchases,
+  vehicleSales,
   vehicles,
   workOrders
 } from '$lib/server/db/schema'
@@ -83,11 +84,14 @@ import {
   addVehiclePhotoRemote,
   createVehicleRemote,
   deleteVehicleRemote,
+  getVehicleHistoryRemote,
   getVehicleRemote,
   listVehiclePhotosRemote,
+  listVehicleWorkOrdersRemote,
   purchaseVehicleIntoStockRemote,
   setVehicleArchivedRemote,
-  updateVehicleRemote
+  updateVehicleRemote,
+  type VehicleHistoryEvent
 } from './vehicles.remote'
 import { eq } from 'drizzle-orm'
 
@@ -418,6 +422,254 @@ describe('vehicles.remote — setVehicleArchivedRemote + delete guard', () => {
       .from(vehicles)
       .where(eq(vehicles.id, vehicleId))
     expect(rows).toHaveLength(0)
+  })
+})
+
+describe('vehicles.remote — listVehicleWorkOrdersRemote (Aufträge tab)', () => {
+  let vehicleId: string
+  let otherVehicleId: string
+
+  type OrdersResult = {
+    items: Array<{
+      id: string
+      orderNumber: string
+      status: string
+      scheduledDate: string | null
+      scheduledTime: string | null
+    }>
+    total: number
+    page: number
+    size: number
+    pageCount: number
+  }
+
+  beforeEach(async () => {
+    await db.delete(workOrders)
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+    mockRequestEvent.locals.user = null
+    mockRequestEvent.locals.permissions = new Set()
+
+    const [a] = await db
+      .insert(vehicles)
+      .values({ make: 'VW', model: 'Golf' })
+      .returning({ id: vehicles.id })
+    const [b] = await db
+      .insert(vehicles)
+      .values({ make: 'BMW', model: '320d' })
+      .returning({ id: vehicles.id })
+    vehicleId = a.id
+    otherVehicleId = b.id
+    await db.insert(workOrders).values([
+      {
+        orderNumber: 'AU-T1',
+        title: 'Bremsen erneuern',
+        vehicleId,
+        status: 'open'
+      },
+      {
+        orderNumber: 'AU-T2',
+        title: 'Zahnriemen',
+        vehicleId,
+        status: 'done',
+        scheduledDate: '2026-07-01',
+        scheduledTime: '08:30'
+      },
+      {
+        orderNumber: 'AU-T3',
+        title: 'Fremdes Fahrzeug',
+        vehicleId: otherVehicleId,
+        status: 'open'
+      }
+    ])
+  })
+
+  it('rejects anonymous callers (401)', async () => {
+    await expect(
+      listVehicleWorkOrdersRemote({ id: vehicleId, page: 1 })
+    ).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('rejects callers with neither vehicles nor orders (403)', async () => {
+    withPermissions('customers')
+    await expect(
+      listVehicleWorkOrdersRemote({ id: vehicleId, page: 1 })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('lists only the orders of the requested vehicle (vehicles permission)', async () => {
+    withPermissions('vehicles')
+    const res = (await listVehicleWorkOrdersRemote({
+      id: vehicleId,
+      page: 1
+    })) as OrdersResult
+    expect(res.total).toBe(2)
+    expect(res.items).toHaveLength(2)
+    expect(res.items.map((o) => o.orderNumber).sort()).toEqual([
+      'AU-T1',
+      'AU-T2'
+    ])
+    // Fixed 25-page shape (project pagination rule).
+    expect(res.page).toBe(1)
+    expect(res.size).toBe(25)
+    expect(res.pageCount).toBe(1)
+  })
+
+  it('carries the Termin fields for scheduled orders', async () => {
+    withPermissions('vehicles')
+    const res = (await listVehicleWorkOrdersRemote({
+      id: vehicleId,
+      page: 1
+    })) as OrdersResult
+    const scheduled = res.items.find((o) => o.orderNumber === 'AU-T2')
+    expect(scheduled?.scheduledDate).toBe('2026-07-01')
+    expect(scheduled?.scheduledTime).toBe('08:30')
+  })
+
+  it('is readable with the orders permission alone (shop floor)', async () => {
+    withPermissions('orders')
+    const res = (await listVehicleWorkOrdersRemote({
+      id: vehicleId,
+      page: 1
+    })) as OrdersResult
+    expect(res.total).toBe(2)
+  })
+
+  it('returns an empty page for a vehicle without orders', async () => {
+    withPermissions('vehicles')
+    const [fresh] = await db
+      .insert(vehicles)
+      .values({ make: 'Audi', model: 'A3' })
+      .returning({ id: vehicles.id })
+    const res = (await listVehicleWorkOrdersRemote({
+      id: fresh.id,
+      page: 1
+    })) as OrdersResult
+    expect(res.items).toEqual([])
+    expect(res.total).toBe(0)
+    expect(res.pageCount).toBe(1)
+  })
+})
+
+describe('vehicles.remote — getVehicleHistoryRemote (Historie tab)', () => {
+  let vehicleId: string
+  let buyerId: string
+
+  beforeEach(async () => {
+    await db.delete(vehicleSales)
+    await db.delete(vehiclePurchases)
+    await db.delete(vehicleLicensePlateVersions)
+    await db.delete(vehicles)
+    await db.delete(customers)
+    mockRequestEvent.locals.user = null
+    mockRequestEvent.locals.permissions = new Set()
+
+    buyerId = await seedCustomer()
+    const [veh] = await db
+      .insert(vehicles)
+      .values({ make: 'VW', model: 'Golf' })
+      .returning({ id: vehicles.id })
+    vehicleId = veh.id
+  })
+
+  it('rejects anonymous callers (401)', async () => {
+    await expect(
+      getVehicleHistoryRemote({ id: vehicleId })
+    ).rejects.toMatchObject({ status: 401 })
+  })
+
+  it('rejects callers without the vehicles module (403)', async () => {
+    withPermissions('orders')
+    await expect(
+      getVehicleHistoryRemote({ id: vehicleId })
+    ).rejects.toMatchObject({ status: 403 })
+  })
+
+  it('merges purchases, sales and plate versions sorted newest first', async () => {
+    withPermissions('vehicles')
+    await db
+      .insert(vehiclePurchases)
+      .values({
+        vehicleId,
+        purchaseDate: '2026-01-10',
+        purchasePrice: '4500.00',
+        previousOwner: 'Alt Besitzer'
+      })
+    await db
+      .insert(vehicleSales)
+      .values({
+        vehicleId,
+        customerId: buyerId,
+        saleDate: '2026-03-05',
+        salesPriceGross: '7990.00'
+      })
+    await db
+      .insert(vehicleLicensePlateVersions)
+      .values({ vehicleId, validFrom: '2025-12-01', licensePlate: 'KI-AA 1' })
+    await db
+      .insert(vehicleLicensePlateVersions)
+      .values({ vehicleId, validFrom: '2026-02-01', licensePlate: 'KI-BB 2' })
+
+    const events = (await getVehicleHistoryRemote({
+      id: vehicleId
+    })) as VehicleHistoryEvent[]
+
+    expect(events.map((e) => e.kind)).toEqual([
+      'sale',
+      'plate',
+      'purchase',
+      'plate'
+    ])
+    expect(events.map((e) => e.date)).toEqual([
+      '2026-03-05',
+      '2026-02-01',
+      '2026-01-10',
+      '2025-12-01'
+    ])
+
+    const sale = events[0]
+    expect(sale.counterpartLabel).toBe('Ankauf GmbH')
+    expect(sale.customerId).toBe(buyerId)
+    expect(Number(sale.amount)).toBe(7990)
+
+    const purchase = events[2]
+    // Rename-proof snapshot, never a live customer link.
+    expect(purchase.counterpartLabel).toBe('Alt Besitzer')
+    expect(purchase.customerId).toBeNull()
+    expect(Number(purchase.amount)).toBe(4500)
+
+    const plates = events.filter((e) => e.kind === 'plate')
+    expect(plates.map((e) => e.licensePlate)).toEqual(['KI-BB 2', 'KI-AA 1'])
+    expect(plates.every((e) => e.amount === null)).toBe(true)
+  })
+
+  it('returns an empty list for a vehicle without history', async () => {
+    withPermissions('vehicles')
+    const events = (await getVehicleHistoryRemote({
+      id: vehicleId
+    })) as VehicleHistoryEvent[]
+    expect(events).toEqual([])
+  })
+
+  it('scopes the history to the requested vehicle', async () => {
+    withPermissions('vehicles')
+    const [other] = await db
+      .insert(vehicles)
+      .values({ make: 'BMW', model: '320d' })
+      .returning({ id: vehicles.id })
+    await db
+      .insert(vehiclePurchases)
+      .values({
+        vehicleId: other.id,
+        purchaseDate: '2026-05-01',
+        purchasePrice: '100.00'
+      })
+    const events = (await getVehicleHistoryRemote({
+      id: vehicleId
+    })) as VehicleHistoryEvent[]
+    expect(events).toEqual([])
   })
 })
 

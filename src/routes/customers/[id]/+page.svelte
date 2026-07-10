@@ -3,9 +3,11 @@
   import { page } from '$app/state'
   import { goto } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
+  import Pagination from '$lib/components/ui/Pagination.svelte'
   import {
     getCustomerRemote,
     getCustomerRelatedRemote,
+    listCustomerWorkOrdersRemote,
     sendAdHocCustomerEmailRemote,
     setCustomerArchivedRemote
   } from '../customers.remote'
@@ -15,6 +17,7 @@
     Archive,
     ArchiveRestore,
     Car,
+    ClipboardList,
     Contact,
     Mail,
     Pencil,
@@ -22,7 +25,9 @@
   } from '@lucide/svelte'
   import {
     documentStatusBadge,
-    documentStatusLabel
+    documentStatusLabel,
+    workOrderStatusBadge,
+    workOrderStatusLabel
   } from '$lib/utils/status-labels'
   import { formatEuro } from '$lib/utils/money'
   import EmailComposer, {
@@ -33,14 +38,16 @@
   import { handleClientError } from '$lib/utils/client-error'
 
   const id = untrack(() => page.params.id!)
+  let ordersPage = $state(1)
 
   /**
-   * SSR-friendly parallel load. The customer record + related vehicles
-   * and invoices ship in one server round-trip.
+   * SSR-friendly parallel load. The customer record + related vehicles,
+   * invoices and work orders ship in one server round-trip.
    */
-  const [initialCustomer, related] = await Promise.all([
+  const [initialCustomer, related, initialOrders] = await Promise.all([
     getCustomerRemote({ id }),
-    getCustomerRelatedRemote({ id })
+    getCustomerRelatedRemote({ id }),
+    listCustomerWorkOrdersRemote({ id, page: 1 })
   ])
 
   /**
@@ -57,11 +64,31 @@
   const isEbay = $derived(customer.kind === 'ebay')
 
   /**
+   * Paginated work orders — never memoize the query proxy
+   * (CONTRIBUTING §5); only the page number is reactive, size is fixed
+   * at 25 server-side. `initialOrders` bridges page changes.
+   */
+  const orders = $derived.by(
+    () =>
+      listCustomerWorkOrdersRemote({ id, page: ordersPage }).current ??
+      initialOrders
+  )
+
+  const fmtDate = (d: string | null | undefined) => {
+    if (!d) return '-'
+    return new Date(d).toLocaleDateString('de-DE', {
+      day: '2-digit',
+      month: '2-digit',
+      year: 'numeric'
+    })
+  }
+
+  /**
    * Detail tabs (standard TabGroup, `?tab=` deep links). Übersicht
    * carries the contact/master data, the related records get one tab
    * each with a count badge.
    */
-  const detailTabs: TabItem[] = [
+  const detailTabs = $derived.by((): TabItem[] => [
     { id: 'uebersicht', label: 'Übersicht', icon: Contact },
     {
       id: 'fahrzeuge',
@@ -74,8 +101,14 @@
       label: 'Rechnungen',
       icon: Receipt,
       badge: related.invoices.length
+    },
+    {
+      id: 'auftraege',
+      label: 'Aufträge',
+      icon: ClipboardList,
+      badge: orders.total
     }
-  ]
+  ])
 
   const labelOf = () =>
     customer.company ||
@@ -438,6 +471,67 @@
             </tbody>
           </table>
         </div>
+      {/if}
+    {:else if tabId === 'auftraege'}
+      <!-- Paginated work-order history for this customer. -->
+      <div
+        class="border-base-300 flex items-center justify-between border-b px-4 py-3"
+      >
+        <h3 class="text-base font-semibold">Aufträge</h3>
+        <span class="text-base-content/60 text-sm">
+          {orders.total}
+          {orders.total === 1 ? 'Eintrag' : 'Einträge'}
+        </span>
+      </div>
+      {#if orders.items.length === 0}
+        <div class="text-base-content/60 px-4 py-6 text-sm">
+          Bisher keine Aufträge für diesen Kunden.
+        </div>
+      {:else}
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Nummer</th>
+                <th>Titel</th>
+                <th>Status</th>
+                <th>Kennzeichen</th>
+                <th>Termin</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each orders.items as o (o.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/orders/${o.id}`)}
+                >
+                  <td class="font-mono text-xs font-medium">{o.orderNumber}</td>
+                  <td class="break-words">{o.title}</td>
+                  <td>
+                    <span
+                      class="badge badge-sm {workOrderStatusBadge(o.status)}"
+                    >
+                      {workOrderStatusLabel(o.status)}
+                    </span>
+                  </td>
+                  <td class="font-mono text-xs">{o.vehiclePlate ?? '-'}</td>
+                  <td>
+                    {o.scheduledDate
+                      ? `${fmtDate(o.scheduledDate)}${o.scheduledTime ? `, ${o.scheduledTime}` : ''}`
+                      : '-'}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+        <Pagination
+          total={orders.total}
+          page={orders.page}
+          pageCount={orders.pageCount}
+          size={orders.size}
+          onPage={(p) => (ordersPage = p)}
+        />
       {/if}
     {/if}
   {/snippet}

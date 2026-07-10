@@ -29,6 +29,8 @@ import {
   createVehicle,
   deleteVehicle,
   getVehicle,
+  listLicensePlateVersions,
+  listVehiclePurchases,
   listVehicles,
   purchaseVehicleIntoStock,
   recordVehiclePurchase,
@@ -43,9 +45,19 @@ import {
   setMainVehiclePhoto
 } from '$lib/server/services/vehicle-photo-service'
 import { db } from '$lib/server/db/client'
-import { customers, documents, vehicles } from '$lib/server/db/schema'
+import {
+  customers,
+  documents,
+  vehicles,
+  vehicleSales,
+  workOrders
+} from '$lib/server/db/schema'
 import { and, count as sqlCount, desc, eq } from 'drizzle-orm'
-import { requirePermission } from '$lib/server/auth-guards'
+import {
+  requireAnyPermission,
+  requirePermission
+} from '$lib/server/auth-guards'
+import { customerDisplayName } from '$lib/utils/picker-labels'
 
 /**
  * Field shape shared by `createVehicleRemote` and
@@ -244,6 +256,166 @@ export const getVehicleRelatedRemote = query(
 )
 
 /**
+ * Paginated work orders of one vehicle (Aufträge tab on the detail
+ * page). Mirrors the invoices block in `getVehicleRelatedRemote`:
+ * fixed size 25, only the page number is reactive. Guarded with
+ * ANY of `vehicles` / `orders` — the shop floor (orders-only) may
+ * inspect a vehicle's order history, and vehicle-permission holders
+ * see the tab without needing the orders module (same pattern as
+ * `pickEmployeesRemote`).
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const listVehicleWorkOrdersRemote = query(
+  object({ id: idSchema, page: number() }),
+  async ({ id, page }) => {
+    requireAnyPermission('vehicles', 'orders')
+    const size = 25
+    const offset = Math.max(0, (page - 1) * size)
+    const where = eq(workOrders.vehicleId, id)
+
+    const [rows, totalRows] = await Promise.all([
+      db
+        .select({
+          id: workOrders.id,
+          orderNumber: workOrders.orderNumber,
+          title: workOrders.title,
+          status: workOrders.status,
+          scheduledDate: workOrders.scheduledDate,
+          scheduledTime: workOrders.scheduledTime,
+          completedAt: workOrders.completedAt
+        })
+        .from(workOrders)
+        .where(where)
+        .orderBy(desc(workOrders.createdAt))
+        .limit(size)
+        .offset(offset),
+      db.select({ value: sqlCount() }).from(workOrders).where(where)
+    ])
+
+    const total = Number(totalRows[0]?.value ?? 0)
+    return {
+      items: rows,
+      total,
+      page,
+      size,
+      pageCount: Math.max(1, Math.ceil(total / size))
+    }
+  }
+)
+
+/** One row of the vehicle Historie tab (Ankauf / Verkauf / Kennzeichen). */
+export type VehicleHistoryEvent = {
+  /** Stable key — kind-prefixed source row id. */
+  id: string
+  kind: 'purchase' | 'sale' | 'plate'
+  /** ISO date the event applies to (Ankaufs-/Verkaufsdatum, valid_from). */
+  date: string
+  /** Gross amount for purchase/sale rows, `null` for plate changes. */
+  amount: string | null
+  /**
+   * Counterpart display name: rename-proof `previous_owner` snapshot
+   * for purchases, the buyer's current display name for sales.
+   */
+  counterpartLabel: string | null
+  /** Buyer link target for sale rows whose customer still exists. */
+  customerId: string | null
+  /** Plate value for `kind = 'plate'` rows. */
+  licensePlate: string | null
+}
+
+/**
+ * Ownership + plate history of a vehicle, merged from
+ * `vehicle_purchases` (Ankauf), `vehicle_sales` (Verkauf) and
+ * `vehicle_license_plate_versions`, sorted newest first. The list is
+ * bounded by real-world ownership cycles (a handful of rows), so it is
+ * deliberately unpaginated.
+ *
+ * @group integration
+ * @module vehicles
+ */
+export const getVehicleHistoryRemote = query(
+  object({ id: idSchema }),
+  async ({ id }) => {
+    requirePermission('vehicles')
+    const [purchases, sales, plates] = await Promise.all([
+      listVehiclePurchases(id),
+      db
+        .select({
+          id: vehicleSales.id,
+          saleDate: vehicleSales.saleDate,
+          salesPriceGross: vehicleSales.salesPriceGross,
+          createdAt: vehicleSales.createdAt,
+          customerId: vehicleSales.customerId,
+          buyerCompany: customers.company,
+          buyerFirstName: customers.firstName,
+          buyerLastName: customers.lastName,
+          buyerNumber: customers.customerNumber
+        })
+        .from(vehicleSales)
+        .leftJoin(customers, eq(vehicleSales.customerId, customers.id))
+        .where(eq(vehicleSales.vehicleId, id)),
+      listLicensePlateVersions(id)
+    ])
+
+    // `sortKey` (row creation time) breaks same-day ties so an Ankauf
+    // and a later re-sale on one day keep their true order.
+    type Sortable = VehicleHistoryEvent & { sortKey: number }
+    const events: Sortable[] = [
+      ...purchases.map(
+        (p): Sortable => ({
+          id: `purchase-${p.id}`,
+          kind: 'purchase',
+          date: p.purchaseDate,
+          amount: p.purchasePrice,
+          counterpartLabel: p.previousOwner,
+          customerId: null,
+          licensePlate: null,
+          sortKey: p.createdAt.getTime()
+        })
+      ),
+      ...sales.map((s): Sortable => {
+        const buyerLabel = customerDisplayName({
+          company: s.buyerCompany,
+          firstName: s.buyerFirstName,
+          lastName: s.buyerLastName,
+          customerNumber: s.buyerNumber
+        })
+        return {
+          id: `sale-${s.id}`,
+          kind: 'sale',
+          date: s.saleDate,
+          amount: s.salesPriceGross,
+          counterpartLabel: buyerLabel,
+          // Link only while the buyer row still exists (left join miss
+          // → label parts are all null).
+          customerId: buyerLabel !== null ? s.customerId : null,
+          licensePlate: null,
+          sortKey: s.createdAt.getTime()
+        }
+      }),
+      ...plates.map(
+        (pl): Sortable => ({
+          id: `plate-${pl.id}`,
+          kind: 'plate',
+          date: pl.validFrom,
+          amount: null,
+          counterpartLabel: null,
+          customerId: null,
+          licensePlate: pl.licensePlate,
+          sortKey: pl.createdAt.getTime()
+        })
+      )
+    ]
+    events.sort((a, b) => b.date.localeCompare(a.date) || b.sortKey - a.sortKey)
+    return events.map(
+      ({ sortKey: _sortKey, ...event }): VehicleHistoryEvent => event
+    )
+  }
+)
+
+/**
  * Refresh the dashboard count plus every list instance the client requested
  * via `.updates(listVehiclesRemote)`. Caps at 4 instances per request.
  */
@@ -391,6 +563,7 @@ export const purchaseVehicleIntoStockRemote = command(
     await Promise.all([
       requested(getVehicleRemote, 4).refreshAll(),
       requested(getVehicleRelatedRemote, 4).refreshAll(),
+      requested(getVehicleHistoryRemote, 4).refreshAll(),
       requested(listVehiclesRemote, 4).refreshAll(),
       requested(listInventoryRemote, 4).refreshAll()
     ])

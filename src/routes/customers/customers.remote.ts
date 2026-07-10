@@ -35,11 +35,15 @@ import {
   updateCustomer
 } from '$lib/server/services/customer-service'
 import { sendAdHocCustomerEmail } from '$lib/server/services/mail-service'
+import { listWorkOrders } from '$lib/server/services/work-order-service'
 import { db } from '$lib/server/db/client'
 import { documents, vehicles } from '$lib/server/db/schema'
 import { and, desc, eq } from 'drizzle-orm'
 import { latestPlateSubquery } from '$lib/server/services/vehicle-service'
-import { requirePermission } from '$lib/server/auth-guards'
+import {
+  requireAnyPermission,
+  requirePermission
+} from '$lib/server/auth-guards'
 
 /**
  * Validation schema shared by `createCustomerRemote` and
@@ -172,6 +176,26 @@ export const getCustomerRelatedRemote = query(
         .orderBy(desc(documents.issueDate))
     ])
     return { vehicles: vehicleRows, invoices: invoiceRows }
+  }
+)
+
+/**
+ * Paginated work orders of one customer (Aufträge tab on the detail
+ * page). Delegates to `listWorkOrders` with its `customerId` filter —
+ * fixed size 25, only the page number is reactive (mirrors the vehicle
+ * detail's invoice/order tabs). Guarded with ANY of `customers` /
+ * `orders`: the shop floor (orders-only) may inspect a customer's
+ * order history, and customer-permission holders see the tab without
+ * needing the orders module (same pattern as `pickEmployeesRemote`).
+ *
+ * @group integration
+ * @module customers
+ */
+export const listCustomerWorkOrdersRemote = query(
+  object({ id: idSchema, page: number() }),
+  async ({ id, page }) => {
+    requireAnyPermission('customers', 'orders')
+    return listWorkOrders({ page, size: 25, customerId: id })
   }
 )
 
