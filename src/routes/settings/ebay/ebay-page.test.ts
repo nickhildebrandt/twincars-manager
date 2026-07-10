@@ -36,9 +36,79 @@ const baseStatus: Status = {
   refreshTokenExpiresAt: null
 }
 
+type Listing = {
+  id: string
+  ebayItemId: string
+  sku: string | null
+  title: string
+  priceValue: string | null
+  priceCurrency: string | null
+  quantityAvailable: number | null
+  quantitySold: number | null
+  listingType: string | null
+  status: string
+  viewItemUrl: string | null
+  galleryUrl: string | null
+  pictureUrls: string[]
+  startTime: Date | null
+  endTime: Date | null
+}
+
+type ImportInfo = {
+  lastRun: {
+    id: string
+    startedAt: Date
+    finishedAt: Date | null
+    status: string
+    imported: number
+    updated: number
+    ended: number
+    failed: number
+    totalActive: number
+    error: string | null
+    environment: string
+  } | null
+  listingCount: number
+  activeCount: number
+}
+
+const sampleListing = (over: Partial<Listing> = {}): Listing => ({
+  id: 'l-1',
+  ebayItemId: '110001',
+  sku: 'WR-1',
+  title: 'Winterreifen Continental 205/55 R16',
+  priceValue: '349.00',
+  priceCurrency: 'EUR',
+  quantityAvailable: 8,
+  quantitySold: 2,
+  listingType: 'FixedPriceItem',
+  status: 'active',
+  viewItemUrl: 'https://www.ebay.de/itm/110001',
+  galleryUrl: 'https://i.ebayimg.com/gal.jpg',
+  pictureUrls: [],
+  startTime: new Date('2026-06-01T08:00:00Z'),
+  endTime: new Date('2026-09-01T08:00:00Z'),
+  ...over
+})
+
 let statusValue: Status = { ...baseStatus }
+let listingsValue: Listing[] = []
+let importInfoValue: ImportInfo = {
+  lastRun: null,
+  listingCount: 0,
+  activeCount: 0
+}
 const startConnectMock = vi.fn<() => Promise<{ url: string }>>()
 const disconnectMock = vi.fn<() => Promise<void>>()
+const importMock =
+  vi.fn<
+    () => Promise<{
+      imported: number
+      updated: number
+      ended: number
+      failed: number
+    }>
+  >()
 
 vi.mock('./ebay.remote', () => ({
   getEbayStatusRemote: () =>
@@ -48,7 +118,27 @@ vi.mock('./ebay.remote', () => ({
     }),
   startEbayConnectRemote: () => startConnectMock(),
   disconnectEbayRemote: () =>
-    Object.assign(disconnectMock(), { refresh: () => Promise.resolve() })
+    Object.assign(disconnectMock(), { refresh: () => Promise.resolve() }),
+  getEbayImportInfoRemote: () =>
+    Object.assign(Promise.resolve(importInfoValue), {
+      current: undefined,
+      refresh: () => Promise.resolve()
+    }),
+  listEbayListingsRemote: (args: { page: number; size: number }) => {
+    const result = {
+      items: listingsValue,
+      total: listingsValue.length,
+      page: args.page,
+      size: args.size,
+      pageCount: listingsValue.length > 0 ? 1 : 0
+    }
+    return Object.assign(Promise.resolve(result), {
+      current: result,
+      error: undefined,
+      refresh: () => Promise.resolve()
+    })
+  },
+  importEbayListingsRemote: () => importMock()
 }))
 
 const replaceStateMock = vi.fn()
@@ -87,9 +177,12 @@ const renderPage = async () => {
 
 beforeEach(() => {
   statusValue = { ...baseStatus }
+  listingsValue = []
+  importInfoValue = { lastRun: null, listingCount: 0, activeCount: 0 }
   setTestUrl('/settings/ebay')
   startConnectMock.mockReset()
   disconnectMock.mockReset()
+  importMock.mockReset()
   replaceStateMock.mockReset()
   toastSuccessMock.mockReset()
   toastErrorMock.mockReset()
@@ -204,5 +297,165 @@ describe('/settings/ebay — states & accessibility', () => {
         ),
       { timeout: 2000 }
     )
+  })
+})
+
+describe('/settings/ebay — listing import (Phase 2)', () => {
+  it('disconnected: shows the hint but keeps the import button clickable', async () => {
+    await renderPage()
+
+    expect(
+      screen.getByText(/Noch kein eBay-Konto verbunden/i)
+    ).toBeInTheDocument()
+    const button = screen.getByRole('button', { name: /Angebote importieren/i })
+    // Never disabled for missing prerequisites — click-time errors only.
+    expect(button).toBeEnabled()
+    expect(screen.getByText(/Noch kein Import durchgeführt/i)).toBeVisible()
+  })
+
+  it('successful import surfaces the German count summary as a toast', async () => {
+    importMock.mockResolvedValue({
+      imported: 3,
+      updated: 2,
+      ended: 1,
+      failed: 0
+    })
+    const user = userEvent.setup()
+    await renderPage()
+
+    await user.click(
+      screen.getByRole('button', { name: /Angebote importieren/i })
+    )
+    await waitFor(() => expect(importMock).toHaveBeenCalledTimes(1))
+    await waitFor(() =>
+      expect(toastSuccessMock).toHaveBeenCalledWith(
+        'Import abgeschlossen: 3 neu, 2 aktualisiert, 1 beendet.'
+      )
+    )
+  })
+
+  it('failed import shows the curated German error via handleClientError', async () => {
+    const { error } = await import('@sveltejs/kit')
+    // `error()` returns `never`, so the mock's return type stays
+    // assignable to the success shape.
+    importMock.mockImplementation(async () =>
+      error(
+        409,
+        'Kein eBay-Konto verbunden. Bitte zuerst unter Einstellungen → eBay verbinden.'
+      )
+    )
+    const user = userEvent.setup()
+    await renderPage()
+
+    await user.click(
+      screen.getByRole('button', { name: /Angebote importieren/i })
+    )
+    await waitFor(() =>
+      expect(toastErrorMock).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /Der Angebots-Import ist fehlgeschlagen: Kein eBay-Konto verbunden/
+        )
+      )
+    )
+  })
+
+  it('renders the last-run summary and the imported listings table', async () => {
+    importInfoValue = {
+      lastRun: {
+        id: 'r-1',
+        startedAt: new Date('2026-07-01T10:00:00Z'),
+        finishedAt: new Date('2026-07-01T10:00:05Z'),
+        status: 'success',
+        imported: 5,
+        updated: 1,
+        ended: 0,
+        failed: 0,
+        totalActive: 6,
+        error: null,
+        environment: 'production'
+      },
+      listingCount: 6,
+      activeCount: 5
+    }
+    listingsValue = [
+      sampleListing(),
+      sampleListing({
+        id: 'l-2',
+        ebayItemId: '110002',
+        sku: null,
+        title: 'Sommerreifen Michelin',
+        status: 'ended'
+      })
+    ]
+    await renderPage()
+
+    const lastImport = screen.getByTestId('last-import')
+    expect(lastImport).toHaveTextContent('5 neu')
+    expect(lastImport).toHaveTextContent('1 aktualisiert')
+
+    expect(
+      screen.getByText('Winterreifen Continental 205/55 R16')
+    ).toBeInTheDocument()
+    expect(screen.getByText('Sommerreifen Michelin')).toBeInTheDocument()
+    // 'Aktiv'/'Beendet' also exist as filter <option>s — assert the badges.
+    expect(
+      screen.getAllByText('Aktiv').some((el) => el.classList.contains('badge'))
+    ).toBe(true)
+    expect(
+      screen
+        .getAllByText('Beendet')
+        .some((el) => el.classList.contains('badge'))
+    ).toBe(true)
+    expect(screen.getByText('110001')).toBeInTheDocument()
+  })
+
+  it('a failed last run is announced with its curated error text', async () => {
+    importInfoValue = {
+      lastRun: {
+        id: 'r-2',
+        startedAt: new Date('2026-07-01T10:00:00Z'),
+        finishedAt: new Date('2026-07-01T10:00:01Z'),
+        status: 'failed',
+        imported: 0,
+        updated: 0,
+        ended: 0,
+        failed: 0,
+        totalActive: 0,
+        error:
+          'Die eBay-Anmeldung ist abgelaufen oder wurde widerrufen. Bitte die eBay-Verbindung trennen und neu verbinden.',
+        environment: 'production'
+      },
+      listingCount: 0,
+      activeCount: 0
+    }
+    await renderPage()
+
+    const lastImport = screen.getByTestId('last-import')
+    expect(lastImport).toHaveTextContent(/fehlgeschlagen/)
+    expect(lastImport).toHaveTextContent(/abgelaufen oder wurde widerrufen/)
+  })
+
+  it('clicking a listing row opens the eBay offer in a new tab', async () => {
+    listingsValue = [sampleListing()]
+    const openSpy = vi
+      .spyOn(window, 'open')
+      .mockReturnValue(null as unknown as Window)
+    const user = userEvent.setup()
+    await renderPage()
+
+    await user.click(screen.getByText('Winterreifen Continental 205/55 R16'))
+    expect(openSpy).toHaveBeenCalledWith(
+      'https://www.ebay.de/itm/110001',
+      '_blank',
+      'noopener'
+    )
+    openSpy.mockRestore()
+  })
+
+  it('empty state distinguishes "nothing imported yet"', async () => {
+    await renderPage()
+    expect(
+      screen.getByText('Noch keine Angebote importiert')
+    ).toBeInTheDocument()
   })
 })

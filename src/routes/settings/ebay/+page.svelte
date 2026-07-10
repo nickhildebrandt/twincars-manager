@@ -1,19 +1,27 @@
 <script lang="ts">
-  import { onMount } from 'svelte'
+  import { onMount, untrack } from 'svelte'
   import { replaceState } from '$app/navigation'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import ConfirmDialog from '$lib/components/ui/ConfirmDialog.svelte'
+  import EmptyState from '$lib/components/ui/EmptyState.svelte'
+  import Pagination from '$lib/components/ui/Pagination.svelte'
   import {
     Store,
     Link2,
     Unlink,
     CircleCheck,
-    CircleAlert
+    CircleAlert,
+    CloudDownload,
+    PackageSearch,
+    Search
   } from '@lucide/svelte'
   import {
     getEbayStatusRemote,
     startEbayConnectRemote,
-    disconnectEbayRemote
+    disconnectEbayRemote,
+    getEbayImportInfoRemote,
+    importEbayListingsRemote,
+    listEbayListingsRemote
   } from './ebay.remote'
   import { busy } from '$lib/stores/busy.svelte'
   import { toast } from '$lib/stores/toast.svelte'
@@ -78,6 +86,88 @@
     } catch (err) {
       handleClientError(err)
     }
+  }
+
+  /* ── Phase 2: listing import ─────────────────────────────────── */
+
+  const infoQuery = getEbayImportInfoRemote()
+  const infoInitial = await infoQuery
+  const importInfo = $derived(infoQuery.current ?? infoInitial)
+
+  let pageNum = $state(1)
+  const size = 25 as const
+  let q = $state('')
+  let statusFilter = $state<'all' | 'active' | 'ended'>('all')
+  let searchTimer: ReturnType<typeof setTimeout> | null = null
+
+  // Only set filter keys carry into the arg object — the cache key of
+  // the mutation-side instance must match this one exactly.
+  const queryArgs = $derived({
+    page: pageNum,
+    size,
+    ...(q ? { q } : {}),
+    ...(statusFilter === 'all' ? {} : { status: statusFilter })
+  })
+
+  /** Top-level await: SSR carries the data, hydration reuses the cache. */
+  const listInitial = await untrack(() => listEbayListingsRemote(queryArgs))
+
+  /** Cache last successful result so paginating doesn't flash empty. */
+  let lastResult = $state<typeof listInitial>(listInitial)
+
+  // Re-called on EVERY read (never memoized): a memoized remote proxy
+  // holds a dead cache entry after init.
+  const listResult = $derived.by(
+    () => listEbayListingsRemote(queryArgs).current ?? lastResult
+  )
+  const listings = $derived(listResult.items)
+  const total = $derived(listResult.total)
+  const pageCount = $derived(listResult.pageCount)
+
+  $effect(() => {
+    const listQuery = listEbayListingsRemote(queryArgs)
+    if (listQuery.current) lastResult = listQuery.current
+    if (listQuery.error) handleClientError(listQuery.error)
+  })
+
+  const onSearchInput = (e: Event) => {
+    const value = (e.target as HTMLInputElement).value
+    if (searchTimer) clearTimeout(searchTimer)
+    searchTimer = setTimeout(() => {
+      q = value
+      pageNum = 1
+    }, 250)
+  }
+
+  const runImport = async () => {
+    try {
+      const r = await busy.run(() => importEbayListingsRemote())
+      const parts = [
+        `${r.imported} neu`,
+        `${r.updated} aktualisiert`,
+        `${r.ended} beendet`
+      ]
+      if (r.failed > 0) parts.push(`${r.failed} übersprungen`)
+      toast.success(`Import abgeschlossen: ${parts.join(', ')}.`)
+    } catch (err) {
+      handleClientError(err, 'Der Angebots-Import ist fehlgeschlagen')
+    }
+  }
+
+  const fmtPrice = (value: string | null, currency: string | null) => {
+    if (value == null) return '-'
+    try {
+      return Number(value).toLocaleString('de-DE', {
+        style: 'currency',
+        currency: currency ?? 'EUR'
+      })
+    } catch {
+      return `${value} ${currency ?? ''}`.trim()
+    }
+  }
+
+  const openListing = (url: string | null) => {
+    if (url) window.open(url, '_blank', 'noopener')
   }
 </script>
 
@@ -154,6 +244,181 @@
         </div>
       {/if}
     </div>
+  </div>
+
+  <!-- Phase 2: import of the account's active listings -->
+  <div class="card border-base-300 bg-base-100 border">
+    <div class="card-body gap-3">
+      <div class="flex flex-wrap items-center gap-2">
+        <PackageSearch size={22} class="text-primary" />
+        <h3 class="card-title text-base">eBay-Angebote</h3>
+        {#if importInfo.listingCount > 0}
+          <span class="badge badge-ghost badge-sm">
+            {importInfo.activeCount} aktiv / {importInfo.listingCount} gesamt
+          </span>
+        {/if}
+      </div>
+
+      <p class="text-base-content/70 text-sm">
+        Importiert die aktiven Angebote des verbundenen Verkäuferkontos in die
+        Verwaltung. Ein erneuter Import aktualisiert vorhandene Angebote; nicht
+        mehr aktive Angebote werden als „Beendet" markiert.
+      </p>
+
+      {#if !status.connected}
+        <div class="alert text-sm" role="note">
+          <CircleAlert size={16} />
+          <span>
+            Noch kein eBay-Konto verbunden — der Import setzt eine bestehende
+            Verbindung voraus.
+          </span>
+        </div>
+      {/if}
+
+      <div class="flex flex-wrap items-center justify-between gap-2">
+        <div class="text-base-content/70 text-sm" data-testid="last-import">
+          {#if !importInfo.lastRun}
+            Noch kein Import durchgeführt.
+          {:else if importInfo.lastRun.status === 'failed'}
+            <span class="text-error">
+              Letzter Import am {fmt(
+                importInfo.lastRun.finishedAt ?? importInfo.lastRun.startedAt
+              )} fehlgeschlagen{#if importInfo.lastRun.error}:
+                {importInfo.lastRun.error}{/if}
+            </span>
+          {:else}
+            Letzter Import: {fmt(
+              importInfo.lastRun.finishedAt ?? importInfo.lastRun.startedAt
+            )} – {importInfo.lastRun.imported} neu,
+            {importInfo.lastRun.updated} aktualisiert,
+            {importInfo.lastRun.ended} beendet{#if importInfo.lastRun.failed > 0},
+              {importInfo.lastRun.failed} übersprungen{/if}.
+          {/if}
+        </div>
+        <button
+          type="button"
+          class="btn btn-primary gap-2"
+          onclick={runImport}
+          disabled={busy.active}
+        >
+          {#if busy.active}
+            <span class="loading loading-spinner loading-sm"></span>
+          {/if}
+          <CloudDownload size={16} /> Angebote importieren
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Imported listings (paginated, server-side) -->
+  <div class="card border-base-300 bg-base-100 border">
+    <div class="card-body gap-3 pb-0">
+      <div class="flex flex-wrap items-center gap-2">
+        <h3 class="card-title text-base">Importierte Angebote</h3>
+        <div class="ms-auto flex flex-wrap items-center gap-2">
+          <label
+            class="input input-bordered input-sm flex items-center gap-2 sm:min-w-[14rem]"
+          >
+            <Search size={14} class="opacity-60" />
+            <input
+              type="search"
+              class="grow"
+              placeholder="Titel, SKU, Artikelnr. …"
+              oninput={onSearchInput}
+              maxlength="200"
+              aria-label="Angebote durchsuchen"
+            />
+          </label>
+          <select
+            class="select select-sm select-bordered"
+            bind:value={statusFilter}
+            onchange={() => (pageNum = 1)}
+            aria-label="Status filtern"
+          >
+            <option value="all">Alle Status</option>
+            <option value="active">Aktiv</option>
+            <option value="ended">Beendet</option>
+          </select>
+        </div>
+      </div>
+    </div>
+    {#if listings.length === 0}
+      <EmptyState
+        icon={PackageSearch}
+        title={q || statusFilter !== 'all'
+          ? 'Keine Angebote gefunden'
+          : 'Noch keine Angebote importiert'}
+        description={q || statusFilter !== 'all'
+          ? 'Für die aktuelle Suche bzw. den Filter gibt es keine Treffer.'
+          : 'Nach dem Verbinden des Verkäuferkontos können die aktiven Angebote importiert werden.'}
+      />
+    {:else}
+      <div class="overflow-x-auto">
+        <table class="table">
+          <thead>
+            <tr>
+              <th>Angebot</th>
+              <th>eBay-Artikelnr.</th>
+              <th class="text-right">Preis</th>
+              <th class="text-right">Verfügbar</th>
+              <th class="text-right">Verkauft</th>
+              <th>Status</th>
+              <th>Läuft bis</th>
+            </tr>
+          </thead>
+          <tbody>
+            {#each listings as l (l.id)}
+              <tr
+                class="hover:bg-base-200 cursor-pointer"
+                onclick={() => openListing(l.viewItemUrl)}
+              >
+                <td>
+                  <div class="flex items-center gap-3">
+                    {#if l.galleryUrl}
+                      <img
+                        src={l.galleryUrl}
+                        alt=""
+                        class="h-10 w-10 shrink-0 rounded object-cover"
+                        loading="lazy"
+                      />
+                    {/if}
+                    <div class="min-w-0">
+                      <div class="max-w-md truncate font-medium">{l.title}</div>
+                      {#if l.sku}
+                        <div class="text-base-content/60 font-mono text-xs">
+                          SKU {l.sku}
+                        </div>
+                      {/if}
+                    </div>
+                  </div>
+                </td>
+                <td class="font-mono text-xs">{l.ebayItemId}</td>
+                <td class="text-right font-mono">
+                  {fmtPrice(l.priceValue, l.priceCurrency)}
+                </td>
+                <td class="text-right">{l.quantityAvailable ?? '-'}</td>
+                <td class="text-right">{l.quantitySold ?? '-'}</td>
+                <td>
+                  {#if l.status === 'active'}
+                    <span class="badge badge-success badge-sm">Aktiv</span>
+                  {:else}
+                    <span class="badge badge-ghost badge-sm">Beendet</span>
+                  {/if}
+                </td>
+                <td class="text-base-content/70 text-sm">{fmt(l.endTime)}</td>
+              </tr>
+            {/each}
+          </tbody>
+        </table>
+      </div>
+      <Pagination
+        {total}
+        page={pageNum}
+        {pageCount}
+        {size}
+        onPage={(p) => (pageNum = p)}
+      />
+    {/if}
   </div>
 </div>
 

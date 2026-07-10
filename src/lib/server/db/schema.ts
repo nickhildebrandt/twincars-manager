@@ -1569,6 +1569,100 @@ export const ebayCredentials = pgTable('ebay_credentials', {
     .defaultNow()
 })
 
+/**
+ * eBay listings imported from the connected seller account via the
+ * Trading API (`GetMyeBaySelling` — listings created in the eBay web
+ * UI are invisible to the Inventory API, see ADR-014). Idempotent
+ * import keyed on `(environment, ebay_item_id)`: re-running updates
+ * rows in place; listings that disappear from the active list are
+ * flipped to `status = 'ended'` instead of being deleted. Photos are
+ * stored **by URL only** (eBay-hosted) — no bytes are copied locally.
+ * `tireId` is the optional anchor a later Phase-3 tire sync links a
+ * listing to; it is not populated by the import itself.
+ */
+export const ebayListings = pgTable(
+  'ebay_listings',
+  {
+    id: uuid('id').primaryKey().defaultRandom(),
+    /** eBay's numeric item id (`ItemID`), unique per environment. */
+    ebayItemId: varchar('ebay_item_id', { length: 30 }).notNull(),
+    /** Seller-defined SKU ("Custom label"), when present. */
+    sku: varchar('sku', { length: 80 }),
+    title: varchar('title', { length: 255 }).notNull(),
+    /** Current price (`SellingStatus.CurrentPrice`). */
+    priceValue: numeric('price_value', { precision: 12, scale: 2 }),
+    /** ISO 4217 code from the `currencyID` attribute (usually EUR). */
+    priceCurrency: varchar('price_currency', { length: 3 }),
+    /** Remaining purchasable quantity (`QuantityAvailable`). */
+    quantityAvailable: integer('quantity_available'),
+    quantitySold: integer('quantity_sold'),
+    /** `FixedPriceItem`, `Chinese` (auction), … */
+    listingType: varchar('listing_type', { length: 30 }),
+    /** `active` while returned by the active list; `ended` afterwards. */
+    status: varchar('status', { length: 20 }).notNull().default('active'),
+    viewItemUrl: text('view_item_url'),
+    /** Gallery thumbnail URL (`PictureDetails.GalleryURL`). */
+    galleryUrl: text('gallery_url'),
+    /** Full-size photo URLs (`PictureDetails.PictureURL`), URL only. */
+    pictureUrls: jsonb('picture_urls').$type<string[]>().default([]),
+    startTime: timestamp('start_time', { withTimezone: true }),
+    endTime: timestamp('end_time', { withTimezone: true }),
+    /** eBay world the listing belongs to (`production` | `sandbox`). */
+    environment: varchar('environment', { length: 20 })
+      .notNull()
+      .default('production'),
+    /** Optional link to the local tire (Phase-3 sync anchor). */
+    tireId: uuid('tire_id').references(() => tires.id, {
+      onDelete: 'set null'
+    }),
+    firstImportedAt: timestamp('first_imported_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    /** Last time the import saw this listing in the active list. */
+    lastSeenAt: timestamp('last_seen_at', { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp('updated_at', { withTimezone: true })
+      .notNull()
+      .defaultNow()
+  },
+  (t) => [
+    uniqueIndex('ebay_listings_env_item_idx').on(t.environment, t.ebayItemId),
+    index('ebay_listings_status_idx').on(t.status)
+  ]
+)
+
+/**
+ * Append-only log of listing-import runs — one row per operator
+ * click on "Angebote importieren". The most recent row backs the
+ * "last sync" info on `/settings/ebay`. `error` carries the curated
+ * German message only; raw eBay errors are server-logged.
+ */
+export const ebayImportRuns = pgTable('ebay_import_runs', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  startedAt: timestamp('started_at', { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  finishedAt: timestamp('finished_at', { withTimezone: true }),
+  /** `running` → `success` | `failed`. */
+  status: varchar('status', { length: 20 }).notNull().default('running'),
+  /** Listings newly created by this run. */
+  imported: integer('imported').notNull().default(0),
+  /** Listings that already existed and were refreshed in place. */
+  updated: integer('updated').notNull().default(0),
+  /** Previously active listings no longer in the active list. */
+  ended: integer('ended').notNull().default(0),
+  /** Items eBay returned that could not be mapped (skipped). */
+  failed: integer('failed').notNull().default(0),
+  /** Total active listings eBay reported for the account. */
+  totalActive: integer('total_active').notNull().default(0),
+  /** Curated German error when `status = 'failed'`. */
+  error: text('error'),
+  environment: varchar('environment', { length: 20 })
+    .notNull()
+    .default('production')
+})
+
 /* ────────────────────────────────────────────────────────────────────── */
 /* Reifenlager — customer-owned tires kept on the workshop premises       */
 /* ────────────────────────────────────────────────────────────────────── */
@@ -1912,3 +2006,6 @@ export type Post = typeof posts.$inferSelect
 export type NewPost = typeof posts.$inferInsert
 export type EbayCredentials = typeof ebayCredentials.$inferSelect
 export type NewEbayCredentials = typeof ebayCredentials.$inferInsert
+export type EbayListing = typeof ebayListings.$inferSelect
+export type NewEbayListing = typeof ebayListings.$inferInsert
+export type EbayImportRun = typeof ebayImportRuns.$inferSelect

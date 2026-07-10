@@ -368,7 +368,9 @@ export const FIELD_LABELS: Record<string, string> = {
   port: 'Port',
   fromName: 'Absendername',
   q: 'Suchbegriff',
-  page: 'Seite'
+  page: 'Seite',
+  size: 'Seitengröße',
+  status: 'Status'
 }
 
 /**
