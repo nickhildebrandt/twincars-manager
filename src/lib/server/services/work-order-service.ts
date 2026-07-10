@@ -15,9 +15,18 @@
  * without any report changes.
  *
  * Status flow: open ⇄ in_progress; → done ONLY through
- * {@link completeWorkOrder}; done → in_progress reopens only while
- * `invoice_id IS NULL`. {@link deleteWorkOrder} refuses (409) once the
- * invoice exists — the GoBD invoice chain owns the record then.
+ * {@link completeWorkOrder} — a done order always carries an ACTIVE
+ * invoice (linked invoice whose status is not cancelled/storno, see
+ * {@link getActiveInvoiceForOrder}). done → in_progress reopens only
+ * while no active invoice exists. Cancelling the active invoice
+ * (`cancelInvoice` in document-service) reopens the order
+ * automatically: items become editable again and the order can be
+ * re-invoiced through {@link completeWorkOrder}; the cancelled
+ * original and its Storno stay linked via `documents.work_order_id`.
+ * While an active invoice exists, the order's items are locked
+ * (add/update/delete refuse with 409). {@link deleteWorkOrder}
+ * refuses (409) once any invoice exists — the GoBD invoice chain owns
+ * the record then.
  *
  * @group integration
  * @module work-order-service
@@ -31,6 +40,7 @@ import {
   eq,
   ilike,
   inArray,
+  notInArray,
   or,
   type SQL
 } from 'drizzle-orm'
@@ -96,6 +106,79 @@ export type WorkOrderDetail = {
   vehicleLabel: string | null
   appointmentTitle: string | null
   invoiceNumber: string | null
+  /** Full billing history — active invoice, cancelled originals and
+   * their Stornos (oldest first). See {@link listOrderInvoices}. */
+  invoices: OrderInvoiceRef[]
+}
+
+/* ── Order ↔ invoice rule set ───────────────────────────────────────── */
+
+/**
+ * Invoice statuses that do NOT count as "active": a cancelled original
+ * and its Storno document are retained history (GoBD), not a live
+ * claim. Every other status (`created`, `sent`, `paid`, legacy
+ * `draft`/`open`/`overdue`) keeps the invoice active.
+ */
+const INACTIVE_INVOICE_STATUSES = ['cancelled', 'storno']
+
+/** One entry of an order's billing history. */
+export type OrderInvoiceRef = {
+  id: string
+  documentNumber: string
+  status: string
+  issueDate: string
+  grossTotal: string
+  cancelledAt: Date | null
+}
+
+const orderInvoiceColumns = {
+  id: documents.id,
+  documentNumber: documents.documentNumber,
+  status: documents.status,
+  issueDate: documents.issueDate,
+  grossTotal: documents.grossTotal,
+  cancelledAt: documents.cancelledAt
+}
+
+/**
+ * Every invoice ever created for the order — the active one, cancelled
+ * originals and their Storno documents — oldest first. Backed by the
+ * `documents.work_order_id` backlink, which survives re-invoicing
+ * cycles (unlike the single active pointer `work_orders.invoice_id`).
+ */
+export async function listOrderInvoices(
+  orderId: string
+): Promise<OrderInvoiceRef[]> {
+  return db
+    .select(orderInvoiceColumns)
+    .from(documents)
+    .where(
+      and(eq(documents.workOrderId, orderId), eq(documents.type, 'invoice'))
+    )
+    .orderBy(asc(documents.createdAt))
+}
+
+/**
+ * The single ACTIVE invoice of an order, or `null`. Rule: an order has
+ * at most one linked invoice whose status is not cancelled/storno —
+ * this helper is the one source of truth every guard (completion,
+ * item lock, reopen, second-invoice rejection) derives from.
+ */
+export async function getActiveInvoiceForOrder(
+  orderId: string
+): Promise<OrderInvoiceRef | null> {
+  const [row] = await db
+    .select(orderInvoiceColumns)
+    .from(documents)
+    .where(
+      and(
+        eq(documents.workOrderId, orderId),
+        eq(documents.type, 'invoice'),
+        notInArray(documents.status, INACTIVE_INVOICE_STATUSES)
+      )
+    )
+    .limit(1)
+  return row ?? null
 }
 
 /** Latest 25 completed orders shown in the Kanban done column. */
@@ -356,13 +439,14 @@ export async function getWorkOrder(
     .limit(1)
   if (!row) return null
 
-  const [orderItems, assigneesByOrder] = await Promise.all([
+  const [orderItems, assigneesByOrder, invoices] = await Promise.all([
     db
       .select()
       .from(workOrderItems)
       .where(eq(workOrderItems.workOrderId, id))
       .orderBy(asc(workOrderItems.position)),
-    fetchAssignees([id])
+    fetchAssignees([id]),
+    listOrderInvoices(id)
   ])
 
   const makeModel = `${row.vehicleMake ?? ''} ${row.vehicleModel ?? ''}`.trim()
@@ -382,7 +466,8 @@ export async function getWorkOrder(
       ? [row.plate, makeModel].filter(Boolean).join(' · ') || null
       : null,
     appointmentTitle: row.appointmentTitle ?? null,
-    invoiceNumber: row.invoiceNumber ?? null
+    invoiceNumber: row.invoiceNumber ?? null,
+    invoices
   }
 }
 
@@ -560,12 +645,15 @@ export async function updateWorkOrder(
 }
 
 /**
- * Delete an order. Refuses (409) once the invoice exists — the GoBD
- * invoice chain owns the record then; corrections go through the
- * invoice's Storno flow. The write-through `time_entries` rows of the
- * order's labor items are removed explicitly (production also cascades
- * them via the `work_order_item_id` FK, but the service does not rely
- * on it).
+ * Delete an order. Refuses (409) once ANY invoice exists for it —
+ * active, cancelled or Storno — because the GoBD invoice chain owns
+ * the record then; corrections go through the invoice's Storno flow.
+ * (Checked via the `documents.work_order_id` history backlink, not
+ * just the active pointer: an order whose invoice was cancelled must
+ * keep its billing history reachable.) The write-through
+ * `time_entries` rows of the order's labor items are removed
+ * explicitly (production also cascades them via the
+ * `work_order_item_id` FK, but the service does not rely on it).
  */
 export async function deleteWorkOrder(id: string): Promise<void> {
   const [row] = await db
@@ -574,10 +662,15 @@ export async function deleteWorkOrder(id: string): Promise<void> {
     .where(eq(workOrders.id, id))
     .limit(1)
   if (!row) return
-  if (row.invoiceId !== null) {
+  const [linkedInvoice] = await db
+    .select({ id: documents.id })
+    .from(documents)
+    .where(eq(documents.workOrderId, id))
+    .limit(1)
+  if (row.invoiceId !== null || linkedInvoice) {
     error(
       409,
-      'Dieser Auftrag wurde bereits abgerechnet und kann nicht gelöscht werden.'
+      'Dieser Auftrag wurde bereits abgerechnet und kann nicht gelöscht werden. Die Rechnungshistorie (inklusive Stornos) bleibt erhalten.'
     )
   }
   // Explicit write-through cleanup (mirrors the DB-level ON DELETE
@@ -593,10 +686,15 @@ export async function deleteWorkOrder(id: string): Promise<void> {
  *
  *   open         → in_progress
  *   in_progress  → open
- *   done         → in_progress   (reopen, only while invoice_id IS NULL)
+ *   done         → in_progress   (reopen, only while no ACTIVE
+ *                                 invoice exists — after a Storno the
+ *                                 order is reopened automatically)
  *
- * → done is NOT reachable here — completion happens exclusively through
- * {@link completeWorkOrder} (which creates the invoice).
+ * → done is NOT reachable here — a done order requires an active
+ * invoice, so completion happens exclusively through
+ * {@link completeWorkOrder} (which creates that invoice). This also
+ * covers the Kanban drag-to-done path and orders whose only invoice
+ * is a Storno.
  */
 export async function setWorkOrderStatus(
   id: string,
@@ -613,7 +711,7 @@ export async function setWorkOrderStatus(
   if (status === 'done') {
     error(
       409,
-      'Abschließen ist nur über "Abschließen & Rechnung erstellen" möglich.'
+      'Abschließen ist nur über "Abschließen & Rechnung erstellen" möglich — ohne gültige Rechnung kann ein Auftrag nicht abgeschlossen werden.'
     )
   }
   if (order.status === status) return order
@@ -624,10 +722,10 @@ export async function setWorkOrderStatus(
         'Ein abgeschlossener Auftrag kann nur nach "in Bearbeitung" zurückgeholt werden.'
       )
     }
-    if (order.invoiceId !== null) {
+    if (await getActiveInvoiceForOrder(order.id)) {
       error(
         409,
-        'Dieser Auftrag wurde bereits abgerechnet und kann nicht wieder geöffnet werden.'
+        'Dieser Auftrag wurde bereits abgerechnet und kann nicht wieder geöffnet werden. Stornieren Sie zuerst die Rechnung.'
       )
     }
   }
@@ -635,8 +733,12 @@ export async function setWorkOrderStatus(
     .update(workOrders)
     .set({
       status,
-      // Reopening clears the completion timestamp.
+      // Reopening clears the completion timestamp AND a stale active
+      // pointer (a reopenable order has no active invoice — a leftover
+      // link to a cancelled invoice would keep the UI locked; the
+      // history stays reachable via documents.work_order_id).
       completedAt: order.status === 'done' ? null : order.completedAt,
+      invoiceId: order.status === 'done' ? null : order.invoiceId,
       updatedAt: new Date()
     })
     .where(eq(workOrders.id, id))
@@ -719,11 +821,35 @@ const requireOrder = async (id: string): Promise<WorkOrder> => {
   return order
 }
 
+/**
+ * Arbeitserfassung lock: while an ACTIVE invoice exists the recorded
+ * items are frozen — they ARE the invoice's basis. Corrections require
+ * cancelling the invoice first (which reopens the order and lifts the
+ * lock). A done order without an active invoice (legacy edge) is
+ * equally locked until it is reopened.
+ */
+const requireItemsUnlocked = async (order: WorkOrder): Promise<void> => {
+  const active = await getActiveInvoiceForOrder(order.id)
+  if (active) {
+    error(
+      409,
+      `Positionen sind gesperrt, solange eine gültige Rechnung existiert (${active.documentNumber}). Stornieren Sie die Rechnung, um Änderungen vorzunehmen.`
+    )
+  }
+  if (order.status === 'done') {
+    error(
+      409,
+      'Dieser Auftrag ist abgeschlossen — Positionen können erst nach dem Wiederöffnen geändert werden.'
+    )
+  }
+}
+
 export async function addWorkOrderItem(
   workOrderId: string,
   input: WorkOrderItemInput
 ): Promise<WorkOrderItem> {
   const order = await requireOrder(workOrderId)
+  await requireItemsUnlocked(order)
   const [last] = await db
     .select({ position: workOrderItems.position })
     .from(workOrderItems)
@@ -774,6 +900,7 @@ export async function updateWorkOrderItem(
     error(404, 'Auftragsposition nicht gefunden.')
   }
   const order = await requireOrder(current.workOrderId)
+  await requireItemsUnlocked(order)
 
   const fields: Partial<typeof workOrderItems.$inferInsert> = {}
   if (patch.kind !== undefined) fields.kind = patch.kind
@@ -816,6 +943,14 @@ export async function updateWorkOrderItem(
 }
 
 export async function deleteWorkOrderItem(itemId: string): Promise<void> {
+  const [current] = await db
+    .select({ workOrderId: workOrderItems.workOrderId })
+    .from(workOrderItems)
+    .where(eq(workOrderItems.id, itemId))
+    .limit(1)
+  // Unknown id: no-op (idempotent — same as before the lock).
+  if (!current) return
+  await requireItemsUnlocked(await requireOrder(current.workOrderId))
   // Explicit write-through cleanup (mirrors the DB-level ON DELETE
   // CASCADE of time_entries.work_order_item_id).
   await db.delete(timeEntries).where(eq(timeEntries.workOrderItemId, itemId))
@@ -882,7 +1017,17 @@ export async function completeWorkOrder(
   opts: { issueDate: string; paymentMethod?: string }
 ): Promise<Document> {
   const order = await requireOrder(id)
-  if (order.status === 'done' || order.invoiceId !== null) {
+  // Rule: at most ONE active invoice per order. Re-invoicing requires
+  // cancelling the existing invoice first (which reopens the order);
+  // after the Storno this guard passes and a fresh invoice is created.
+  const active = await getActiveInvoiceForOrder(id)
+  if (active) {
+    error(
+      409,
+      `Für diesen Auftrag existiert bereits die gültige Rechnung ${active.documentNumber}. Stornieren Sie diese zuerst, um den Auftrag neu abzurechnen.`
+    )
+  }
+  if (order.status === 'done') {
     error(409, 'Dieser Auftrag ist bereits abgeschlossen.')
   }
 
@@ -984,6 +1129,9 @@ export async function completeWorkOrder(
     type: 'invoice',
     customerId: order.customerId ?? undefined,
     vehicleId: order.vehicleId ?? undefined,
+    // History backlink — survives a later Storno + re-invoicing, so
+    // the order's full billing chain stays traceable (GoBD).
+    workOrderId: id,
     issueDate: opts.issueDate,
     serviceDate: todayIso(),
     dueDate: addDaysIso(opts.issueDate, settings.defaultPaymentTermDays),

@@ -48,14 +48,21 @@ import {
   createWorkOrderFromAppointment,
   deleteWorkOrder,
   deleteWorkOrderItem,
+  getActiveInvoiceForOrder,
   getLaborRate,
   getWorkOrder,
   listKanbanBoard,
+  listOrderInvoices,
   listWorkOrders,
   setWorkOrderStatus,
   updateWorkOrder,
   updateWorkOrderItem
 } from './work-order-service'
+import {
+  cancelInvoice,
+  createDocument,
+  deleteDocument
+} from './document-service'
 
 const YEAR = new Date().getFullYear()
 
@@ -157,7 +164,8 @@ describe('work-order-service', () => {
     await db.delete(companySettings)
     await db.insert(numberRanges).values([
       { kind: 'work_order', formatTemplate: 'AU-{YYYY}-{NNNN}', nextValue: 1 },
-      { kind: 'invoice', formatTemplate: 'RE-{YYYY}-{NNNN}', nextValue: 1 }
+      { kind: 'invoice', formatTemplate: 'RE-{YYYY}-{NNNN}', nextValue: 1 },
+      { kind: 'storno', formatTemplate: 'S-{NNNN}', nextValue: 1 }
     ])
     await db
       .insert(companySettings)
@@ -790,13 +798,13 @@ describe('work-order-service', () => {
       expect(positions[0].description).toBe('Kleinarbeit')
     })
 
-    it('409s on a second completion', async () => {
+    it('409s on a second completion while the invoice is active (rule: one active invoice)', async () => {
       const { order } = await seedCompletableOrder()
       await completeWorkOrder(order.id, { issueDate: '2026-07-06' })
       await expectHttpError(
         () => completeWorkOrder(order.id, { issueDate: '2026-07-07' }),
         409,
-        /bereits abgeschlossen/i
+        /existiert bereits die gültige Rechnung RE-.*Stornieren/i
       )
     })
 
@@ -938,6 +946,316 @@ describe('work-order-service', () => {
       expect(card.assignees).toEqual([
         { id: employeeId, label: 'Max Schrauber' }
       ])
+    })
+  })
+
+  /**
+   * Requirement 10 — the complete order ↔ invoice rule set:
+   * one active invoice per order, done requires an active invoice,
+   * Storno reopens the order (items editable, re-invoicing possible),
+   * full history traceable in both directions, standalone invoices
+   * (Teileverkauf) unaffected.
+   */
+  describe('order ↔ invoice rule set (requirement 10)', () => {
+    /** Order with a labor + material item, ready for completion. */
+    const seedBillableOrder = async () => {
+      const customerId = await seedCustomer()
+      const employeeId = await seedEmployee()
+      const order = await createWorkOrder({ title: 'Bremsen', customerId })
+      await addWorkOrderItem(order.id, {
+        kind: 'labor',
+        description: 'Bremsen erneuert',
+        unitPriceNet: 60,
+        employeeId,
+        hours: 2,
+        doneAt: '2026-07-06'
+      })
+      await addWorkOrderItem(order.id, {
+        kind: 'material',
+        description: 'Bremsscheibe',
+        quantity: 2,
+        unitPriceNet: 45,
+        doneAt: '2026-07-06'
+      })
+      return { order, customerId, employeeId }
+    }
+
+    it('case 1+6: an order without invoice can be invoiced (completion possible)', async () => {
+      const { order } = await seedBillableOrder()
+      expect(await getActiveInvoiceForOrder(order.id)).toBeNull()
+
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      const detail = await getWorkOrder(order.id)
+      expect(detail?.order.status).toBe('done')
+      expect(detail?.order.invoiceId).toBe(invoice.id)
+      // The history backlink is written at creation time.
+      expect(invoice.workOrderId).toBe(order.id)
+      const active = await getActiveInvoiceForOrder(order.id)
+      expect(active?.id).toBe(invoice.id)
+    })
+
+    it('case 2: a second invoice is rejected while an active one exists', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      await expectHttpError(
+        () => completeWorkOrder(order.id, { issueDate: '2026-07-07' }),
+        409,
+        new RegExp(
+          `existiert bereits die gültige Rechnung ${invoice.documentNumber}`
+        )
+      )
+      // Exactly one invoice exists.
+      expect(await listOrderInvoices(order.id)).toHaveLength(1)
+    })
+
+    it('case 3+8: cancelling the active invoice keeps the Storno document (GoBD)', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      const { stornoId, stornoNumber } = await cancelInvoice(
+        invoice.id,
+        'Falsche Positionen'
+      )
+      expect(stornoNumber).toBe('S-0001')
+
+      const history = await listOrderInvoices(order.id)
+      expect(history).toHaveLength(2)
+      const original = history.find((d) => d.id === invoice.id)
+      const storno = history.find((d) => d.id === stornoId)
+      expect(original?.status).toBe('cancelled')
+      expect(original?.cancelledAt).not.toBeNull()
+      expect(storno?.status).toBe('storno')
+      // Neither counts as active anymore.
+      expect(await getActiveInvoiceForOrder(order.id)).toBeNull()
+      // Storno documents are undeletable, order-linked originals too.
+      await expectHttpError(
+        () => deleteDocument(stornoId),
+        409,
+        /Stornorechnungen.*nicht gelöscht/i
+      )
+      await expectHttpError(
+        () => deleteDocument(invoice.id),
+        409,
+        /gehört zu einem Auftrag/i
+      )
+    })
+
+    it('lifecycle: the Storno reopens the order and un-bills its time entries', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      await cancelInvoice(invoice.id, 'Falsche Positionen')
+
+      const detail = await getWorkOrder(order.id)
+      expect(detail?.order.status).toBe('in_progress')
+      expect(detail?.order.completedAt).toBeNull()
+      expect(detail?.order.invoiceId).toBeNull()
+
+      // The write-through hours are no longer billed on any document.
+      const entries = await db
+        .select()
+        .from(timeEntries)
+        .where(eq(timeEntries.workOrderId, order.id))
+      expect(entries).toHaveLength(1)
+      expect(entries[0].documentId).toBeNull()
+    })
+
+    it('case 4: after the Storno a new invoice is possible', async () => {
+      const { order } = await seedBillableOrder()
+      const first = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      await cancelInvoice(first.id, 'Falsche Positionen')
+
+      const second = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-08'
+      })
+      expect(second.id).not.toBe(first.id)
+      expect(second.documentNumber).toBe(`RE-${YEAR}-0002`)
+      expect(second.workOrderId).toBe(order.id)
+
+      const detail = await getWorkOrder(order.id)
+      expect(detail?.order.status).toBe('done')
+      expect(detail?.order.invoiceId).toBe(second.id)
+      const active = await getActiveInvoiceForOrder(order.id)
+      expect(active?.id).toBe(second.id)
+      // The re-billed hours point at the new invoice again.
+      const entries = await db
+        .select()
+        .from(timeEntries)
+        .where(eq(timeEntries.workOrderId, order.id))
+      expect(entries[0].documentId).toBe(second.id)
+    })
+
+    it('case 5: flipping an invoice-less order to done directly is rejected', async () => {
+      const { order } = await seedBillableOrder()
+      await expectHttpError(
+        () => setWorkOrderStatus(order.id, 'done'),
+        409,
+        /ohne gültige Rechnung kann ein Auftrag nicht abgeschlossen werden/i
+      )
+      const detail = await getWorkOrder(order.id)
+      expect(detail?.order.status).toBe('open')
+    })
+
+    it('case 7: an order whose only invoice is a Storno cannot be flipped to done', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      await cancelInvoice(invoice.id, 'Falsche Positionen')
+      // Reopened by the Storno — but done stays unreachable without a
+      // NEW active invoice (only completeWorkOrder can create one).
+      await expectHttpError(
+        () => setWorkOrderStatus(order.id, 'done'),
+        409,
+        /ohne gültige Rechnung/i
+      )
+    })
+
+    it('case 9: item add/update/delete are rejected while an active invoice exists', async () => {
+      const { order } = await seedBillableOrder()
+      const detailBefore = await getWorkOrder(order.id)
+      const existingItem = detailBefore!.items[0]
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+
+      const lockPattern = new RegExp(
+        `Positionen sind gesperrt.*${invoice.documentNumber}.*Stornieren`
+      )
+      await expectHttpError(
+        () =>
+          addWorkOrderItem(order.id, {
+            kind: 'material',
+            description: 'Nachtrag',
+            quantity: 1,
+            unitPriceNet: 5,
+            doneAt: '2026-07-07'
+          }),
+        409,
+        lockPattern
+      )
+      await expectHttpError(
+        () => updateWorkOrderItem(existingItem.id, { description: 'Geändert' }),
+        409,
+        lockPattern
+      )
+      await expectHttpError(
+        () => deleteWorkOrderItem(existingItem.id),
+        409,
+        lockPattern
+      )
+      // Nothing changed.
+      const detailAfter = await getWorkOrder(order.id)
+      expect(detailAfter?.items).toHaveLength(2)
+      expect(detailAfter?.items[0].description).toBe(existingItem.description)
+    })
+
+    it('case 10: after the Storno item corrections are possible again', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      await cancelInvoice(invoice.id, 'Falsche Positionen')
+
+      const detail = await getWorkOrder(order.id)
+      const material = detail!.items.find((it) => it.kind === 'material')!
+      const corrected = await updateWorkOrderItem(material.id, { quantity: 4 })
+      expect(Number(corrected.quantity)).toBe(4)
+      const added = await addWorkOrderItem(order.id, {
+        kind: 'material',
+        description: 'Kleinteile',
+        quantity: 1,
+        unitPriceNet: 12,
+        doneAt: '2026-07-08'
+      })
+      await deleteWorkOrderItem(added.id)
+      expect((await getWorkOrder(order.id))?.items).toHaveLength(2)
+    })
+
+    it('case 11: standalone invoices (Teileverkauf) stay unaffected', async () => {
+      const customerId = await seedCustomer()
+      const invoice = await createDocument({
+        type: 'invoice',
+        customerId,
+        issueDate: '2026-07-06',
+        items: [
+          {
+            description: 'Bremsscheibe (Verkauf über den Tresen)',
+            quantity: 2,
+            unitPriceNet: 45,
+            taxRate: 19
+          }
+        ]
+      })
+      expect(invoice.workOrderId).toBeNull()
+      // Cancelling a standalone invoice touches no order.
+      const { stornoId } = await cancelInvoice(invoice.id, 'Rückgabe')
+      const [storno] = await db
+        .select()
+        .from(documents)
+        .where(eq(documents.id, stornoId))
+      expect(storno.workOrderId).toBeNull()
+      expect(await db.select().from(workOrders)).toHaveLength(0)
+    })
+
+    it('traceability: the order detail lists Storno AND new invoice with numbers', async () => {
+      const { order } = await seedBillableOrder()
+      const first = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      const { stornoId } = await cancelInvoice(first.id, 'Falsche Positionen')
+      const second = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-08'
+      })
+
+      const detail = await getWorkOrder(order.id)
+      expect(detail?.invoices.map((d) => d.status)).toEqual([
+        'cancelled',
+        'storno',
+        'created'
+      ])
+      expect(detail?.invoices.map((d) => d.id)).toEqual([
+        first.id,
+        stornoId,
+        second.id
+      ])
+      expect(detail?.invoices.map((d) => d.documentNumber)).toEqual([
+        `RE-${YEAR}-0001`,
+        'S-0001',
+        `RE-${YEAR}-0002`
+      ])
+      // Reverse direction: every document points back at the order.
+      const docs = await db.select().from(documents)
+      expect(docs.every((d) => d.workOrderId === order.id)).toBe(true)
+    })
+
+    it('reopen guard uses the ACTIVE invoice, and delete stays refused after Storno', async () => {
+      const { order } = await seedBillableOrder()
+      const invoice = await completeWorkOrder(order.id, {
+        issueDate: '2026-07-06'
+      })
+      // Active invoice → reopening is refused with the Storno hint.
+      await expectHttpError(
+        () => setWorkOrderStatus(order.id, 'in_progress'),
+        409,
+        /bereits abgerechnet.*Stornieren/i
+      )
+      await cancelInvoice(invoice.id, 'Falsche Positionen')
+      // The billing history keeps the order undeletable (GoBD) even
+      // though the active pointer is cleared.
+      await expectHttpError(
+        () => deleteWorkOrder(order.id),
+        409,
+        /bereits abgerechnet.*Rechnungshistorie/i
+      )
     })
   })
 })

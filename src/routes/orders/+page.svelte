@@ -139,9 +139,12 @@
     dragOverCol = null
     if (!card) return
     if (key === 'done') {
+      // Guard (mirrors the server rule): a done order requires an
+      // active invoice, so the drop is rejected with a German toast
+      // and the card never leaves its column — no partial state.
       if (card.status !== 'done') {
         toast.info(
-          'Abschließen ist nur über die Auftragsseite möglich ("Abschließen & Rechnung erstellen").'
+          'Abschließen ist nur über die Auftragsseite möglich ("Abschließen & Rechnung erstellen") — ohne gültige Rechnung kann ein Auftrag nicht abgeschlossen werden.'
         )
       }
       return

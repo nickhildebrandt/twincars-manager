@@ -8,6 +8,7 @@
   import {
     ArrowLeft,
     ArrowRight,
+    Lock,
     Pencil,
     Receipt,
     RotateCcw,
@@ -26,6 +27,10 @@
   import { pickEmployeesRemote, pickItemsRemote } from '../../pickers.remote'
   import { PAYMENT_METHODS, type PaymentMethod } from '$lib/payment-methods'
   import { formatEuro } from '$lib/utils/money'
+  import {
+    documentStatusBadge,
+    documentStatusLabel
+  } from '$lib/utils/status-labels'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -54,6 +59,16 @@
 
   const isDone = $derived(order.status === 'done')
   const hasInvoice = $derived(order.invoiceId !== null)
+  /**
+   * Arbeitserfassung lock (mirrors the server guard): while an active
+   * invoice exists — or the order is done — items are frozen; the
+   * Storno flow reopens the order and lifts the lock. This is a true
+   * mode gate, one of the two sanctioned reasons to hide/disable
+   * actions (CONTRIBUTING rule 1.1 exception).
+   */
+  const positionsLocked = $derived(isDone || hasInvoice)
+  /** Full billing history (active + cancelled originals + Stornos). */
+  const orderInvoices = $derived(detail.invoices)
 
   const statusLabels: Record<string, string> = {
     open: 'Offen',
@@ -508,10 +523,22 @@
         <h3 class="text-base font-semibold">Positionen</h3>
         <p class="text-base-content/60 text-sm">
           Arbeitszeiten und Material dieses Auftrags.
-          {#if isDone}
-            Der Auftrag ist abgeschlossen, die Positionen sind schreibgeschützt.
-          {/if}
         </p>
+        {#if hasInvoice}
+          <!-- Mode gate, not validation: an active invoice freezes the
+               recorded items — the Storno flow lifts the lock. -->
+          <p class="text-warning mt-1 flex items-start gap-1 text-sm">
+            <Lock size={14} class="mt-0.5 shrink-0" />
+            <span>
+              Positionen sind gesperrt, solange eine gültige Rechnung existiert.
+              Stornieren Sie die Rechnung, um Änderungen vorzunehmen.
+            </span>
+          </p>
+        {:else if isDone}
+          <p class="text-base-content/60 mt-1 text-sm">
+            Der Auftrag ist abgeschlossen, die Positionen sind schreibgeschützt.
+          </p>
+        {/if}
       </div>
 
       {#if items.length === 0}
@@ -530,7 +557,7 @@
                 <th class="text-right">Std. / Menge</th>
                 <th class="text-right">Einzelpreis</th>
                 <th class="text-right">Summe</th>
-                {#if !isDone}
+                {#if !positionsLocked}
                   <th class="text-right">Aktionen</th>
                 {/if}
               </tr>
@@ -565,7 +592,7 @@
                   <td class="text-right font-mono">
                     {formatEuro(rowTotal(it))}
                   </td>
-                  {#if !isDone}
+                  {#if !positionsLocked}
                     <td class="text-right" onclick={(e) => e.stopPropagation()}>
                       <button
                         type="button"
@@ -596,7 +623,7 @@
               <tr class="bg-base-200/30 border-t-2 font-semibold">
                 <td colspan="5" class="text-right"> Summe (netto) </td>
                 <td class="text-right font-mono">{formatEuro(netTotal)}</td>
-                {#if !isDone}
+                {#if !positionsLocked}
                   <td></td>
                 {/if}
               </tr>
@@ -632,7 +659,7 @@
                   </span>
                 {/if}
               </div>
-              {#if !isDone}
+              {#if !positionsLocked}
                 <div class="flex shrink-0 gap-1">
                   <button
                     type="button"
@@ -667,7 +694,7 @@
         </ul>
       {/if}
 
-      {#if !isDone}
+      {#if !positionsLocked}
         <form
           onsubmit={submitItem}
           class="border-base-300 flex flex-col gap-3 border-t px-4 py-4"
@@ -829,8 +856,62 @@
     </div>
   </div>
 
-  <!-- Abschluss -->
-  {#if !isDone}
+  <!-- Rechnungshistorie — every invoice ever created for this order:
+       the active one, cancelled originals and their Storno documents
+       (GoBD; traceable in both directions). -->
+  {#if orderInvoices.length > 0}
+    <div class="card border-base-300 bg-base-100 border">
+      <div class="card-body p-0">
+        <div class="border-base-300 border-b px-4 py-3">
+          <h3 class="text-base font-semibold">Rechnungen</h3>
+          <p class="text-base-content/60 text-sm">
+            Alle zu diesem Auftrag erstellten Rechnungen — inklusive stornierter
+            Belege und Stornorechnungen.
+          </p>
+        </div>
+        <div class="overflow-x-auto">
+          <table class="table">
+            <thead>
+              <tr>
+                <th>Nummer</th>
+                <th>Datum</th>
+                <th>Status</th>
+                <th class="text-right">Brutto</th>
+              </tr>
+            </thead>
+            <tbody>
+              {#each orderInvoices as inv (inv.id)}
+                <tr
+                  class="hover:bg-base-200 cursor-pointer"
+                  onclick={() => goto(`/invoices/${inv.id}`)}
+                >
+                  <td class="font-mono text-xs font-medium">
+                    {inv.documentNumber}
+                  </td>
+                  <td>{fmtDate(inv.issueDate)}</td>
+                  <td>
+                    <span
+                      class="badge badge-sm {documentStatusBadge(inv.status)}"
+                    >
+                      {documentStatusLabel(inv.status)}
+                    </span>
+                  </td>
+                  <td class="text-right font-mono">
+                    {formatEuro(Number(inv.grossTotal))}
+                  </td>
+                </tr>
+              {/each}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- Abschluss — hidden while done OR an active invoice exists
+       (re-invoicing requires the Storno flow, which reopens the
+       order and clears the active-invoice link). -->
+  {#if !isDone && !hasInvoice}
     <div class="card border-base-300 bg-base-100 border">
       <div class="card-body">
         <h3 class="card-title text-base">Abschluss</h3>

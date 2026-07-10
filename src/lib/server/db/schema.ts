@@ -616,6 +616,19 @@ export const documents = pgTable(
     cancellationReason: varchar('cancellation_reason', { length: 500 }),
     cancelledByDocumentId: uuid('cancelled_by_document_id'),
     cancelsDocumentId: uuid('cancels_document_id'),
+    /**
+     * Backlink to the work order this invoice bills (set by
+     * `completeWorkOrder`, inherited by the Storno document in
+     * `cancelInvoice`). While `work_orders.invoice_id` only points at
+     * the CURRENT active invoice (and is cleared on Storno so the
+     * order can be re-invoiced), this column keeps the FULL history —
+     * active invoice, cancelled originals and their Stornos all stay
+     * traceable in both directions (GoBD). NULL for standalone
+     * documents (Teileverkauf, offers, reminders). Declared without
+     * `.references()` (cycle with `work_orders.invoice_id`); the SQL
+     * migration adds the FK explicitly (ON DELETE SET NULL).
+     */
+    workOrderId: uuid('work_order_id'),
     createdAt: timestamp('created_at', { withTimezone: true })
       .notNull()
       .defaultNow(),
@@ -630,7 +643,8 @@ export const documents = pgTable(
     index('documents_issue_date_idx').on(t.issueDate),
     index('documents_converted_to_invoice_idx').on(t.convertedToInvoiceId),
     index('documents_cancelled_by_idx').on(t.cancelledByDocumentId),
-    index('documents_cancels_idx').on(t.cancelsDocumentId)
+    index('documents_cancels_idx').on(t.cancelsDocumentId),
+    index('documents_work_order_id_idx').on(t.workOrderId)
   ]
 )
 

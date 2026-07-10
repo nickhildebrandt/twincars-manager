@@ -67,6 +67,7 @@ const baseDoc: Document = {
   status: 'draft',
   customerId: 'c-1',
   vehicleId: null,
+  workOrderId: null,
   issueDate: '2026-05-01',
   serviceDate: '2026-05-01',
   dueDate: '2026-05-15',

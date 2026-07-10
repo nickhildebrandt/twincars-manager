@@ -9,6 +9,7 @@
     BellRing,
     Car,
     CheckCircle2,
+    ClipboardList,
     Clock,
     Send,
     Trash2,
@@ -649,6 +650,35 @@
               ? Number(v.mileageKm).toLocaleString('de-DE') + ' km'
               : '-'}
           </dd>
+        </dl>
+      </div>
+    </div>
+  {/if}
+
+  <!--
+    Auftrags-Backlink: Rechnungen, die einen Auftrag abrechnen (auch
+    stornierte Originale und Storno-Belege), verlinken zurück auf den
+    Auftrag — die Historie Auftrag <-> Rechnung ist in beide
+    Richtungen navigierbar.
+  -->
+  {#if data.workOrder}
+    {@const wo = data.workOrder}
+    <div class="card border-base-300 bg-base-100 min-w-0 border lg:col-span-3">
+      <div class="card-body">
+        <div class="flex flex-wrap items-center justify-between gap-2">
+          <h3 class="card-title text-base">
+            <ClipboardList size={18} class="text-base-content/60" />
+            Auftrag
+          </h3>
+          <a class="btn btn-ghost btn-sm" href={`/orders/${wo.id}`}>
+            Zum Auftrag
+          </a>
+        </div>
+        <dl class="grid grid-cols-1 gap-y-1 text-sm sm:grid-cols-3">
+          <dt class="text-base-content/60">Auftragsnr.</dt>
+          <dd class="font-mono break-all sm:col-span-2">{wo.orderNumber}</dd>
+          <dt class="text-base-content/60">Titel</dt>
+          <dd class="break-words sm:col-span-2">{wo.title}</dd>
         </dl>
       </div>
     </div>

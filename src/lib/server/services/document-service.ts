@@ -5,8 +5,10 @@ import {
   documentItems,
   documentPayments,
   customers,
+  timeEntries,
   vehicleLicensePlateVersions,
   vehicles,
+  workOrders,
   type Document
 } from '$lib/server/db/schema'
 import {
@@ -203,6 +205,12 @@ export type CreateDocumentInput = {
   type: string
   customerId?: string
   vehicleId?: string
+  /**
+   * Backlink to the work order this invoice bills — set exclusively by
+   * `completeWorkOrder`. Standalone invoices (Teileverkauf) and every
+   * other document type leave it unset.
+   */
+  workOrderId?: string
   issueDate: string
   serviceDate?: string
   dueDate?: string
@@ -273,6 +281,7 @@ export async function createDocument(
     status: 'created',
     customerId: input.customerId ?? null,
     vehicleId: input.vehicleId ?? null,
+    workOrderId: input.workOrderId ?? null,
     issueDate: input.issueDate,
     serviceDate: input.serviceDate ?? null,
     dueDate: input.dueDate ?? null,
@@ -330,7 +339,8 @@ export async function deleteDocument(id: string): Promise<void> {
       id: documents.id,
       type: documents.type,
       status: documents.status,
-      cancelledAt: documents.cancelledAt
+      cancelledAt: documents.cancelledAt,
+      workOrderId: documents.workOrderId
     })
     .from(documents)
     .where(eq(documents.id, id))
@@ -344,6 +354,16 @@ export async function deleteDocument(id: string): Promise<void> {
       error(
         409,
         'Stornorechnungen sind GoBD-pflichtige Belege und können nicht gelöscht werden.'
+      )
+    }
+    // Order-linked invoices are part of the order's billing history —
+    // even a cancelled original must stay readable so the chain
+    // Auftrag -> Rechnung -> Storno remains complete in both
+    // directions.
+    if (row.workOrderId !== null) {
+      error(
+        409,
+        'Diese Rechnung gehört zu einem Auftrag und ist Teil der Belegkette. Bitte stornieren Sie sie stattdessen.'
       )
     }
     if (row.status !== 'draft' && row.cancelledAt === null) {
@@ -380,6 +400,13 @@ export async function deleteDocument(id: string): Promise<void> {
  *  5. Original markieren: `cancelledAt = now()`,
  *     `cancellationReason = reason`,
  *     `cancelledByDocumentId = newStorno.id`.
+ *  6. Falls die Rechnung einen Auftrag abrechnet
+ *     (`work_order_id` gesetzt): Auftrag wieder öffnen —
+ *     `status = 'in_progress'`, `completed_at = NULL`,
+ *     `invoice_id = NULL` — damit Positionen korrigiert und der
+ *     Auftrag erneut abgerechnet werden kann. Die Storno-Rechnung
+ *     erbt `work_order_id`, die Historie bleibt beidseitig
+ *     nachvollziehbar.
  *
  * Idempotenz greift im Schritt 1 — ein zweiter Aufruf scheitert mit
  * "bereits storniert". PDF-Render läuft separat im Aufrufer.
@@ -452,7 +479,10 @@ export async function cancelInvoice(
     header: original.header,
     footer: original.footer,
     notes: `Stornorechnung zu ${original.documentNumber}. Grund: ${reason}`,
-    cancelsDocumentId: originalId
+    cancelsDocumentId: originalId,
+    // Storno inherits the order backlink — the order's history shows
+    // the cancelled original AND its Storno document (GoBD).
+    workOrderId: original.workOrderId
   }
 
   // Sequence (best-effort serialisation; postgres-js wraps each query
@@ -501,6 +531,40 @@ export async function cancelInvoice(
       updatedAt: new Date()
     })
     .where(eq(documents.id, originalId))
+
+  // Lifecycle rule (Auftrag <-> Rechnung, requirement 10): cancelling
+  // the ACTIVE invoice of a work order reopens the order for
+  // corrections — status back to `in_progress`, `completed_at`
+  // cleared, and the active-invoice pointer `work_orders.invoice_id`
+  // cleared so `completeWorkOrder` can bill the order again. The full
+  // history (cancelled original + Storno) stays reachable through
+  // `documents.work_order_id`. The order's write-through time entries
+  // stop counting as billed until the next completion re-links them.
+  if (original.workOrderId !== null) {
+    await db
+      .update(workOrders)
+      .set({
+        status: 'in_progress',
+        completedAt: null,
+        invoiceId: null,
+        updatedAt: new Date()
+      })
+      .where(
+        and(
+          eq(workOrders.id, original.workOrderId),
+          eq(workOrders.invoiceId, originalId)
+        )
+      )
+    await db
+      .update(timeEntries)
+      .set({ documentId: null, updatedAt: new Date() })
+      .where(
+        and(
+          eq(timeEntries.workOrderId, original.workOrderId),
+          eq(timeEntries.documentId, originalId)
+        )
+      )
+  }
 
   // Die Stornorechnung ist ein aufbewahrungspflichtiger Beleg — ihr
   // PDF wird wie bei jeder Beleg-Anlage sofort persistiert (der

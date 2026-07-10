@@ -109,6 +109,7 @@ import {
   kanbanBoardRemote,
   listWorkOrdersRemote,
   moveWorkOrderStatusRemote,
+  updateWorkOrderItemRemote,
   updateWorkOrderRemote
 } from './orders.remote'
 
@@ -176,7 +177,8 @@ async function resetDb() {
   await db.delete(companySettings)
   await db.insert(numberRanges).values([
     { kind: 'work_order', formatTemplate: 'AU-{YYYY}-{NNNN}', nextValue: 1 },
-    { kind: 'invoice', formatTemplate: 'RE-{YYYY}-{NNNN}', nextValue: 1 }
+    { kind: 'invoice', formatTemplate: 'RE-{YYYY}-{NNNN}', nextValue: 1 },
+    { kind: 'storno', formatTemplate: 'S-{NNNN}', nextValue: 1 }
   ])
   await db
     .insert(companySettings)
@@ -499,5 +501,89 @@ describe('orders.remote — items & completion', () => {
       409,
       /keine Positionen/
     )
+  })
+
+  it('locks items while the invoice is active and re-invoices after the Storno', async () => {
+    const order = await createWorkOrderRemote({
+      title: 'Bremsen',
+      customerId: await seedCustomer()
+    })
+    const item = await addWorkOrderItemRemote({
+      workOrderId: order.id,
+      values: {
+        kind: 'material',
+        description: 'Bremsscheibe',
+        quantity: 2,
+        unitPriceNet: 45,
+        doneAt: '2026-07-06'
+      }
+    })
+    const first = await completeWorkOrderRemote({
+      id: order.id,
+      issueDate: '2026-07-06'
+    })
+
+    // Item mutations are rejected server-side while the invoice is
+    // active — the same guard the UI mirrors with the lock hint.
+    await expectHttpError(
+      () =>
+        addWorkOrderItemRemote({
+          workOrderId: order.id,
+          values: {
+            kind: 'material',
+            description: 'Nachtrag',
+            quantity: 1,
+            unitPriceNet: 5,
+            doneAt: '2026-07-07'
+          }
+        }),
+      409,
+      /Positionen sind gesperrt.*Stornieren/
+    )
+    // A second completion is rejected with the one-active-invoice rule.
+    await expectHttpError(
+      () => completeWorkOrderRemote({ id: order.id, issueDate: '2026-07-07' }),
+      409,
+      new RegExp(
+        `existiert bereits die gültige Rechnung ${first.invoiceNumber}`
+      )
+    )
+
+    // Storno (service layer — the invoices module owns the remote):
+    // the order reopens, items unlock, re-invoicing works.
+    const { cancelInvoice } =
+      await import('$lib/server/services/document-service')
+    await cancelInvoice(first.invoiceId, 'Falsche Positionen')
+
+    const reopened = await getWorkOrderRemote({ id: order.id })
+    expect(reopened.order.status).toBe('in_progress')
+    expect(reopened.order.invoiceId).toBeNull()
+
+    await updateWorkOrderItemRemote({
+      id: item.id,
+      values: {
+        kind: 'material',
+        description: 'Bremsscheibe belüftet',
+        quantity: 2,
+        unitPriceNet: 55,
+        doneAt: '2026-07-06'
+      }
+    })
+    const second = await completeWorkOrderRemote({
+      id: order.id,
+      issueDate: '2026-07-08'
+    })
+    expect(second.invoiceNumber).toBe(`RE-${YEAR}-0002`)
+
+    // Traceability on the detail: cancelled original, Storno, new active.
+    const detail = await getWorkOrderRemote({ id: order.id })
+    expect(detail.invoices.map((d) => d.status)).toEqual([
+      'cancelled',
+      'storno',
+      'created'
+    ])
+    // The done Kanban card links the NEW invoice.
+    const board = await kanbanBoardRemote({})
+    expect(board.done[0].invoiceNumber).toBe(second.invoiceNumber)
   })
 })

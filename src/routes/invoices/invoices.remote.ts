@@ -32,7 +32,12 @@ import {
   sellStockVehicleToCustomer
 } from '$lib/server/services/vehicle-service'
 import { db } from '$lib/server/db/client'
-import { customers, documents, vehicles } from '$lib/server/db/schema'
+import {
+  customers,
+  documents,
+  vehicles,
+  workOrders
+} from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { requirePermission } from '$lib/server/auth-guards'
 
@@ -154,12 +159,28 @@ export const getInvoiceRemote = query(
           .limit(1)
       : [null]
 
+    // Auftrags-Backlink: Rechnungen aus einem Auftrag (auch stornierte
+    // Originale und Storno-Belege) verlinken zurück auf den Auftrag —
+    // die Historie ist in beide Richtungen navigierbar.
+    const [workOrder] = result.doc.workOrderId
+      ? await db
+          .select({
+            id: workOrders.id,
+            orderNumber: workOrders.orderNumber,
+            title: workOrders.title
+          })
+          .from(workOrders)
+          .where(eq(workOrders.id, result.doc.workOrderId))
+          .limit(1)
+      : [null]
+
     return {
       ...result,
       customer: cust ?? null,
       vehicle: veh ?? null,
       stornoDoc: stornoDoc ?? null,
-      originalDoc: originalDoc ?? null
+      originalDoc: originalDoc ?? null,
+      workOrder: workOrder ?? null
     }
   }
 )
@@ -188,8 +209,12 @@ export const createInvoiceRemote = command(inputSchema, async (values) => {
  *
  * Valid transitions:
  *   created → sent → paid
- *                 ↘ cancelled (on stornieren — rare; usually a
- *                              Zahlungserinnerung path is preferred)
+ *
+ * `cancelled` is deliberately NOT settable here: the only way to
+ * cancel an issued invoice is `cancelInvoiceRemote`, which creates the
+ * GoBD Storno document and — for order-linked invoices — reopens the
+ * work order. A bare status flip would deactivate the invoice without
+ * either, leaving a done order without an active invoice.
  *
  * Zahlungserinnerungen werden separat über `documents.reminderLevel`
  * und das Zahlungserinnerungs-Modul nachverfolgt — sie ändern den
@@ -199,10 +224,7 @@ export const createInvoiceRemote = command(inputSchema, async (values) => {
  * @module invoices
  */
 export const setInvoiceStatusRemote = command(
-  object({
-    id: idSchema,
-    status: picklist(['created', 'sent', 'paid', 'cancelled'])
-  }),
+  object({ id: idSchema, status: picklist(['created', 'sent', 'paid']) }),
   async ({ id, status }) => {
     requirePermission('invoices')
     await setDocumentStatus(id, status)
