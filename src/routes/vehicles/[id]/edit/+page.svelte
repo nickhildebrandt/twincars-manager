@@ -8,6 +8,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   const id = untrack(() => page.params.id!)
 
@@ -19,6 +20,10 @@
       // customerLabel is a UI-only field for creation-flow leaves.
       const { customerLabel, ...payload } = values
       await busy.run(() => updateVehicleRemote({ id, values: payload }))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Fahrzeug gespeichert.')
       goto(`/vehicles/${id}`)
     } catch (err) {

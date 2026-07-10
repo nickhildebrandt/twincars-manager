@@ -55,7 +55,6 @@
       return
     }
     try {
-      formDirty.clear()
       await busy.run(() =>
         createLedgerEntryRemote({
           direction,
@@ -68,6 +67,8 @@
           paymentStatus
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Buchung gespeichert.')
       goto('/ledger')
     } catch (err) {

@@ -7,6 +7,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
   import { creationFlow } from '$lib/stores/creation-flow.svelte'
   import { customerPickerLabel } from '$lib/utils/picker-labels'
 
@@ -21,6 +22,10 @@
   const handleSave = async (values: CustomerFormValues) => {
     try {
       const created = await busy.run(() => createCustomerRemote(values))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Kunde angelegt.')
       if (creationFlow.top?.entity === 'customer') {
         const returnUrl = creationFlow.finish({

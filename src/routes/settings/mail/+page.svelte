@@ -71,7 +71,6 @@
     e.preventDefault()
     if (!activeTemplateKey) return
     try {
-      formDirty.clear()
       await busy.run(() =>
         updateMailTemplateRemote({
           key: activeTemplateKey!,
@@ -79,6 +78,8 @@
           body: templateBody
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Mailvorlage gespeichert.')
     } catch (err) {
       handleClientError(err, 'Mailvorlage konnte nicht gespeichert werden')

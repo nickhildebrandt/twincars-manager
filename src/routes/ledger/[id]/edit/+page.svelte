@@ -72,7 +72,6 @@
       return
     }
     try {
-      formDirty.clear()
       await busy.run(() =>
         updateLedgerEntryRemote({
           id,
@@ -88,6 +87,8 @@
           }
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Buchung gespeichert.')
       goto('/ledger')
     } catch (err) {
@@ -99,8 +100,9 @@
 
   const remove = async () => {
     try {
-      formDirty.clear()
       await busy.run(() => deleteLedgerEntryRemote({ id }))
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Buchung gelöscht.')
       goto('/ledger')
     } catch (err) {

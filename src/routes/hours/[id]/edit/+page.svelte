@@ -13,6 +13,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   const id = untrack(() => page.params.id!)
   const e = await getTimeEntryRemote({ id })
@@ -47,6 +48,10 @@
   const handleSave = async (values: HoursFormValues) => {
     try {
       await busy.run(() => updateTimeEntryRemote({ id, values }))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Stundeneintrag gespeichert.')
       goto(`/hours/${id}`)
     } catch (err) {

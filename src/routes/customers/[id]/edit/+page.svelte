@@ -13,6 +13,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   const id = untrack(() => page.params.id!)
 
@@ -22,6 +23,10 @@
   const handleSave = async (values: CustomerFormValues) => {
     try {
       await busy.run(() => updateCustomerRemote({ id, values }))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Kunde gespeichert.')
       goto(`/customers/${id}`)
     } catch (err) {

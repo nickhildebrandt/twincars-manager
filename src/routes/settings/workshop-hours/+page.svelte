@@ -62,7 +62,6 @@
   const saveAll = async (e: Event) => {
     e.preventDefault()
     try {
-      formDirty.clear()
       await busy.run(async () => {
         // Sequential is fine: 7 small writes against a local DB, and a
         // sequential loop produces predictable error reporting when one
@@ -76,6 +75,8 @@
           })
         }
       })
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Öffnungszeiten gespeichert.')
     } catch (err) {
       handleClientError(err, 'Öffnungszeiten konnten nicht gespeichert werden')

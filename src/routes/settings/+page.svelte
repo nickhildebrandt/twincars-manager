@@ -101,7 +101,6 @@
     e.preventDefault()
     if (!data) return
     try {
-      formDirty.clear()
       await busy.run(() =>
         updateCompanyRemote({
           companyName,
@@ -123,6 +122,8 @@
           pdfFooter
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Einstellungen gespeichert.')
     } catch (err) {
       handleClientError(err)
@@ -162,8 +163,9 @@
       return
     }
     try {
-      formDirty.clear()
       await busy.run(() => updateLaborRateRemote({ priceNet: value }))
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Stundensatz aktualisiert.')
     } catch (err) {
       handleClientError(err, 'Stundensatz konnte nicht gespeichert werden')

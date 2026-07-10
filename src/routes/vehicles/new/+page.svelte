@@ -7,6 +7,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
   import { creationFlow } from '$lib/stores/creation-flow.svelte'
   import { vehiclePickerLabel } from '$lib/utils/picker-labels'
 
@@ -34,6 +35,10 @@
       // — never sent to the server.
       const { customerLabel, ...payload } = values
       const created = await busy.run(() => createVehicleRemote(payload))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Fahrzeug angelegt.')
       if (creationFlow.top?.entity === 'vehicle') {
         const returnUrl = creationFlow.finish({

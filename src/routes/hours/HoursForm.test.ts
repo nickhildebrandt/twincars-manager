@@ -274,7 +274,11 @@ describe('HoursForm', () => {
     expect(affordances).toHaveLength(0)
   })
 
-  it('marks dirty on first input and clears on submit', async () => {
+  it('marks dirty on first input and stays dirty when onSave does not clear', async () => {
+    // New contract (QA fix): the form itself never clears the flag on
+    // submit — the HOST's onSave clears it after a successful save,
+    // right before its goto. A failed save therefore stays dirty and
+    // the unsaved-changes guard keeps protecting the input.
     const user = userEvent.setup()
     const { container } = render(HoursForm, {
       props: { onSave: vi.fn(), lockedEmployee: { id: 'emp-1', label: 'Test' } }
@@ -286,7 +290,7 @@ describe('HoursForm', () => {
     await user.type(taskInput, 'X')
     expect(formDirty.dirty).toBe(true)
     await user.click(screen.getByRole('button', { name: /speichern/i }))
-    expect(formDirty.dirty).toBe(false)
+    expect(formDirty.dirty).toBe(true)
   })
 
   it('rejects a click when the date is cleared', async () => {

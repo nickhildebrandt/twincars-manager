@@ -71,6 +71,8 @@
   const save = async (values: CalendarFormValues) => {
     try {
       await busy.run(() => updateCalendarEntryRemote({ id, values }))
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success(
         values.kind === 'appointment'
           ? 'Termin gespeichert.'
@@ -86,8 +88,9 @@
 
   const remove = async () => {
     try {
-      formDirty.clear()
       await busy.run(() => deleteCalendarEntryRemote({ id }))
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Eintrag gelöscht.')
       goto('/calendar')
     } catch (err) {

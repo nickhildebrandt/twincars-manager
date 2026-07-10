@@ -160,10 +160,9 @@
     const trimmedName = name.trim()
     const permissions = wildcard ? [WILDCARD_PERMISSION] : Array.from(selected)
     const trimmedDesc = description.trim()
-    // Clear the dirty flag BEFORE the save round-trip so the host's
-    // post-save `goto` is not blocked by the unsaved-changes guard
-    // (CONTRIBUTING §11 pattern, same as CustomerForm).
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       name: trimmedName,
       description: trimmedDesc === '' ? undefined : trimmedDesc,

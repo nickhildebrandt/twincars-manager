@@ -8,6 +8,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   const handleSave = async (values: WorkOrderFormValues) => {
     try {
@@ -22,6 +23,10 @@
           assigneeIds: values.assigneeIds
         })
       )
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Auftrag angelegt.')
       goto(`/orders/${created.id}`, { replaceState: true })
     } catch (err) {

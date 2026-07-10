@@ -6,6 +6,7 @@
   import { ArrowLeft, ArrowRight, Plus, Receipt, Search } from '@lucide/svelte'
   import { kanbanBoardRemote, moveWorkOrderStatusRemote } from './orders.remote'
   import { pickEmployeesRemote } from '../pickers.remote'
+  import { workOrderStatusLabel } from '$lib/utils/status-labels'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
@@ -74,10 +75,12 @@
   type ColumnKey = 'open' | 'in_progress' | 'done'
   type MovableStatus = 'open' | 'in_progress'
 
+  // Column headers come from the central status-label helper so the
+  // Kanban board and the detail badge can never drift apart.
   const columns: Array<{ key: ColumnKey; label: string }> = [
-    { key: 'open', label: 'Offen' },
-    { key: 'in_progress', label: 'In Bearbeitung' },
-    { key: 'done', label: 'Abgeschlossen' }
+    { key: 'open', label: workOrderStatusLabel('open') },
+    { key: 'in_progress', label: workOrderStatusLabel('in_progress') },
+    { key: 'done', label: workOrderStatusLabel('done') }
   ]
 
   const cardsOf = (key: ColumnKey): Card[] => board[key]

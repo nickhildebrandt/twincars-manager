@@ -66,8 +66,9 @@
       return
     }
     try {
-      formDirty.clear()
       await busy.run(() => updateUserRemote({ id, name: trimmedName, roleIds }))
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Benutzer gespeichert.')
       goto('/settings/users')
     } catch (err) {

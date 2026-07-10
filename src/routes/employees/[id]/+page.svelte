@@ -74,6 +74,25 @@
   /** Values held while the conflict modal awaits the user's decision. */
   let pendingValues = $state<AbsenceSubmitValues | null>(null)
   let absenceSection = $state<{ resetForm: () => void } | undefined>(undefined)
+  let conflictDialogEl = $state<HTMLDialogElement | null>(null)
+
+  /**
+   * Native modal semantics (same pattern as ConfirmDialog / pickers):
+   * `showModal()` traps focus, Esc fires `cancel` and `close()`
+   * restores focus to the trigger. Optional chaining keeps test
+   * environments without a full `<dialog>` implementation working.
+   */
+  $effect(() => {
+    if (conflictOpen && conflictDialogEl && !conflictDialogEl.open) {
+      conflictDialogEl.showModal?.()
+    }
+  })
+
+  /** Close natively first so the browser restores focus to the trigger. */
+  const closeConflictDialog = () => {
+    conflictDialogEl?.close?.()
+    conflictOpen = false
+  }
 
   /**
    * List keys for every calendar year an absence touches, excluding
@@ -146,7 +165,7 @@
   }
 
   const confirmReplace = async () => {
-    conflictOpen = false
+    closeConflictDialog()
     const values = pendingValues
     pendingValues = null
     if (!values) return
@@ -159,7 +178,7 @@
   }
 
   const cancelReplace = () => {
-    conflictOpen = false
+    closeConflictDialog()
     conflictRows = []
     pendingValues = null
   }
@@ -408,7 +427,15 @@
   der neuen Eingabe. Nutzer entscheidet, welche Art gelten soll.
 -->
 {#if conflictOpen}
-  <div class="modal modal-open" role="dialog" aria-modal="true">
+  <dialog
+    bind:this={conflictDialogEl}
+    class="modal modal-open"
+    oncancel={(e) => {
+      // Esc equals "Eingabe verwerfen" — never replaces entries.
+      e.preventDefault()
+      cancelReplace()
+    }}
+  >
     <div class="modal-box">
       <h3 class="text-lg font-bold">Konflikt mit bestehender Abwesenheit</h3>
       <p class="text-base-content/70 mt-2 text-sm">
@@ -460,7 +487,7 @@
       type="button"
       class="modal-backdrop"
       onclick={cancelReplace}
-      aria-label="Schließen">close</button
-    >
-  </div>
+      aria-label="Schließen"
+    ></button>
+  </dialog>
 {/if}

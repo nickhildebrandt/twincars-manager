@@ -288,6 +288,15 @@
   const composeTitle = (): string =>
     composeFrom(customerId, customerLabel, vehicleId, vehicleLabel)
 
+  /**
+   * The last value auto-composition wrote into the title. Manual-edit
+   * detection is value-based on top of the `oninput` tracking: any
+   * current value that differs from the last composition is a user
+   * edit — even when the input event was lost (e.g. text typed before
+   * hydration finished). `null` = the field is user-owned.
+   */
+  let lastComposed: string | null = seeded.titleTouched ? null : seeded.title
+
   const onTitleInput = (e: Event) => {
     // Typing arms manual mode; clearing the field completely re-arms
     // the auto composition (it refills on the next picker change, not
@@ -317,7 +326,17 @@
   const onLinksChange = () => {
     fv.markTouched('customerId')
     fv.markTouched('vehicleId')
-    if (!titleTouched) title = composeTitle()
+    // Never overwrite a user-owned title: `oninput` normally arms
+    // manual mode, and any non-empty value that diverges from the last
+    // auto-composition counts as a manual edit as well (covers lost
+    // input events).
+    if (!titleTouched && title.trim() !== '' && title !== lastComposed) {
+      titleTouched = true
+    }
+    if (!titleTouched) {
+      title = composeTitle()
+      lastComposed = title
+    }
     markDirty()
   }
 
@@ -339,7 +358,9 @@
       return
     }
     errorMsg = null
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       title: title.trim(),
       description: description.trim() || undefined,

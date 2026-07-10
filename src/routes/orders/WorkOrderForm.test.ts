@@ -18,8 +18,10 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 const emptyPage = () =>
   Promise.resolve({ items: [], total: 0, page: 1, size: 25, pageCount: 1 })
 
+const pickCustomersMock = vi.fn()
+
 vi.mock('../pickers.remote', () => ({
-  pickCustomersRemote: () => ({ run: () => emptyPage() }),
+  pickCustomersRemote: () => ({ run: () => pickCustomersMock() }),
   pickCustomerVehiclesRemote: () => ({ run: () => emptyPage() }),
   pickEmployeesRemote: () => ({ run: () => emptyPage() })
 }))
@@ -42,6 +44,8 @@ beforeEach(() => {
   formDirty.clear()
   creationFlow.reset()
   window.sessionStorage.clear()
+  pickCustomersMock.mockReset()
+  pickCustomersMock.mockImplementation(() => emptyPage())
   // jsdom does not implement <dialog>; provide minimal stubs so the
   // pickers can mount.
   if (!HTMLDialogElement.prototype.showModal) {
@@ -159,6 +163,51 @@ describe('WorkOrderForm', () => {
     })
     await user.click(clearButtons[1])
     expect(input.value).toBe('Müller')
+  })
+
+  it('keeps a typed title when a customer is picked afterwards (QA fix)', async () => {
+    const user = userEvent.setup()
+    pickCustomersMock.mockResolvedValue({
+      items: [{ id: 'c1', label: 'Alpha GmbH · Berlin' }],
+      total: 1,
+      page: 1,
+      size: 25,
+      pageCount: 1
+    })
+    const { container } = render(WorkOrderForm, { props: { onSave: vi.fn() } })
+    const input = titleInput(container)
+    await user.type(input, 'Eigener Titel')
+    expect(input.value).toBe('Eigener Titel')
+
+    // Pick a customer through the real dialog flow — the manual title
+    // must survive (any user edit stops auto-composition).
+    await user.click(screen.getByText('Kunde suchen'))
+    const row = await screen.findByRole('button', {
+      name: 'Alpha GmbH · Berlin'
+    })
+    await user.click(row)
+    expect(input.value).toBe('Eigener Titel')
+  })
+
+  it('auto-composes the title when the customer is picked before typing', async () => {
+    const user = userEvent.setup()
+    pickCustomersMock.mockResolvedValue({
+      items: [{ id: 'c1', label: 'Alpha GmbH · Berlin' }],
+      total: 1,
+      page: 1,
+      size: 25,
+      pageCount: 1
+    })
+    const { container } = render(WorkOrderForm, { props: { onSave: vi.fn() } })
+    const input = titleInput(container)
+    expect(input.value).toBe('')
+
+    await user.click(screen.getByText('Kunde suchen'))
+    const row = await screen.findByRole('button', {
+      name: 'Alpha GmbH · Berlin'
+    })
+    await user.click(row)
+    expect(input.value).toBe('Alpha GmbH')
   })
 
   it('keeps an initial title untouched (edit mode)', () => {

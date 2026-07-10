@@ -344,8 +344,9 @@
         notes: notes.trim() || undefined
       }
 
+      // On success the host's onSave clears formDirty before its goto;
+      // a failed save keeps the form dirty (unsaved-changes guard).
       const doSave = async () => {
-        formDirty.clear()
         await onSave(values)
       }
 
@@ -388,7 +389,9 @@
       errorMsg = 'Bis-Datum darf nicht vor dem Von-Datum liegen.'
       return
     }
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       kind: 'closure',
       title: title.trim(),

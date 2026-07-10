@@ -66,7 +66,6 @@
     }
     errorMsg = null
     try {
-      formDirty.clear()
       await busy.run(() =>
         changeOwnPasswordRemote({
           currentPassword,
@@ -74,6 +73,8 @@
           newPasswordConfirm
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Passwort aktualisiert.')
       currentPassword = ''
       newPassword = ''

@@ -126,7 +126,12 @@ describe('Pagination', () => {
     })
     const dots = screen.getAllByRole('button', { name: '…' })
     expect(dots.length).toBeGreaterThan(0)
-    for (const d of dots) expect(d).toHaveClass('btn-disabled')
+    for (const d of dots) {
+      expect(d).toHaveClass('btn-disabled')
+      // Real `disabled` attribute — keeps the ellipsis out of the tab
+      // order for keyboard / AT users (not just visually inert).
+      expect(d).toBeDisabled()
+    }
     await user.click(dots[0])
     expect(onPage).not.toHaveBeenCalled()
     // Full join shows first + last page as jump targets around the dots.

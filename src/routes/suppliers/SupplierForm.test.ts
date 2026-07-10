@@ -112,7 +112,11 @@ describe('SupplierForm', () => {
     expect(payload.country).toBe('Deutschland')
   })
 
-  it('marks dirty on first input and clears on submit', async () => {
+  it('marks dirty on first input and stays dirty when onSave does not clear', async () => {
+    // New contract (QA fix): the form itself never clears the flag on
+    // submit — the HOST's onSave clears it after a successful save,
+    // right before its goto. A failed save therefore stays dirty and
+    // the unsaved-changes guard keeps protecting the input.
     const user = userEvent.setup()
     const { container } = render(SupplierForm, { props: { onSave: vi.fn() } })
     expect(formDirty.dirty).toBe(false)
@@ -122,7 +126,7 @@ describe('SupplierForm', () => {
     await user.type(nameInput, 'X')
     expect(formDirty.dirty).toBe(true)
     await user.click(screen.getByRole('button', { name: /speichern/i }))
-    expect(formDirty.dirty).toBe(false)
+    expect(formDirty.dirty).toBe(true)
   })
 
   it('passes IBAN and BIC through to the payload as trimmed strings', async () => {

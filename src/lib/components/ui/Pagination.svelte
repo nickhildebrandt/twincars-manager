@@ -55,7 +55,9 @@
     </button>
     {#each compactButtons as btn, i (i)}
       {#if btn === null}
-        <button type="button" class="btn btn-sm join-item btn-disabled"
+        <!-- Real `disabled` on top of the visual class keeps the inert
+             ellipsis out of the keyboard tab order (a11y). -->
+        <button type="button" class="btn btn-sm join-item btn-disabled" disabled
           >…</button
         >
       {:else}
@@ -103,7 +105,9 @@
     </button>
     {#each buttons as btn, i (i)}
       {#if btn === null}
-        <button type="button" class="btn btn-sm join-item btn-disabled"
+        <!-- Real `disabled` on top of the visual class keeps the inert
+             ellipsis out of the keyboard tab order (a11y). -->
+        <button type="button" class="btn btn-sm join-item btn-disabled" disabled
           >…</button
         >
       {:else}

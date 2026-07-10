@@ -61,7 +61,6 @@
   const saveSmtp = async (e: Event) => {
     e.preventDefault()
     try {
-      formDirty.clear()
       await busy.run(() =>
         updateSmtpRemote({
           host: smtpHost,
@@ -74,6 +73,8 @@
           replyTo: undefined
         })
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       smtpPassword = ''
       toast.success('SMTP-Konfiguration gespeichert.')
     } catch (err) {

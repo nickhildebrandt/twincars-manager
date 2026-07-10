@@ -138,7 +138,9 @@
       return
     }
     errorMsg = null
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       name: name.trim(),
       contactPerson: u(contactPerson),

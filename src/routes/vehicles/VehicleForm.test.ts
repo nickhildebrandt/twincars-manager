@@ -149,10 +149,33 @@ describe('VehicleForm', () => {
     expect(onSave.mock.calls[0][0].licensePlate).toBe('B-AA 1234')
   })
 
-  it('marks dirty on first input and clears on submit', async () => {
+  it('marks dirty on first input and stays dirty when onSave does not clear (failed save)', async () => {
     const user = userEvent.setup()
-    const { container } = render(VehicleForm, { props: { onSave: vi.fn() } })
+    // The host's onSave clears formDirty only AFTER a successful save
+    // (before its goto). A rejected save is caught by the host and
+    // resolves WITHOUT clearing — the form must stay dirty so the
+    // unsaved-changes guard keeps protecting the input (QA finding:
+    // clearing before the await silently discarded input after a 400).
+    const onSave = vi.fn().mockResolvedValue(undefined)
+    const { container } = render(VehicleForm, { props: { onSave } })
     expect(formDirty.dirty).toBe(false)
+    const make = container.querySelector(
+      'input[maxlength="100"]'
+    ) as HTMLInputElement
+    await user.type(make, 'V')
+    expect(formDirty.dirty).toBe(true)
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
+    expect(onSave).toHaveBeenCalledTimes(1)
+    expect(formDirty.dirty).toBe(true)
+  })
+
+  it('clears the dirty flag when a successful onSave clears it (host contract)', async () => {
+    const user = userEvent.setup()
+    // Simulates the host success path: remote resolved → clear → goto.
+    const onSave = vi.fn().mockImplementation(async () => {
+      formDirty.clear()
+    })
+    const { container } = render(VehicleForm, { props: { onSave } })
     const make = container.querySelector(
       'input[maxlength="100"]'
     ) as HTMLInputElement

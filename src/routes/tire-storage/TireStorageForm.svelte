@@ -374,7 +374,9 @@
     }
     errorMsg = null
     const qty = numOrUndef(quantity) ?? 4
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       customerId,
       vehicleId: vehicleId || undefined,

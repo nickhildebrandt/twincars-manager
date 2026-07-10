@@ -8,6 +8,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
 
   /**
    * Stock-Vehicle-Anlage. Nutzt dieselbe `VehicleForm` wie das
@@ -23,6 +24,10 @@
   const handleSave = async (values: VehicleFormValues) => {
     try {
       const created = await busy.run(() => createVehicleRemote(values))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Verkaufsfahrzeug angelegt.')
       goto(`/vehicles/${created.id}`, { replaceState: true })
     } catch (err) {

@@ -36,10 +36,11 @@
 
   const handleSave = async (values: RoleFormValues) => {
     try {
-      formDirty.clear()
       await busy.run(() =>
         updateRoleRemote({ id, ...values }).updates(listRolesRemote())
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Rolle gespeichert.')
       goto('/settings/users?tab=roles')
     } catch (err) {

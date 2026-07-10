@@ -7,6 +7,7 @@
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
   import { busy } from '$lib/stores/busy.svelte'
+  import { formDirty } from '$lib/stores/form-dirty.svelte'
   import { creationFlow } from '$lib/stores/creation-flow.svelte'
 
   /**
@@ -27,6 +28,10 @@
   const handleSave = async (values: EmployeeFormValues) => {
     try {
       const created = await busy.run(() => createEmployeeRemote(values))
+      // Saved — release the unsaved-changes guard before the goto
+      // (§11: clear AFTER success, BEFORE navigating; the catch path
+      // leaves the form dirty so cancel/navigation still warns).
+      formDirty.clear()
       toast.success('Mitarbeiter angelegt.')
       if (creationFlow.top?.entity === 'employee') {
         const returnUrl = creationFlow.finish({

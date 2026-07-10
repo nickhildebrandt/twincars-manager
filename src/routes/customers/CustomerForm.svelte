@@ -240,7 +240,6 @@
     }
     errorMsg = null
     if (kind === 'ebay') {
-      formDirty.clear()
       await onSave({
         kind: 'ebay',
         ebayHandle: ebayHandle.trim(),
@@ -250,7 +249,9 @@
       })
       return
     }
-    formDirty.clear()
+    // On success the host's onSave clears formDirty right before
+    // its post-save goto (CONTRIBUTING §11); a failed save keeps the
+    // form dirty so the unsaved-changes guard still protects input.
     await onSave({
       kind: 'regular',
       company: trimOrUndef(company),

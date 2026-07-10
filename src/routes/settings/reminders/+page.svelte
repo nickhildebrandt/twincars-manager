@@ -71,7 +71,6 @@
   const saveReminders = async (e: Event) => {
     e.preventDefault()
     try {
-      formDirty.clear()
       await busy.run(async () => {
         await updateReminderSettingsRemote({
           reminderAutoEnabled,
@@ -87,6 +86,8 @@
           body: reminderTemplateBody
         })
       })
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Einstellungen für Zahlungserinnerungen gespeichert.')
     } catch (err) {
       handleClientError(err)

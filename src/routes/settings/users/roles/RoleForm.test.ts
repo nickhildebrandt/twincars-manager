@@ -115,9 +115,13 @@ describe('RoleForm', () => {
     expect(onSave.mock.calls[0][0].permissions).toEqual(['*'])
   })
 
-  it('clears the global dirty flag on submit (post-save goto must not be blocked)', async () => {
+  it('keeps the dirty flag on a failed save and lets a successful onSave clear it', async () => {
     const user = userEvent.setup()
-    const onSave = vi.fn()
+    // New contract (QA fix): the HOST's onSave clears the flag after a
+    // successful save (right before its post-save goto). A failed save
+    // resolves without clearing — the form stays dirty so the
+    // unsaved-changes guard keeps protecting the input.
+    const onSave = vi.fn().mockResolvedValue(undefined)
     render(RoleForm, {
       props: { onSave, initial: { name: 'Sauber', permissions: ['customers'] } }
     })
@@ -125,9 +129,14 @@ describe('RoleForm', () => {
     formDirty.set(true)
     await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(onSave).toHaveBeenCalledTimes(1)
-    // Regression: RoleForm used to leave the flag set, so the host's
-    // post-save `goto('/settings/users?tab=roles')` was cancelled by
-    // the AppShell beforeNavigate confirm.
+    // Failed save (host caught the error, did not clear): stays dirty.
+    expect(formDirty.dirty).toBe(true)
+
+    // Host success path: the onSave clears before its goto.
+    onSave.mockImplementationOnce(async () => {
+      formDirty.clear()
+    })
+    await user.click(screen.getByRole('button', { name: /speichern/i }))
     expect(formDirty.dirty).toBe(false)
   })
 

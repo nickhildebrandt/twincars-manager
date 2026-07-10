@@ -62,7 +62,6 @@
       return
     }
     try {
-      formDirty.clear()
       await busy.run(() =>
         createUserRemote({
           username: trimmedUsername,
@@ -71,6 +70,8 @@
           roleIds
         }).updates(listUsersRemote({ page: 1, size: 25 }))
       )
+      // Success — clear only now; a failure keeps the form dirty (§11).
+      formDirty.clear()
       toast.success('Benutzer angelegt.')
       goto('/settings/users', { replaceState: true })
     } catch (err) {

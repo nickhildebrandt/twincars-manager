@@ -235,6 +235,37 @@ describe('ConfirmDialog', () => {
     )
   })
 
+  it('keeps the dialog open and only logs when onConfirm rejects', async () => {
+    const user = userEvent.setup()
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
+    try {
+      const onConfirm = vi.fn().mockRejectedValue(new Error('boom'))
+      const onClose = vi.fn()
+      render(ConfirmDialog, {
+        props: { open: true, title: 'Wirklich löschen?', onConfirm, onClose }
+      })
+      await user.click(
+        screen.getByRole('button', { name: 'Bestätigen', hidden: true })
+      )
+      await waitFor(() => expect(consoleError).toHaveBeenCalledTimes(1))
+      // Dialog stays open — the caller's toast explains the failure;
+      // the user can retry or cancel.
+      expect(screen.getByText('Wirklich löschen?')).toBeInTheDocument()
+      expect(onClose).not.toHaveBeenCalled()
+
+      // The re-entrancy guard is released again: a second confirm works
+      // and a later success closes normally.
+      onConfirm.mockResolvedValueOnce(undefined)
+      await user.click(
+        screen.getByRole('button', { name: 'Bestätigen', hidden: true })
+      )
+      await waitFor(() => expect(onClose).toHaveBeenCalledTimes(1))
+      expect(onConfirm).toHaveBeenCalledTimes(2)
+    } finally {
+      consoleError.mockRestore()
+    }
+  })
+
   it('the native cancel event (Esc in a real browser) closes without confirming', async () => {
     const onClose = vi.fn()
     const onConfirm = vi.fn()

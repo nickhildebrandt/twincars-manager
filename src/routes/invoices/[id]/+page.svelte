@@ -134,6 +134,30 @@
   /** Stornieren-Dialog state — Begründung ist Pflicht. */
   let stornoOpen = $state(false)
   let stornoReason = $state('')
+  let stornoDialogEl = $state<HTMLDialogElement | null>(null)
+
+  /**
+   * Native modal semantics (same pattern as ConfirmDialog / pickers):
+   * `showModal()` traps focus, Esc fires `cancel` and `close()`
+   * restores focus to the trigger. Optional chaining keeps test
+   * environments without a full `<dialog>` implementation working.
+   */
+  $effect(() => {
+    if (stornoOpen && stornoDialogEl && !stornoDialogEl.open) {
+      stornoDialogEl.showModal?.()
+    }
+  })
+
+  /**
+   * Abbrechen / Esc / Backdrop: close natively first (focus returns to
+   * the trigger), then drop the typed reason — cancelling never keeps
+   * a stale Begründung around.
+   */
+  const closeStornoDialog = () => {
+    stornoDialogEl?.close?.()
+    stornoOpen = false
+    stornoReason = ''
+  }
   /** Löschen-Dialog state — nur für Entwürfe (`status='draft'`). */
   let deleteOpen = $state(false)
 
@@ -178,8 +202,7 @@
     try {
       const res = await busy.run(() => cancelInvoiceRemote({ id, reason }))
       toast.success(`Stornorechnung ${res.stornoNumber} erstellt.`)
-      stornoOpen = false
-      stornoReason = ''
+      closeStornoDialog()
       goto(`/invoices/${res.stornoId}`)
     } catch (err) {
       handleClientError(err, 'Rechnung konnte nicht storniert werden')
@@ -873,7 +896,15 @@
   ConfirmDialog hat keinen Body-Slot.
 -->
 {#if stornoOpen}
-  <dialog class="modal modal-open">
+  <dialog
+    bind:this={stornoDialogEl}
+    class="modal modal-open"
+    oncancel={(e) => {
+      // Esc equals Abbrechen — never confirm.
+      e.preventDefault()
+      closeStornoDialog()
+    }}
+  >
     <div class="modal-box">
       <h3 class="text-lg font-semibold">Rechnung stornieren?</h3>
       <p class="text-base-content/80 py-2 text-sm">
@@ -898,10 +929,7 @@
         <button
           type="button"
           class="btn btn-ghost"
-          onclick={() => {
-            stornoOpen = false
-            stornoReason = ''
-          }}
+          onclick={closeStornoDialog}
           disabled={busy.active}
         >
           Abbrechen
@@ -928,10 +956,7 @@
       type="button"
       class="modal-backdrop"
       aria-label="Schließen"
-      onclick={() => {
-        stornoOpen = false
-        stornoReason = ''
-      }}
+      onclick={closeStornoDialog}
     ></button>
   </dialog>
 {/if}

@@ -29,7 +29,9 @@
   import { formatEuro } from '$lib/utils/money'
   import {
     documentStatusBadge,
-    documentStatusLabel
+    documentStatusLabel,
+    workOrderStatusBadge,
+    workOrderStatusLabel
   } from '$lib/utils/status-labels'
   import { handleClientError } from '$lib/utils/client-error'
   import { toast } from '$lib/stores/toast.svelte'
@@ -69,17 +71,6 @@
   const positionsLocked = $derived(isDone || hasInvoice)
   /** Full billing history (active + cancelled originals + Stornos). */
   const orderInvoices = $derived(detail.invoices)
-
-  const statusLabels: Record<string, string> = {
-    open: 'Offen',
-    in_progress: 'In Bearbeitung',
-    done: 'Abgeschlossen'
-  }
-  const statusBadges: Record<string, string> = {
-    open: 'badge-ghost',
-    in_progress: 'badge-info',
-    done: 'badge-success'
-  }
 
   const todayIso = (): string => {
     const d = new Date()
@@ -343,6 +334,25 @@
   let issueDate = $state(todayIso())
   let paymentMethod = $state<'' | PaymentMethod>('')
   let completeError = $state<string | null>(null)
+  let completeDialogEl = $state<HTMLDialogElement | null>(null)
+
+  /**
+   * Native modal semantics (same pattern as ConfirmDialog / pickers):
+   * `showModal()` traps focus, Esc fires `cancel` and `close()`
+   * restores focus to the trigger. Optional chaining keeps test
+   * environments without a full `<dialog>` implementation working.
+   */
+  $effect(() => {
+    if (completeOpen && completeDialogEl && !completeDialogEl.open) {
+      completeDialogEl.showModal?.()
+    }
+  })
+
+  /** Close natively first so the browser restores focus to the trigger. */
+  const closeCompleteDialog = () => {
+    completeDialogEl?.close?.()
+    completeOpen = false
+  }
 
   /** Rule 1.1: the button is always clickable — validate on click. */
   const openCompleteDialog = () => {
@@ -372,7 +382,7 @@
           paymentMethod: paymentMethod || undefined
         })
       )
-      completeOpen = false
+      closeCompleteDialog()
       toast.success(`Rechnung ${result.invoiceNumber} erstellt.`)
       goto(`/invoices/${result.invoiceId}`)
     } catch (err) {
@@ -390,8 +400,8 @@
 />
 
 <div class="mb-4 flex flex-wrap items-center gap-2">
-  <span class="badge {statusBadges[order.status] ?? 'badge-ghost'}">
-    {statusLabels[order.status] ?? order.status}
+  <span class="badge {workOrderStatusBadge(order.status)}">
+    {workOrderStatusLabel(order.status)}
   </span>
   {#if order.status === 'open'}
     <button
@@ -941,7 +951,15 @@
 </div>
 
 {#if completeOpen}
-  <dialog class="modal modal-open">
+  <dialog
+    bind:this={completeDialogEl}
+    class="modal modal-open"
+    oncancel={(e) => {
+      // Esc equals Abbrechen — never confirm.
+      e.preventDefault()
+      closeCompleteDialog()
+    }}
+  >
     <div class="modal-box">
       <h3 class="text-lg font-semibold">Auftrag abschließen?</h3>
       <p class="text-base-content/80 py-3 text-sm">
@@ -981,7 +999,7 @@
         <button
           type="button"
           class="btn btn-ghost"
-          onclick={() => (completeOpen = false)}
+          onclick={closeCompleteDialog}
           disabled={busy.active}
         >
           Abbrechen
@@ -1003,7 +1021,7 @@
       type="button"
       class="modal-backdrop"
       aria-label="Schließen"
-      onclick={() => (completeOpen = false)}
+      onclick={closeCompleteDialog}
     ></button>
   </dialog>
 {/if}

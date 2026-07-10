@@ -59,6 +59,12 @@
     try {
       await onConfirm()
       closeDialog()
+    } catch (err) {
+      // A rejecting onConfirm keeps the dialog open so the user can
+      // retry or cancel. Callers already surface their own curated
+      // German toasts — log for developers only, never re-throw
+      // (an unhandled rejection would escape the click handler).
+      console.error('[ConfirmDialog] onConfirm rejected:', err)
     } finally {
       inFlight = false
     }
