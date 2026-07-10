@@ -1,6 +1,7 @@
 <script lang="ts">
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
   import ImageUploader from '$lib/components/ui/ImageUploader.svelte'
+  import SmtpTestSend from './SmtpTestSend.svelte'
   import {
     Building2,
     Server,
@@ -14,6 +15,7 @@
     listMailTemplatesRemote,
     removeLogoRemote,
     resetMailTemplateRemote,
+    sendSmtpTestMailRemote,
     updateCompanyRemote,
     updateLaborRateRemote,
     updateLogoRemote,
@@ -237,6 +239,37 @@
       handleClientError(err)
     }
   }
+
+  /**
+   * Pragmatic dirty check for the SMTP form: current field values vs.
+   * the last-loaded server state (a typed password always counts as a
+   * change). Drives the "save before testing" hint in the Testversand
+   * fieldset — the test always sends via the SAVED settings. After a
+   * save, `updateSmtpRemote` refreshes `getAllSettingsRemote`, so this
+   * settles back to false automatically.
+   */
+  const smtpFormDirty = $derived.by(() => {
+    const s = data?.smtp
+    if (!s) {
+      return (
+        smtpHost !== '' ||
+        smtpUser !== '' ||
+        fromAddress !== '' ||
+        fromName !== '' ||
+        smtpPassword !== ''
+      )
+    }
+    return (
+      smtpHost !== s.host ||
+      Number(smtpPort) !== s.port ||
+      smtpSecure !==
+        ((s.secure as 'none' | 'STARTTLS' | 'TLS') ?? 'STARTTLS') ||
+      smtpUser !== s.username ||
+      fromAddress !== s.fromAddress ||
+      fromName !== s.fromName ||
+      smtpPassword !== ''
+    )
+  })
 
   const saveReminders = async (e: Event) => {
     e.preventDefault()
@@ -1040,6 +1073,12 @@
             </button>
           </div>
         </form>
+        <SmtpTestSend
+          defaultRecipient={data?.company.email ?? ''}
+          dirty={smtpFormDirty}
+          send={async (recipient) =>
+            await sendSmtpTestMailRemote({ recipient })}
+        />
       {/if}
     </div>
   {/each}

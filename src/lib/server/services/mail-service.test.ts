@@ -63,12 +63,14 @@ import {
   vehicles
 } from '$lib/server/db/schema'
 import {
+  mapSmtpTestError,
   recordInquiryNotificationResult,
   sendAdHocCustomerEmail,
   sendAppointmentConfirmation,
   sendBroadcastEmail,
   sendContactNotification,
-  sendDocumentEmail
+  sendDocumentEmail,
+  sendSmtpTestMail
 } from './mail-service'
 import { documents } from '$lib/server/db/schema'
 import type { Document } from '$lib/server/db/schema'
@@ -1338,6 +1340,237 @@ Viele Grüße
         .where(eq(customerInquiries.id, inquiryId))
       expect(after2.notificationStatus).toBe('failed')
       expect(after2.notificationError).toBe('kaput')
+    })
+  })
+
+  /* ──────────────────────────────────────────────────────────────────────
+   * SMTP Testversand — error-class mapper (pure)
+   * ──────────────────────────────────────────────────────────────────── */
+
+  describe('mapSmtpTestError', () => {
+    it('maps DNS failures (EDNS wrapper with raw ENOTFOUND) to "Server nicht gefunden"', () => {
+      const msg = mapSmtpTestError({
+        code: 'EDNS',
+        message: 'getaddrinfo ENOTFOUND smtp.nirgendwo.example'
+      })
+      expect(msg).toBe(
+        'Der SMTP-Server wurde nicht gefunden. Bitte prüfen Sie den Hostnamen.'
+      )
+      // The raw hostname must never leak into the curated message.
+      expect(msg).not.toContain('nirgendwo')
+      expect(msg).not.toContain('ENOTFOUND')
+    })
+
+    it('maps a bare ENOTFOUND code and EAI_AGAIN to the DNS message', () => {
+      expect(mapSmtpTestError({ code: 'ENOTFOUND' })).toMatch(
+        /nicht gefunden.*Hostnamen/
+      )
+      expect(mapSmtpTestError({ code: 'EAI_AGAIN' })).toMatch(
+        /nicht gefunden.*Hostnamen/
+      )
+      expect(
+        mapSmtpTestError({
+          code: 'ECONNECTION',
+          message: 'getaddrinfo EAI_AGAIN smtp.example'
+        })
+      ).toMatch(/nicht gefunden/)
+    })
+
+    it('maps connection refused (wrong port) to the port hint', () => {
+      // nodemailer wraps the socket error as ECONNECTION with the raw
+      // ECONNREFUSED only inside the message.
+      const msg = mapSmtpTestError({
+        code: 'ECONNECTION',
+        message: 'connect ECONNREFUSED 127.0.0.1:2525'
+      })
+      expect(msg).toBe(
+        'Die Verbindung wurde abgelehnt. Bitte prüfen Sie Port und Verschlüsselung.'
+      )
+      expect(msg).not.toContain('127.0.0.1')
+      expect(mapSmtpTestError({ code: 'ECONNREFUSED' })).toMatch(
+        /Verbindung wurde abgelehnt/
+      )
+    })
+
+    it('maps auth failures (EAUTH / SMTP 535) to the credentials hint', () => {
+      const msg = mapSmtpTestError({
+        code: 'EAUTH',
+        responseCode: 535,
+        message: '535 5.7.8 Invalid login: user@example.com'
+      })
+      expect(msg).toBe(
+        'Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.'
+      )
+      // Username from the server banner must not leak.
+      expect(msg).not.toContain('user@example.com')
+      expect(mapSmtpTestError({ responseCode: 535 })).toMatch(
+        /Anmeldung fehlgeschlagen/
+      )
+    })
+
+    it('maps recipient rejections (EENVELOPE / 550 / 553) to the recipient hint', () => {
+      expect(
+        mapSmtpTestError({
+          code: 'EENVELOPE',
+          responseCode: 553,
+          message: '553 Relaying denied'
+        })
+      ).toMatch(/Empfänger abgelehnt/)
+      expect(mapSmtpTestError({ responseCode: 550 })).toMatch(
+        /Empfänger abgelehnt/
+      )
+      expect(mapSmtpTestError({ responseCode: 553 })).toMatch(
+        /Empfänger abgelehnt/
+      )
+    })
+
+    it('maps timeouts (ETIMEDOUT / greeting) to the timeout message', () => {
+      expect(
+        mapSmtpTestError({ code: 'ETIMEDOUT', message: 'Connection timeout' })
+      ).toMatch(/Zeitüberschreitung/)
+      expect(
+        mapSmtpTestError({
+          code: 'ETIMEDOUT',
+          message: 'Greeting never received'
+        })
+      ).toMatch(/Zeitüberschreitung/)
+      expect(mapSmtpTestError({ message: 'Socket timed out' })).toMatch(
+        /Zeitüberschreitung/
+      )
+    })
+
+    it('maps TLS / certificate errors to the encryption hint', () => {
+      expect(
+        mapSmtpTestError({
+          code: 'ESOCKET',
+          message: 'self-signed certificate'
+        })
+      ).toMatch(/TLS-\/Zertifikatsfehler/)
+      expect(mapSmtpTestError({ code: 'DEPTH_ZERO_SELF_SIGNED_CERT' })).toMatch(
+        /TLS-\/Zertifikatsfehler/
+      )
+      expect(
+        mapSmtpTestError({ code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE' })
+      ).toMatch(/TLS-\/Zertifikatsfehler/)
+      // TLS handshake against a plaintext port.
+      expect(
+        mapSmtpTestError({
+          code: 'ESOCKET',
+          message: 'ssl3_get_record:wrong version number'
+        })
+      ).toMatch(/TLS-\/Zertifikatsfehler/)
+      expect(mapSmtpTestError({ code: 'CERT_HAS_EXPIRED' })).toMatch(
+        /TLS-\/Zertifikatsfehler/
+      )
+    })
+
+    it('falls back to the generic German message for unknown errors', () => {
+      const generic =
+        'Testversand fehlgeschlagen. Bitte prüfen Sie die SMTP-Einstellungen.'
+      expect(mapSmtpTestError(new Error('kaboom'))).toBe(generic)
+      expect(mapSmtpTestError('plain string')).toBe(generic)
+      expect(mapSmtpTestError(null)).toBe(generic)
+      expect(mapSmtpTestError(undefined)).toBe(generic)
+      expect(mapSmtpTestError({})).toBe(generic)
+    })
+  })
+
+  /* ──────────────────────────────────────────────────────────────────────
+   * SMTP Testversand — send path
+   * ──────────────────────────────────────────────────────────────────── */
+
+  describe('sendSmtpTestMail', () => {
+    it('returns the missing-config message when no smtp_settings row exists', async () => {
+      const res = await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(res.ok).toBe(false)
+      if (res.ok) return
+      expect(res.error).toMatch(/SMTP ist nicht konfiguriert/)
+      expect(createTransportMock).not.toHaveBeenCalled()
+    })
+
+    it('returns the missing-config message when host or fromAddress is blank', async () => {
+      await seedSmtp({ host: '' })
+      const res = await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(res.ok).toBe(false)
+      if (res.ok) return
+      expect(res.error).toMatch(/SMTP ist nicht konfiguriert/)
+      expect(createTransportMock).not.toHaveBeenCalled()
+    })
+
+    it('sends via the persisted settings with hard 10 s timeouts', async () => {
+      await seedSmtp()
+      const res = await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(res).toEqual({ ok: true, messageId: '<test-id>' })
+
+      expect(createTransportMock).toHaveBeenCalledTimes(1)
+      const opts = createTransportMock.mock.calls[0][0]
+      expect(opts.host).toBe('smtp.example.com')
+      expect(opts.port).toBe(587)
+      expect(opts.secure).toBe(false)
+      expect(opts.requireTLS).toBe(true)
+      expect(opts.connectionTimeout).toBe(10_000)
+      expect(opts.greetingTimeout).toBe(10_000)
+      expect(opts.socketTimeout).toBe(10_000)
+      expect(opts.auth).toEqual({
+        user: 'user@example.com',
+        pass: 'plain-password'
+      })
+
+      const mail = sendMailMock.mock.calls[0][0]
+      expect(mail.from).toBe('TwinCars <rechnung@example.com>')
+      expect(mail.to).toBe('ziel@example.com')
+      expect(mail.subject).toBe('TwinCarsManager SMTP-Test')
+      expect(mail.text).toContain('Testnachricht von TwinCarsManager')
+      expect(mail.text).toMatch(/Gesendet am \d{2}\.\d{2}\.\d{4} \d{2}:\d{2}/)
+    })
+
+    it('decrypts an encrypted stored password before handing it to nodemailer', async () => {
+      vi.stubEnv('APP_SECRET', 'test-secret')
+      try {
+        const { encryptSecret } = await import('$lib/server/crypto')
+        await seedSmtp({ password: encryptSecret('geheimes-passwort') })
+        const res = await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+        expect(res.ok).toBe(true)
+        const opts = createTransportMock.mock.calls[0][0]
+        expect(opts.auth.pass).toBe('geheimes-passwort')
+      } finally {
+        vi.unstubAllEnvs()
+      }
+    })
+
+    it('does NOT write a sent_messages row (infrastructure check, not correspondence)', async () => {
+      await seedSmtp()
+      await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(await db.select().from(sentMessages)).toHaveLength(0)
+    })
+
+    it('maps send failures to the curated German message without leaking details', async () => {
+      await seedSmtp()
+      const consoleSpy = vi
+        .spyOn(console, 'error')
+        .mockImplementation(() => undefined)
+      sendMailMock.mockRejectedValueOnce(
+        Object.assign(new Error('535 5.7.8 Invalid login: user@example.com'), {
+          code: 'EAUTH',
+          responseCode: 535
+        })
+      )
+      const res = await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(res.ok).toBe(false)
+      if (res.ok) return
+      expect(res.error).toBe(
+        'Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.'
+      )
+      expect(res.error).not.toContain('user@example.com')
+      // The raw error still lands on the server console for diagnosis.
+      expect(consoleSpy).toHaveBeenCalled()
+      consoleSpy.mockRestore()
+    })
+
+    it('skips auth when no username is stored', async () => {
+      await seedSmtp({ username: '' })
+      await sendSmtpTestMail({ recipient: 'ziel@example.com' })
+      expect(createTransportMock.mock.calls[0][0].auth).toBeUndefined()
     })
   })
 })

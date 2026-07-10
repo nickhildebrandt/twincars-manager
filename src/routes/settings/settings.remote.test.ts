@@ -1,5 +1,5 @@
 // @vitest-environment node
-import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest'
 
 /**
  * Integration tests for the Stundensatz (workshop labor rate) remotes
@@ -24,6 +24,29 @@ vi.mock('$lib/server/db/client', async () => {
   const handle = await createTestDb()
   return { db: handle.db, schema: handle.schema }
 })
+
+// The SMTP-Testversand remote reaches nodemailer through
+// `mail-service.sendSmtpTestMail` — mock the transport boundary so no
+// real SMTP traffic happens (same pattern as mail-service.test.ts).
+const { sendMailMock, createTransportMock } = vi.hoisted(() => {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const sendMailMock = vi.fn<(opts: any) => Promise<any>>()
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const createTransportMock = vi.fn<(opts: any) => any>(() => ({
+    sendMail: sendMailMock
+  }))
+  return { sendMailMock, createTransportMock }
+})
+
+vi.mock('nodemailer', () => ({
+  default: { createTransport: createTransportMock }
+}))
+
+// mail-service pulls the PDF renderer for attachments — stub it so the
+// import chain stays light (pdf-lib is irrelevant here).
+vi.mock('$lib/server/services/pdf-service', () => ({
+  getOrRenderDocumentPdf: vi.fn()
+}))
 
 const mockRequestEvent = {
   locals: {
@@ -78,12 +101,14 @@ import { db } from '$lib/server/db/client'
 import {
   companySettings,
   itemPriceVersions,
-  items
+  items,
+  smtpSettings
 } from '$lib/server/db/schema'
 import { eq } from 'drizzle-orm'
 import { WILDCARD_PERMISSION } from '$lib/server/auth-permissions'
 import {
   getLaborRateSettingRemote,
+  sendSmtpTestMailRemote,
   updateLaborRateRemote
 } from './settings.remote'
 
@@ -229,5 +254,134 @@ describe('settings.remote — Stundensatz', () => {
         .where(eq(companySettings.laborItemId, laborItemId))
       await expectHttpError(() => updateLaborRateRemote({ priceNet: 80 }), 409)
     })
+  })
+})
+
+describe('settings.remote — SMTP Testversand', () => {
+  // The double-fire guard is module-level state with a 5 s cooldown
+  // measured via `Date.now()`. Advance a fake clock by a minute per
+  // test so the cooldown from one test never bleeds into the next; the
+  // in-flight / cooldown tests then move `fakeNow` explicitly.
+  let fakeNow = Date.now()
+
+  beforeEach(async () => {
+    anonymous()
+    await db.delete(smtpSettings)
+    sendMailMock.mockReset()
+    sendMailMock.mockResolvedValue({ messageId: '<smtp-test>' })
+    createTransportMock.mockClear()
+    fakeNow += 60_000
+    vi.spyOn(Date, 'now').mockImplementation(() => fakeNow)
+  })
+
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  const seedSmtp = async () => {
+    await db
+      .insert(smtpSettings)
+      .values({
+        host: 'smtp.example.com',
+        port: 587,
+        secure: 'STARTTLS',
+        username: 'user@example.com',
+        password: 'plain-password',
+        fromAddress: 'noreply@example.com',
+        fromName: 'TwinCars',
+        replyTo: null,
+        verified: false
+      })
+  }
+
+  it('rejects anonymous callers with 401', async () => {
+    await expectHttpError(
+      () => sendSmtpTestMailRemote({ recipient: 'ziel@example.com' }),
+      401
+    )
+    expect(sendMailMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects callers without the settings permission with 403', async () => {
+    authAs(['customers'])
+    await expectHttpError(
+      () => sendSmtpTestMailRemote({ recipient: 'ziel@example.com' }),
+      403
+    )
+    expect(sendMailMock).not.toHaveBeenCalled()
+  })
+
+  it('rejects an invalid recipient with the German validation message', async () => {
+    authAs(['settings'])
+    await expect(
+      sendSmtpTestMailRemote({ recipient: 'keine-mail' })
+    ).rejects.toThrow(/gültige E-Mail-Adresse/)
+    expect(sendMailMock).not.toHaveBeenCalled()
+  })
+
+  it('sends via the persisted settings and returns ok:true (mocked transport)', async () => {
+    authAs(['settings'])
+    await seedSmtp()
+    const res = await sendSmtpTestMailRemote({ recipient: 'ziel@example.com' })
+    expect(res).toEqual({ ok: true, messageId: '<smtp-test>' })
+
+    const opts = createTransportMock.mock.calls[0][0]
+    expect(opts.host).toBe('smtp.example.com')
+    expect(opts.connectionTimeout).toBe(10_000)
+
+    const mail = sendMailMock.mock.calls[0][0]
+    expect(mail.to).toBe('ziel@example.com')
+    expect(mail.subject).toBe('TwinCarsManager SMTP-Test')
+  })
+
+  it('returns ok:false with the German missing-config message when SMTP is unset', async () => {
+    authAs(['settings'])
+    const res = await sendSmtpTestMailRemote({ recipient: 'ziel@example.com' })
+    expect(res.ok).toBe(false)
+    if (res.ok) return
+    expect(res.error).toMatch(/SMTP ist nicht konfiguriert/)
+  })
+
+  it('refuses with 429 while a test is still in flight (even past the cooldown)', async () => {
+    authAs(['settings'])
+    await seedSmtp()
+    let release!: (v: { messageId: string | null }) => void
+    sendMailMock.mockImplementationOnce(
+      () =>
+        new Promise((resolve) => {
+          release = resolve
+        })
+    )
+    const first = sendSmtpTestMailRemote({ recipient: 'a@example.com' })
+    // Wait until the transport send is actually in flight (the command
+    // body has set the guard flag and handed off to nodemailer).
+    await vi.waitFor(() => expect(sendMailMock).toHaveBeenCalledTimes(1))
+    // Move past the 5 s window — only the in-flight flag can refuse now.
+    fakeNow += 10_000
+    await expectHttpError(
+      () => sendSmtpTestMailRemote({ recipient: 'b@example.com' }),
+      429
+    )
+    release({ messageId: '<done>' })
+    const res = await first
+    expect(res).toEqual({ ok: true, messageId: '<done>' })
+  })
+
+  it('refuses a re-fire within 5 s of the last start, allows afterwards', async () => {
+    authAs(['settings'])
+    await seedSmtp()
+    const ok1 = await sendSmtpTestMailRemote({ recipient: 'a@example.com' })
+    expect(ok1.ok).toBe(true)
+
+    fakeNow += 3_000
+    await expectHttpError(
+      () => sendSmtpTestMailRemote({ recipient: 'a@example.com' }),
+      429
+    )
+
+    fakeNow += 5_000
+    const ok2 = await sendSmtpTestMailRemote({ recipient: 'a@example.com' })
+    expect(ok2.ok).toBe(true)
+    expect(sendMailMock).toHaveBeenCalledTimes(2)
   })
 })

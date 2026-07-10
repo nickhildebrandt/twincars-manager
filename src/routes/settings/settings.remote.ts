@@ -34,6 +34,7 @@ import {
   optionalEmailSchema
 } from '$lib/server/db/validation'
 import { requirePermission } from '$lib/server/auth-guards'
+import { sendSmtpTestMail } from '$lib/server/services/mail-service'
 import { upsertSmtpSettings } from '$lib/server/services/smtp-settings-service'
 import { getLaborRate } from '$lib/server/services/work-order-service'
 import { upsertItemPrice } from '$lib/server/services/item-service'
@@ -397,3 +398,53 @@ export const updateSmtpRemote = command(smtpUpdateSchema, async (data) => {
   })
   void getAllSettingsRemote().refresh()
 })
+
+/* ────────────────────────────────────────────────────────────────────── */
+/* SMTP Testversand                                                       */
+/* ────────────────────────────────────────────────────────────────────── */
+
+/**
+ * Double-fire guard for the SMTP test send. Module-level on purpose:
+ * remote modules are process singletons, so an in-flight flag plus a
+ * 5 s cooldown measured from the last START stops accidental double
+ * clicks and rapid re-fires. This is a UI safeguard, not a
+ * multi-instance rate limiter (the app runs as a single node process)
+ * — it deliberately needs no DB table and resets on restart.
+ */
+let smtpTestInFlight = false
+let smtpTestLastStartedAt = 0
+const SMTP_TEST_COOLDOWN_MS = 5_000
+
+/**
+ * Send a German test mail to `recipient` via the currently PERSISTED
+ * `smtp_settings` (never the unsaved form values — the UI hints at
+ * saving first). Returns the typed service result: send failures come
+ * back as `{ ok: false, error }` with a curated German message the UI
+ * renders inline; only the double-fire guard throws (429).
+ *
+ * @group integration
+ * @module settings
+ */
+export const sendSmtpTestMailRemote = command(
+  object({ recipient: emailSchema }),
+  async ({ recipient }) => {
+    requirePermission('settings')
+    const now = Date.now()
+    if (
+      smtpTestInFlight ||
+      now - smtpTestLastStartedAt < SMTP_TEST_COOLDOWN_MS
+    ) {
+      error(
+        429,
+        'Ein Testversand läuft bereits oder wurde soeben gestartet. Bitte warten Sie einen Moment.'
+      )
+    }
+    smtpTestInFlight = true
+    smtpTestLastStartedAt = now
+    try {
+      return await sendSmtpTestMail({ recipient })
+    } finally {
+      smtpTestInFlight = false
+    }
+  }
+)

@@ -1055,6 +1055,160 @@ export const sendContactNotification = async (
   }
 }
 
+/* ──────────────────────────────────────────────────────────────────────
+ * SMTP test send (Testversand)
+ * ──────────────────────────────────────────────────────────────────── */
+
+export type SmtpTestInput = { recipient: string }
+
+export type SmtpTestResult =
+  | { ok: true; messageId: string | null }
+  | { ok: false; error: string }
+
+/**
+ * Hard cap on connect / greeting / socket inactivity for the test
+ * send — a black-holed host must not hang the request for minutes.
+ */
+const SMTP_TEST_TIMEOUT_MS = 10_000
+
+/**
+ * Map a nodemailer / socket error to a curated German message for the
+ * SMTP Testversand. NEVER returns raw error text — hostnames,
+ * usernames and server banners must not leak into the UI (the raw
+ * error goes to the server console only).
+ *
+ * Checked in order (first hit wins):
+ *
+ * 1. DNS / unknown host — nodemailer wraps resolution failures as
+ *    `EDNS`; the underlying Node error carries `ENOTFOUND` /
+ *    `EAI_AGAIN` (often only inside the message).
+ * 2. Connection refused — usually a wrong port / no SMTP service;
+ *    nodemailer reports `ECONNECTION` with `ECONNREFUSED` in the text.
+ * 3. Authentication failed — `EAUTH` / SMTP 535.
+ * 4. Recipient rejected — `EENVELOPE` / SMTP 550 / 553.
+ * 5. Timeout — `ETIMEDOUT` (connection / greeting / socket).
+ * 6. TLS / certificate problems — Node TLS codes (`CERT_*`,
+ *    `DEPTH_ZERO_SELF_SIGNED_CERT`, …) or handshake text such as
+ *    "wrong version number" (TLS against a plaintext port).
+ *
+ * Exported for exhaustive unit testing.
+ */
+export const mapSmtpTestError = (err: unknown): string => {
+  const e = (err ?? {}) as {
+    code?: unknown
+    responseCode?: unknown
+    message?: unknown
+  }
+  const code = typeof e.code === 'string' ? e.code : ''
+  const responseCode =
+    typeof e.responseCode === 'number' ? e.responseCode : null
+  const message = typeof e.message === 'string' ? e.message : ''
+
+  if (
+    code === 'EDNS' ||
+    code === 'ENOTFOUND' ||
+    code === 'EAI_AGAIN' ||
+    /ENOTFOUND|EAI_AGAIN/.test(message)
+  ) {
+    return 'Der SMTP-Server wurde nicht gefunden. Bitte prüfen Sie den Hostnamen.'
+  }
+  if (code === 'ECONNREFUSED' || /ECONNREFUSED/.test(message)) {
+    return 'Die Verbindung wurde abgelehnt. Bitte prüfen Sie Port und Verschlüsselung.'
+  }
+  if (code === 'EAUTH' || responseCode === 535) {
+    return 'Anmeldung fehlgeschlagen. Bitte prüfen Sie Benutzername und Passwort.'
+  }
+  if (code === 'EENVELOPE' || responseCode === 550 || responseCode === 553) {
+    return 'Der Server hat den Empfänger abgelehnt. Bitte prüfen Sie die Empfängeradresse.'
+  }
+  if (
+    code === 'ETIMEDOUT' ||
+    /timed?\s?out|timeout|greeting never received/i.test(message)
+  ) {
+    return 'Zeitüberschreitung beim SMTP-Server. Bitte prüfen Sie Host, Port und Firewall.'
+  }
+  if (
+    /certificat|self.signed|wrong version number|\bssl\b|\btls\b|handshake/i.test(
+      message
+    ) ||
+    /^(CERT_|ERR_TLS_|ERR_SSL_|DEPTH_ZERO_SELF_SIGNED_CERT$|SELF_SIGNED_CERT_IN_CHAIN$|UNABLE_TO_)/.test(
+      code
+    )
+  ) {
+    return 'TLS-/Zertifikatsfehler. Bitte prüfen Sie die Verschlüsselungseinstellung.'
+  }
+  return 'Testversand fehlgeschlagen. Bitte prüfen Sie die SMTP-Einstellungen.'
+}
+
+/**
+ * Send a minimal German test mail through the currently PERSISTED
+ * `smtp_settings` row. The stored password is decrypted via the same
+ * path the regular send pipeline uses (`decryptSecretIfNeeded`, legacy
+ * plaintext passes through). Unsaved form values never reach this
+ * function — the UI hints at saving first.
+ *
+ * Unlike every other entry point in this module the test send is
+ * deliberately NOT recorded in `sent_messages`: it is an
+ * infrastructure check, not business correspondence, and a failed
+ * probe must not clutter the outbox audit trail.
+ *
+ * The transport carries hard {@link SMTP_TEST_TIMEOUT_MS} connect /
+ * greeting / socket timeouts. Failures map to curated German messages
+ * via {@link mapSmtpTestError}; the raw error is logged to the server
+ * console only.
+ */
+export const sendSmtpTestMail = async (
+  input: SmtpTestInput
+): Promise<SmtpTestResult> => {
+  const [s] = await db.select().from(smtpSettings).limit(1)
+  if (!s || !s.host || !s.fromAddress) {
+    return {
+      ok: false,
+      error:
+        'SMTP ist nicht konfiguriert. Bitte speichern Sie zuerst Host und Absender-Adresse.'
+    }
+  }
+
+  // Own transport build (not `buildTransport`): the test needs hard
+  // timeouts and a non-throwing missing-config path.
+  const transport = nodemailer.createTransport({
+    host: s.host,
+    port: s.port,
+    secure: s.secure === 'TLS',
+    requireTLS: s.secure === 'STARTTLS',
+    auth: s.username
+      ? {
+          user: s.username,
+          pass: s.password ? decryptSecretIfNeeded(s.password) : undefined
+        }
+      : undefined,
+    connectionTimeout: SMTP_TEST_TIMEOUT_MS,
+    greetingTimeout: SMTP_TEST_TIMEOUT_MS,
+    socketTimeout: SMTP_TEST_TIMEOUT_MS
+  })
+
+  const from = s.fromName ? `${s.fromName} <${s.fromAddress}>` : s.fromAddress
+  const sentAt = formatTimestampDe(new Date())
+
+  try {
+    const info = await transport.sendMail({
+      from,
+      to: input.recipient,
+      subject: 'TwinCarsManager SMTP-Test',
+      text:
+        'Dies ist eine Testnachricht von TwinCarsManager.\n\n' +
+        `Gesendet am ${sentAt} Uhr.\n\n` +
+        'Wenn Sie diese E-Mail lesen, ist der SMTP-Versand korrekt konfiguriert.'
+    })
+    return { ok: true, messageId: info.messageId ?? null }
+  } catch (e) {
+    // Raw error (incl. code) only to the server console — the UI gets
+    // the curated mapping below.
+    console.error('[smtp-test] send failed:', e)
+    return { ok: false, error: mapSmtpTestError(e) }
+  }
+}
+
 /**
  * Flip the notification-tracking columns on `customer_inquiries`
  * after `sendContactNotification` runs. Keeps the contact endpoint
