@@ -1,8 +1,11 @@
 <script lang="ts">
   import { untrack } from 'svelte'
-  import { goto } from '$app/navigation'
   import { page } from '$app/state'
   import PageHeader from '$lib/components/layout/PageHeader.svelte'
+  import AbsenceSection, {
+    type AbsenceStatus,
+    type AbsenceSubmitValues
+  } from './AbsenceSection.svelte'
   import {
     createAbsenceRemote,
     deleteAbsenceRemote,
@@ -12,15 +15,7 @@
     listEmployeeSalaryVersionsRemote,
     updateAbsenceRemote
   } from '../employees.remote'
-  import {
-    Pencil,
-    Plus,
-    Trash2,
-    CalendarDays,
-    ChevronLeft,
-    ChevronRight,
-    Stethoscope
-  } from '@lucide/svelte'
+  import { Pencil, CalendarDays, Stethoscope } from '@lucide/svelte'
   import { busy } from '$lib/stores/busy.svelte'
   import { toast } from '$lib/stores/toast.svelte'
   import { handleClientError } from '$lib/utils/client-error'
@@ -66,87 +61,6 @@
   const absences = $derived(absencesData.absences)
   const balance = $derived(absencesData.balance)
 
-  /**
-   * Past years are read-only — the user can browse them but can't add,
-   * edit, or delete. Only the current year (and future years, in case
-   * the user wants to plan vacation early) is mutable.
-   */
-  const yearReadOnly = $derived(absenceYear < currentYear)
-
-  /**
-   * Krankheit im Folgejahr ist fachlich nicht zulässig (das wäre eine
-   * Vorab-Krankmeldung) — Urlaubsplanung dagegen schon. Wir gaten den
-   * Type-Selector entsprechend; der Server prüft zusätzlich.
-   */
-  const sickAllowed = $derived(absenceYear <= currentYear)
-
-  /**
-   * Frei navigierbare Jahres-Auswahl: prev/Heute/next, ohne fixe
-   * Range. Auch mehrere Jahre im Voraus geplante Urlaube sind so
-   * sichtbar; das Backend filtert ohnehin per `year` und liefert
-   * leere Listen zurück, wenn nichts existiert.
-   */
-  const goPrevYear = () => (absenceYear -= 1)
-  const goNextYear = () => (absenceYear += 1)
-  const goCurrentYear = () => (absenceYear = currentYear)
-
-  const monthLabel = (m: number) =>
-    [
-      'Januar',
-      'Februar',
-      'März',
-      'April',
-      'Mai',
-      'Juni',
-      'Juli',
-      'August',
-      'September',
-      'Oktober',
-      'November',
-      'Dezember'
-    ][m - 1] ?? String(m)
-
-  /* — New-absence form state — */
-  const todayIso = new Date().toISOString().slice(0, 10)
-  /** Default-Datum für ein Zieljahr: heute, falls das aktuelle Jahr,
-   * sonst der 1. Januar. */
-  const defaultDateFor = (year: number): string =>
-    year === currentYear ? todayIso : `${year}-01-01`
-  let formType = $state<'vacation' | 'sick' | 'other'>('vacation')
-  let formFrom = $state(todayIso)
-  let formTo = $state(todayIso)
-  let formStatus = $state<'planned' | 'approved' | 'cancelled'>('approved')
-  let formError = $state<string | null>(null)
-
-  const reset = () => {
-    formType = 'vacation'
-    const d = defaultDateFor(absenceYear)
-    formFrom = d
-    formTo = d
-    formStatus = 'approved'
-    formError = null
-  }
-
-  /** Bei Jahres-Wechsel: Formular-Datum auf das gewählte Jahr ziehen,
-   * solange der User es nicht bereits manuell auf dieses Jahr gesetzt
-   * hat. */
-  $effect(() => {
-    const y = absenceYear
-    const fromY = Number(formFrom.slice(0, 4))
-    const toY = Number(formTo.slice(0, 4))
-    if (fromY !== y) formFrom = defaultDateFor(y)
-    if (toY !== y) formTo = defaultDateFor(y)
-    // Krankheit im Folgejahr nicht zulässig — auf Urlaub fallen.
-    if (!sickAllowed && formType === 'sick') formType = 'vacation'
-  })
-
-  /** Wenn der User manuell ein Datum aus einem anderen Jahr wählt,
-   * snappt die obere Jahresauswahl entsprechend mit. */
-  const onDateChange = (val: string) => {
-    const y = Number(val.slice(0, 4))
-    if (Number.isFinite(y) && y !== absenceYear) absenceYear = y
-  }
-
   /* — Konflikt-Modal für Urlaub vs. Krankheit am gleichen Tag — */
   type ConflictRow = {
     id: string
@@ -157,64 +71,88 @@
   }
   let conflictOpen = $state(false)
   let conflictRows = $state<ConflictRow[]>([])
+  /** Values held while the conflict modal awaits the user's decision. */
+  let pendingValues = $state<AbsenceSubmitValues | null>(null)
+  let absenceSection = $state<{ resetForm: () => void } | undefined>(undefined)
 
-  const persistAbsence = async (replaceConflicting = false) => {
-    // The command refreshes every subscribed list key server-side
-    // (single-flight) — no separate client refresh needed.
+  /**
+   * List keys for every calendar year an absence touches, excluding
+   * the currently browsed one (that key is declared separately, with
+   * an optimistic override where applicable). A cross-year absence
+   * (max two years — spans are capped at one year) must refresh both
+   * year caches, otherwise the neighbour year shows stale data.
+   */
+  const otherYearKeys = (fromIso: string, toIso: string) => {
+    const years = new Set([
+      Number(fromIso.slice(0, 4)),
+      Number(toIso.slice(0, 4))
+    ])
+    years.delete(absenceYear)
+    return Array.from(years, (y) =>
+      listAbsencesRemote({ employeeId: id, year: y })
+    )
+  }
+
+  const persistAbsence = async (
+    values: AbsenceSubmitValues,
+    replaceConflicting = false
+  ) => {
+    // Single-flight: the client declares the subscribed list keys via
+    // `.updates(...)`; the server-side `requested(...).refreshAll()`
+    // then returns the fresh lists (with workday counts and balance)
+    // in the same round trip.
     await busy.run(() =>
       createAbsenceRemote({
         employeeId: id,
-        type: formType,
-        dateFrom: formFrom,
-        dateTo: formTo,
-        status: formStatus,
+        ...values,
         replaceConflicting
-      })
+      }).updates(
+        listAbsencesRemote(absArgs),
+        ...otherYearKeys(values.dateFrom, values.dateTo)
+      )
     )
-    reset()
     toast.success('Abwesenheit eingetragen.')
   }
 
-  const submit = async (ev: Event) => {
-    ev.preventDefault()
-    formError = null
-    if (formTo < formFrom) {
-      formError = 'Bis-Datum darf nicht vor dem Von-Datum liegen.'
-      return
-    }
-    if (formType === 'sick') {
-      const fromY = Number(formFrom.slice(0, 4))
-      const toY = Number(formTo.slice(0, 4))
-      if (fromY > currentYear || toY > currentYear) {
-        formError =
-          'Krankmeldungen für ein Folgejahr sind nicht zulässig - Urlaub kann vorausgeplant werden.'
-        return
-      }
-    }
+  /**
+   * AbsenceSection submit hook — returns `true` when the entry was
+   * created (form resets), `false` when a conflict modal is pending or
+   * the server rejected (values stay editable).
+   */
+  const submitAbsence = async (
+    values: AbsenceSubmitValues
+  ): Promise<boolean> => {
     try {
       // Event-handler call site: queries must be executed via `.run()`
       // (only render-time calls create a reactive resource).
       const conflicts = await getAbsenceConflictsRemote({
         employeeId: id,
-        type: formType,
-        dateFrom: formFrom,
-        dateTo: formTo
+        type: values.type,
+        dateFrom: values.dateFrom,
+        dateTo: values.dateTo
       }).run()
       if (conflicts.length > 0) {
+        pendingValues = values
         conflictRows = conflicts as ConflictRow[]
         conflictOpen = true
-        return
+        return false
       }
-      await persistAbsence(false)
+      await persistAbsence(values, false)
+      return true
     } catch (err) {
       handleClientError(err, 'Eintrag konnte nicht gespeichert werden')
+      return false
     }
   }
 
   const confirmReplace = async () => {
     conflictOpen = false
+    const values = pendingValues
+    pendingValues = null
+    if (!values) return
     try {
-      await persistAbsence(true)
+      await persistAbsence(values, true)
+      absenceSection?.resetForm()
     } catch (err) {
       handleClientError(err, 'Eintrag konnte nicht gespeichert werden')
     }
@@ -223,15 +161,29 @@
   const cancelReplace = () => {
     conflictOpen = false
     conflictRows = []
+    pendingValues = null
   }
 
-  const setStatus = async (
-    rowId: string,
-    status: 'planned' | 'approved' | 'cancelled'
-  ) => {
+  /** Neighbour-year keys of an existing row (empty when not found). */
+  const rowYearKeys = (rowId: string) => {
+    const row = absences.find((a) => a.id === rowId)
+    return row ? otherYearKeys(row.dateFrom, row.dateTo) : []
+  }
+
+  const setStatus = async (rowId: string, status: AbsenceStatus) => {
     try {
+      // Optimistic status flip; the server flight replaces the override
+      // with the authoritative list (incl. recalculated balance).
       await busy.run(() =>
-        updateAbsenceRemote({ id: rowId, values: { status } })
+        updateAbsenceRemote({ id: rowId, values: { status } }).updates(
+          listAbsencesRemote(absArgs).withOverride((current) => ({
+            ...current,
+            absences: current.absences.map((a) =>
+              a.id === rowId ? { ...a, status } : a
+            )
+          })),
+          ...rowYearKeys(rowId)
+        )
       )
       toast.success('Status aktualisiert.')
     } catch (err) {
@@ -241,7 +193,16 @@
 
   const remove = async (rowId: string) => {
     try {
-      await busy.run(() => deleteAbsenceRemote({ id: rowId, employeeId: id }))
+      // Optimistic delete: the row vanishes immediately.
+      await busy.run(() =>
+        deleteAbsenceRemote({ id: rowId, employeeId: id }).updates(
+          listAbsencesRemote(absArgs).withOverride((current) => ({
+            ...current,
+            absences: current.absences.filter((a) => a.id !== rowId)
+          })),
+          ...rowYearKeys(rowId)
+        )
+      )
       toast.success('Eintrag gelöscht.')
     } catch (err) {
       handleClientError(err)
@@ -262,35 +223,6 @@
     const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(s)
     return m ? `${m[3]}.${m[2]}.${m[1]}` : s
   }
-
-  /** Business days (Mon–Fri) for an inclusive YYYY-MM-DD range. */
-  const businessDays = (fromIso: string, toIso: string): number => {
-    const start = new Date(`${fromIso}T00:00:00Z`).getTime()
-    const end = new Date(`${toIso}T00:00:00Z`).getTime()
-    if (Number.isNaN(start) || Number.isNaN(end) || end < start) return 0
-    let n = 0
-    for (let t = start; t <= end; t += 24 * 60 * 60 * 1000) {
-      const d = new Date(t).getUTCDay()
-      if (d !== 0 && d !== 6) n += 1
-    }
-    return n
-  }
-  const absenceDays = (a: {
-    dateFrom: string
-    dateTo: string
-    status: string
-  }) => (a.status === 'cancelled' ? 0 : businessDays(a.dateFrom, a.dateTo))
-
-  const vacationTotal = $derived(
-    absences
-      .filter((a) => a.type === 'vacation')
-      .reduce((s, a) => s + absenceDays(a), 0)
-  )
-  const sickTotal = $derived(
-    absences
-      .filter((a) => a.type === 'sick')
-      .reduce((s, a) => s + absenceDays(a), 0)
-  )
 
   /* Gehaltshistorie ist read-only — neue Versionen entstehen
      ausschliesslich durch Bearbeiten der Mitarbeiter-Stammdaten
@@ -457,202 +389,19 @@
   </div>
 </div>
 
-<!-- Abwesenheiten — Urlaub / Krankheit / Sonstiges, jahresweise -->
-<div class="card border-base-300 bg-base-100 mt-4 border">
-  <div class="card-body gap-4">
-    <div class="flex flex-wrap items-center justify-between gap-2">
-      <h3 class="card-title text-base">Abwesenheiten</h3>
-      <div class="join">
-        <button
-          type="button"
-          class="btn btn-sm join-item"
-          onclick={goPrevYear}
-          aria-label="Vorheriges Jahr"
-        >
-          <ChevronLeft size={14} />
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm join-item w-20 font-mono"
-          onclick={goCurrentYear}
-          title="Aktuelles Jahr"
-        >
-          {absenceYear}
-        </button>
-        <button
-          type="button"
-          class="btn btn-sm join-item"
-          onclick={goNextYear}
-          aria-label="Nächstes Jahr"
-        >
-          <ChevronRight size={14} />
-        </button>
-      </div>
-    </div>
-
-    {#if yearReadOnly}
-      <div class="alert alert-info py-2 text-sm">
-        Vergangene Jahre sind schreibgeschützt.
-      </div>
-    {/if}
-
-    {#if formError}
-      <div class="alert alert-error" role="alert">
-        <span>{formError}</span>
-      </div>
-    {/if}
-
-    {#if !yearReadOnly}
-      <!--
-        Add-form fills the whole card width with equal-weight columns —
-        only rendered for the current/future year. Past years are
-        read-only and don't show the form.
-      -->
-      <form
-        onsubmit={submit}
-        class="grid grid-cols-1 gap-3 sm:grid-cols-[1fr_1fr_1fr_1fr_auto]"
-        novalidate
-      >
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Typ</span>
-          <select class="select select-bordered w-full" bind:value={formType}>
-            <option value="vacation">Urlaub</option>
-            {#if sickAllowed}
-              <option value="sick">Krankheit</option>
-            {/if}
-            <option value="other">Sonstiges</option>
-          </select>
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Von</span>
-          <input
-            class="input input-bordered w-full"
-            type="date"
-            required
-            bind:value={formFrom}
-            onchange={(e) => onDateChange((e.target as HTMLInputElement).value)}
-          />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Bis</span>
-          <input
-            class="input input-bordered w-full"
-            type="date"
-            required
-            bind:value={formTo}
-            onchange={(e) => onDateChange((e.target as HTMLInputElement).value)}
-          />
-        </label>
-        <label class="flex w-full flex-col gap-1">
-          <span class="label-text">Status</span>
-          <select class="select select-bordered w-full" bind:value={formStatus}>
-            <option value="planned">Geplant</option>
-            <option value="approved">Genehmigt</option>
-            <option value="cancelled">Abgesagt</option>
-          </select>
-        </label>
-        <div class="flex items-end">
-          <button
-            type="submit"
-            class="btn btn-primary gap-1"
-            disabled={busy.active}
-          >
-            <Plus size={14} />
-            Eintragen
-          </button>
-        </div>
-      </form>
-    {/if}
-
-    {#if absences.length === 0}
-      <p class="text-base-content/60 text-sm">
-        Noch keine Abwesenheiten erfasst.
-      </p>
-    {:else}
-      <div class="overflow-x-auto">
-        <table class="table">
-          <thead>
-            <tr>
-              <th>Typ</th>
-              <th>Zeitraum</th>
-              <th class="text-right">Tage</th>
-              <th>Status</th>
-              <th class="text-right">Aktion</th>
-            </tr>
-          </thead>
-          <tbody>
-            {#each absences as a (a.id)}
-              {@const days = absenceDays(a)}
-              <tr>
-                <td>
-                  <span class="inline-flex items-center gap-2">
-                    {#if a.type === 'sick'}
-                      <Stethoscope size={14} class="text-error" />
-                    {:else}
-                      <CalendarDays size={14} class="text-info" />
-                    {/if}
-                    {typeLabel(a.type)}
-                  </span>
-                </td>
-                <td>{fmt(a.dateFrom)} - {fmt(a.dateTo)}</td>
-                <td class="text-right font-mono">{days}</td>
-                <td>
-                  <span class="badge badge-sm {statusBadge(a.status)}">
-                    {statusLabel(a.status)}
-                  </span>
-                </td>
-                <td>
-                  {#if !yearReadOnly}
-                    <div class="flex justify-end gap-1">
-                      {#if a.status !== 'cancelled'}
-                        <button
-                          type="button"
-                          class="btn btn-ghost btn-xs"
-                          onclick={() => setStatus(a.id, 'cancelled')}
-                          disabled={busy.active}
-                        >
-                          Stornieren
-                        </button>
-                      {/if}
-                      <button
-                        type="button"
-                        class="btn btn-ghost btn-xs btn-square text-error"
-                        onclick={() => remove(a.id)}
-                        disabled={busy.active}
-                        aria-label="Löschen"
-                      >
-                        <Trash2 size={14} />
-                      </button>
-                    </div>
-                  {/if}
-                </td>
-              </tr>
-            {/each}
-          </tbody>
-          <tfoot
-            class="border-base-300 bg-base-200/30 border-t-2 font-semibold"
-          >
-            <tr>
-              <td>Urlaub gesamt</td>
-              <td class="text-base-content/60 font-normal">
-                Anspruch: {balance.entitled} Tage · verbleibend
-                <span class="font-semibold">{balance.remaining}</span>
-              </td>
-              <td class="text-right font-mono">{vacationTotal}</td>
-              <td colspan="2"></td>
-            </tr>
-            <tr>
-              <td>Krankheit gesamt</td>
-              <td></td>
-              <td class="text-right font-mono">{sickTotal}</td>
-              <td colspan="2"></td>
-            </tr>
-          </tfoot>
-        </table>
-      </div>
-    {/if}
-  </div>
-</div>
+<!-- Abwesenheiten — Urlaub / Krankheit / Sonstiges, jahresweise.
+     Die Karte (Jahr-Auswahl, Resturlaub, Formular, Liste) lebt in
+     AbsenceSection; der Konflikt-Modal-Flow bleibt hier, weil er die
+     Remote-Aufrufe orchestriert. -->
+<AbsenceSection
+  bind:this={absenceSection}
+  bind:year={absenceYear}
+  {absences}
+  {balance}
+  onSubmit={submitAbsence}
+  onSetStatus={setStatus}
+  onDelete={remove}
+/>
 
 <!--
   Konflikt-Modal: bestehende Urlaub/Krankheit-Einträge überlappen mit

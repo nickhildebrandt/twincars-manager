@@ -8,17 +8,22 @@ vi.mock('$lib/server/db/client', async () => {
 
 import {
   absenceDaysInPeriod,
+  absenceWorkdays,
+  checkVacationBudget,
   createAbsence,
   deleteAbsence,
   deleteAbsencesByIds,
+  findSameTypeOverlaps,
   findVacationSickConflicts,
   getAbsence,
   listAbsencesForEmployee,
   listAbsencesInRange,
+  listAbsencesWithWorkdays,
   remainingVacationDays,
   updateAbsence
 } from './absence-service'
 import { db } from '$lib/server/db/client'
+import { eq } from 'drizzle-orm'
 import {
   companySettings,
   employeeAbsences,
@@ -519,6 +524,374 @@ describe('absence-service', () => {
       expect(result.entitled).toBe(2)
       expect(result.used).toBe(5)
       expect(result.remaining).toBe(0)
+    })
+
+    it('reports the requested year and honours excludeId', async () => {
+      const row = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const withRow = await remainingVacationDays(employeeId, 2026)
+      expect(withRow.year).toBe(2026)
+      expect(withRow.used).toBe(5)
+      const withoutRow = await remainingVacationDays(employeeId, 2026, {
+        excludeId: row.id
+      })
+      expect(withoutRow.used).toBe(0)
+      expect(withoutRow.remaining).toBe(30)
+    })
+
+    it('splits a cross-year vacation per calendar year', async () => {
+      // 2026-12-28 (Mon) .. 2027-01-05 (Tue), federal fallback:
+      // 2026 part = Mon..Thu = 4 days; 2027 part = Jan 1 (Fri, Neujahr,
+      // skipped) + Jan 4 + Jan 5 = 2 days.
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-12-28',
+        dateTo: '2027-01-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const y2026 = await remainingVacationDays(employeeId, 2026)
+      const y2027 = await remainingVacationDays(employeeId, 2027)
+      expect(y2026.used).toBe(4)
+      expect(y2026.remaining).toBe(26)
+      expect(y2027.used).toBe(2)
+      expect(y2027.remaining).toBe(28)
+    })
+  })
+
+  describe('absenceWorkdays (pure)', () => {
+    it('skips weekends', () => {
+      // Fri 2026-06-05 .. Mon 2026-06-08 → Fri + Mon = 2.
+      const n = absenceWorkdays(
+        { dateFrom: '2026-06-05', dateTo: '2026-06-08' },
+        'DE'
+      )
+      expect(n).toBe(2)
+    })
+
+    it('skips public holidays of the given state', () => {
+      // Mon 2026-04-27 .. Fri 2026-05-01; May 1st is Tag der Arbeit.
+      const n = absenceWorkdays(
+        { dateFrom: '2026-04-27', dateTo: '2026-05-01' },
+        'BE'
+      )
+      expect(n).toBe(4)
+    })
+
+    it('counts cancelled rows as zero', () => {
+      const n = absenceWorkdays(
+        { dateFrom: '2026-06-01', dateTo: '2026-06-05', status: 'cancelled' },
+        'DE'
+      )
+      expect(n).toBe(0)
+    })
+
+    it('counts a half day as 0.5', () => {
+      const n = absenceWorkdays(
+        { dateFrom: '2026-06-02', dateTo: '2026-06-02', halfDay: true },
+        'DE'
+      )
+      expect(n).toBe(0.5)
+    })
+
+    it('clamps to the given window', () => {
+      // Cross-year row clamped to 2026 → the 4 December workdays only.
+      const n = absenceWorkdays(
+        { dateFrom: '2026-12-28', dateTo: '2027-01-05' },
+        'DE',
+        '2026-01-01',
+        '2026-12-31'
+      )
+      expect(n).toBe(4)
+    })
+  })
+
+  describe('listAbsencesWithWorkdays', () => {
+    it('enriches rows with full and year-clamped workday counts', async () => {
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-12-28',
+        dateTo: '2027-01-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const in2026 = await listAbsencesWithWorkdays(employeeId, { year: 2026 })
+      expect(in2026).toHaveLength(1)
+      expect(in2026[0].workdays).toBe(6)
+      expect(in2026[0].workdaysInYear).toBe(4)
+      const in2027 = await listAbsencesWithWorkdays(employeeId, { year: 2027 })
+      expect(in2027[0].workdaysInYear).toBe(2)
+    })
+
+    it('equals the full count when no year filter is active', async () => {
+      await createAbsence({
+        employeeId,
+        type: 'sick',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const rows = await listAbsencesWithWorkdays(employeeId)
+      expect(rows[0].workdays).toBe(5)
+      expect(rows[0].workdaysInYear).toBe(5)
+    })
+
+    it('applies the company Bundesland holidays', async () => {
+      await db.insert(companySettings).values({ state: 'Berlin' })
+      // Mon 2026-04-27 .. Fri 2026-05-01 contains Tag der Arbeit.
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-04-27',
+        dateTo: '2026-05-01',
+        halfDay: false,
+        status: 'approved'
+      })
+      const rows = await listAbsencesWithWorkdays(employeeId, { year: 2026 })
+      expect(rows[0].workdaysInYear).toBe(4)
+    })
+  })
+
+  describe('findSameTypeOverlaps', () => {
+    it('finds an overlapping row of the same type', async () => {
+      const existing = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-10',
+        halfDay: false,
+        status: 'approved'
+      })
+      const hits = await findSameTypeOverlaps({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-10',
+        dateTo: '2026-06-15'
+      })
+      expect(hits.map((h) => h.id)).toEqual([existing.id])
+    })
+
+    it('ignores other types, cancelled rows, other employees and excludeId', async () => {
+      const cancelled = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-10',
+        halfDay: false,
+        status: 'cancelled'
+      })
+      await createAbsence({
+        employeeId,
+        type: 'sick',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-10',
+        halfDay: false,
+        status: 'approved'
+      })
+      await createAbsence({
+        employeeId: otherEmployeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-10',
+        halfDay: false,
+        status: 'approved'
+      })
+      const own = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-08',
+        dateTo: '2026-06-09',
+        halfDay: false,
+        status: 'approved'
+      })
+      const hits = await findSameTypeOverlaps({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-05',
+        dateTo: '2026-06-12',
+        excludeId: own.id
+      })
+      expect(hits).toEqual([])
+      expect(hits.find((h) => h.id === cancelled.id)).toBeUndefined()
+    })
+
+    it('does not flag adjacent, non-overlapping ranges', async () => {
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const hits = await findSameTypeOverlaps({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-06',
+        dateTo: '2026-06-10'
+      })
+      expect(hits).toEqual([])
+    })
+  })
+
+  describe('absenceDaysInPeriod excludeId', () => {
+    it('leaves the excluded row out of the sum', async () => {
+      const a = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-08',
+        dateTo: '2026-06-09',
+        halfDay: false,
+        status: 'approved'
+      })
+      const all = await absenceDaysInPeriod(
+        employeeId,
+        'vacation',
+        '2026-01-01',
+        '2026-12-31'
+      )
+      expect(all).toBe(7)
+      const without = await absenceDaysInPeriod(
+        employeeId,
+        'vacation',
+        '2026-01-01',
+        '2026-12-31',
+        { excludeId: a.id }
+      )
+      expect(without).toBe(2)
+    })
+  })
+
+  describe('checkVacationBudget', () => {
+    it('returns null when no entitlement is configured', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: null })
+        .where(eq(employees.id, employeeId))
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-01-01',
+        dateTo: '2026-12-31'
+      })
+      expect(violation).toBeNull()
+    })
+
+    it('returns null when the request fits the remaining allowance', async () => {
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05'
+      })
+      expect(violation).toBeNull()
+    })
+
+    it('flags a request that exceeds the remaining allowance', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: 3 })
+        .where(eq(employees.id, employeeId))
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05'
+      })
+      expect(violation).toEqual({ year: 2026, remaining: 3, requested: 5 })
+    })
+
+    it('accounts for already-used vacation days', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: 6 })
+        .where(eq(employees.id, employeeId))
+      await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-07-06',
+        dateTo: '2026-07-08'
+      })
+      expect(violation).toEqual({ year: 2026, remaining: 1, requested: 3 })
+    })
+
+    it('checks each calendar year of a cross-year range separately', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: 3 })
+        .where(eq(employees.id, employeeId))
+      // 2026 part is 4 workdays > 3 → violation reported for 2026.
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-12-28',
+        dateTo: '2027-01-05'
+      })
+      expect(violation).toEqual({ year: 2026, remaining: 3, requested: 4 })
+    })
+
+    it('lets a half day through a nearly exhausted allowance', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: 1 })
+        .where(eq(employees.id, employeeId))
+      const violation = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-06-02',
+        dateTo: '2026-06-02',
+        halfDay: true
+      })
+      expect(violation).toBeNull()
+    })
+
+    it('excludes the row being updated via excludeId', async () => {
+      await db
+        .update(employees)
+        .set({ vacationDaysPerYear: 5 })
+        .where(eq(employees.id, employeeId))
+      const row = await createAbsence({
+        employeeId,
+        type: 'vacation',
+        dateFrom: '2026-06-01',
+        dateTo: '2026-06-05',
+        halfDay: false,
+        status: 'approved'
+      })
+      // Moving the same 5 workdays elsewhere fits when the row itself
+      // is excluded, but not when it still counts.
+      const withExclude = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-07-06',
+        dateTo: '2026-07-10',
+        excludeId: row.id
+      })
+      expect(withExclude).toBeNull()
+      const withoutExclude = await checkVacationBudget({
+        employeeId,
+        dateFrom: '2026-07-06',
+        dateTo: '2026-07-10'
+      })
+      expect(withoutExclude).toEqual({ year: 2026, remaining: 0, requested: 5 })
     })
   })
 })

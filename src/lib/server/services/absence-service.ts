@@ -71,6 +71,33 @@ const overlapBusinessDays = (
   return businessDaysBetween(from, to, state)
 }
 
+/**
+ * Workdays of a single absence row (weekends and public holidays of
+ * `state` skipped), optionally clamped to `[clampFrom, clampTo]`.
+ * Cancelled rows count 0, half-day rows at most 0.5.
+ */
+export const absenceWorkdays = (
+  a: {
+    dateFrom: string
+    dateTo: string
+    halfDay?: boolean | null
+    status?: string | null
+  },
+  state: GermanState,
+  clampFrom?: string,
+  clampTo?: string
+): number => {
+  if (a.status === 'cancelled') return 0
+  const span = overlapBusinessDays(
+    a.dateFrom,
+    a.dateTo,
+    clampFrom ?? a.dateFrom,
+    clampTo ?? a.dateTo,
+    state
+  )
+  return a.halfDay ? Math.min(0.5, span) : span
+}
+
 /* ── Queries ─────────────────────────────────────────────────────── */
 
 export const getAbsence = async (
@@ -137,6 +164,69 @@ export const listAbsencesForEmployee = async (
     .orderBy(employeeAbsences.dateFrom)
 }
 
+export type AbsenceWithWorkdays = EmployeeAbsence & {
+  /** Workdays over the full absence range. */
+  workdays: number
+  /**
+   * Workdays clamped to the requested filter year — equals `workdays`
+   * when no year filter is active. This is the number the UI shows so
+   * that cross-year absences count per calendar year.
+   */
+  workdaysInYear: number
+}
+
+/**
+ * Absence list enriched with server-computed workday counts (weekends
+ * and the company Bundesland's public holidays skipped) so clients
+ * never have to re-implement the business-day math.
+ */
+export const listAbsencesWithWorkdays = async (
+  employeeId: string,
+  opts: { year?: number | null } = {}
+): Promise<AbsenceWithWorkdays[]> => {
+  const [rows, state] = await Promise.all([
+    listAbsencesForEmployee(employeeId, opts),
+    getCompanyHolidayState()
+  ])
+  const clampFrom = opts.year != null ? `${opts.year}-01-01` : undefined
+  const clampTo = opts.year != null ? `${opts.year}-12-31` : undefined
+  return rows.map((a) => ({
+    ...a,
+    workdays: absenceWorkdays(a, state),
+    workdaysInYear: absenceWorkdays(a, state, clampFrom, clampTo)
+  }))
+}
+
+/**
+ * Overlapping absences of the SAME type for the employee. Same-type
+ * overlaps are always rejected upstream — they would double-count the
+ * period (e.g. vacation days drawn twice from the allowance). Unlike
+ * the vacation↔sick cross-type conflicts there is no replace flow.
+ */
+export const findSameTypeOverlaps = async (params: {
+  employeeId: string
+  type: 'vacation' | 'sick' | 'other'
+  dateFrom: string
+  dateTo: string
+  excludeId?: string
+}): Promise<EmployeeAbsence[]> => {
+  const filters = [
+    eq(employeeAbsences.employeeId, params.employeeId),
+    eq(employeeAbsences.type, params.type),
+    ne(employeeAbsences.status, 'cancelled'),
+    lte(employeeAbsences.dateFrom, params.dateTo),
+    gte(employeeAbsences.dateTo, params.dateFrom)
+  ]
+  if (params.excludeId) {
+    filters.push(ne(employeeAbsences.id, params.excludeId))
+  }
+  return db
+    .select()
+    .from(employeeAbsences)
+    .where(and(...filters))
+    .orderBy(employeeAbsences.dateFrom)
+}
+
 export const listAbsencesInRange = async (
   fromIso: string,
   toIso: string
@@ -161,7 +251,8 @@ export const absenceDaysInPeriod = async (
   employeeId: string,
   type: 'vacation' | 'sick' | 'other',
   fromIso: string,
-  toIso: string
+  toIso: string,
+  opts: { excludeId?: string } = {}
 ): Promise<number> => {
   const [rows, holidayState] = await Promise.all([
     db
@@ -178,6 +269,7 @@ export const absenceDaysInPeriod = async (
   let days = 0
   for (const a of rows) {
     if (a.status === 'cancelled') continue
+    if (opts.excludeId && a.id === opts.excludeId) continue
     const span = overlapBusinessDays(
       a.dateFrom,
       a.dateTo,
@@ -191,14 +283,23 @@ export const absenceDaysInPeriod = async (
 }
 
 /**
- * Remaining vacation days for the current calendar year — entitlement
- * (`vacationDaysPerYear` from the employee record) minus the
- * year-to-date used vacation. Cancelled rows don't count.
+ * Remaining vacation days for a calendar year — entitlement
+ * (`vacationDaysPerYear` from the employee record) minus the vacation
+ * used in that year. Cancelled rows don't count; cross-year absences
+ * are clamped to the year, so each calendar year is charged only its
+ * own workdays. `opts.excludeId` leaves one row out of the "used"
+ * count (needed when validating an update of that very row).
  */
 export const remainingVacationDays = async (
   employeeId: string,
-  year: number = new Date().getUTCFullYear()
-): Promise<{ entitled: number; used: number; remaining: number }> => {
+  year: number = new Date().getUTCFullYear(),
+  opts: { excludeId?: string } = {}
+): Promise<{
+  year: number
+  entitled: number
+  used: number
+  remaining: number
+}> => {
   const [emp] = await db
     .select({ entitled: employees.vacationDaysPerYear })
     .from(employees)
@@ -209,9 +310,57 @@ export const remainingVacationDays = async (
     employeeId,
     'vacation',
     `${year}-01-01`,
-    `${year}-12-31`
+    `${year}-12-31`,
+    opts
   )
-  return { entitled, used, remaining: Math.max(0, entitled - used) }
+  return { year, entitled, used, remaining: Math.max(0, entitled - used) }
+}
+
+/**
+ * Hard vacation-budget gate (design spec 2026-06-23, decision 4:
+ * "harte Sperre"). Checks every calendar year the requested range
+ * touches and returns the first violation, or `null` when the request
+ * fits. Employees without a configured `vacationDaysPerYear` have no
+ * limit (`null` = not configured — deliberately distinct from an
+ * explicit 0).
+ */
+export const checkVacationBudget = async (params: {
+  employeeId: string
+  dateFrom: string
+  dateTo: string
+  halfDay?: boolean
+  excludeId?: string
+}): Promise<{ year: number; remaining: number; requested: number } | null> => {
+  const [emp] = await db
+    .select({ entitled: employees.vacationDaysPerYear })
+    .from(employees)
+    .where(eq(employees.id, params.employeeId))
+    .limit(1)
+  if (emp?.entitled == null) return null
+  const state = await getCompanyHolidayState()
+  const fromYear = Number(params.dateFrom.slice(0, 4))
+  const toYear = Number(params.dateTo.slice(0, 4))
+  if (!Number.isInteger(fromYear) || !Number.isInteger(toYear)) return null
+  for (let year = fromYear; year <= toYear; year++) {
+    const requested = absenceWorkdays(
+      {
+        dateFrom: params.dateFrom,
+        dateTo: params.dateTo,
+        halfDay: params.halfDay ?? false
+      },
+      state,
+      `${year}-01-01`,
+      `${year}-12-31`
+    )
+    if (requested <= 0) continue
+    const balance = await remainingVacationDays(params.employeeId, year, {
+      excludeId: params.excludeId
+    })
+    if (requested > balance.remaining) {
+      return { year, remaining: balance.remaining, requested }
+    }
+  }
+  return null
 }
 
 /* ── Mutations ───────────────────────────────────────────────────── */

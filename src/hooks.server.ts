@@ -334,6 +334,7 @@ export const FIELD_LABELS: Record<string, string> = {
   monthlySalary: 'Monatsgehalt',
   hourlyWage: 'Stundenlohn',
   vacationDaysPerYear: 'Urlaubstage pro Jahr',
+  halfDay: 'Halber Tag',
   taxId: 'Steuer-ID',
   taxClass: 'Steuerklasse',
   socialInsuranceNumber: 'Sozialversicherungsnummer',
