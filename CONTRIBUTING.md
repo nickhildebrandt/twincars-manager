@@ -1067,9 +1067,21 @@ templates are canonical. Reuse the wording when adding new modules.
 
 - **Unit and component tests** with Vitest + `@testing-library/svelte`,
   co-located next to the source file (`X.svelte` ↔ `X.test.ts`).
-- **No Playwright in the project**. The Claude Code Playwright MCP is the
-  E2E harness during development.
-- **`scripts/e2e-smoke.mjs` is the standing E2E entry point**: it drives
+  Scoped runs: `pnpm test:unit` (src/lib/server, stores, utils, hooks),
+  `pnpm test:components` (src/lib/components), `pnpm test:integration`
+  (src/routes remote/endpoint tests). `pnpm test` runs everything.
+- **`pnpm test:e2e` is the real E2E suite**: `@playwright/test` specs in
+  `e2e/` against a production build (`node build`) and the committed,
+  anonymized fixture database (`e2e/fixtures/seed.sql.gz`; reset via
+  `node scripts/seed-test-db.mjs`, regeneration via
+  `scripts/generate-test-seed.mjs` — needs the local MDB, which never
+  enters the repo). Browsers are never downloaded: the config resolves
+  the cached Chromium (`CHROMIUM_PATH`). `E2E_WEB_SERVER=1 SEED=1
+pnpm test:e2e` is the fully managed workflow. Long form in
+  `docs/operations/test-database.md`.
+- The interactive Claude Code Playwright walkthrough remains mandatory
+  for frontend changes during development (see §"Verification").
+- **`scripts/e2e-smoke.mjs` stays as the quick smoke check**: it drives
   a headless browser (playwright-core resolved at runtime, never a repo
   dependency) against a running build and walks the core flows: login,
   customer CRUD incl. the archive round trip, search, the creation-flow

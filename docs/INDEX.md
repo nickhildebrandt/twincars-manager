@@ -58,6 +58,7 @@ System: [[settings]] · [[import]] · [[setup]] · [[search]] · [[dashboard-and
 - [[fresh-db-reset]] - runbook for recreating a database (dev and prod)
 - [[dev-environment]] - pnpm, Postgres, mdbtools, mail catcher, headless E2E
 - [[e2e-smoke]] - the standing E2E smoke script (`scripts/e2e-smoke.mjs`)
+- [[test-database]] - reproducible seeded test DB + the Playwright E2E suite (`pnpm test:e2e`)
 
 ## Decisions (ADRs)
 

@@ -36,6 +36,9 @@ test-results
 playwright-report
 .playwright-mcp/*
 
+# E2E runtime artifacts (auth storage state, managed-server pid)
+e2e/.auth
+
 # Uploads / temporary
 uploads
 tmp
@@ -50,3 +53,6 @@ ssh/twincars-manager.pub
 # Tooling must never pollute static/ (would leak into the service-worker asset list)
 static/.svelte-kit/
 static/node_modules/
+
+# Obsidian vault config (user-local, never committed)
+docs/.obsidian/

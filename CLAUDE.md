@@ -22,6 +22,10 @@ pnpm check          # svelte-kit sync && svelte-check — must report 0 errors /
 pnpm test               # Vitest, single run
 pnpm test:watch     # Vitest watch
 pnpm test:cov       # Vitest with v8 coverage
+pnpm test:unit      # Vitest, scoped: src/lib/server|stores|utils, hooks
+pnpm test:components # Vitest, scoped: src/lib/components
+pnpm test:integration # Vitest, scoped: src/routes
+pnpm test:e2e       # @playwright/test suite in e2e/ (see CONTRIBUTING §13)
 pnpm format         # Prettier write across the repo
 pnpm db:generate    # drizzle-kit generate (after schema change)
 pnpm db:migrate     # apply pending migrations
@@ -113,7 +117,7 @@ Until `company_settings.setupCompleted = true`, every route redirects to `/setup
 
 ## Verification before declaring done
 
-Per project memory and §13 of `CONTRIBUTING.md`: in addition to `pnpm test` and `pnpm exec svelte-check`, frontend changes must be exercised live — start `pnpm dev` and walk the affected flows with the Playwright MCP (flow correctness, validation behavior, response times, visual cleanliness). **Do not add Playwright as a project dependency** — it's the agent's tool, not a repo dep. `scripts/e2e-smoke.mjs` is the standing E2E entry point against a running build (login through offer-to-invoice conversion; env `BASE_URL`/`E2E_USERNAME`/`E2E_PASSWORD`/`PLAYWRIGHT_CORE_PATH`/`CHROMIUM_PATH`; see `docs/operations/e2e-smoke.md`).
+Per project memory and §13 of `CONTRIBUTING.md`: in addition to `pnpm test` and `pnpm exec svelte-check`, frontend changes must be exercised live — start `pnpm dev` and walk the affected flows with the Playwright MCP (flow correctness, validation behavior, response times, visual cleanliness). `pnpm test:e2e` is the real E2E suite: `@playwright/test` specs in `e2e/` against a production build and the committed anonymized fixture DB (`e2e/fixtures/seed.sql.gz`; reset `node scripts/seed-test-db.mjs`, fully managed run `E2E_WEB_SERVER=1 SEED=1 pnpm test:e2e`; browsers are never downloaded — the config uses the cached Chromium; see `docs/operations/test-database.md`). `scripts/e2e-smoke.mjs` stays as the quick smoke check against a running build (env `BASE_URL`/`E2E_USERNAME`/`E2E_PASSWORD`/`PLAYWRIGHT_CORE_PATH`/`CHROMIUM_PATH`; see `docs/operations/e2e-smoke.md`).
 
 ## Code style
 
