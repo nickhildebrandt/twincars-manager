@@ -27,15 +27,17 @@
     "test:cov:update": "vitest run --coverage --update",
     "test:befunde": "node scripts/check-befunde.mjs",
     "test:db:reset": "node scripts/test-db.mjs reset",
-    "docs:check": "node scripts/not-yet.mjs docs:check",
-    "docs:api": "node scripts/not-yet.mjs docs:api",
-    "docs:data": "node scripts/not-yet.mjs docs:data",
+    "docs:check": "node scripts/docs-check.mjs",
+    "docs:api": "node scripts/docs-api.mjs",
+    "docs:data": "node scripts/docs-data.mjs",
     "db:generate": "node scripts/not-yet.mjs db:generate",
     "db:migrate": "node scripts/not-yet.mjs db:migrate",
     "db:studio": "node scripts/not-yet.mjs db:studio",
     "db:seed": "node scripts/not-yet.mjs db:seed",
     "test:watch": "vitest --project unit --project nuxt",
-    "test:db:status": "node scripts/test-db.mjs status"
+    "test:db:status": "node scripts/test-db.mjs status",
+    "docs:features": "node scripts/docs-features.mjs",
+    "docs:build": "pnpm docs:features && pnpm docs:api && pnpm docs:data"
   },
   "lint-staged": {
     "*.{js,mjs,ts,vue,json,md,yaml,yml,css}": "eslint --fix"

@@ -109,3 +109,56 @@ die End-to-End-Prüfung. `pnpm lint` und `pnpm typecheck` grün.
 - Die Coverage-Schwellen stehen auf den Zielwerten aus
   [05-teststrategie.md](05-teststrategie.md) §7. Sie sind aktuell mit 100 %
   erfüllt, weil noch wenig Code existiert; ab T-004 werden sie aussagekräftig.
+
+---
+
+## T-003 — Dokumentationsgerüst · fertig 2026-09-13
+
+**Ergebnis:** Die Produktdokumentation steht unter `docs/` mit einem Einstieg,
+sieben Bereichen, fünf Vorlagen und **631 Feature-Seiten**. Die
+Vollständigkeitsprüfung ist scharf.
+
+| Akzeptanzkriterium | Ergebnis |
+| --- | --- |
+| Für jede Feature-ID existiert eine Seite | 631 von 631, `pnpm docs:check` grün |
+| Eine gelöschte Seite lässt die Prüfung fehlschlagen | geprobt mit F-100 — „Feature F-100 hat keine Seite" |
+| Ein toter Link lässt die Prüfung fehlschlagen | geprobt in `docs/guides/README.md` |
+| Einstieg erreicht jede Kategorie in einem Klick | `docs/index.md` verlinkt alle sieben Bereiche |
+| Erzeugte Seiten sind reproduzierbar | zweiter Lauf: 0 neu, 0 aktualisiert, 631 unverändert |
+
+**Was entstanden ist**
+
+- `docs/index.md` — Einstieg; jede Seite in höchstens zwei Klicks erreichbar,
+  maschinell geprüft.
+- `docs/features/` — eine Seite je Funktion, erzeugt aus dem Inventar:
+  Frontmatter mit Kennung, Modul, Arbeitspaket, Routen, Endpoints, Tabellen;
+  im Text das erwartete Verhalten aus dem Inventar.
+- `docs/api/`, `docs/data/`, `docs/ui/`, `docs/architecture/`,
+  `docs/decisions/`, `docs/guides/` — je ein Bereichsindex mit den Grundsätzen
+  und dem Hinweis, welches Arbeitspaket ihn füllt.
+- `docs/_templates/` — Vorlagen für Feature, Endpoint, Komponente,
+  Entscheidung, Anleitung.
+- Skripte: `docs:features`, `docs:api`, `docs:data`, `docs:build`,
+  `docs:check`.
+
+**Entscheidungen unterwegs**
+
+- **Alte und neue Dokumentation stehen nebeneinander.** Die Bereiche
+  `architecture/` und `decisions/` enthalten weiterhin Seiten der
+  SvelteKit-Fassung. Die Prüfung erkennt neue Seiten am Frontmatter-Feld
+  `kategorie` (bzw. `id`) und lässt die alten unangetastet — sie sind während
+  des Umbaus die beste fachliche Quelle und werden erst beim Umstieg entfernt.
+- **Erzeugte Seiten werden nicht nachformatiert.** `docs/features/` und
+  `docs/api/` sind vom Formatierer des Altbestands ausgenommen, sonst meldet
+  die Reproduzierbarkeitsprüfung nach jedem Commit Unterschiede.
+- **Der Generator überschreibt nichts Geschriebenes.** Seiten mit
+  `status: umgesetzt` oder `blockiert` bleiben unverändert; nur Rümpfe werden
+  aufgefrischt.
+
+**Offen aus diesem Paket**
+
+- `docs/api/` und `docs/data/` sind noch leer, weil es weder Endpoints noch ein
+  Schema gibt. Die Generatoren laufen bereits und melden null Einträge.
+- Anleitungen für Umgebung, Freigabe, Deployment und Fehlersuche folgen mit
+  T-041 und T-042; bis dahin verweist der Bereichsindex auf die
+  Betriebsunterlagen des Vorgängersystems.
