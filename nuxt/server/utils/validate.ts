@@ -14,7 +14,7 @@ import * as v from 'valibot'
 import { getQuery, getRequestHeader, getRouterParams, readBody } from 'h3'
 import type { H3Event } from 'h3'
 import { labelForPath } from '#shared/schemas/field-labels'
-import { badRequest, validationFailed } from './errors'
+import { badRequest, validationFailed } from './errors.ts'
 import '#shared/schemas/messages'
 
 type Schema = v.GenericSchema | v.GenericSchemaAsync

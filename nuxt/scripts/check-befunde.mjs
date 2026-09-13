@@ -45,7 +45,9 @@ const done = new Set(
 )
 
 // ── findings per package ────────────────────────────────────────────────────
-const owner = new Map() // finding id -> package id
+// A finding can affect features in several packages, so it can have several
+// owners. It becomes due as soon as ONE of them is finished.
+const owner = new Map() // finding id -> Set<package id>
 for (const line of read(join(planDir, '06-abdeckung.md')).split('\n')) {
   const head = line.match(/^\| \*\*(T-\d{3})\*\* \| (\d+) \| (.*) \|$/)
   if (!head) continue
@@ -56,7 +58,9 @@ for (const line of read(join(planDir, '06-abdeckung.md')).split('\n')) {
     const from = Number(range[1])
     const to = Number(range[2] ?? range[1])
     for (let n = from; n <= to; n++) {
-      owner.set(`B-${String(n).padStart(3, '0')}`, pkg)
+      const id = `B-${String(n).padStart(3, '0')}`
+      if (!owner.has(id)) owner.set(id, new Set())
+      owner.get(id).add(pkg)
     }
   }
 }
@@ -87,8 +91,9 @@ for (const dir of ['test', 'app', 'server', 'shared']) {
 }
 
 // ── report ──────────────────────────────────────────────────────────────────
+const ownersOf = id => [...(owner.get(id) ?? [])]
 const due = [...befunde.keys()].filter(
-  id => all || (owner.has(id) && done.has(owner.get(id))),
+  id => all || ownersOf(id).some(pkg => done.has(pkg)),
 )
 const missing = due.filter(id => !covered.has(id))
 
@@ -100,7 +105,7 @@ console.log(
 if (missing.length > 0) {
   console.error('\nOhne Regressionstest:')
   for (const id of missing) {
-    console.error(`  ${id}  (${owner.get(id) ?? 'ohne Paket'})  ${befunde.get(id)}`)
+    console.error(`  ${id}  (${ownersOf(id).join(', ') || 'ohne Paket'})  ${befunde.get(id)}`)
   }
   console.error(
     '\nJeder behobene Befund braucht einen Test, dessen Name mit der Befund-ID '

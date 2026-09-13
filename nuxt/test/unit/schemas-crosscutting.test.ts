@@ -110,6 +110,18 @@ describe('Feldbezeichnungen', () => {
     expect(labelForPath('nochNichtBenannt')).toBe('nochNichtBenannt')
   })
 
+  it('B-363: die SMTP-Felder haben deutsche Bezeichnungen', () => {
+    // Der Vorgänger kannte für `fromAddress`, `replyTo` und `secure` keine
+    // Bezeichnung, sodass der Nutzer im Fehlerfall den technischen Schlüssel
+    // sah. Die Formularhälfte des Befunds (novalidate, deutsche Meldungen)
+    // gehört zu T-026.
+    for (const key of ['host', 'port', 'secure', 'username', 'password',
+      'fromAddress', 'fromName', 'replyTo']) {
+      expect(FIELD_LABELS[key], key).toBeTruthy()
+      expect(labelForPath(key), key).not.toBe(key)
+    }
+  })
+
   it('jede Bezeichnung ist auf Deutsch und nicht leer', () => {
     for (const [key, label] of Object.entries(FIELD_LABELS)) {
       expect(label.trim(), `Label für ${key}`).not.toBe('')

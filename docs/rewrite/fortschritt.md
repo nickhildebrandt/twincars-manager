@@ -238,3 +238,86 @@ geprüft wird, und jeder Fehler einen Ort, an dem er entsteht. 191 Tests grün.
 | Tests | 191 (15 Dateien) |
 | Coverage | 96,5 % Anweisungen · 88,2 % Zweige · 94,2 % Funktionen |
 | Schemata | 6 Dateien, 20 Primitive, rund 140 Feldbezeichnungen |
+
+---
+
+## T-005 — Datenbankschema, Baseline-Migration, Seeds · fertig 2026-09-13
+
+**Ergebnis:** Das vollständige Datenmodell steht in der neuen Anwendung —
+nachweislich gleichwertig zum Stand des Vorgängersystems, dazu die
+Bereinigungen, die das Inventar belegt hat. 216 Tests grün.
+
+| Akzeptanzkriterium | Ergebnis |
+| --- | --- |
+| Migrationen laufen auf leerer Datenbank durch | 51 Tabellen, 105 Indizes |
+| Migrationen sind wiederholbar | zweiter Lauf ohne Fehler und ohne Änderung |
+| Seeds sind idempotent | zweiter Lauf legt nichts noch einmal an |
+| Drift-Test grün | Tabellen, Spalten, Pflichtfelder und Eingabegrenzen abgeglichen |
+| Jede Fremdschlüsselspalte hat einen Index | **0** ohne Index (vorher 27) |
+| Kein Schema erlaubt mehr Zeichen als die Spalte | geprüft, ein Fehler dabei gefunden und behoben |
+| Jede Tabelle hat einen Primärschlüssel | geprüft |
+
+**Wie die Baseline entstanden ist**
+
+1. Die 38 Migrationen des Vorgängers wurden auf eine leere Datenbank
+   angewendet — alle 38 liefen fehlerfrei durch und ergaben 53 Tabellen.
+2. Daraus wurde das Schema eingelesen und auf **13 Domänendateien** verteilt
+   (statt einer Datei mit 2 025 Zeilen).
+3. Aus dem Schema wurde eine einzelne Baseline-Migration erzeugt und
+   wiederholbar gemacht (214 Anweisungen).
+4. **Gleichwertigkeit nachgewiesen:** alle **624 Spalten**, 138 Indizes,
+   60 Fremdschlüssel und sämtliche Löschregeln stimmen zwischen altem
+   Migrationsstand und neuer Baseline exakt überein.
+
+Damit funktioniert `drizzle-kit generate` wieder, was beim Vorgänger seit
+Migration 0007 nicht mehr der Fall war (B-543).
+
+**Bereinigungen, die eingeflossen sind**
+
+- **25 fehlende Fremdschlüssel-Indizes ergänzt.** Vorher liefen 27 von 60
+  Fremdschlüsseln ohne Index; jede Löschung eines Elterndatensatzes war ein
+  vollständiger Tabellendurchlauf.
+- **Zwei tote Tabellen entfernt**: `public_holidays` (Feiertage werden
+  gerechnet) und `recurring_entries` (hatte nie eine Oberfläche).
+- **Vier tote Spalten entfernt**: `ledger_entries.recurring_template_id`,
+  `vehicle_sales.trade_in_value`, `vehicle_listings.equipment` und
+  `.internal_notes`.
+
+**Behobene Befunde (mit Regressionstest)**
+
+- **B-556 (Klasse)** — der Drift-Test hat sofort einen echten Fall gefunden:
+  das Telefonschema ließ 40 Zeichen zu, die Spalte fasst 30. Eine längere
+  Nummer wäre als unbehandelter Datenbankfehler beim Nutzer gelandet.
+- **B-363** (Teil) — die SMTP-Felder haben jetzt deutsche Bezeichnungen.
+
+**Entscheidungen unterwegs**
+
+- **Eine Baseline statt Baseline plus Bereinigungsmigration.** Für eine frische
+  Installation ist der bereinigte Stand der richtige Ausgangspunkt. Die
+  bestehende Produktionsdatenbank wird in **T-042** mit einem eigenen
+  Cutover-Skript nachgezogen; dessen Inhalt ist die Differenz, die hier
+  dokumentiert ist (25 Indizes, 2 Tabellen, 4 Spalten).
+- **Gegenseitige Verweise zwischen Domänendateien** (Belege ↔ Aufträge,
+  Mitarbeiter ↔ Aufträge) werden mit der verzögerten Referenzform aufgelöst.
+  Ohne sie bricht entweder die Modul-Auswertung oder die Typprüfung.
+- **`bytea` bekommt einen eigenen Spaltentyp** — Drizzle bringt keinen mit,
+  und das Einlesen hatte die drei Binärspalten als `unknown` erzeugt.
+- **Operatorklassen aus dem Einlesen entfernt.** Das Werkzeug hatte bei
+  zusammengesetzten Indizes allen Spalten dieselbe Klasse zugewiesen, was
+  PostgreSQL zurückweist.
+- **`#shared/*` ist jetzt auch für Node auflösbar** (`imports` in der
+  `package.json`), damit Migrations- und Seed-Skript dieselben Module nutzen
+  wie Anwendung und Tests.
+- **Ein Befund kann mehrere Arbeitspakete haben.** Die Prüfung
+  `pnpm test:befunde` hat das anfangs nicht berücksichtigt und nur den letzten
+  Eigentümer behalten; das ist korrigiert.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tabellen | 51 (13 Domänendateien) |
+| Indizes | 105 |
+| Tests | 216 (18 Dateien), davon 46 Integrationstests |
+| Coverage | 93,4 % Anweisungen · 82,5 % Zweige · 91,0 % Funktionen |
+| Seeds | 3 Rollen, 8 Mailvorlagen, 13 Kategorien, 10 Nummernkreise, 7 Öffnungszeiten |

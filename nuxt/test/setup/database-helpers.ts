@@ -9,7 +9,8 @@
 import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
-import type { Options, Sql } from 'postgres'
+import type { Sql } from 'postgres'
+import { connectionOptionsForDatabase } from '../../server/utils/connection.ts'
 
 /** Prefix for everything this module creates, so cleanup can be exact. */
 const PREFIX = 'twincars_test'
@@ -45,35 +46,11 @@ export function loadTestEnv(): void {
  * here and translated. TCP connection strings are passed through unchanged
  * apart from the database name.
  */
-export function connectionOptions(database: string): Options<Record<string, never>> {
-  const base = process.env.DATABASE_URL
-  if (!base) {
-    throw new Error(
-      'DATABASE_URL ist nicht gesetzt. Die Testdatenbank braucht eine Verbindung '
-      + '(lokal über .env.test, in CI über die Umgebung).',
-    )
-  }
-
-  const url = new URL(base)
-  const socket = url.searchParams.get('host')
-  const options: Options<Record<string, never>> = {
-    database,
+export function connectionOptions(database: string) {
+  return connectionOptionsForDatabase(process.env.DATABASE_URL ?? '', database, {
     max: 1,
-    onnotice: () => {},
     connection: { application_name: 'twincars-test' },
-  }
-
-  if (socket?.startsWith('/')) {
-    options.host = socket
-  }
-  else {
-    options.host = url.hostname || '127.0.0.1'
-    if (url.port) options.port = Number(url.port)
-  }
-  if (url.username) options.username = decodeURIComponent(url.username)
-  if (url.password) options.password = decodeURIComponent(url.password)
-
-  return options
+  })
 }
 
 /** Connection to one database. */
@@ -154,10 +131,10 @@ export async function createWorkerDatabase(
 }
 
 /**
- * Applies every `.sql` migration in order. The migration files are written to
- * be idempotent, so re-running is harmless.
- *
- * Until work package T-005 lands there are no migrations and this is a no-op.
+ * Applies every `.sql` migration in order. The files are written to be
+ * idempotent, so re-running is harmless. Deliberately simpler than the
+ * production runner: the template is built from nothing every time, so there
+ * is no journal to keep.
  */
 export async function applyMigrations(database: string): Promise<number> {
   if (!existsSync(MIGRATIONS_DIR)) return 0

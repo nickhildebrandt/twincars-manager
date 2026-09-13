@@ -112,3 +112,23 @@ describe('Fehlerauswertung', () => {
     expect(fieldsOf({ statusCode: 500, data: { data: { fields: { a: 'x' } } } })).toBeNull()
   })
 })
+
+describe('Sprachfilter', () => {
+  it('B-044: der Client filtert Servermeldungen nicht mehr nach Wortanfang', () => {
+    // Der Vorgänger verwarf im Browser jede Meldung, die mit "Invalid",
+    // "Expected" oder "Missing" begann, und auf dem Server jede ohne Umlaut.
+    // Dieselbe Meldung konnte dadurch an beiden Stellen unterschiedlich
+    // aussehen. Jetzt wird die kuratierte Meldung unverändert übernommen.
+    const curated = 'Die Seitenzahl beginnt bei 1.'
+    expect(messageOf({ data: { statusMessage: curated } })).toBe(curated)
+
+    const awkward = 'Expected: Bitte eine gueltige Eingabe.'
+    expect(messageOf({ data: { statusMessage: awkward } })).toBe(awkward)
+  })
+
+  it('B-044: nur eine fehlende Servermeldung führt zum Ersatztext', () => {
+    expect(messageOf({ data: { statusMessage: '   ' } })).toBe(
+      'Es ist leider ein Fehler aufgetreten.',
+    )
+  })
+})

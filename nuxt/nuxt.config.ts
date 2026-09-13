@@ -25,18 +25,22 @@ export default defineNuxtConfig({
 
   // Secrets stay server-side. Everything readable by the browser goes into
   // `public` and must never contain a credential.
+  // The values are mapped from the plain variable names the deployment uses
+  // (DATABASE_URL, APP_SECRET …) rather than Nuxt's NUXT_-prefixed defaults.
+  // This file is the ONLY place that reads process.env; everything else goes
+  // through useRuntimeConfig().
   runtimeConfig: {
-    databaseUrl: '',
-    appSecret: '',
-    appEncryptionKey: '',
-    apiTokens: '',
+    databaseUrl: process.env.DATABASE_URL ?? '',
+    appSecret: process.env.APP_SECRET ?? '',
+    appEncryptionKey: process.env.APP_ENCRYPTION_KEY ?? '',
+    apiTokens: process.env.API_TOKENS ?? '',
     ebay: {
-      clientId: '',
-      certId: '',
-      ruName: '',
-      env: 'production',
-      verificationToken: '',
-      deletionEndpointUrl: '',
+      clientId: process.env.EBAY_CLIENT_ID ?? '',
+      certId: process.env.EBAY_CERT_ID ?? '',
+      ruName: process.env.EBAY_RU_NAME ?? '',
+      env: process.env.EBAY_ENV ?? 'production',
+      verificationToken: process.env.EBAY_VERIFICATION_TOKEN ?? '',
+      deletionEndpointUrl: process.env.EBAY_DELETION_ENDPOINT_URL ?? '',
     },
     tasks: {
       // Recurring work is operator-triggered by default (08-entscheidungen.md

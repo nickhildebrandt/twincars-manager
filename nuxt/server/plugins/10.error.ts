@@ -6,7 +6,7 @@
  * German sentence — no stack, no SQL, no file path
  * (../../../docs/rewrite/03-architektur.md §5.4).
  */
-import { INTERNAL_MESSAGE, UNKNOWN_CLIENT_MESSAGE, isCuratedError } from '../utils/errors'
+import { INTERNAL_MESSAGE, UNKNOWN_CLIENT_MESSAGE, isCuratedError } from '../utils/errors.ts'
 
 export default defineNitroPlugin((nitro) => {
   nitro.hooks.hook('error', (error, context) => {

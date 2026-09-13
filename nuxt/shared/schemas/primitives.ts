@@ -64,10 +64,13 @@ export const emailSchema = v.pipe(
   v.maxLength(254, MESSAGES.tooLong(254)),
 )
 
+// 30 characters, matching the column. The drift test enforces the match:
+// a schema that allows more than the column holds turns a typo into an
+// unhandled database error (B-556).
 export const phoneSchema = v.pipe(
   v.string(),
   v.trim(),
-  v.maxLength(40, MESSAGES.tooLong(40)),
+  v.maxLength(30, MESSAGES.tooLong(30)),
   v.regex(
     /^[\d\s+()/-]*$/,
     'Bitte nur Ziffern, Leerzeichen und die Zeichen + ( ) / - verwenden.',

@@ -12,12 +12,12 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | **T-001** | Projektgerüst und Toolchain | 2 | F-052, F-447 |
 | **T-002** | Teststack und Testdatenbank | 0 | – |
 | **T-003** | Dokumentationsgerüst | 0 | – |
-| **T-004** | Valibot-Fundament und Fehler-Trichter | 5 | F-007–F-008, F-044, F-444, F-526 |
+| **T-004** | Valibot-Fundament und Fehler-Trichter | 4 | F-007–F-008, F-444, F-526 |
 | **T-005** | Datenbankschema, Baseline-Migration, Seeds | 10 | F-006, F-070, F-153–F-159, F-480 |
 | **T-006** | Server-Grundgerüst und Infrastruktur-Helfer | 9 | F-045–F-046, F-048–F-049, F-053, F-170–F-171, F-406, F-411 |
 | **T-007** | Authentifizierung, Sitzungen, Rechte | 24 | F-001–F-003, F-005, F-011–F-013, F-015–F-016, F-055–F-066, F-091–F-093 |
 | **T-008** | App-Shell, Navigation, Zustände, Animationen | 24 | F-009–F-010, F-014, F-018–F-026, F-042, F-067, F-069, F-085–F-086, F-132–F-134, F-136, F-173–F-174, F-445 |
-| **T-009** | Gemeinsame Komponenten und Picker | 35 | F-043, F-095–F-113, F-115–F-117, F-122–F-131, F-137, F-247 |
+| **T-009** | Gemeinsame Komponenten und Picker | 36 | F-043–F-044, F-095–F-113, F-115–F-117, F-122–F-131, F-137, F-247 |
 | **T-010** | Setup-Assistent und Firmeneinstellungen | 33 | F-017, F-068, F-071, F-094, F-138–F-152, F-160–F-169, F-172, F-176–F-177, F-446 |
 | **T-011** | Kunden und Lieferanten | 43 | F-178–F-220 |
 | **T-012** | Fahrzeuge, Dokumente, Fotos | 23 | F-118, F-221–F-240, F-255–F-256 |
@@ -99,7 +99,7 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | F-041 | Dashboard „Anstehende Termine“ | **T-035** |
 | F-042 | Toast-System | **T-008** |
 | F-043 | Creation-Flow-Store (Rundreise-Infrastruktur) | **T-009** |
-| F-044 | Form-Validierungs-Primitive | **T-004** |
+| F-044 | Form-Validierungs-Primitive | **T-009** |
 | F-045 | Geld-/IBAN-/Nummernkreis-/Pagination-Helfer | **T-006** |
 | F-046 | Statuslabel-Katalog (deutsch) | **T-006** |
 | F-047 | PDF öffnen / Datei herunterladen (Client) | **T-023** |
@@ -697,12 +697,12 @@ Nur Befunde mit der Einordnung „im Rewrite beheben". Jeder davon braucht einen
 | **T-001** | 0 | – |
 | **T-002** | 0 | – |
 | **T-003** | 0 | – |
-| **T-004** | 6 | B-012, B-022, B-042, B-044, B-149, B-363 |
+| **T-004** | 5 | B-012, B-042, B-044, B-149, B-363 |
 | **T-005** | 30 | B-015, B-079, B-137, B-139–B-140, B-411, B-560–B-565, B-567–B-568, B-570–B-571, B-574–B-575, B-577–B-579, B-582–B-589, B-594 |
 | **T-006** | 6 | B-011, B-018, B-026, B-028, B-304, B-335 |
 | **T-007** | 15 | B-002–B-003, B-013–B-014, B-018, B-041, B-051–B-052, B-054, B-056–B-058, B-071–B-072, B-080 |
 | **T-008** | 13 | B-012, B-014, B-017, B-019–B-020, B-033–B-035, B-037–B-038, B-043, B-058, B-375 |
-| **T-009** | 20 | B-082–B-084, B-086–B-087, B-091, B-093, B-096, B-100, B-106–B-109, B-111, B-113–B-116, B-216, B-225 |
+| **T-009** | 22 | B-022, B-044, B-082–B-084, B-086–B-087, B-091, B-093, B-096, B-100, B-106–B-109, B-111, B-113–B-116, B-216, B-225 |
 | **T-010** | 24 | B-001, B-046, B-077, B-117–B-118, B-120–B-126, B-128–B-131, B-141–B-144, B-146, B-148, B-150, B-152 |
 | **T-011** | 31 | B-153–B-157, B-159–B-162, B-165–B-166, B-170–B-174, B-176–B-179, B-181–B-186, B-189, B-191–B-194 |
 | **T-012** | 14 | B-105, B-197, B-202–B-204, B-206, B-209–B-210, B-214–B-215, B-217–B-218, B-226, B-228 |
