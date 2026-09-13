@@ -20,9 +20,10 @@ export const items = pgTable('items', {
   stockOnHand: integer('stock_on_hand').default(0).notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   onlineBookable: boolean('online_bookable').default(false).notNull(),
 }, table => [
+  index('items_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   uniqueIndex('items_article_number_idx').using('btree', table.articleNumber.asc().nullsLast()),
   index('items_kind_idx').using('btree', table.kind.asc().nullsLast()),
 ])
@@ -74,8 +75,9 @@ export const tires = pgTable('tires', {
   onlineSellable: boolean('online_sellable').default(false).notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  index('tires_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   uniqueIndex('tires_article_number_idx').using('btree', table.articleNumber.asc().nullsLast()),
   index('tires_brand_idx').using('btree', table.brand.asc().nullsLast()),
   index('tires_online_sellable_idx').using('btree', table.onlineSellable.asc().nullsLast()),

@@ -18,7 +18,7 @@ export const users = pgTable('users', {
   username: text(),
   displayUsername: text('display_username'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   active: boolean().default(true).notNull(),
 }, table => [
   uniqueIndex('users_email_idx').using('btree', table.email.asc().nullsLast()),
@@ -33,7 +33,7 @@ export const sessions = pgTable('sessions', {
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   uniqueIndex('sessions_token_idx').using('btree', table.token.asc().nullsLast()),
   index('sessions_user_id_idx').using('btree', table.userId.asc().nullsLast()),
@@ -57,7 +57,7 @@ export const accounts = pgTable('accounts', {
   scope: text(),
   password: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('accounts_user_id_idx').using('btree', table.userId.asc().nullsLast()),
   foreignKey({
@@ -73,7 +73,7 @@ export const verifications = pgTable('verifications', {
   value: text().notNull(),
   expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('verifications_identifier_idx').using('btree', table.identifier.asc().nullsLast()),
 ])
@@ -83,7 +83,7 @@ export const roles = pgTable('roles', {
   name: varchar({ length: 100 }).notNull(),
   description: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   uniqueIndex('roles_name_idx').using('btree', table.name.asc().nullsLast()),
 ])

@@ -144,3 +144,23 @@ describe('Vorgaben anlegen', () => {
     expect(rows.filter(r => r.direction === 'expense').length).toBeGreaterThan(0)
   })
 })
+
+describe('Automatische Zeitstempel', () => {
+  it('B-575: die Datenbank aktualisiert updated_at bei jeder Änderung', async () => {
+    // Der Vorgänger setzte updated_at an 45 Stellen von Hand. Eine vergessene
+    // Stelle blieb unbemerkt, und die Spalte log.
+    const [before] = await db.select().from(schema.companySettings).limit(1)
+    expect(before).toBeTruthy()
+
+    await new Promise(resolve => setTimeout(resolve, 20))
+    const [after] = await db
+      .update(schema.companySettings)
+      .set({ companyName: 'Werkstatt Beispiel' })
+      .where(eq(schema.companySettings.id, before!.id))
+      .returning()
+
+    expect(after!.companyName).toBe('Werkstatt Beispiel')
+    expect(new Date(after!.updatedAt).getTime())
+      .toBeGreaterThan(new Date(before!.updatedAt).getTime())
+  })
+})

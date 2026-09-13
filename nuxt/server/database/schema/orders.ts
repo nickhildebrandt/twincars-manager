@@ -28,10 +28,11 @@ export const workOrders = pgTable('work_orders', {
   invoiceId: uuid('invoice_id'),
   completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   scheduledDate: date('scheduled_date'),
   scheduledTime: varchar('scheduled_time', { length: 5 }),
 }, table => [
+  index('work_orders_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('work_orders_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   uniqueIndex('work_orders_appointment_id_idx').using('btree', table.appointmentId.asc().nullsLast()).where(sql`(appointment_id IS NOT NULL)`),
   index('work_orders_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
@@ -74,7 +75,7 @@ export const workOrderItems = pgTable('work_order_items', {
   hours: numeric({ precision: 6, scale: 2 }),
   doneAt: date('done_at').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('work_order_items_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   index('work_order_items_item_id_idx').using('btree', table.itemId.asc().nullsLast()),

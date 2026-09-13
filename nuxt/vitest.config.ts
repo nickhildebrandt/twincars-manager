@@ -35,6 +35,10 @@ export default defineConfig({
         'server/plugins/**',
         // Pure re-export barrel.
         'shared/schemas/index.ts',
+        // Declarative table definitions, not logic. Their correctness is
+        // proven against a real database by test/integration/schema-drift,
+        // which compares every table, column and constraint.
+        'server/database/schema/**',
       ],
       // Thresholds may only ever RISE. `pnpm test:cov:update` writes the
       // reached values back into this file; the change is committed with the

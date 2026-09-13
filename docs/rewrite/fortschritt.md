@@ -312,12 +312,42 @@ Migration 0007 nicht mehr der Fall war (B-543).
   `pnpm test:befunde` hat das anfangs nicht berücksichtigt und nur den letzten
   Eigentümer behalten; das ist korrigiert.
 
+**Zweiter Durchgang: Strukturhärtung**
+
+Die Befund-Prüfung hat nach dem ersten Durchgang gemeldet, dass T-005 dreißig
+Datenmodell-Befunde besitzt, von denen erst ein Teil erledigt war. Daraufhin
+kam ein zweiter Durchgang:
+
+- **B-575** — `updated_at` wird von der Datenbank gestempelt, nicht mehr an 45
+  Stellen von Hand (26 Spalten). Ein Test ändert eine Zeile und prüft, dass der
+  Zeitstempel mitwandert.
+- **B-574** — Belegpositionen, Nummernkreise, Buchungskategorien und
+  Mailvorlagen führen jetzt Zeitstempel.
+- **B-567** — Personalnummer und Verkaufsinserat sind eindeutig.
+- **B-568** — die zwei fehlenden Fremdschlüssel sind deklariert, samt Index.
+- **B-565** — acht Sortier-Indizes für die Standardsortierung der Listen.
+- **B-139, B-586** — die drei Einzelzeilen-Tabellen nehmen nur noch eine Zeile
+  auf; die Datenbank weist die zweite ab (geprüft).
+- **B-561** — Öffnungszeiten sind eine echte Uhrzeit, kein Text.
+
+**Bewusst anderen Paketen zugeordnet.** Sieben Datenmodell-Befunde hängen an
+einer fachlichen Festlegung, die hier nicht zu treffen ist, ohne zu raten:
+erlaubte Statuswerte (B-411 → T-028), Löschregeln (B-587 → T-022), welches
+Feld fachlich Pflicht ist (B-588 → T-011), Transaktionen in den Diensten
+(B-578 → T-011), die Id-Strategie der Anmeldebibliothek (B-582 → T-007),
+Upload-Grenzen (B-589 → T-009), das Verhalten beim Entfernen geseedeter Rechte
+(B-079 → T-034) und eine Spaltenumbenennung, die eine Datenmigration ist
+(B-594 → T-042). Die Zuordnung steht in
+[06-abdeckung.md](06-abdeckung.md); `pnpm test:befunde` verlangt den
+Regressionstest dann dort.
+
 **Zahlen**
 
 | | |
 | --- | --- |
 | Tabellen | 51 (13 Domänendateien) |
-| Indizes | 105 |
-| Tests | 216 (18 Dateien), davon 46 Integrationstests |
-| Coverage | 93,4 % Anweisungen · 82,5 % Zweige · 91,0 % Funktionen |
+| Indizes | 114, kein Fremdschlüssel ohne Index |
+| Tests | 239 (18 Dateien), davon 69 Integrationstests |
+| Coverage | 92,1 % Anweisungen · 82,5 % Zweige · 88,9 % Funktionen |
 | Seeds | 3 Rollen, 8 Mailvorlagen, 13 Kategorien, 10 Nummernkreise, 7 Öffnungszeiten |
+| Befund-Abdeckung | 27 von 27 fälligen Befunden mit Regressionstest |

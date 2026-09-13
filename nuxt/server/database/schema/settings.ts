@@ -7,7 +7,8 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, numeric, integer, boolean, timestamp, foreignKey, text, unique, index } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, numeric, integer, boolean, timestamp, foreignKey, text, unique, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { items } from './catalog.ts'
 
 export const companySettings = pgTable('company_settings', {
@@ -37,7 +38,7 @@ export const companySettings = pgTable('company_settings', {
   logoData: text('logo_data'),
   pdfFooter: text('pdf_footer').default('').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   smallBusinessExempt: boolean('small_business_exempt').default(false).notNull(),
   reminderAutoEnabled: boolean('reminder_auto_enabled').default(true).notNull(),
   reminderDays1: integer('reminder_days_1').default(3).notNull(),
@@ -46,6 +47,7 @@ export const companySettings = pgTable('company_settings', {
   geoLon: numeric('geo_lon', { precision: 9, scale: 6 }),
   laborItemId: uuid('labor_item_id'),
 }, table => [
+  uniqueIndex('company_settings_singleton').using('btree', sql`((true))`),
   index('company_settings_labor_item_id_idx').using('btree', table.laborItemId.asc().nullsLast()),
   foreignKey({
     columns: [table.laborItemId],
@@ -59,6 +61,8 @@ export const numberRanges = pgTable('number_ranges', {
   kind: varchar({ length: 30 }).notNull(),
   formatTemplate: varchar('format_template', { length: 50 }).notNull(),
   nextValue: integer('next_value').default(1).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   unique('number_ranges_kind_unique').on(table.kind),
 ])

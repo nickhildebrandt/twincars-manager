@@ -8,6 +8,7 @@
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
 import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
+import { documents } from './documents.ts'
 import { bytea } from './_types.ts'
 import { customers } from './customers.ts'
 
@@ -34,9 +35,10 @@ export const vehicles = pgTable('vehicles', {
   notes: text(),
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   previousOwnerCustomerId: uuid('previous_owner_customer_id'),
 }, table => [
+  index('vehicles_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('vehicles_previous_owner_customer_id_idx').using('btree', table.previousOwnerCustomerId.asc().nullsLast()),
   index('vehicles_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('vehicles_next_hu_idx').using('btree', table.nextHu.asc().nullsLast()),
@@ -97,6 +99,12 @@ export const vehicleSales = pgTable('vehicle_sales', {
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  index('vehicle_sales_invoice_id_idx').using('btree', table.invoiceId.asc().nullsLast()),
+  foreignKey({
+    columns: [table.invoiceId],
+    foreignColumns: [documents.id],
+    name: 'vehicle_sales_invoice_id_fk',
+  }).onDelete('set null'),
   index('vehicle_sales_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('vehicle_sales_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   foreignKey({
@@ -120,8 +128,9 @@ export const vehicleListings = pgTable('vehicle_listings', {
   highlights: text(),
   location: varchar({ length: 100 }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  uniqueIndex('vehicle_listings_vehicle_unique').using('btree', table.vehicleId.asc().nullsLast()),
   index('vehicle_listings_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   foreignKey({
     columns: [table.vehicleId],

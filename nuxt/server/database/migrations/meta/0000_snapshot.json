@@ -1,5 +1,5 @@
 {
-  "id": "1bd78f6c-7a3f-4f60-912b-3ef6981b8368",
+  "id": "d6ea9a09-30bd-455b-9c19-202b1c662638",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -979,6 +979,21 @@
         }
       },
       "indexes": {
+        "items_created_at_idx": {
+          "name": "items_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "items_article_number_idx": {
           "name": "items_article_number_idx",
           "columns": [
@@ -1391,6 +1406,21 @@
         }
       },
       "indexes": {
+        "tires_created_at_idx": {
+          "name": "tires_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "tires_article_number_idx": {
           "name": "tires_article_number_idx",
           "columns": [
@@ -1524,6 +1554,13 @@
         },
         "updated_at": {
           "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "created_at": {
+          "name": "created_at",
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": true,
@@ -1883,7 +1920,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "smtp_settings_singleton": {
+          "name": "smtp_settings_singleton",
+          "columns": [
+            {
+              "expression": "((true))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -2267,6 +2320,21 @@
         }
       },
       "indexes": {
+        "customers_created_at_idx": {
+          "name": "customers_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "customers_company_idx": {
           "name": "customers_company_idx",
           "columns": [
@@ -2494,7 +2562,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "suppliers_created_at_idx": {
+          "name": "suppliers_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -2603,6 +2687,20 @@
           "type": "uuid",
           "primaryKey": false,
           "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {
@@ -3064,6 +3162,21 @@
         }
       },
       "indexes": {
+        "documents_created_at_idx": {
+          "name": "documents_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "documents_vehicle_id_idx": {
           "name": "documents_vehicle_id_idx",
           "columns": [
@@ -3981,7 +4094,38 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "employees_created_at_idx": {
+          "name": "employees_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "employees_personnel_number_idx": {
+          "name": "employees_personnel_number_idx",
+          "columns": [
+            {
+              "expression": "personnel_number",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -4432,7 +4576,23 @@
           "default": "now()"
         }
       },
-      "indexes": {},
+      "indexes": {
+        "ebay_credentials_singleton": {
+          "name": "ebay_credentials_singleton",
+          "columns": [
+            {
+              "expression": "((true))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
       "foreignKeys": {},
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
@@ -4762,6 +4922,20 @@
           "type": "numeric(5, 2)",
           "primaryKey": false,
           "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {},
@@ -5403,6 +5577,21 @@
         }
       },
       "indexes": {
+        "work_orders_created_at_idx": {
+          "name": "work_orders_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "work_orders_vehicle_id_idx": {
           "name": "work_orders_vehicle_id_idx",
           "columns": [
@@ -5778,6 +5967,21 @@
         }
       },
       "indexes": {
+        "company_settings_singleton": {
+          "name": "company_settings_singleton",
+          "columns": [
+            {
+              "expression": "((true))",
+              "asc": true,
+              "isExpression": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "company_settings_labor_item_id_idx": {
           "name": "company_settings_labor_item_id_idx",
           "columns": [
@@ -5844,6 +6048,20 @@
           "primaryKey": false,
           "notNull": true,
           "default": 1
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        },
+        "updated_at": {
+          "name": "updated_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
         }
       },
       "indexes": {},
@@ -5937,7 +6155,21 @@
           "with": {}
         }
       },
-      "foreignKeys": {},
+      "foreignKeys": {
+        "tire_reminder_log_customer_id_fk": {
+          "name": "tire_reminder_log_customer_id_fk",
+          "tableFrom": "tire_reminder_log",
+          "tableTo": "customers",
+          "columnsFrom": [
+            "customer_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "cascade",
+          "onUpdate": "no action"
+        }
+      },
       "compositePrimaryKeys": {},
       "uniqueConstraints": {
         "tire_reminder_log_unique": {
@@ -6432,6 +6664,21 @@
         }
       },
       "indexes": {
+        "vehicle_listings_vehicle_unique": {
+          "name": "vehicle_listings_vehicle_unique",
+          "columns": [
+            {
+              "expression": "vehicle_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "vehicle_listings_vehicle_id_idx": {
           "name": "vehicle_listings_vehicle_id_idx",
           "columns": [
@@ -6701,6 +6948,21 @@
         }
       },
       "indexes": {
+        "vehicle_sales_invoice_id_idx": {
+          "name": "vehicle_sales_invoice_id_idx",
+          "columns": [
+            {
+              "expression": "invoice_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "vehicle_sales_customer_id_idx": {
           "name": "vehicle_sales_customer_id_idx",
           "columns": [
@@ -6733,6 +6995,19 @@
         }
       },
       "foreignKeys": {
+        "vehicle_sales_invoice_id_fk": {
+          "name": "vehicle_sales_invoice_id_fk",
+          "tableFrom": "vehicle_sales",
+          "tableTo": "documents",
+          "columnsFrom": [
+            "invoice_id"
+          ],
+          "columnsTo": [
+            "id"
+          ],
+          "onDelete": "set null",
+          "onUpdate": "no action"
+        },
         "vehicle_sales_vehicle_id_vehicles_id_fk": {
           "name": "vehicle_sales_vehicle_id_vehicles_id_fk",
           "tableFrom": "vehicle_sales",
@@ -6920,6 +7195,21 @@
         }
       },
       "indexes": {
+        "vehicles_created_at_idx": {
+          "name": "vehicles_created_at_idx",
+          "columns": [
+            {
+              "expression": "created_at",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
         "vehicles_previous_owner_customer_id_idx": {
           "name": "vehicles_previous_owner_customer_id_idx",
           "columns": [

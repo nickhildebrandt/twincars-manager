@@ -47,8 +47,11 @@ export const employees = pgTable('employees', {
   bankName: varchar('bank_name', { length: 100 }),
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-})
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+}, table => [
+  index('employees_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
+  uniqueIndex('employees_personnel_number_idx').using('btree', table.personnelNumber.asc().nullsLast()),
+])
 
 export const employeeAbsences = pgTable('employee_absences', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -63,7 +66,7 @@ export const employeeAbsences = pgTable('employee_absences', {
   attachmentMime: varchar('attachment_mime', { length: 50 }),
   attachmentName: varchar('attachment_name', { length: 200 }),
   attachmentData: text('attachment_data'),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('employee_absences_date_from_idx').using('btree', table.dateFrom.asc().nullsLast()),
   index('employee_absences_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
@@ -101,7 +104,7 @@ export const timeEntries = pgTable('time_entries', {
   task: varchar({ length: 200 }),
   note: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   // Deferred reference, see documents.ts — time entries and work orders
   // reference each other across domain files.
   workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'set null' }),
@@ -140,5 +143,5 @@ export const workshopHours = pgTable('workshop_hours', {
   opensAt: time('opens_at').default('08:00:00').notNull(),
   closesAt: time('closes_at').default('17:00:00').notNull(),
   closed: boolean().default(false).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 })

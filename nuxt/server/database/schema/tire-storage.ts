@@ -28,7 +28,7 @@ export const tireStorage = pgTable('tire_storage', {
   storedAt: date('stored_at').defaultNow().notNull(),
   retrievedAt: date('retrieved_at'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('tire_storage_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('tire_storage_active_idx').using('btree', table.retrievedAt.asc().nullsLast()),
@@ -53,6 +53,11 @@ export const tireReminderLog = pgTable('tire_reminder_log', {
   year: integer().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  foreignKey({
+    columns: [table.customerId],
+    foreignColumns: [customers.id],
+    name: 'tire_reminder_log_customer_id_fk',
+  }).onDelete('cascade'),
   index('tire_reminder_log_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('tire_reminder_log_season_year_idx').using('btree', table.season.asc().nullsLast(), table.year.asc().nullsLast()),
   unique('tire_reminder_log_unique').on(table.customerId, table.season, table.year),

@@ -8,6 +8,7 @@
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
 import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { documents } from './documents.ts'
 
 export const sentMessages = pgTable('sent_messages', {
@@ -39,7 +40,8 @@ export const mailTemplates = pgTable('mail_templates', {
   subject: varchar({ length: 200 }).notNull(),
   body: text().notNull(),
   isCustom: boolean('is_custom').default(false).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
   uniqueIndex('mail_templates_key_idx').using('btree', table.key.asc().nullsLast()),
 ])
@@ -55,8 +57,10 @@ export const smtpSettings = pgTable('smtp_settings', {
   fromName: varchar('from_name', { length: 200 }).default('').notNull(),
   replyTo: varchar('reply_to', { length: 254 }),
   verified: boolean().default(false).notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-})
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+}, () => [
+  uniqueIndex('smtp_settings_singleton').using('btree', sql`((true))`),
+])
 
 export const posts = pgTable('posts', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -68,7 +72,7 @@ export const posts = pgTable('posts', {
   published: boolean().default(false).notNull(),
   publishedAt: timestamp('published_at', { withTimezone: true, mode: 'string' }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('posts_published_idx').using('btree', table.published.asc().nullsLast(), table.publishedAt.asc().nullsLast()),
   uniqueIndex('posts_slug_idx').using('btree', table.slug.asc().nullsLast()),

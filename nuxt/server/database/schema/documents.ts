@@ -35,7 +35,7 @@ export const documents = pgTable('documents', {
   footer: text(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   convertedToInvoiceId: uuid('converted_to_invoice_id'),
   reminderLevel: integer('reminder_level').default(0).notNull(),
   cancelledAt: timestamp('cancelled_at', { withTimezone: true, mode: 'string' }),
@@ -47,6 +47,7 @@ export const documents = pgTable('documents', {
   // module evaluation order and the type checker.
   workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'set null' }),
 }, table => [
+  index('documents_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('documents_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('documents_cancelled_by_idx').using('btree', table.cancelledByDocumentId.asc().nullsLast()),
   index('documents_cancels_idx').using('btree', table.cancelsDocumentId.asc().nullsLast()),
@@ -94,6 +95,8 @@ export const documentItems = pgTable('document_items', {
   lineTotalNet: numeric('line_total_net', { precision: 12, scale: 2 }).default('0').notNull(),
   lineTotalGross: numeric('line_total_gross', { precision: 12, scale: 2 }).default('0').notNull(),
   tireId: uuid('tire_id'),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('document_items_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   index('document_items_item_id_idx').using('btree', table.itemId.asc().nullsLast()),
@@ -161,7 +164,7 @@ export const reminders = pgTable('reminders', {
   status: varchar({ length: 20 }).default('open').notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('reminders_invoice_id_idx').using('btree', table.invoiceId.asc().nullsLast()),
   uniqueIndex('reminders_invoice_level_idx').using('btree', table.invoiceId.asc().nullsLast(), table.level.asc().nullsLast()),

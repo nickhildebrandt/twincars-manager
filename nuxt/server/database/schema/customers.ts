@@ -36,12 +36,13 @@ export const customers = pgTable('customers', {
   bankName: varchar('bank_name', { length: 100 }),
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   kind: varchar({ length: 20 }).default('regular').notNull(),
   ebayHandle: varchar('ebay_handle', { length: 100 }),
   wantsBroadcast: boolean('wants_broadcast').default(false).notNull(),
   wantsTireReminders: boolean('wants_tire_reminders').default(false).notNull(),
 }, table => [
+  index('customers_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('customers_company_idx').using('btree', table.company.asc().nullsLast()),
   uniqueIndex('customers_customer_number_idx').using('btree', table.customerNumber.asc().nullsLast()),
   index('customers_kind_idx').using('btree', table.kind.asc().nullsLast()),
@@ -70,8 +71,10 @@ export const suppliers = pgTable('suppliers', {
   notes: text(),
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-})
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+}, table => [
+  index('suppliers_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
+])
 
 export const customerInquiries = pgTable('customer_inquiries', {
   id: uuid().defaultRandom().primaryKey().notNull(),

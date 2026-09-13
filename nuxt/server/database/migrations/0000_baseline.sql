@@ -163,7 +163,8 @@ CREATE TABLE IF NOT EXISTS "mail_templates" (
 	"subject" varchar(200) NOT NULL,
 	"body" text NOT NULL,
 	"is_custom" boolean DEFAULT false NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "posts" (
@@ -297,7 +298,9 @@ CREATE TABLE IF NOT EXISTS "document_items" (
 	"tax_rate" numeric(5, 2) DEFAULT '19.00' NOT NULL,
 	"line_total_net" numeric(12, 2) DEFAULT '0' NOT NULL,
 	"line_total_gross" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"tire_id" uuid
+	"tire_id" uuid,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "document_payments" (
@@ -530,6 +533,8 @@ CREATE TABLE IF NOT EXISTS "ledger_categories" (
 	"direction" varchar(10) NOT NULL,
 	"name" varchar(100) NOT NULL,
 	"default_tax_rate" numeric(5, 2),
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ledger_categories_name_unique" UNIQUE("name")
 );
 --> statement-breakpoint
@@ -636,6 +641,8 @@ CREATE TABLE IF NOT EXISTS "number_ranges" (
 	"kind" varchar(30) NOT NULL,
 	"format_template" varchar(50) NOT NULL,
 	"next_value" integer DEFAULT 1 NOT NULL,
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "number_ranges_kind_unique" UNIQUE("kind")
 );
 --> statement-breakpoint
@@ -946,6 +953,10 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
+  ALTER TABLE "tire_reminder_log" ADD CONSTRAINT "tire_reminder_log_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
   ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
@@ -971,6 +982,10 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
   ALTER TABLE "vehicle_purchases" ADD CONSTRAINT "vehicle_purchases_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "vehicle_sales" ADD CONSTRAINT "vehicle_sales_invoice_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -1004,10 +1019,12 @@ CREATE INDEX IF NOT EXISTS "calendar_entries_kind_idx" ON "calendar_entries" USI
 CREATE INDEX IF NOT EXISTS "calendar_entries_starts_at_idx" ON "calendar_entries" USING btree ("starts_at");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "item_price_versions_item_from_idx" ON "item_price_versions" USING btree ("item_id","valid_from");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "item_price_versions_item_idx" ON "item_price_versions" USING btree ("item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "items_created_at_idx" ON "items" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "items_article_number_idx" ON "items" USING btree ("article_number");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "items_kind_idx" ON "items" USING btree ("kind");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tire_photos_tire_idx" ON "tire_photos" USING btree ("tire_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "tire_price_versions_tire_from_idx" ON "tire_price_versions" USING btree ("tire_id","valid_from");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "tires_created_at_idx" ON "tires" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "tires_article_number_idx" ON "tires" USING btree ("article_number");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tires_brand_idx" ON "tires" USING btree ("brand");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tires_online_sellable_idx" ON "tires" USING btree ("online_sellable");--> statement-breakpoint
@@ -1018,21 +1035,25 @@ CREATE INDEX IF NOT EXISTS "posts_published_idx" ON "posts" USING btree ("publis
 CREATE UNIQUE INDEX IF NOT EXISTS "posts_slug_idx" ON "posts" USING btree ("slug");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sent_messages_document_id_idx" ON "sent_messages" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sent_messages_sent_at_idx" ON "sent_messages" USING btree ("sent_at");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "smtp_settings_singleton" ON "smtp_settings" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_customer_id_idx" ON "customer_inquiries" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_created_at_idx" ON "customer_inquiries" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_notification_status_idx" ON "customer_inquiries" USING btree ("notification_status");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_status_idx" ON "customer_inquiries" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "customers_created_at_idx" ON "customers" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_company_idx" ON "customers" USING btree ("company");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "customers_customer_number_idx" ON "customers" USING btree ("customer_number");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_kind_idx" ON "customers" USING btree ("kind");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_last_name_idx" ON "customers" USING btree ("last_name");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_wants_broadcast_idx" ON "customers" USING btree ("wants_broadcast");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_zip_idx" ON "customers" USING btree ("zip");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "suppliers_created_at_idx" ON "suppliers" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "document_items_document_id_idx" ON "document_items" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "document_items_item_id_idx" ON "document_items" USING btree ("item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "document_items_tire_idx" ON "document_items" USING btree ("tire_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "document_payments_document_id_idx" ON "document_payments" USING btree ("document_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "document_pdfs_document_id_idx" ON "document_pdfs" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "documents_created_at_idx" ON "documents" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_vehicle_id_idx" ON "documents" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_cancelled_by_idx" ON "documents" USING btree ("cancelled_by_document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_cancels_idx" ON "documents" USING btree ("cancels_document_id");--> statement-breakpoint
@@ -1050,12 +1071,15 @@ CREATE INDEX IF NOT EXISTS "employee_absences_date_from_idx" ON "employee_absenc
 CREATE INDEX IF NOT EXISTS "employee_absences_employee_id_idx" ON "employee_absences" USING btree ("employee_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "employee_salary_versions_emp_from_idx" ON "employee_salary_versions" USING btree ("employee_id","valid_from");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "employee_salary_versions_employee_idx" ON "employee_salary_versions" USING btree ("employee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "employees_created_at_idx" ON "employees" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "employees_personnel_number_idx" ON "employees" USING btree ("personnel_number");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "time_entries_customer_id_idx" ON "time_entries" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "time_entries_date_idx" ON "time_entries" USING btree ("date");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "time_entries_document_id_idx" ON "time_entries" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "time_entries_employee_id_idx" ON "time_entries" USING btree ("employee_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "time_entries_work_order_id_idx" ON "time_entries" USING btree ("work_order_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "time_entries_work_order_item_id_idx" ON "time_entries" USING btree ("work_order_item_id") WHERE (work_order_item_id IS NOT NULL);--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "ebay_credentials_singleton" ON "ebay_credentials" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ebay_listings_tire_id_idx" ON "ebay_listings" USING btree ("tire_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "ebay_listings_env_item_idx" ON "ebay_listings" USING btree ("environment","ebay_item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ebay_listings_status_idx" ON "ebay_listings" USING btree ("status");--> statement-breakpoint
@@ -1069,11 +1093,13 @@ CREATE INDEX IF NOT EXISTS "work_order_assignees_employee_id_idx" ON "work_order
 CREATE INDEX IF NOT EXISTS "work_order_items_employee_id_idx" ON "work_order_items" USING btree ("employee_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_order_items_item_id_idx" ON "work_order_items" USING btree ("item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_order_items_work_order_id_idx" ON "work_order_items" USING btree ("work_order_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "work_orders_created_at_idx" ON "work_orders" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_vehicle_id_idx" ON "work_orders" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "work_orders_appointment_id_idx" ON "work_orders" USING btree ("appointment_id") WHERE (appointment_id IS NOT NULL);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_customer_id_idx" ON "work_orders" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_invoice_id_idx" ON "work_orders" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_status_idx" ON "work_orders" USING btree ("status");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "company_settings_singleton" ON "company_settings" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "company_settings_labor_item_id_idx" ON "company_settings" USING btree ("labor_item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tire_reminder_log_customer_id_idx" ON "tire_reminder_log" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tire_reminder_log_season_year_idx" ON "tire_reminder_log" USING btree ("season","year");--> statement-breakpoint
@@ -1085,11 +1111,14 @@ CREATE INDEX IF NOT EXISTS "vehicle_documents_vehicle_id_idx" ON "vehicle_docume
 CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_plate_idx" ON "vehicle_license_plate_versions" USING btree ("license_plate");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_license_plate_versions_veh_from_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id","valid_from");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_vehicle_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_listings_vehicle_unique" ON "vehicle_listings" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_listings_vehicle_id_idx" ON "vehicle_listings" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_photos_vehicle_id_idx" ON "vehicle_photos" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_purchases_vehicle_id_idx" ON "vehicle_purchases" USING btree ("vehicle_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "vehicle_sales_invoice_id_idx" ON "vehicle_sales" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_sales_customer_id_idx" ON "vehicle_sales" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_sales_vehicle_id_idx" ON "vehicle_sales" USING btree ("vehicle_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "vehicles_created_at_idx" ON "vehicles" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicles_previous_owner_customer_id_idx" ON "vehicles" USING btree ("previous_owner_customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicles_customer_id_idx" ON "vehicles" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicles_next_hu_idx" ON "vehicles" USING btree ("next_hu");--> statement-breakpoint

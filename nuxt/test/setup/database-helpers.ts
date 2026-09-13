@@ -10,6 +10,8 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import postgres from 'postgres'
 import type { Sql } from 'postgres'
+import { drizzle } from 'drizzle-orm/postgres-js'
+import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { connectionOptionsForDatabase } from '../../server/utils/connection.ts'
 
 /** Prefix for everything this module creates, so cleanup can be exact. */
@@ -131,23 +133,18 @@ export async function createWorkerDatabase(
 }
 
 /**
- * Applies every `.sql` migration in order. The files are written to be
- * idempotent, so re-running is harmless. Deliberately simpler than the
- * production runner: the template is built from nothing every time, so there
- * is no journal to keep.
+ * Applies the migrations with the SAME runner production uses, so the template
+ * ends up byte-identical to a freshly deployed database — including Drizzle's
+ * journal table.
  */
 export async function applyMigrations(database: string): Promise<number> {
   if (!existsSync(MIGRATIONS_DIR)) return 0
-  const files = readdirSync(MIGRATIONS_DIR)
-    .filter(name => name.endsWith('.sql'))
-    .sort()
+  const files = readdirSync(MIGRATIONS_DIR).filter(name => name.endsWith('.sql'))
   if (files.length === 0) return 0
 
   const sql = sqlFor(database)
   try {
-    for (const file of files) {
-      await sql.unsafe(readFileSync(`${MIGRATIONS_DIR}/${file}`, 'utf8'))
-    }
+    await migrate(drizzle(sql), { migrationsFolder: MIGRATIONS_DIR })
   }
   finally {
     await sql.end({ timeout: 5 })

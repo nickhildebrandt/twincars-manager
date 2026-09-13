@@ -8,6 +8,7 @@
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
 import { pgTable, uuid, varchar, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { sql } from 'drizzle-orm'
 import { tires } from './catalog.ts'
 
 export const ebayCredentials = pgTable('ebay_credentials', {
@@ -20,8 +21,10 @@ export const ebayCredentials = pgTable('ebay_credentials', {
   scopes: text().default('').notNull(),
   environment: varchar({ length: 20 }).default('production').notNull(),
   connectedAt: timestamp('connected_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-})
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+}, () => [
+  uniqueIndex('ebay_credentials_singleton').using('btree', sql`((true))`),
+])
 
 export const ebayListings = pgTable('ebay_listings', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -43,7 +46,7 @@ export const ebayListings = pgTable('ebay_listings', {
   tireId: uuid('tire_id'),
   firstImportedAt: timestamp('first_imported_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   index('ebay_listings_tire_id_idx').using('btree', table.tireId.asc().nullsLast()),
   uniqueIndex('ebay_listings_env_item_idx').using('btree', table.environment.asc().nullsLast(), table.ebayItemId.asc().nullsLast()),

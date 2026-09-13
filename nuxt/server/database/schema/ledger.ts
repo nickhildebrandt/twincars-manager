@@ -16,6 +16,8 @@ export const ledgerCategories = pgTable('ledger_categories', {
   direction: varchar({ length: 10 }).notNull(),
   name: varchar({ length: 100 }).notNull(),
   defaultTaxRate: numeric('default_tax_rate', { precision: 5, scale: 2 }),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   unique('ledger_categories_name_unique').on(table.name),
 ])
