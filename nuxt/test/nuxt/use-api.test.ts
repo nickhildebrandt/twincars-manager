@@ -31,6 +31,16 @@ registerEndpoint('/api/probe/invalid', {
     }),
 })
 
+registerEndpoint('/api/probe/echo', {
+  method: 'PATCH',
+  handler: () => ({ method: 'PATCH' }),
+})
+
+registerEndpoint('/api/probe/weg', {
+  method: 'DELETE',
+  handler: () => ({ method: 'DELETE' }),
+})
+
 registerEndpoint('/api/probe/gone', () =>
   createError({
     statusCode: 401,
@@ -130,5 +140,32 @@ describe('Sprachfilter', () => {
     expect(messageOf({ data: { statusMessage: '   ' } })).toBe(
       'Es ist leider ein Fehler aufgetreten.',
     )
+  })
+})
+
+describe('Die Kurzformen', () => {
+  it('schickt patch als PATCH', async () => {
+    await expect(useApi().patch('/api/probe/echo', { name: 'neu' }))
+      .resolves.toEqual({ method: 'PATCH' })
+  })
+
+  it('schickt delete als DELETE', async () => {
+    await expect(useApi().delete('/api/probe/weg')).resolves.toEqual({ method: 'DELETE' })
+  })
+})
+
+describe('Regression', () => {
+  it('B-057: eine abgelaufene Sitzung führt zur Anmeldung, nicht in eine tote Oberfläche', async () => {
+    // Beim Vorgänger lief jeder Remote-Aufruf nach Sitzungsende in einen Toast
+    // oder eine Fehlerseite, ohne Weiterleitung. Der Nutzer blieb auf einer
+    // Seite, die nichts mehr laden konnte.
+    navigate.mockClear()
+    await useApi().get('/api/probe/gone').catch(() => {})
+
+    expect(navigate).toHaveBeenCalledTimes(1)
+    const target = navigate.mock.calls[0]![0] as { path: string, query: Record<string, string> }
+    expect(target.path).toBe('/login')
+    // Und das ursprüngliche Ziel reist mit, damit der Weg zurückführt.
+    expect(target.query).toHaveProperty('redirectTo')
   })
 })

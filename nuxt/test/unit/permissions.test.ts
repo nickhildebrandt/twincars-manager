@@ -11,7 +11,9 @@ import {
   MODULE_PERMISSIONS,
   WILDCARD_PERMISSION,
   hasAnyPermission,
+  hasModule,
   hasPermission,
+  moduleOf,
 } from '#shared/permissions'
 
 describe('das Berechtigungsmodell', () => {
@@ -70,5 +72,55 @@ describe('hasAnyPermission', () => {
 
   it('lässt den Platzhalter auch hier durch', () => {
     expect(hasAnyPermission(new Set([WILDCARD_PERMISSION]), 'settings')).toBe(true)
+  })
+})
+
+describe('moduleOf', () => {
+  it.each([
+    ['customers', 'customers'],
+    ['hours', 'hours'],
+    ['hours:write_own', 'hours'],
+    ['settings', 'settings'],
+  ])('ordnet %s dem Modul %s zu', (key, module) => {
+    expect(moduleOf(key)).toBe(module)
+  })
+
+  it('kennt einen erfundenen Schlüssel nicht', () => {
+    expect(moduleOf('gibtsnicht')).toBeUndefined()
+  })
+})
+
+describe('hasModule', () => {
+  it('genügt der Vollzugriff', () => {
+    expect(hasModule(new Set(['hours']), 'hours')).toBe(true)
+  })
+
+  it('genügt auch die Selbstauskunft', () => {
+    expect(hasModule(new Set(['hours:write_own']), 'hours')).toBe(true)
+  })
+
+  it('ist ohne beides falsch', () => {
+    expect(hasModule(new Set(['customers']), 'hours')).toBe(false)
+  })
+
+  it('lässt den Platzhalter überall', () => {
+    for (const module of Object.keys(MODULE_PERMISSIONS)) {
+      expect(hasModule(new Set([WILDCARD_PERMISSION]), module as never), module).toBe(true)
+    }
+  })
+})
+
+describe('Regression', () => {
+  it('B-058: wer vollen Zugriff hat, sieht den Eintrag auch', () => {
+    // Der Vorgänger verlangte im Sidebar-Eintrag genau `hours:write_own`. Eine
+    // Rolle mit vollem `hours`-Zugriff verlor den Eintrag — die geseedeten
+    // Rollen hielten zufällig beide Schlüssel, deshalb fiel es nicht auf.
+    const fullAccess = new Set(['hours'])
+    expect(hasModule(fullAccess, 'hours')).toBe(true)
+
+    // Und die Umkehrung stimmt weiterhin: Sehen heißt nicht alles dürfen.
+    const selfServiceOnly = new Set(['hours:write_own'])
+    expect(hasModule(selfServiceOnly, 'hours')).toBe(true)
+    expect(hasPermission(selfServiceOnly, 'hours')).toBe(false)
   })
 })

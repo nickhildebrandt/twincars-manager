@@ -649,3 +649,35 @@ describe('Vorgaben und Migrationen sind nicht mehr an den Request gebunden', () 
     expect(rows).toHaveLength(3)
   })
 })
+
+describe('Die Schlüsselstrategie', () => {
+  it('B-582: die Tabellen der Anmeldebibliothek führen Text-Ids, alle anderen uuid', async () => {
+    // Der Befund lässt die Wahl offen: beibehalten, wenn better-auth bleibt.
+    // Es bleibt (ADR-019), also bleibt auch seine Id-Form — sie gegen uuid zu
+    // tauschen hieße, gegen die Bibliothek zu arbeiten, bei jedem Update aufs
+    // Neue. Wichtig ist, dass die Grenze sauber verläuft.
+    const rows = await sql<{ table_name: string, data_type: string }[]>`
+      SELECT c.table_name, c.data_type
+      FROM information_schema.columns c
+      JOIN information_schema.table_constraints t
+        ON t.table_name = c.table_name AND t.constraint_type = 'PRIMARY KEY'
+      JOIN information_schema.key_column_usage k
+        ON k.constraint_name = t.constraint_name AND k.column_name = c.column_name
+      WHERE c.table_schema = 'public' AND c.column_name = 'id'
+    `
+
+    const LIBRARY = ['users', 'sessions', 'accounts', 'verifications']
+    for (const row of rows) {
+      const expected = LIBRARY.includes(row.table_name) ? 'text' : 'uuid'
+      expect(row.data_type, row.table_name).toBe(expected)
+    }
+
+    // Und die Fremdschlüssel auf Benutzer folgen der Bibliothek, nicht dem
+    // Hausstandard — sonst ließen sie sich gar nicht deklarieren.
+    const userRefs = await sql<{ table_name: string, data_type: string }[]>`
+      SELECT table_name, data_type FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'user_id'
+    `
+    for (const row of userRefs) expect(row.data_type, row.table_name).toBe('text')
+  })
+})

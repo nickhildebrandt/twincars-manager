@@ -139,3 +139,39 @@ describe('may', () => {
     expect(may(null, 'customers')).toBe(false)
   })
 })
+
+describe('Sehen und Dürfen sind zweierlei', () => {
+  it('lässt die Selbstauskunft das Modul sehen', () => {
+    expect(may(userWith('hours:write_own'), 'hours')).toBe(true)
+  })
+
+  it('lässt die Selbstauskunft nicht den Vollzugriff', () => {
+    // Eine Liste aller Zeiteinträge verlangt `hours`, nicht `hours:write_own`.
+    try {
+      requirePermission(eventWith(userWith('hours:write_own')), 'hours')
+      expect.unreachable('Der Wächter hätte werfen müssen.')
+    }
+    catch (error) {
+      expect(statusOf(error)).toBe(403)
+      expect(messageOf(error)).toContain('Zeiterfassung')
+    }
+  })
+
+  it('lässt den Vollzugriff auch die eigene Erfassung', () => {
+    expect(requireAnyPermission(
+      eventWith(userWith('hours')),
+      'hours',
+      'hours:write_own',
+    )).toBeTruthy()
+  })
+
+  it('nennt denselben Bereich nur einmal', () => {
+    try {
+      requireAnyPermission(eventWith(userWith('customers')), 'hours', 'hours:write_own')
+      expect.unreachable('Der Wächter hätte werfen müssen.')
+    }
+    catch (error) {
+      expect(messageOf(error)).toBe('Sie haben keine Berechtigung für Zeiterfassung.')
+    }
+  })
+})

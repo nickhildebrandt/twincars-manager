@@ -36,6 +36,11 @@ export default defineNuxtConfig({
     appSecret: process.env.APP_SECRET ?? '',
     appEncryptionKey: process.env.APP_ENCRYPTION_KEY ?? '',
     apiTokens: process.env.API_TOKENS ?? '',
+    origin: process.env.ORIGIN ?? '',
+    betterAuthUrl: process.env.BETTER_AUTH_URL ?? process.env.ORIGIN ?? '',
+    // Only 'on' behind a proxy that overwrites x-forwarded-for. Left off, the
+    // rate limiter counts the socket address, which nobody can forge (B-003).
+    trustProxy: process.env.TRUST_PROXY ?? 'off',
     ebay: {
       clientId: process.env.EBAY_CLIENT_ID ?? '',
       certId: process.env.EBAY_CERT_ID ?? '',
@@ -53,6 +58,9 @@ export default defineNuxtConfig({
     },
     public: {
       appVersion: '0.0.0-development',
+      // Minutes of inactivity before the session ends. The browser needs this
+      // value, so it is public — it is a duration, not a secret.
+      idleTimeoutMinutes: Number(process.env.IDLE_TIMEOUT_MINUTES ?? 60),
     },
   },
 

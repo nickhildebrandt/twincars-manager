@@ -62,3 +62,4 @@ darunter gelten weiter, die technischen werden durch den Umbau abgelöst.
 | [ADR-016](adr-016-shop-refocus.md)                       | Bestandsfelder entfernt                 | **ja**                                 |
 | [ADR-017](adr-017-broadcast-unsubscribe-mailto.md)       | Abbestellen per Antwortmail             | **ja**                                 |
 | [ADR-018](adr-018-otel-noop-shim.md)                     | Telemetrie-Platzhalter                  | nein — Bau-Eigenheit der alten Fassung |
+| [ADR-019](adr-019-better-auth-bleibt.md)                 | better-auth bleibt, Rollenmodell auch   | **ja** — Entscheidung des Umbaus       |

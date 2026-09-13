@@ -46,10 +46,43 @@ export const envSchema = v.pipe(
       v.pipe(v.string(), v.url('ORIGIN muss eine vollständige Adresse sein.')),
     ),
 
+    /**
+     * Where better-auth believes it lives. Defaults to `ORIGIN`.
+     *
+     * Both are used to build the trusted-origin list, so that a mismatch
+     * cannot leave the CSRF check looking at the wrong address (B-071).
+     */
+    BETTER_AUTH_URL: v.optional(
+      v.pipe(v.string(), v.url('BETTER_AUTH_URL muss eine vollständige Adresse sein.')),
+    ),
+
     /** Fixed: appointment slots and period boundaries depend on it. */
     TZ: v.optional(
       v.literal('Europe/Berlin', 'TZ muss auf Europe/Berlin stehen.'),
       'Europe/Berlin',
+    ),
+
+    /**
+     * `on` only behind a proxy that overwrites `x-forwarded-for`.
+     *
+     * Left off, the rate limiter counts the socket address, which nobody can
+     * choose. Turned on without a proxy in front, the protection is worthless
+     * (B-003).
+     */
+    TRUST_PROXY: v.optional(
+      v.picklist(['on', 'off'], 'TRUST_PROXY muss "on" oder "off" sein.'),
+      'off',
+    ),
+
+    /** Minutes of inactivity before the session ends. */
+    IDLE_TIMEOUT_MINUTES: v.optional(
+      v.pipe(
+        v.number('IDLE_TIMEOUT_MINUTES muss eine Zahl sein.'),
+        v.integer('IDLE_TIMEOUT_MINUTES muss eine ganze Zahl sein.'),
+        v.minValue(5, 'IDLE_TIMEOUT_MINUTES muss mindestens 5 betragen.'),
+        v.maxValue(1440, 'IDLE_TIMEOUT_MINUTES darf höchstens 1440 betragen.'),
+      ),
+      60,
     ),
 
     /** `off` silences the schedule; the buttons keep working (E-12). */

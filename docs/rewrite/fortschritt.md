@@ -548,3 +548,119 @@ zwischen Test- und Serververbindung ist damit ausgeschlossen.
 | Tests | 650 (32 Dateien) |
 | Coverage | 93,8 % Anweisungen · 85,0 % Zweige · 94,2 % Funktionen |
 | Befund-Abdeckung | 33 von 33 fälligen Befunden mit Regressionstest |
+
+---
+
+## T-007 — Authentifizierung, Sitzungen, Rechte · fertig
+
+**Datum:** 2026-09-13 · **Vorbedingungen:** T-005, T-006 (beide erfüllt)
+
+better-auth 1.7.4, Benutzername und Passwort, eigenes Rollenmodell. Die
+Entscheidung ist alt (ADR-013, Untersuchung in
+[`inventar/research-auth.md`](inventar/research-auth.md)); neu ist, wie streng
+sie hier umgesetzt wird.
+
+### Was entstanden ist
+
+| Datei | Zweck |
+| --- | --- |
+| `server/utils/auth.ts` | die Instanz der Bibliothek |
+| `server/utils/auth-users.ts` | Konten, Rollen, Rechte, letzter Administrator |
+| `server/utils/auth-accounts.ts` | Konto anlegen, Passwort setzen |
+| `server/utils/auth-paths.ts` | was öffentlich ist, was die Bibliothek anbieten darf |
+| `server/utils/client-ip.ts` | welche Adresse gezählt wird |
+| `server/middleware/00.throttle.ts` | Anmeldedrossel |
+| `server/middleware/01.auth.ts` | Sitzung einmal je Request |
+| `server/middleware/02.api-guard.ts` | zweiter Riegel vor `/api` |
+| `server/api/auth/[...all].ts` | die Bibliothek, gefiltert |
+| `server/api/me.get.ts` | wer angemeldet ist, für die Oberfläche |
+| `shared/redirect.ts` | wohin die Anmeldung weiterleiten darf |
+| `shared/idle.ts` | wann eine Sitzung wegen Untätigkeit endet |
+| `app/composables/useAuth.ts` | Anmelden, Abmelden, Sichtbarkeit |
+| `app/middleware/auth.global.ts`, `permission.ts` | keine Seite ohne Sitzung |
+| `app/pages/login.vue`, `403.vue` | Anmeldung und die Seite, die erklärt |
+| `app/plugins/01.auth.ts`, `idle-logout.client.ts` | Zustand laden, Untätigkeit |
+
+### Drei Dinge, die anders gelöst sind als geplant
+
+**Die Drossel gehört uns, nicht der Bibliothek.** Beim Einbau fiel auf, dass
+better-auth 1.7.4 `x-forwarded-for` **standardmäßig** liest und einen
+einwertigen Header akzeptiert. Ohne Proxy davor schickt ein Angreifer bei jedem
+Versuch eine andere Adresse, landet nie im selben Eimer, und der
+Brute-Force-Schutz tut nichts — genau der Befund B-003. Der eingebaute Zähler
+ist deshalb aus; gezählt wird in einer eigenen Middleware, die den Header nur
+glaubt, wenn `TRUST_PROXY=on` gesetzt ist. Dasselbe gilt für die Adresse, die
+in der Sitzungszeile landet.
+
+**Nur vier Endpunkte der Bibliothek sind erreichbar**, als Zulassungsliste:
+Anmelden, Abmelden, Sitzung lesen, Passwort ändern. Der Vorgänger reichte den
+Catch-all durch und bot damit ungewollt `update-user` an — womit ein
+Angemeldeter seinen Benutzernamen ändern konnte, obwohl die Oberfläche das
+ausschließt (B-051) — und `is-username-available` ohne Sitzung, womit sich
+durchprobieren ließ, welche Zugänge es gibt (B-052). Eine Sperrliste hätte
+dasselbe Problem beim nächsten Versionssprung wieder.
+
+**Sehen und Dürfen sind getrennt.** `hasPermission` prüft den genauen
+Schlüssel, `hasModule` irgendeinen des Moduls. Der Vorgänger verlangte im
+Sidebar-Eintrag genau `hours:write_own`, sodass eine Rolle mit vollem Zugriff
+den Eintrag verlor (B-058); die geseedeten Rollen hielten zufällig beide
+Schlüssel, deshalb fiel es nie auf.
+
+### Was dabei auffiel
+
+**Die vier Tabellen der Bibliothek sprechen `Date`.** Ihre Zeitstempel stehen
+jetzt auf `mode: 'date'`, die fachlichen Tabellen weiter auf Zeichenketten. Am
+Spaltentyp ändert das nichts.
+
+**Der Drizzle-Adapter kann keine Joins gegen dieses Schema.** Er sucht ein
+inline `.references()`; hier stehen die Fremdschlüssel als benannte
+`foreignKey()`-Blöcke, damit die Namen stabil bleiben. Also zwei Abfragen statt
+einer — bei einer Handvoll Konten kostenlos.
+
+**`/api/me` braucht keine Sitzung, muss aber eine melden.** Das sind zwei
+verschiedene Fragen; die Sitzungssuche läuft deshalb für alles außer
+statischen Dateien und den Endpunkten der Bibliothek, die das Cookie selbst
+lesen.
+
+**`/api/healthy-profits` galt als öffentlich**, weil `/api/health` ein Präfix
+davon ist. Präfixe enden jetzt an einer Segmentgrenze. Der Test fand es, bevor
+es einen solchen Endpoint gab.
+
+### Behobene Befunde
+
+| Befund | Was jetzt gilt |
+| --- | --- |
+| B-002, B-056 | das Ziel wird geparst; Backslash, `//` und Kodierungen werden verworfen |
+| B-003, B-054 | der Weiterleitungs-Header zählt nur hinter einem erklärten Proxy |
+| B-013, B-072 | Aktivität gilt tabübergreifend, mit Vorwarnung zwei Minuten vorher |
+| B-014, B-057 | 401 führt zur Anmeldung, mit dem ursprünglichen Ziel im Gepäck |
+| B-018, B-071 | ohne Geheimnis startet nichts; kein eingebauter Ersatzschlüssel |
+| B-041 | eine zweite Sperre vor `/api`: ein vergessener Wächter ist 401, nicht offen |
+| B-051, B-052 | Zulassungsliste statt Catch-all |
+| B-058 | Modul sehen und Modul dürfen sind getrennte Fragen |
+| B-080 | jeder genannte Kernpfad hat jetzt einen Test, nachprüfbar |
+
+### Doku
+
+`docs/architecture/auth.md` (neu), `docs/api/auth-all-.md`,
+`docs/api/me-get.md`, `docs/decisions/adr-019-better-auth-bleibt.md`.
+
+### Ein Werkzeugproblem, kein Anwendungsproblem
+
+Beim Laufenlassen mit gelöschtem Vite-Zwischenspeicher scheitert das
+Browser-Projekt, bevor ein Test läuft. Vite optimiert die Abhängigkeiten,
+entdeckt mitten im Lauf eine weitere, lädt die Seite neu — und die Aufbaudatei
+hält danach eine veraltete Ausgabe von Vitest fest. Das lag schon vorher so
+vor; aufgefallen ist es erst, weil dieser Durchgang den Zwischenspeicher
+angefasst hat. Sechs Ansätze halfen nicht; die Umgehung wärmt den
+Zwischenspeicher einmal vor. Kein Test wird übersprungen. Einzelheiten und der
+Weg zurück: [blocker.md](blocker.md) W-01.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 913 (45 Dateien) |
+| Coverage | 96,4 % Anweisungen · 88,8 % Zweige · 98,0 % Funktionen |
+| Schwellen | ab hier auf die erreichten Werte gezogen |
+| Befund-Abdeckung | 48 von 48 fälligen Befunden mit Regressionstest |

@@ -42,8 +42,23 @@ afterAll(() => {
   // `pnpm test:db:reset` removes the leftovers.
 })
 
+/** The name of this worker's database. */
+export const testDatabaseName = () => process.env.TEST_DATABASE ?? workerDatabase(worker)
+
 /** Connection options for the database of the current worker. */
-export const testDatabaseOptions = () =>
-  connectionOptions(process.env.TEST_DATABASE ?? workerDatabase(worker))
+export const testDatabaseOptions = () => connectionOptions(testDatabaseName())
+
+/**
+ * The same database as a connection string.
+ *
+ * Needed where the code under test reads a URL from the configuration rather
+ * than taking options — `useDatabase()` does.
+ */
+export function testDatabaseUrl(): string {
+  const base = process.env.DATABASE_URL ?? ''
+  const [before, query] = base.split('?')
+  const withoutName = (before ?? '').replace(/\/[^/]*$/, '/')
+  return `${withoutName}${testDatabaseName()}${query ? `?${query}` : ''}`
+}
 
 export { worker }

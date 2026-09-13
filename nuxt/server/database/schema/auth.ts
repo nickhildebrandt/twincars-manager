@@ -1,7 +1,13 @@
 /**
  * Anmeldung, Sitzungen, Rollen und Rechte
  *
- * Die vier better-auth-Tabellen bleiben unverändert, damit Passwörter und laufende Sitzungen den Umbau überstehen.
+ * Die vier better-auth-Tabellen bleiben unverändert, damit Passwörter und
+ * laufende Sitzungen den Umbau überstehen.
+ *
+ * Ihre Zeitstempel stehen auf `mode: 'date'`, weil die Bibliothek `Date`
+ * übergibt und liest. Die fachlichen Tabellen führen Zeichenketten — der
+ * Spaltentyp ist in beiden Fällen `timestamptz`, es geht nur darum, was der
+ * Treiber erwartet.
  *
  * Erzeugt aus dem Stand des Vorgängersystems (38 Migrationen) und in
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
@@ -17,8 +23,8 @@ export const users = pgTable('users', {
   image: text(),
   username: text(),
   displayUsername: text('display_username'),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull().$onUpdate(() => new Date()),
   active: boolean().default(true).notNull(),
 }, table => [
   uniqueIndex('users_email_idx').using('btree', table.email.asc().nullsLast()),
@@ -29,11 +35,11 @@ export const sessions = pgTable('sessions', {
   id: text().primaryKey().notNull(),
   userId: text('user_id').notNull(),
   token: text().notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }).notNull(),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
   ipAddress: text('ip_address'),
   userAgent: text('user_agent'),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, table => [
   uniqueIndex('sessions_token_idx').using('btree', table.token.asc().nullsLast()),
   index('sessions_user_id_idx').using('btree', table.userId.asc().nullsLast()),
@@ -52,12 +58,12 @@ export const accounts = pgTable('accounts', {
   accessToken: text('access_token'),
   refreshToken: text('refresh_token'),
   idToken: text('id_token'),
-  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true, mode: 'string' }),
-  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true, mode: 'string' }),
+  accessTokenExpiresAt: timestamp('access_token_expires_at', { withTimezone: true, mode: 'date' }),
+  refreshTokenExpiresAt: timestamp('refresh_token_expires_at', { withTimezone: true, mode: 'date' }),
   scope: text(),
   password: text(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, table => [
   index('accounts_user_id_idx').using('btree', table.userId.asc().nullsLast()),
   foreignKey({
@@ -71,9 +77,9 @@ export const verifications = pgTable('verifications', {
   id: text().primaryKey().notNull(),
   identifier: text().notNull(),
   value: text().notNull(),
-  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'string' }).notNull(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
+  expiresAt: timestamp('expires_at', { withTimezone: true, mode: 'date' }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull().$onUpdate(() => new Date()),
 }, table => [
   index('verifications_identifier_idx').using('btree', table.identifier.asc().nullsLast()),
 ])

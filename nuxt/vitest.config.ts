@@ -36,13 +36,27 @@ export default defineConfig({
         // loads them.
         'app/assets/css/**',
         'server/plugins/**',
+        // Browser wiring: event listeners, a timer, a storage key and a
+        // channel. The judgement it wires up is `shared/idle.ts`, covered to
+        // the line; the cross-tab mechanism itself is exercised in a real
+        // Chromium by test/browser/idle-logout.test.ts. What is left here is
+        // the glue, and V8 cannot reach it outside a running browser.
+        'app/plugins/idle-logout.client.ts',
         // Endpoint wiring without logic: it hands `useDatabase()` to
         // `checkHealth` and turns a failure into a 503. The check itself is
         // covered in test/integration/health.test.ts, the wiring by the
         // end-to-end suite against the built server.
         'server/api/health.get.ts',
+        // Stylesheets are not code; V8 reports them because the Nuxt project
+        // loads them.
+        'app/assets/css/**',
         // Pure re-export barrel.
         'shared/schemas/index.ts',
+        // Endpoint wiring without logic: it hands `useDatabase()` to
+        // `checkHealth` and turns a failure into a 503. The check itself is
+        // covered in test/integration/health.test.ts, the wiring by the
+        // end-to-end suite against the built server.
+        'server/api/health.get.ts',
         // Declarative table definitions, not logic. Their correctness is
         // proven against a real database by test/integration/schema-drift,
         // which compares every table, column and constraint.
@@ -53,15 +67,16 @@ export default defineConfig({
       // work package. In CI the flag is off, so the committed values decide.
       thresholds: {
         'autoUpdate': process.env.COV_UPDATE === '1',
-        // Starting floors from 05-teststrategie.md §7. They are deliberately
-        // NOT ratcheted to the values Phase 0 reaches: the code base is still
-        // only schemas and helpers, which cover far more easily than the user
-        // interface that follows. Ratcheting begins with the first functional
-        // slice (T-011), when the mix is representative.
-        'statements': 80,
-        'branches': 75,
-        'functions': 80,
-        'lines': 80,
+        // Ratcheted from T-007 onwards. Until then the code base was only
+        // schemas and helpers, which cover far more easily than an interface;
+        // holding it to those numbers would have been meaningless. It now has
+        // endpoints, middleware, pages and composables, so the mix is
+        // representative and `pnpm test:cov:update` writes the reached values
+        // back here with every package.
+        'statements': 96.44,
+        'branches': 88.76,
+        'functions': 98,
+        'lines': 98.03,
         // Geldarithmetik: jede Zeile gerechnet, jeder Rundungsfall belegt.
         // Ein blinder Fleck hier kostet Cent in echten Rechnungen.
         'shared/money.ts': {
@@ -148,7 +163,7 @@ export default defineConfig({
           // No env setup file here: browser setup files run IN the browser
           // and cannot read the filesystem. Locale and timezone come from the
           // browser context instead.
-          setupFiles: ['@nuxt/test-utils/browser'],
+          setupFiles: ['test/setup/browser.ts'],
           browser: {
             enabled: true,
             headless: true,

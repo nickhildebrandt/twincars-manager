@@ -12,8 +12,8 @@
  * `event.context.auth`. These functions only read it.
  */
 import type { H3Event } from 'h3'
-import { hasAnyPermission, hasPermission, MODULE_LABELS } from '#shared/permissions'
-import type { ModuleKey } from '#shared/permissions'
+import { hasAnyPermission, hasModule, hasPermission, MODULE_LABELS, moduleOf } from '#shared/permissions'
+import type { ModuleKey, PermissionKey } from '#shared/permissions'
 import { forbidden, unauthorized } from './errors.ts'
 
 /** What the session middleware puts on the event. */
@@ -43,16 +43,26 @@ export function optionalUser(event: H3Event): AuthContext | null {
   return event.context.auth ?? null
 }
 
+/** The German area name behind a permission key, for the message. */
+const areaOf = (key: string) => {
+  const module = moduleOf(key)
+  return module ? MODULE_LABELS[module] : 'diesen Bereich'
+}
+
 /**
- * The user plus one module permission, or 403.
+ * The user plus one exact permission, or 403.
+ *
+ * Strict on purpose: `hours` and `hours:write_own` are different rights, and
+ * an endpoint that lists everyone's time must not accept the self-service key.
+ * Whether somebody may *see* the module is a separate question — `may()`.
  *
  * The message names the area in German, so the user learns what is missing
  * instead of reading "Forbidden".
  */
-export function requirePermission(event: H3Event, module: ModuleKey): AuthContext {
+export function requirePermission(event: H3Event, key: PermissionKey): AuthContext {
   const auth = requireUser(event)
-  if (!hasPermission(auth.permissions, module)) {
-    throw forbidden(`Sie haben keine Berechtigung für ${MODULE_LABELS[module]}.`)
+  if (!hasPermission(auth.permissions, key)) {
+    throw forbidden(`Sie haben keine Berechtigung für ${areaOf(key)}.`)
   }
   return auth
 }
@@ -63,16 +73,21 @@ export function requirePermission(event: H3Event, module: ModuleKey): AuthContex
  * The shop floor picks employees and catalogue items while working on an
  * order, without holding the personnel or catalogue permission itself.
  */
-export function requireAnyPermission(event: H3Event, ...modules: ModuleKey[]): AuthContext {
+export function requireAnyPermission(event: H3Event, ...keys: PermissionKey[]): AuthContext {
   const auth = requireUser(event)
-  if (!hasAnyPermission(auth.permissions, ...modules)) {
-    const areas = modules.map(module => MODULE_LABELS[module]).join(' oder ')
+  if (!hasAnyPermission(auth.permissions, ...keys)) {
+    const areas = [...new Set(keys.map(areaOf))].join(' oder ')
     throw forbidden(`Sie haben keine Berechtigung für ${areas}.`)
   }
   return auth
 }
 
-/** True when the user may see the module. For building navigation. */
+/**
+ * True when the user may **see** the module — any of its keys is enough.
+ *
+ * For navigation and page visibility. What they may then do inside it is the
+ * endpoint's decision (B-058).
+ */
 export function may(auth: AuthContext | null, module: ModuleKey): boolean {
-  return auth ? hasPermission(auth.permissions, module) : false
+  return auth ? hasModule(auth.permissions, module) : false
 }
