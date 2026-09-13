@@ -832,7 +832,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -876,7 +876,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "documents" ADD CONSTRAINT "documents_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -888,11 +888,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "documents" ADD CONSTRAINT "documents_cancelled_by_fk" FOREIGN KEY ("cancelled_by_document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_cancelled_by_fk" FOREIGN KEY ("cancelled_by_document_id") REFERENCES "public"."documents"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "documents" ADD CONSTRAINT "documents_cancels_fk" FOREIGN KEY ("cancels_document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_converted_to_invoice_id_fk" FOREIGN KEY ("converted_to_invoice_id") REFERENCES "public"."documents"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_cancels_fk" FOREIGN KEY ("cancels_document_id") REFERENCES "public"."documents"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -912,7 +916,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -936,11 +940,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_category_id_ledger_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."ledger_categories"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_category_id_ledger_categories_id_fk" FOREIGN KEY ("category_id") REFERENCES "public"."ledger_categories"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_supplier_id_suppliers_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_supplier_id_suppliers_id_fk" FOREIGN KEY ("supplier_id") REFERENCES "public"."suppliers"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -948,7 +952,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -968,7 +972,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_order_items" ADD CONSTRAINT "work_order_items_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "work_order_items" ADD CONSTRAINT "work_order_items_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -988,7 +992,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_labor_item_id_items_id_fk" FOREIGN KEY ("labor_item_id") REFERENCES "public"."items"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_labor_item_id_items_id_fk" FOREIGN KEY ("labor_item_id") REFERENCES "public"."items"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN

@@ -56,7 +56,7 @@ export const companySettings = pgTable('company_settings', {
     columns: [table.laborItemId],
     foreignColumns: [items.id],
     name: 'company_settings_labor_item_id_items_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])
 
 export const numberRanges = pgTable('number_ranges', {

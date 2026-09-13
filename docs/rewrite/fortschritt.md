@@ -754,3 +754,55 @@ kann der zusätzliche Vorwärtseintrag aus B-038 nicht mehr entstehen.
 | Tests | 1053 (51 Dateien) |
 | Coverage | 97,3 % Anweisungen · 90,1 % Zweige · 98,7 % Funktionen |
 | Befund-Abdeckung | 58 von 58 fälligen Befunden mit Regressionstest |
+
+---
+
+## Nachbesserung — Löschregeln und ein fehlender Fremdschlüssel
+
+**Datum:** 2026-09-13 · **Auslöser:** die Durchsicht des gesamten
+Beziehungsgeflechts für die Entitätsübersicht
+
+Beim Aufzeichnen aller 51 Tabellen und 60 Beziehungen fielen zwei Dinge auf,
+die vorher niemand gesehen hatte.
+
+**Ein Verweis hatte gar keinen Fremdschlüssel.**
+`documents.converted_to_invoice_id` nennt die Rechnung, in die ein Angebot
+überging — die Datenbank wusste davon nichts. Es gab einen Index darauf, aber
+keine Beziehung. Jetzt ist er deklariert, und ein Test besteht darauf, dass
+**jede** `uuid`-Spalte mit der Endung `_id` einen Fremdschlüssel hat.
+
+**Neun Löschregeln setzten still auf `NULL`, wo Information verloren ging.**
+B-190 verlangt genau das Gegenteil. Berichtigt:
+
+| Beziehung | vorher | jetzt | warum |
+| --- | --- | --- | --- |
+| Stornokette der Belege (zwei Verweise) | `set null` | sperrt | eine Stornorechnung wird nicht gelöscht |
+| Buchung → Beleg | `set null` | sperrt | die Buchung nennt ihre Herkunft |
+| Buchung → Lieferant | `set null` | sperrt | ein Lieferant mit Buchungen wird archiviert |
+| Buchung → Kategorie | `set null` | sperrt | eine Kategorie mit Buchungen bleibt |
+| Termin → Mitarbeiter | `set null` | sperrt | wer zugeteilt war, ist eine Auskunft |
+| Auftragsposition → Mitarbeiter | `set null` | sperrt | wer gearbeitet hat, ist eine Auskunft |
+| Firmeneinstellung → Arbeitszeitposition | `set null` | sperrt | ohne sie funktioniert kein Auftrag |
+| Beleg → erzeugender Auftrag | `set null` | sperrt | ein Auftrag mit Beleg verschwindet nicht spurlos |
+
+**Und ein echter Widerspruch.** Ein Zeiteintrag verweist sowohl auf den Auftrag
+als auch auf die Auftragsposition. Die eine Beziehung kaskadierte, die andere
+setzte auf `NULL` — dieselbe Löschung, zwei verschiedene Folgen, je nachdem
+welcher Verweis gefüllt war. Beide kaskadieren jetzt.
+
+**Zehn `set null`-Regeln bleiben**, und jede ist die gemeinte Folge: ein
+gelöschter Rechnungsentwurf macht die Arbeitszeit wieder unabgerechnet und den
+Auftrag wieder abrechenbar; eine Belegposition trägt Bezeichnung und Preis als
+eigene Kopie und bleibt ohne Katalogartikel lesbar. Alle zehn stehen jetzt
+**namentlich mit Begründung** im Drift-Test. Eine elfte, die dort nicht steht,
+lässt ihn scheitern — und wer sie hinzufügt, muss den Grund aufschreiben.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Beziehungen | 61 (vorher 60) |
+| davon kaskadierend | 35 |
+| davon sperrend | 16 (vorher 6) |
+| davon entkoppelnd | 10 (vorher 20) |
+| Tests | 1059 |

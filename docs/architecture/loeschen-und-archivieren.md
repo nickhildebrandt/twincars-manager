@@ -71,6 +71,12 @@ deutschen Satz, und die Datenbank hält als letzte Verteidigungslinie dagegen.
 **Kein Verweis wird mehr stillschweigend auf `NULL` gesetzt** — das war Befund
 B-190. Der Löschwächter zählt jeden Fremdschlüssel und benennt ihn.
 
+Es gibt genau zehn Stellen, an denen ein Verweis doch auf `NULL` geht, und an
+jeder ist das die gemeinte Folge — zum Beispiel: ein Rechnungsentwurf wird
+gelöscht, also ist die Arbeitszeit wieder unabgerechnet und der Auftrag wieder
+abrechenbar. Die zehn stehen namentlich mit Begründung im Test
+`schema-drift.test.ts`; eine elfte, die dort nicht steht, lässt ihn scheitern.
+
 Die Sperre ist bewusst `no action` und nicht `restrict`: `no action` wird erst
 am Ende der Anweisung geprüft. Eine berechtigte Kaskade, die die verweisende
 Zeile im selben Zug entfernt, bleibt damit möglich; `restrict` würde auch dann

@@ -681,3 +681,118 @@ describe('Die Schlüsselstrategie', () => {
     for (const row of userRefs) expect(row.data_type, row.table_name).toBe('text')
   })
 })
+
+describe('B-190: kein Verweis wird still gelöscht', () => {
+  /**
+   * Jede verbliebene `SET NULL`-Regel, mit dem Grund, warum sie richtig ist.
+   *
+   * Der Vorgänger setzte Verweise reihenweise still auf NULL, und niemand
+   * merkte, dass Auskünfte verschwanden. Hier steht jede einzelne Regel
+   * namentlich in dieser Liste — eine neue, die nicht darin steht, lässt den
+   * Test scheitern, und wer sie hinzufügt, muss den Grund aufschreiben.
+   */
+  const DELIBERATE_SET_NULL: Record<string, string> = {
+    'work_orders.appointment_id':
+      'Der Termin wird abgesagt, der Auftrag in der Werkstatt läuft weiter.',
+    'sent_messages.document_id':
+      'Die Versandhistorie überlebt den Beleg — sie ist die Spur, dass etwas rausging.',
+    'time_entries.document_id':
+      'Wird ein Entwurf gelöscht, ist die Zeit wieder unabgerechnet. Genau das ist gemeint.',
+    'vehicle_sales.invoice_id':
+      'Der Verkauf bleibt, die Rechnung dazu kann neu geschrieben werden.',
+    'work_orders.invoice_id':
+      'Nach dem Löschen eines Rechnungsentwurfs ist der Auftrag wieder abrechenbar.',
+    'document_items.item_id':
+      'Die Position trägt Bezeichnung und Preis als eigene Kopie; sie bleibt lesbar.',
+    'document_items.tire_id':
+      'Dasselbe für eine Reifenposition im Beleg: Größe und Preis sind kopiert.',
+    'work_order_items.item_id':
+      'Dasselbe für eine Position im Auftrag: Bezeichnung und Preis sind kopiert.',
+    'ebay_listings.tire_id':
+      'Das Angebot behält seine eBay-Daten, auch wenn der Reifen aus dem Katalog geht.',
+    'vehicles.previous_owner_customer_id':
+      'Der Vorbesitzer ist eine Zusatzangabe, nicht der Eigentümer.',
+  }
+
+  it('jede SET-NULL-Regel steht namentlich in der Liste', async () => {
+    const rows = await sql<{ relation: string, column_name: string }[]>`
+      SELECT c.conrelid::regclass::text AS relation, a.attname AS column_name
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+        AND c.confdeltype = 'n'
+      ORDER BY relation, column_name
+    `
+    const found = rows.map(row => `${row.relation}.${row.column_name}`)
+    expect(found.sort()).toEqual(Object.keys(DELIBERATE_SET_NULL).sort())
+  })
+
+  it('jede Begründung ist ein vollständiger deutscher Satz', () => {
+    for (const [rule, reason] of Object.entries(DELIBERATE_SET_NULL)) {
+      expect(reason, rule).toMatch(/^[A-ZÄÖÜ].*\.$/)
+      expect(reason.length, rule).toBeGreaterThan(30)
+    }
+  })
+
+  it('was einen Beleg oder eine Buchung betrifft, sperrt statt zu nullen', async () => {
+    const rows = await sql<{ relation: string, column_name: string, rule: string }[]>`
+      SELECT c.conrelid::regclass::text AS relation, a.attname AS column_name,
+             c.confdeltype::text AS rule
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f' AND c.connamespace = 'public'::regnamespace
+        AND c.conrelid IN ('ledger_entries'::regclass, 'documents'::regclass)
+      ORDER BY relation, column_name
+    `
+    // 'n' wäre SET NULL. Buchungen und Belege nennen ihre Herkunft; verliert
+    // sich die, ist die Buchführung nicht mehr nachvollziehbar.
+    expect(rows.filter(row => row.rule === 'n')).toEqual([])
+  })
+
+  it('die Stornokette reißt nicht', async () => {
+    const rows = await sql<{ conname: string, rule: string }[]>`
+      SELECT conname, confdeltype::text AS rule FROM pg_constraint
+      WHERE contype = 'f' AND conrelid = 'documents'::regclass
+        AND confrelid = 'documents'::regclass
+      ORDER BY conname
+    `
+    expect(rows.map(row => row.conname)).toEqual([
+      'documents_cancelled_by_fk',
+      'documents_cancels_fk',
+      'documents_converted_to_invoice_id_fk',
+    ])
+    for (const row of rows) expect(row.rule, row.conname).toBe('a')
+  })
+
+  it('jede Verweisspalte hat auch einen Fremdschlüssel', async () => {
+    // `documents.converted_to_invoice_id` hatte keinen: das Angebot nannte die
+    // Rechnung, in die es überging, ohne dass die Datenbank das wusste.
+    const rows = await sql<{ table_name: string, column_name: string }[]>`
+      SELECT c.table_name, c.column_name
+      FROM information_schema.columns c
+      WHERE c.table_schema = 'public'
+        AND c.data_type = 'uuid' AND c.column_name LIKE '%\_id'
+        AND NOT EXISTS (
+          SELECT 1 FROM pg_constraint con
+          JOIN pg_attribute a ON a.attrelid = con.conrelid AND a.attnum = ANY(con.conkey)
+          WHERE con.contype = 'f' AND con.conrelid = (quote_ident(c.table_name))::regclass
+            AND a.attname = c.column_name)
+      ORDER BY c.table_name, c.column_name
+    `
+    expect(rows.map(row => `${row.table_name}.${row.column_name}`)).toEqual([])
+  })
+
+  it('die Zeiterfassung folgt einer Regel, nicht zweien', async () => {
+    // Vorher kaskadierte der Verweis auf die Position und der auf den Auftrag
+    // setzte auf NULL — dieselbe Löschung, zwei verschiedene Folgen.
+    const rows = await sql<{ column_name: string, rule: string }[]>`
+      SELECT a.attname AS column_name, c.confdeltype::text AS rule
+      FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f' AND c.conrelid = 'time_entries'::regclass
+        AND a.attname IN ('work_order_id', 'work_order_item_id')
+      ORDER BY column_name
+    `
+    expect(rows.map(row => row.rule)).toEqual(['c', 'c'])
+  })
+})

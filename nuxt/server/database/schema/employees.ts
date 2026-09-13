@@ -111,7 +111,9 @@ export const timeEntries = pgTable('time_entries', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   // Deferred reference, see documents.ts — time entries and work orders
   // reference each other across domain files.
-  workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'set null' }),
+  // Dieselbe Regel wie für die Position weiter unten. Vorher widersprachen
+  // sich die beiden: die Position kaskadierte, der Auftrag setzte auf NULL.
+  workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'cascade' }),
   workOrderItemId: uuid('work_order_item_id'),
 }, table => [
   index('time_entries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),

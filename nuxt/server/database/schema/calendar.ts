@@ -49,5 +49,5 @@ export const calendarEntries = pgTable('calendar_entries', {
     columns: [table.employeeId],
     foreignColumns: [employees.id],
     name: 'calendar_entries_employee_id_employees_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])

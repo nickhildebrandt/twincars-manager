@@ -98,7 +98,7 @@ export const workOrderItems = pgTable('work_order_items', {
     columns: [table.employeeId],
     foreignColumns: [employees.id],
     name: 'work_order_items_employee_id_employees_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])
 
 export const workOrderAssignees = pgTable('work_order_assignees', {

@@ -58,12 +58,12 @@ export const ledgerEntries = pgTable('ledger_entries', {
     columns: [table.categoryId],
     foreignColumns: [ledgerCategories.id],
     name: 'ledger_entries_category_id_ledger_categories_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.supplierId],
     foreignColumns: [suppliers.id],
     name: 'ledger_entries_supplier_id_suppliers_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
@@ -73,5 +73,5 @@ export const ledgerEntries = pgTable('ledger_entries', {
     columns: [table.documentId],
     foreignColumns: [documents.id],
     name: 'ledger_entries_document_id_documents_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])

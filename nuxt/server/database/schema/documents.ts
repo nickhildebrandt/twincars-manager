@@ -47,7 +47,9 @@ export const documents = pgTable('documents', {
   // Deferred reference: documents and work orders point at each other.
   // The thunk plus the explicit column type breaks the cycle for both the
   // module evaluation order and the type checker.
-  workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'set null' }),
+  // Ein Auftrag, aus dem ein Beleg entstanden ist, verschwindet nicht
+  // spurlos: der Verweis wird nicht still gelöscht, er sperrt (B-190).
+  workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'no action' }),
 }, table => [
   check('documents_type_check', oneOf(table.type, documentTypes.values)),
   check('documents_status_check', oneOf(table.status, documentStatuses.values)),
@@ -77,12 +79,17 @@ export const documents = pgTable('documents', {
     columns: [table.cancelledByDocumentId],
     foreignColumns: [table.id],
     name: 'documents_cancelled_by_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
+  foreignKey({
+    columns: [table.convertedToInvoiceId],
+    foreignColumns: [table.id],
+    name: 'documents_converted_to_invoice_id_fk',
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.cancelsDocumentId],
     foreignColumns: [table.id],
     name: 'documents_cancels_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])
 
 export const documentItems = pgTable('document_items', {
