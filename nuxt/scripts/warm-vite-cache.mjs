@@ -20,17 +20,37 @@
  * @nuxt/test-utils fixes the reload. Recorded in ../../docs/rewrite/blocker.md.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync } from 'node:fs'
+import { existsSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
-const cache = new URL('../node_modules/.cache/vite/client', import.meta.url)
+const cache = fileURLToPath(new URL('../node_modules/.cache/vite/client', import.meta.url))
 
-if (existsSync(cache)) {
+/**
+ * Files whose change makes Vite throw the cache away.
+ *
+ * Missing is not the only stale state: editing the Vitest configuration or
+ * installing a package invalidates the optimiser just as thoroughly, and then
+ * the same reload happens again.
+ */
+const INVALIDATORS = ['vitest.config.ts', 'nuxt.config.ts', 'package.json', 'pnpm-lock.yaml']
+
+const modifiedAt = (relative) => {
+  const path = fileURLToPath(new URL(`../${relative}`, import.meta.url))
+  return existsSync(path) ? statSync(path).mtimeMs : 0
+}
+
+function cacheIsFresh() {
+  if (!existsSync(cache)) return false
+  const builtAt = statSync(cache).mtimeMs
+  return INVALIDATORS.every(file => modifiedAt(file) <= builtAt)
+}
+
+if (cacheIsFresh()) {
   process.exit(0)
 }
 
-console.log('[warm] Vite-Zwischenspeicher fehlt — Browser-Projekt einmal vorwärmen.')
+console.log('[warm] Vite-Zwischenspeicher fehlt oder ist veraltet — Browser-Projekt vorwärmen.')
 spawnSync('./node_modules/.bin/vitest', ['run', '--project', 'browser', '--silent'], {
   cwd: root,
   stdio: 'ignore',

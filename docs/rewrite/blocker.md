@@ -48,9 +48,13 @@ nicht mehr); `optimizeDeps.holdUntilCrawlEnd`;
 `--no-file-parallelism`.
 
 **Wie es umgangen ist.** `pnpm test` ruft über `pretest`
-`scripts/warm-vite-cache.mjs` auf. Das Skript prüft, ob der Zwischenspeicher
-fehlt, und lässt in diesem Fall das Browser-Projekt **einmal** vorlaufen. Der
-eigentliche Lauf findet danach einen vollständigen Zwischenspeicher.
+`scripts/warm-vite-cache.mjs` auf. Das Skript lässt das Browser-Projekt
+**einmal** vorlaufen, wenn der Zwischenspeicher fehlt **oder älter ist als**
+`vitest.config.ts`, `nuxt.config.ts`, `package.json` oder `pnpm-lock.yaml` —
+denn eine Konfigurationsänderung oder eine Installation verwirft ihn genauso
+gründlich wie ein Löschen. Der eigentliche Lauf findet danach einen
+vollständigen Zwischenspeicher; ist er bereits frisch, kostet die Prüfung
+nichts.
 
 **Wichtig:** Es wird kein Test übersprungen und keiner entschärft. Jeder Test
 läuft danach und muss bestehen. Die Umgehung kostet beim ersten Lauf einer
