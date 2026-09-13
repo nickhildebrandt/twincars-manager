@@ -443,3 +443,108 @@ Datenkatalog nennt nicht mehr T-005 als ausstehend, weil er es nicht mehr ist.
 | Coverage | 92,7 % Anweisungen · 84,0 % Zweige · 90,0 % Funktionen |
 | `shared/money.ts` | 100 % Anweisungen, Zweige, Funktionen und Zeilen |
 | Befund-Abdeckung | 27 von 27 fälligen Befunden mit Regressionstest |
+
+---
+
+## T-006 — Server-Grundgerüst und Infrastruktur-Helfer · fertig
+
+**Datum:** 2026-09-13 · **Vorbedingungen:** T-004, T-005 (beide erfüllt)
+
+Die Schicht, auf der jedes fachliche Paket danach aufsetzt: Verbindung,
+Transaktion, Wächter, Listen, Nummern, Verschlüsselung, Drossel, Zeit,
+Aufgabenregister, Gesundheitsendpunkt.
+
+### Was entstanden ist
+
+| Datei | Zweck |
+| --- | --- |
+| `shared/datetime.ts` | eine Geschäftszeitzone, Datumsrechnung, deutsche Formate |
+| `shared/numbering.ts` | Nummernvorlagen rendern (Client und Server) |
+| `shared/domain.ts` | alle Wertelisten mit deutschen Beschriftungen |
+| `shared/schemas/domain.ts` | Valibot-Schemata aus denselben Listen |
+| `server/utils/guards.ts` | `requireUser`, `requirePermission`, `requireAnyPermission` |
+| `server/utils/pagination.ts` | `ORDER BY`/`LIMIT`/`OFFSET` mit Sortier-Weißliste |
+| `server/utils/numbering.ts` | Nummernvergabe, atomar und transaktionsfähig |
+| `server/utils/crypto.ts` | AES-256-GCM für Geheimnisse in der Datenbank |
+| `server/utils/rate-limit.ts` | Ein-Minuten-Zähler für Anmeldung und öffentliche API |
+| `server/utils/health.ts` | die Zustandsprüfung, ohne HTTP |
+| `server/tasks/_registry.ts` | eine Erklärung je wiederkehrender Aufgabe |
+| `server/api/health.get.ts` | der erste Endpoint |
+
+### Entscheidungen, die dabei fielen
+
+**Die Wertelisten haben eine eigene Datei bekommen.** Der Arbeitsplan sah
+`server/utils/status-labels.ts` und `payment-methods.ts` vor. Beide Inhalte
+gehören aber der Oberfläche genauso wie dem Server, also liegen sie in
+`shared/domain.ts`. Aus derselben Liste entstehen jetzt drei Dinge: die
+`CHECK`-Bedingung in der Datenbank, das Valibot-Schema und die deutsche
+Beschriftung. Sie können nicht mehr auseinanderlaufen — genau das war B-011.
+
+**Zahlungsarten sind jetzt Codes.** Der Vorgänger speicherte die Beschriftung
+selbst („Überweisung" stand als Wert in der Spalte und damit in jeder
+SQL-Abfrage). Da die Anwendung leer startet (E-20), kostet die Umstellung
+nichts.
+
+**Eine Saison, eine Schreibweise.** Der Katalog schrieb `Sommer`, die
+Einlagerung `summer`, und die Suche hielt eine dritte Karte vor, um beides zu
+verstehen. Jetzt: `summer` als Code, „Sommer" als Beschriftung.
+
+**Ein Vokabular für Importläufe.** eBay meldete `success`, der
+Access-Import `completed`.
+
+**`no action` statt `restrict`** — siehe den T-005-Eintrag: die Prüfung läuft
+erst am Ende der Anweisung, eine berechtigte Kaskade bleibt möglich.
+
+**Geld liegt in `shared/money.ts`, nicht in `server/utils/money.ts`.** Die
+Oberfläche formatiert und liest Beträge, also gehört die Rechenschicht nach
+`shared/`.
+
+### Was dabei auffiel
+
+**Die Drossel ließ bei Grenzwert null einen Aufruf durch.** Der erste Aufruf
+eines Zeitfensters wurde bedingungslos erlaubt. Ein Grenzwert von null heißt
+aber „geschlossen". Der Test hat es gefunden, bevor es jemand benutzt hat.
+
+**`sent_messages.status` widersprach sich selbst.** Die Spalte hatte den
+Vorgabewert `sent`, während jeder Sendeweg ausdrücklich `pending` eintrug. Die
+Zeile entsteht vor dem Versand, also ist `pending` richtig.
+
+**`customer_inquiries.status` war tot.** Keine Schreibstelle, keine Lesestelle,
+und F-582 hält ausdrücklich fest, dass der Posteingang keinen Status pflegt —
+er filtert über den Benachrichtigungsstatus. Die Spalte ist weg.
+
+**Die Wächter waren vollständig ungetestet.** Sie sind die erste Anweisung
+jedes Endpoints und damit sicherheitsrelevant; jetzt prüfen 26 Tests jede
+Verzweigung samt der deutschen Sätze.
+
+**Verbindungsaufbau war doppelt.** Der Testaufbau baute seinen eigenen
+Drizzle-Client. Jetzt geht beides durch `createDatabase` — eine Abweichung
+zwischen Test- und Serververbindung ist damit ausgeschlossen.
+
+### Behobene Befunde
+
+| Befund | Was jetzt gilt |
+| --- | --- |
+| B-011 | eine Quelle für Werte und Beschriftungen, in `shared/domain.ts` |
+| B-018 | ohne `APP_SECRET` startet nichts; kein eingebauter Ersatzschlüssel |
+| B-026 | keine wählbare Seitengröße, auch nicht als toter Helfer |
+| B-028 | eine Geschäftszeitzone entscheidet jede Tagesgrenze |
+| B-304 | die Nummer wird in derselben Transaktion vergeben wie der Beleg |
+| B-335 | 38 `CHECK`-Bedingungen; Alias-Status wie `open` sind abgeschafft |
+| B-411 | dieselben Bedingungen auch auf den Buchungsspalten |
+
+### Doku
+
+`docs/architecture/server-schichten.md` (neu),
+`docs/architecture/wertelisten.md` (**aus dem Code erzeugt**, `pnpm docs:domain`),
+`docs/api/health-get.md` (ausgeschrieben statt Vorlage).
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tabellen | 51, davon 38 Prüfbedingungen auf Diskriminatoren |
+| Baseline | 228 wiederholbare Anweisungen |
+| Tests | 650 (32 Dateien) |
+| Coverage | 93,8 % Anweisungen · 85,0 % Zweige · 94,2 % Funktionen |
+| Befund-Abdeckung | 33 von 33 fälligen Befunden mit Regressionstest |

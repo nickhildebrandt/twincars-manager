@@ -46,7 +46,9 @@ schreibt · kein eigenes CSS · ESLint formatiert.
 
 ## Querschnittsregeln der neuen Fassung
 
-| Regel                                | Seite                                                  |
-| ------------------------------------ | ------------------------------------------------------ |
-| Geld ist eine ganze Zahl in Cent     | [Geldbeträge](money.md)                                |
-| Löschen, Archivieren und was mitgeht | [Löschen und Archivieren](loeschen-und-archivieren.md) |
+| Regel                                             | Seite                                                  |
+| ------------------------------------------------- | ------------------------------------------------------ |
+| Geld ist eine ganze Zahl in Cent                  | [Geldbeträge](money.md)                                |
+| Löschen, Archivieren und was mitgeht              | [Löschen und Archivieren](loeschen-und-archivieren.md) |
+| Wächter, Listen, Nummern, Krypto, Zeitplan        | [Serverschichten](server-schichten.md)                 |
+| Werte der Diskriminatoren und ihre Beschriftungen | [Wertelisten](wertelisten.md)                          |

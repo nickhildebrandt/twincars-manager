@@ -79,7 +79,9 @@ CREATE TABLE IF NOT EXISTS "calendar_entries" (
 	"vehicle_id" uuid,
 	"employee_id" uuid,
 	"notes" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "calendar_entries_kind_check" CHECK ("calendar_entries"."kind" IN ('appointment', 'closure')),
+	CONSTRAINT "calendar_entries_status_check" CHECK ("calendar_entries"."status" IS NULL OR "calendar_entries"."status" IN ('scheduled', 'completed', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "item_price_versions" (
@@ -102,7 +104,8 @@ CREATE TABLE IF NOT EXISTS "items" (
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"online_bookable" boolean DEFAULT false NOT NULL
+	"online_bookable" boolean DEFAULT false NOT NULL,
+	CONSTRAINT "items_kind_check" CHECK ("items"."kind" IN ('article', 'service', 'material', 'pass_through'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "tire_photos" (
@@ -154,7 +157,9 @@ CREATE TABLE IF NOT EXISTS "tires" (
 	"online_sellable" boolean DEFAULT false NOT NULL,
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "tires_season_check" CHECK ("tires"."season" IN ('summer', 'winter', 'allseason')),
+	CONSTRAINT "tires_construction_check" CHECK ("tires"."construction" IN ('R', 'D'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "mail_templates" (
@@ -190,9 +195,11 @@ CREATE TABLE IF NOT EXISTS "sent_messages" (
 	"body_text" text NOT NULL,
 	"attachment_meta" jsonb DEFAULT '[]'::jsonb,
 	"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"status" varchar(20) DEFAULT 'sent' NOT NULL,
+	"status" varchar(20) DEFAULT 'pending' NOT NULL,
 	"error_message" text,
-	"smtp_message_id" varchar(200)
+	"smtp_message_id" varchar(200),
+	CONSTRAINT "sent_messages_status_check" CHECK ("sent_messages"."status" IN ('pending', 'sent', 'failed')),
+	CONSTRAINT "sent_messages_document_type_check" CHECK ("sent_messages"."document_type" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation', 'reminder', 'mailing', 'tire_reminder', 'appointment_confirmation'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "smtp_settings" (
@@ -206,7 +213,8 @@ CREATE TABLE IF NOT EXISTS "smtp_settings" (
 	"from_name" varchar(200) DEFAULT '' NOT NULL,
 	"reply_to" varchar(254),
 	"verified" boolean DEFAULT false NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "smtp_settings_secure_check" CHECK ("smtp_settings"."secure" IN ('none', 'STARTTLS', 'TLS'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "customer_inquiries" (
@@ -219,11 +227,12 @@ CREATE TABLE IF NOT EXISTS "customer_inquiries" (
 	"message" text NOT NULL,
 	"reference_id" varchar(64),
 	"reference_type" varchar(20),
-	"status" varchar(20) DEFAULT 'new' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"notification_status" varchar(20) DEFAULT 'pending' NOT NULL,
 	"notification_sent_at" timestamp with time zone,
-	"notification_error" text
+	"notification_error" text,
+	CONSTRAINT "customer_inquiries_reference_type_check" CHECK ("customer_inquiries"."reference_type" IS NULL OR "customer_inquiries"."reference_type" IN ('used-car', 'article', 'tire', 'general')),
+	CONSTRAINT "customer_inquiries_notification_status_check" CHECK ("customer_inquiries"."notification_status" IN ('pending', 'sent', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "customers" (
@@ -257,7 +266,8 @@ CREATE TABLE IF NOT EXISTS "customers" (
 	"kind" varchar(20) DEFAULT 'privat' NOT NULL,
 	"ebay_handle" varchar(100),
 	"wants_broadcast" boolean DEFAULT false NOT NULL,
-	"wants_tire_reminders" boolean DEFAULT false NOT NULL
+	"wants_tire_reminders" boolean DEFAULT false NOT NULL,
+	CONSTRAINT "customers_kind_check" CHECK ("customers"."kind" IN ('privat', 'firma', 'ebay'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "suppliers" (
@@ -300,7 +310,8 @@ CREATE TABLE IF NOT EXISTS "document_items" (
 	"line_total_gross" integer DEFAULT 0 NOT NULL,
 	"tire_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_items_kind_check" CHECK ("document_items"."kind" IN ('article', 'service', 'material', 'pass_through', 'vehicle'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "document_payments" (
@@ -310,7 +321,8 @@ CREATE TABLE IF NOT EXISTS "document_payments" (
 	"amount" integer NOT NULL,
 	"method" varchar(30),
 	"notes" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "document_payments_method_check" CHECK ("document_payments"."method" IS NULL OR "document_payments"."method" IN ('transfer', 'cash', 'direct_debit', 'card'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "document_pdfs" (
@@ -352,7 +364,11 @@ CREATE TABLE IF NOT EXISTS "documents" (
 	"cancellation_reason" varchar(500),
 	"cancelled_by_document_id" uuid,
 	"cancels_document_id" uuid,
-	"work_order_id" uuid
+	"work_order_id" uuid,
+	CONSTRAINT "documents_type_check" CHECK ("documents"."type" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation')),
+	CONSTRAINT "documents_status_check" CHECK ("documents"."status" IN ('created', 'sent', 'paid', 'cancelled', 'storno', 'converted')),
+	CONSTRAINT "documents_payment_method_check" CHECK ("documents"."payment_method" IS NULL OR "documents"."payment_method" IN ('transfer', 'cash', 'direct_debit', 'card')),
+	CONSTRAINT "documents_reminder_level_check" CHECK ("documents"."reminder_level" >= 0)
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "reminder_pdfs" (
@@ -377,7 +393,8 @@ CREATE TABLE IF NOT EXISTS "reminders" (
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "reminders_document_number_unique" UNIQUE("document_number")
+	CONSTRAINT "reminders_document_number_unique" UNIQUE("document_number"),
+	CONSTRAINT "reminders_status_check" CHECK ("reminders"."status" IN ('open', 'sent', 'paid', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "employee_absences" (
@@ -393,7 +410,9 @@ CREATE TABLE IF NOT EXISTS "employee_absences" (
 	"attachment_mime" varchar(50),
 	"attachment_name" varchar(200),
 	"attachment_data" text,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "employee_absences_type_check" CHECK ("employee_absences"."type" IN ('vacation', 'sick', 'other')),
+	CONSTRAINT "employee_absences_status_check" CHECK ("employee_absences"."status" IN ('planned', 'approved', 'cancelled'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "employee_salary_versions" (
@@ -475,7 +494,8 @@ CREATE TABLE IF NOT EXISTS "access_import_jobs" (
 	"rows_skipped" integer DEFAULT 0 NOT NULL,
 	"notes" text,
 	"progress" integer DEFAULT 0 NOT NULL,
-	"progress_label" varchar(200)
+	"progress_label" varchar(200),
+	CONSTRAINT "access_import_jobs_status_check" CHECK ("access_import_jobs"."status" IN ('running', 'success', 'failed'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ebay_credentials" (
@@ -488,7 +508,8 @@ CREATE TABLE IF NOT EXISTS "ebay_credentials" (
 	"scopes" text DEFAULT '' NOT NULL,
 	"environment" varchar(20) DEFAULT 'production' NOT NULL,
 	"connected_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "ebay_credentials_environment_check" CHECK ("ebay_credentials"."environment" IN ('production', 'sandbox'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ebay_import_runs" (
@@ -502,7 +523,9 @@ CREATE TABLE IF NOT EXISTS "ebay_import_runs" (
 	"failed" integer DEFAULT 0 NOT NULL,
 	"total_active" integer DEFAULT 0 NOT NULL,
 	"error" text,
-	"environment" varchar(20) DEFAULT 'production' NOT NULL
+	"environment" varchar(20) DEFAULT 'production' NOT NULL,
+	CONSTRAINT "ebay_import_runs_status_check" CHECK ("ebay_import_runs"."status" IN ('running', 'success', 'failed')),
+	CONSTRAINT "ebay_import_runs_environment_check" CHECK ("ebay_import_runs"."environment" IN ('production', 'sandbox'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ebay_listings" (
@@ -525,7 +548,9 @@ CREATE TABLE IF NOT EXISTS "ebay_listings" (
 	"tire_id" uuid,
 	"first_imported_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"last_seen_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "ebay_listings_status_check" CHECK ("ebay_listings"."status" IN ('active', 'ended')),
+	CONSTRAINT "ebay_listings_environment_check" CHECK ("ebay_listings"."environment" IN ('production', 'sandbox'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ledger_categories" (
@@ -535,7 +560,8 @@ CREATE TABLE IF NOT EXISTS "ledger_categories" (
 	"default_tax_rate" numeric(5, 2),
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "ledger_categories_name_unique" UNIQUE("name")
+	CONSTRAINT "ledger_categories_name_unique" UNIQUE("name"),
+	CONSTRAINT "ledger_categories_direction_check" CHECK ("ledger_categories"."direction" IN ('income', 'expense'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ledger_entries" (
@@ -555,7 +581,11 @@ CREATE TABLE IF NOT EXISTS "ledger_entries" (
 	"customer_id" uuid,
 	"document_id" uuid,
 	"source" varchar(30) DEFAULT 'manual' NOT NULL,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "ledger_entries_direction_check" CHECK ("ledger_entries"."direction" IN ('income', 'expense')),
+	CONSTRAINT "ledger_entries_payment_status_check" CHECK ("ledger_entries"."payment_status" IN ('paid', 'open', 'partial')),
+	CONSTRAINT "ledger_entries_payment_method_check" CHECK ("ledger_entries"."payment_method" IS NULL OR "ledger_entries"."payment_method" IN ('transfer', 'cash', 'direct_debit', 'card')),
+	CONSTRAINT "ledger_entries_source_check" CHECK ("ledger_entries"."source" IN ('manual', 'invoice'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "work_order_assignees" (
@@ -578,7 +608,8 @@ CREATE TABLE IF NOT EXISTS "work_order_items" (
 	"hours" numeric(6, 2),
 	"done_at" date NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "work_order_items_kind_check" CHECK ("work_order_items"."kind" IN ('labor', 'material'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "work_orders" (
@@ -596,7 +627,8 @@ CREATE TABLE IF NOT EXISTS "work_orders" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"scheduled_date" date,
 	"scheduled_time" varchar(5),
-	CONSTRAINT "work_orders_order_number_unique" UNIQUE("order_number")
+	CONSTRAINT "work_orders_order_number_unique" UNIQUE("order_number"),
+	CONSTRAINT "work_orders_status_check" CHECK ("work_orders"."status" IN ('open', 'in_progress', 'done'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "company_settings" (
@@ -633,7 +665,8 @@ CREATE TABLE IF NOT EXISTS "company_settings" (
 	"reminder_recur_every_days" integer DEFAULT 14 NOT NULL,
 	"geo_lat" numeric(9, 6),
 	"geo_lon" numeric(9, 6),
-	"labor_item_id" uuid
+	"labor_item_id" uuid,
+	CONSTRAINT "company_settings_salutation_style_check" CHECK ("company_settings"."salutation_style" IN ('Sie', 'Du'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "number_ranges" (
@@ -643,7 +676,8 @@ CREATE TABLE IF NOT EXISTS "number_ranges" (
 	"next_value" integer DEFAULT 1 NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "number_ranges_kind_unique" UNIQUE("kind")
+	CONSTRAINT "number_ranges_kind_unique" UNIQUE("kind"),
+	CONSTRAINT "number_ranges_kind_check" CHECK ("number_ranges"."kind" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation', 'storno', 'reminder', 'customer', 'tire', 'tire_storage', 'work_order'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "tire_reminder_log" (
@@ -652,7 +686,8 @@ CREATE TABLE IF NOT EXISTS "tire_reminder_log" (
 	"season" varchar(20) NOT NULL,
 	"year" integer NOT NULL,
 	"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "tire_reminder_log_unique" UNIQUE("customer_id","season","year")
+	CONSTRAINT "tire_reminder_log_unique" UNIQUE("customer_id","season","year"),
+	CONSTRAINT "tire_reminder_log_season_check" CHECK ("tire_reminder_log"."season" IN ('spring', 'autumn'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "tire_storage" (
@@ -672,7 +707,8 @@ CREATE TABLE IF NOT EXISTS "tire_storage" (
 	"stored_at" date DEFAULT now() NOT NULL,
 	"retrieved_at" date,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "tire_storage_season_check" CHECK ("tire_storage"."season" IS NULL OR "tire_storage"."season" IN ('summer', 'winter', 'allseason'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "vehicle_documents" (
@@ -705,7 +741,8 @@ CREATE TABLE IF NOT EXISTS "vehicle_listings" (
 	"location" varchar(100),
 	"internal_notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
+	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "vehicle_listings_status_check" CHECK ("vehicle_listings"."status" IN ('available', 'sold'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "vehicle_photos" (
@@ -1041,7 +1078,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS "smtp_settings_singleton" ON "smtp_settings" U
 CREATE INDEX IF NOT EXISTS "customer_inquiries_customer_id_idx" ON "customer_inquiries" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_created_at_idx" ON "customer_inquiries" USING btree ("created_at");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_notification_status_idx" ON "customer_inquiries" USING btree ("notification_status");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "customer_inquiries_status_idx" ON "customer_inquiries" USING btree ("status");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_created_at_idx" ON "customers" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_company_idx" ON "customers" USING btree ("company");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "customers_customer_number_idx" ON "customers" USING btree ("customer_number");--> statement-breakpoint

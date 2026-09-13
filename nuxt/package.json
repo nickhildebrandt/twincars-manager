@@ -37,8 +37,9 @@
     "test:watch": "vitest --project unit --project nuxt",
     "test:db:status": "node scripts/test-db.mjs status",
     "docs:features": "node scripts/docs-features.mjs",
-    "docs:build": "pnpm docs:features && pnpm docs:api && pnpm docs:data",
-    "db:idempotent": "node scripts/make-migration-idempotent.mjs"
+    "docs:build": "pnpm docs:features && pnpm docs:api && pnpm docs:data && pnpm docs:domain",
+    "db:idempotent": "node scripts/make-migration-idempotent.mjs",
+    "docs:domain": "node --experimental-strip-types scripts/docs-domain.mjs"
   },
   "lint-staged": {
     "*.{js,mjs,ts,vue,json,md,yaml,yml,css}": "eslint --fix"

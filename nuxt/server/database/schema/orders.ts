@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, primaryKey } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, primaryKey, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { workOrderItemKinds, workOrderStatuses } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
 import { calendarEntries } from './calendar.ts'
 import { items } from './catalog.ts'
@@ -32,6 +34,7 @@ export const workOrders = pgTable('work_orders', {
   scheduledDate: date('scheduled_date'),
   scheduledTime: varchar('scheduled_time', { length: 5 }),
 }, table => [
+  check('work_orders_status_check', oneOf(table.status, workOrderStatuses.values)),
   index('work_orders_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('work_orders_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   uniqueIndex('work_orders_appointment_id_idx').using('btree', table.appointmentId.asc().nullsLast()).where(sql`(appointment_id IS NOT NULL)`),
@@ -77,6 +80,7 @@ export const workOrderItems = pgTable('work_order_items', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('work_order_items_kind_check', oneOf(table.kind, workOrderItemKinds.values)),
   index('work_order_items_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   index('work_order_items_item_id_idx').using('btree', table.itemId.asc().nullsLast()),
   index('work_order_items_work_order_id_idx').using('btree', table.workOrderId.asc().nullsLast()),

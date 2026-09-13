@@ -133,6 +133,33 @@ export async function createWorkerDatabase(
 }
 
 /**
+ * Makes sure a named database exists and carries the current schema.
+ *
+ * The end-to-end project starts a real production build, which connects to the
+ * database named in `DATABASE_URL` rather than to a per-worker copy. That
+ * database has to exist, or the health check answers 503 and every flow fails
+ * for a reason that has nothing to do with the flow.
+ */
+export async function ensureDatabase(sql: Sql, database: string): Promise<boolean> {
+  await sql`SELECT pg_advisory_lock(${TEMPLATE_LOCK})`
+  try {
+    const created = !(await databaseExists(sql, database))
+    if (created) await sql.unsafe(`CREATE DATABASE "${database}"`)
+    await applyMigrations(database)
+    return created
+  }
+  finally {
+    await sql`SELECT pg_advisory_unlock(${TEMPLATE_LOCK})`
+  }
+}
+
+/** The database name inside a connection string. */
+export function databaseNameOf(url: string): string {
+  const path = /^[a-z+]+:\/\/[^/]*\/([^?]*)/.exec(url)?.[1] ?? ''
+  return decodeURIComponent(path) || 'postgres'
+}
+
+/**
  * Applies the migrations with the SAME runner production uses, so the template
  * ends up byte-identical to a freshly deployed database — including Drizzle's
  * journal table.

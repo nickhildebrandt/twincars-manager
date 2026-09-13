@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, time, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, time, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { absenceStatuses, absenceTypes } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
 import { customers } from './customers.ts'
 import { documents } from './documents.ts'
@@ -68,6 +70,8 @@ export const employeeAbsences = pgTable('employee_absences', {
   attachmentData: text('attachment_data'),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('employee_absences_type_check', oneOf(table.type, absenceTypes.values)),
+  check('employee_absences_status_check', oneOf(table.status, absenceStatuses.values)),
   index('employee_absences_date_from_idx').using('btree', table.dateFrom.asc().nullsLast()),
   index('employee_absences_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   foreignKey({

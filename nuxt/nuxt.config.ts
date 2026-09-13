@@ -1,5 +1,7 @@
 // Nuxt configuration for TwinCarsManager.
 // Binding rules for this file live in ../docs/rewrite/03-architektur.md.
+import { scheduledTasksConfig } from './server/tasks/_registry'
+
 export default defineNuxtConfig({
   modules: ['@nuxt/ui', '@nuxt/eslint'],
 
@@ -43,9 +45,11 @@ export default defineNuxtConfig({
       deletionEndpointUrl: process.env.EBAY_DELETION_ENDPOINT_URL ?? '',
     },
     tasks: {
-      // Recurring work is operator-triggered by default (08-entscheidungen.md
-      // E-03). Turning this on is an operations decision.
-      scheduleEnabled: false,
+      // Recurring work runs on a schedule — weekdays 07:30 Europe/Berlin
+      // (08-entscheidungen.md E-12). The "Jetzt prüfen" button triggers the
+      // same task by hand. Set TASKS_SCHEDULE=off to silence the schedule
+      // without touching the code, e.g. on a staging instance.
+      scheduleEnabled: process.env.TASKS_SCHEDULE !== 'off',
     },
     public: {
       appVersion: '0.0.0-development',
@@ -57,6 +61,10 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'node-server',
+    // Built from server/tasks/_registry.ts so schedule and implementation
+    // cannot drift apart. Whether the schedule actually fires is decided at
+    // runtime by runtimeConfig.tasks.scheduleEnabled.
+    scheduledTasks: scheduledTasksConfig(),
   },
 
   typescript: {

@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, check } from 'drizzle-orm/pg-core'
+import { oneOf, oneOfOrNull } from './_checks.ts'
+import { customerKinds, inquiryReferenceTypes, messageStatuses } from '../../../shared/domain.ts'
 
 export const customers = pgTable('customers', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -48,6 +50,7 @@ export const customers = pgTable('customers', {
   wantsBroadcast: boolean('wants_broadcast').default(false).notNull(),
   wantsTireReminders: boolean('wants_tire_reminders').default(false).notNull(),
 }, table => [
+  check('customers_kind_check', oneOf(table.kind, customerKinds.values)),
   index('customers_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('customers_company_idx').using('btree', table.company.asc().nullsLast()),
   uniqueIndex('customers_customer_number_idx').using('btree', table.customerNumber.asc().nullsLast()),
@@ -92,16 +95,16 @@ export const customerInquiries = pgTable('customer_inquiries', {
   message: text().notNull(),
   referenceId: varchar('reference_id', { length: 64 }),
   referenceType: varchar('reference_type', { length: 20 }),
-  status: varchar({ length: 20 }).default('new').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   notificationStatus: varchar('notification_status', { length: 20 }).default('pending').notNull(),
   notificationSentAt: timestamp('notification_sent_at', { withTimezone: true, mode: 'string' }),
   notificationError: text('notification_error'),
 }, table => [
+  check('customer_inquiries_reference_type_check', oneOfOrNull(table.referenceType, inquiryReferenceTypes.values)),
+  check('customer_inquiries_notification_status_check', oneOf(table.notificationStatus, messageStatuses.values)),
   index('customer_inquiries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('customer_inquiries_created_at_idx').using('btree', table.createdAt.asc().nullsLast()),
   index('customer_inquiries_notification_status_idx').using('btree', table.notificationStatus.asc().nullsLast()),
-  index('customer_inquiries_status_idx').using('btree', table.status.asc().nullsLast()),
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],

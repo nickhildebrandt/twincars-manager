@@ -50,7 +50,10 @@ export function useApi() {
 
   async function request<T>(path: string, options?: FetchOptions<'json'>): Promise<T> {
     try {
-      return await $fetch<T>(path, options as never)
+      // `$fetch` widens its result once Nitro knows the route types. The
+      // caller states the shape it expects, and the endpoint's Valibot schema
+      // is what actually guarantees it.
+      return await $fetch<T>(path, options as never) as T
     }
     catch (error) {
       handle(error)

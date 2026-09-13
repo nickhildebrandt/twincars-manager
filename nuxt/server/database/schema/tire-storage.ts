@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, jsonb, check } from 'drizzle-orm/pg-core'
+import { oneOf, oneOfOrNull } from './_checks.ts'
+import { reminderSeasons, tireSeasons } from '../../../shared/domain.ts'
 import { customers } from './customers.ts'
 import { vehicles } from './vehicles.ts'
 
@@ -30,6 +32,7 @@ export const tireStorage = pgTable('tire_storage', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('tire_storage_season_check', oneOfOrNull(table.season, tireSeasons.values)),
   index('tire_storage_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('tire_storage_active_idx').using('btree', table.retrievedAt.asc().nullsLast()),
   index('tire_storage_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
@@ -53,6 +56,7 @@ export const tireReminderLog = pgTable('tire_reminder_log', {
   year: integer().notNull(),
   sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('tire_reminder_log_season_check', oneOf(table.season, reminderSeasons.values)),
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],

@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, boolean, timestamp, index, foreignKey, text } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, boolean, timestamp, index, foreignKey, text, check } from 'drizzle-orm/pg-core'
+import { oneOf, oneOfOrNull } from './_checks.ts'
+import { appointmentStatuses, calendarKinds } from '../../../shared/domain.ts'
 import { customers } from './customers.ts'
 import { employees } from './employees.ts'
 import { vehicles } from './vehicles.ts'
@@ -26,6 +28,8 @@ export const calendarEntries = pgTable('calendar_entries', {
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('calendar_entries_kind_check', oneOf(table.kind, calendarKinds.values)),
+  check('calendar_entries_status_check', oneOfOrNull(table.status, appointmentStatuses.values)),
   index('calendar_entries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('calendar_entries_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   index('calendar_entries_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),

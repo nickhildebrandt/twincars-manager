@@ -4,6 +4,7 @@
  */
 import './messages'
 
+export * from './domain'
 export * from './field-labels'
 export * from './messages'
 export * from './pagination'

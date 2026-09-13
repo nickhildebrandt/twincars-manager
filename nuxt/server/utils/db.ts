@@ -15,18 +15,30 @@ import { connectionOptionsFrom } from './connection.ts'
 let client: postgres.Sql | undefined
 let database: ReturnType<typeof drizzle<typeof schema>> | undefined
 
+/**
+ * Opens a client and wraps it in Drizzle.
+ *
+ * Takes the connection options rather than reading them, so tests and scripts
+ * open the very same client the server opens instead of building a second one
+ * that might differ in casing or schema.
+ */
+export function createDatabase(options: postgres.Options<Record<string, never>>) {
+  const sql = postgres(options)
+  return { client: sql, db: drizzle(sql, { schema, casing: 'snake_case' }) }
+}
+
 /** Lazily opened connection pool, shared by the whole server process. */
 export function useDatabase() {
   if (!database) {
-    // Mapped from DATABASE_URL in nuxt.config.ts. Scripts and tests build
-    // their own connection instead of going through the Nuxt runtime.
-    const url = useRuntimeConfig().databaseUrl
-    client = postgres(connectionOptionsFrom(url, {
+    // Mapped from DATABASE_URL in nuxt.config.ts. This is the only place the
+    // application turns configuration into a connection.
+    const opened = createDatabase(connectionOptionsFrom(useRuntimeConfig().databaseUrl, {
       max: 10,
       idle_timeout: 20,
       connect_timeout: 10,
     }))
-    database = drizzle(client, { schema, casing: 'snake_case' })
+    client = opened.client
+    database = opened.db
   }
   return database
 }
@@ -38,6 +50,22 @@ export async function closeDatabase(): Promise<void> {
   database = undefined
 }
 
+/** The connection pool, typed. */
+export type Database = ReturnType<typeof useDatabase>
+
+/** A transaction handle, as `withTransaction` hands it to the callback. */
+export type Transaction = Parameters<Parameters<Database['transaction']>[0]>[0]
+
+/**
+ * Anything that can run a statement.
+ *
+ * Helpers take this instead of reaching for the pool themselves, so the caller
+ * decides whether the work joins an open transaction. Allocating a document
+ * number outside the transaction that writes the document is how the
+ * predecessor produced gaps in the invoice numbering (B-304).
+ */
+export type Executor = Database | Transaction
+
 /**
  * Runs the callback inside one transaction. Anything that throws rolls the
  * whole thing back.
@@ -47,9 +75,7 @@ export async function closeDatabase(): Promise<void> {
  *     await tx.insert(documents).values({ ...input, documentNumber: number })
  *   })
  */
-export function withTransaction<T>(
-  run: (tx: Parameters<Parameters<ReturnType<typeof useDatabase>['transaction']>[0]>[0]) => Promise<T>,
-): Promise<T> {
+export function withTransaction<T>(run: (tx: Transaction) => Promise<T>): Promise<T> {
   return useDatabase().transaction(run)
 }
 

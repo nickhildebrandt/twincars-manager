@@ -32,7 +32,15 @@ export default defineConfig({
         // the production build in the end-to-end project, where V8 coverage
         // does not reach. Their logic is unit-tested through the helpers they
         // call (server/utils/errors.ts, shared/schemas/env.ts).
+        // Stylesheets are not code; V8 reports them because the Nuxt project
+        // loads them.
+        'app/assets/css/**',
         'server/plugins/**',
+        // Endpoint wiring without logic: it hands `useDatabase()` to
+        // `checkHealth` and turns a failure into a 503. The check itself is
+        // covered in test/integration/health.test.ts, the wiring by the
+        // end-to-end suite against the built server.
+        'server/api/health.get.ts',
         // Pure re-export barrel.
         'shared/schemas/index.ts',
         // Declarative table definitions, not logic. Their correctness is
@@ -161,7 +169,7 @@ export default defineConfig({
           name: 'e2e',
           environment: 'node',
           include: ['test/e2e/**/*.test.ts'],
-          setupFiles: ['test/setup/env.ts'],
+          setupFiles: ['test/setup/env.ts', 'test/setup/e2e-db.ts'],
           testTimeout: 120_000,
           hookTimeout: 180_000,
         },

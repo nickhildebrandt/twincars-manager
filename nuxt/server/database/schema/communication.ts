@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { messageKinds, messageStatuses, smtpSecurities } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
 import { documents } from './documents.ts'
 
@@ -21,10 +23,15 @@ export const sentMessages = pgTable('sent_messages', {
   bodyText: text('body_text').notNull(),
   attachmentMeta: jsonb('attachment_meta').default([]),
   sentAt: timestamp('sent_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  status: varchar({ length: 20 }).default('sent').notNull(),
+  // Die Zeile entsteht VOR dem Versand, damit ein Absturz eine Spur
+  // hinterlässt. Der Vorgabewert war beim Vorgänger 'sent', während jeder
+  // Sendeweg 'pending' eintrug — ein Widerspruch, der nur nicht auffiel.
+  status: varchar({ length: 20 }).default('pending').notNull(),
   errorMessage: text('error_message'),
   smtpMessageId: varchar('smtp_message_id', { length: 200 }),
 }, table => [
+  check('sent_messages_status_check', oneOf(table.status, messageStatuses.values)),
+  check('sent_messages_document_type_check', oneOf(table.documentType, messageKinds.values)),
   index('sent_messages_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   index('sent_messages_sent_at_idx').using('btree', table.sentAt.asc().nullsLast()),
   foreignKey({
@@ -58,7 +65,8 @@ export const smtpSettings = pgTable('smtp_settings', {
   replyTo: varchar('reply_to', { length: 254 }),
   verified: boolean().default(false).notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
-}, () => [
+}, table => [
+  check('smtp_settings_secure_check', oneOf(table.secure, smtpSecurities.values)),
   uniqueIndex('smtp_settings_singleton').using('btree', sql`((true))`),
 ])
 

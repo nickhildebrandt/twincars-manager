@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, timestamp, index, foreignKey, text, unique, integer } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, timestamp, index, foreignKey, text, unique, integer, check } from 'drizzle-orm/pg-core'
+import { oneOf, oneOfOrNull } from './_checks.ts'
+import { ledgerDirections, ledgerPaymentStatuses, ledgerSources, paymentMethods } from '../../../shared/domain.ts'
 import { customers, suppliers } from './customers.ts'
 import { documents } from './documents.ts'
 
@@ -19,6 +21,7 @@ export const ledgerCategories = pgTable('ledger_categories', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('ledger_categories_direction_check', oneOf(table.direction, ledgerDirections.values)),
   unique('ledger_categories_name_unique').on(table.name),
 ])
 
@@ -41,6 +44,10 @@ export const ledgerEntries = pgTable('ledger_entries', {
   source: varchar({ length: 30 }).default('manual').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('ledger_entries_direction_check', oneOf(table.direction, ledgerDirections.values)),
+  check('ledger_entries_payment_status_check', oneOf(table.paymentStatus, ledgerPaymentStatuses.values)),
+  check('ledger_entries_payment_method_check', oneOfOrNull(table.paymentMethod, paymentMethods.values)),
+  check('ledger_entries_source_check', oneOf(table.source, ledgerSources.values)),
   index('ledger_entries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('ledger_entries_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   index('ledger_entries_supplier_id_idx').using('btree', table.supplierId.asc().nullsLast()),

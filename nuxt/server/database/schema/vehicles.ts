@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { listingStatuses } from '../../../shared/domain.ts'
 import { documents } from './documents.ts'
 import { bytea } from './_types.ts'
 import { customers } from './customers.ts'
@@ -134,6 +136,7 @@ export const vehicleListings = pgTable('vehicle_listings', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('vehicle_listings_status_check', oneOf(table.status, listingStatuses.values)),
   uniqueIndex('vehicle_listings_vehicle_unique').using('btree', table.vehicleId.asc().nullsLast()),
   foreignKey({
     columns: [table.vehicleId],

@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { itemKinds, tireConstructions, tireSeasons } from '../../../shared/domain.ts'
 
 export const items = pgTable('items', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -23,6 +25,7 @@ export const items = pgTable('items', {
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   onlineBookable: boolean('online_bookable').default(false).notNull(),
 }, table => [
+  check('items_kind_check', oneOf(table.kind, itemKinds.values)),
   index('items_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   uniqueIndex('items_article_number_idx').using('btree', table.articleNumber.asc().nullsLast()),
   index('items_kind_idx').using('btree', table.kind.asc().nullsLast()),
@@ -77,6 +80,8 @@ export const tires = pgTable('tires', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('tires_season_check', oneOf(table.season, tireSeasons.values)),
+  check('tires_construction_check', oneOf(table.construction, tireConstructions.values)),
   index('tires_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   uniqueIndex('tires_article_number_idx').using('btree', table.articleNumber.asc().nullsLast()),
   index('tires_brand_idx').using('btree', table.brand.asc().nullsLast()),

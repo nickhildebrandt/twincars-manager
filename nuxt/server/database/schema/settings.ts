@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, numeric, integer, boolean, timestamp, foreignKey, text, unique, index, uniqueIndex } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, numeric, integer, boolean, timestamp, foreignKey, text, unique, index, uniqueIndex, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { numberKinds, salutationStyles } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
 import { items } from './catalog.ts'
 
@@ -47,6 +49,7 @@ export const companySettings = pgTable('company_settings', {
   geoLon: numeric('geo_lon', { precision: 9, scale: 6 }),
   laborItemId: uuid('labor_item_id'),
 }, table => [
+  check('company_settings_salutation_style_check', oneOf(table.salutationStyle, salutationStyles.values)),
   uniqueIndex('company_settings_singleton').using('btree', sql`((true))`),
   index('company_settings_labor_item_id_idx').using('btree', table.laborItemId.asc().nullsLast()),
   foreignKey({
@@ -64,5 +67,6 @@ export const numberRanges = pgTable('number_ranges', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('number_ranges_kind_check', oneOf(table.kind, numberKinds.values)),
   unique('number_ranges_kind_unique').on(table.kind),
 ])

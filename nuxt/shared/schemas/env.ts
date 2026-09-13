@@ -52,6 +52,12 @@ export const envSchema = v.pipe(
       'Europe/Berlin',
     ),
 
+    /** `off` silences the schedule; the buttons keep working (E-12). */
+    TASKS_SCHEDULE: v.optional(
+      v.picklist(['on', 'off'], 'TASKS_SCHEDULE muss "on" oder "off" sein.'),
+      'on',
+    ),
+
     /** Comma separated, each at least 16 characters. Empty disables the API. */
     API_TOKENS: v.optional(v.string(), ''),
 

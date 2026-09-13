@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, integer, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, integer, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
+import { oneOf } from './_checks.ts'
+import { ebayEnvironments, ebayListingStatuses, importRunStatuses } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
 import { tires } from './catalog.ts'
 
@@ -22,7 +24,8 @@ export const ebayCredentials = pgTable('ebay_credentials', {
   environment: varchar({ length: 20 }).default('production').notNull(),
   connectedAt: timestamp('connected_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
-}, () => [
+}, table => [
+  check('ebay_credentials_environment_check', oneOf(table.environment, ebayEnvironments.values)),
   uniqueIndex('ebay_credentials_singleton').using('btree', sql`((true))`),
 ])
 
@@ -48,6 +51,8 @@ export const ebayListings = pgTable('ebay_listings', {
   lastSeenAt: timestamp('last_seen_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('ebay_listings_status_check', oneOf(table.status, ebayListingStatuses.values)),
+  check('ebay_listings_environment_check', oneOf(table.environment, ebayEnvironments.values)),
   index('ebay_listings_tire_id_idx').using('btree', table.tireId.asc().nullsLast()),
   uniqueIndex('ebay_listings_env_item_idx').using('btree', table.environment.asc().nullsLast(), table.ebayItemId.asc().nullsLast()),
   index('ebay_listings_status_idx').using('btree', table.status.asc().nullsLast()),
@@ -70,7 +75,10 @@ export const ebayImportRuns = pgTable('ebay_import_runs', {
   totalActive: integer('total_active').default(0).notNull(),
   error: text(),
   environment: varchar({ length: 20 }).default('production').notNull(),
-})
+}, table => [
+  check('ebay_import_runs_status_check', oneOf(table.status, importRunStatuses.values)),
+  check('ebay_import_runs_environment_check', oneOf(table.environment, ebayEnvironments.values)),
+])
 
 export const accessImportJobs = pgTable('access_import_jobs', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -83,4 +91,6 @@ export const accessImportJobs = pgTable('access_import_jobs', {
   notes: text(),
   progress: integer().default(0).notNull(),
   progressLabel: varchar('progress_label', { length: 200 }),
-})
+}, table => [
+  check('access_import_jobs_status_check', oneOf(table.status, importRunStatuses.values)),
+])

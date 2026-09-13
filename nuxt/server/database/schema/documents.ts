@@ -7,7 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, type AnyPgColumn } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
+import { notNegative, oneOf, oneOfOrNull } from './_checks.ts'
+import { documentStatuses, documentTypes, itemLineKinds, paymentMethods, reminderStatuses } from '../../../shared/domain.ts'
 import { bytea } from './_types.ts'
 import { items, tires } from './catalog.ts'
 import { customers } from './customers.ts'
@@ -47,6 +49,10 @@ export const documents = pgTable('documents', {
   // module evaluation order and the type checker.
   workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'set null' }),
 }, table => [
+  check('documents_type_check', oneOf(table.type, documentTypes.values)),
+  check('documents_status_check', oneOf(table.status, documentStatuses.values)),
+  check('documents_payment_method_check', oneOfOrNull(table.paymentMethod, paymentMethods.values)),
+  check('documents_reminder_level_check', notNegative(table.reminderLevel)),
   index('documents_created_at_idx').using('btree', table.createdAt.desc().nullsLast()),
   index('documents_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('documents_cancelled_by_idx').using('btree', table.cancelledByDocumentId.asc().nullsLast()),
@@ -98,6 +104,7 @@ export const documentItems = pgTable('document_items', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('document_items_kind_check', oneOf(table.kind, itemLineKinds.values)),
   index('document_items_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   index('document_items_item_id_idx').using('btree', table.itemId.asc().nullsLast()),
   index('document_items_tire_idx').using('btree', table.tireId.asc().nullsLast()),
@@ -127,6 +134,7 @@ export const documentPayments = pgTable('document_payments', {
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('document_payments_method_check', oneOfOrNull(table.method, paymentMethods.values)),
   index('document_payments_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   foreignKey({
     columns: [table.documentId],
@@ -166,6 +174,7 @@ export const reminders = pgTable('reminders', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
+  check('reminders_status_check', oneOf(table.status, reminderStatuses.values)),
   index('reminders_invoice_id_idx').using('btree', table.invoiceId.asc().nullsLast()),
   uniqueIndex('reminders_invoice_level_idx').using('btree', table.invoiceId.asc().nullsLast(), table.level.asc().nullsLast()),
   index('reminders_status_idx').using('btree', table.status.asc().nullsLast()),
