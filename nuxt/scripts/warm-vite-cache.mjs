@@ -89,7 +89,27 @@ console.log(`[warm] Vite-Zwischenspeicher (${variant}) fehlt oder ist veraltet �
 const args = ['run', '--project', 'browser', '--silent']
 if (withCoverage) args.push('--coverage')
 
-spawnSync('./node_modules/.bin/vitest', args, { cwd: root, stdio: 'ignore' })
+const warmOnce = () =>
+  spawnSync('./node_modules/.bin/vitest', args, { cwd: root, stdio: 'ignore' }).status
+
+/**
+ * Bis der Lauf durchgeht, höchstens dreimal.
+ *
+ * Einmal reicht nicht immer: bricht der Vorlauf selbst an dem beschriebenen
+ * Neuladen ab, ist der Zwischenspeicher danach halb gebaut, und der eigentliche
+ * Lauf ist wieder der erste kalte. Die Marke wird erst nach einem sauberen
+ * Durchgang geschrieben — sonst wärmt der nächste Aufruf einfach wieder vor.
+ */
+let status = warmOnce()
+for (let attempt = 1; status !== 0 && attempt < 3; attempt += 1) {
+  console.log(`[warm] Der Vorlauf brach ab — noch ein Versuch (${attempt + 1} von 3).`)
+  status = warmOnce()
+}
+
+if (status !== 0) {
+  console.log('[warm] Der Vorlauf ging nicht durch. Der eigentliche Lauf entscheidet.')
+  process.exit(0)
+}
 
 mkdirSync(dirname(marker), { recursive: true })
 writeFileSync(marker, `${new Date().toISOString()}\n`)

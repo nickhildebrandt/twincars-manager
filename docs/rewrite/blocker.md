@@ -47,21 +47,34 @@ nicht mehr); `optimizeDeps.holdUntilCrawlEnd`;
 `server.deps.inline`; die Aufbaudatei in eine eigene Quelldatei kapseln;
 `--no-file-parallelism`.
 
-**Wie es umgangen ist.** `pnpm test` ruft über `pretest`
-`scripts/warm-vite-cache.mjs` auf. Das Skript lässt das Browser-Projekt
-**einmal** vorlaufen, wenn der Zwischenspeicher fehlt **oder älter ist als**
-`vitest.config.ts`, `nuxt.config.ts`, `package.json` oder `pnpm-lock.yaml` —
-denn eine Konfigurationsänderung oder eine Installation verwirft ihn genauso
-gründlich wie ein Löschen. Der eigentliche Lauf findet danach einen
-vollständigen Zwischenspeicher; ist er bereits frisch, kostet die Prüfung
-nichts.
+**Wie es umgangen ist.** `pnpm test`, `pnpm test:browser` und `pnpm test:cov`
+rufen über ihren `pre…`-Schritt `scripts/warm-vite-cache.mjs` auf. Das Skript
+lässt das Browser-Projekt vorlaufen, wenn der Zwischenspeicher fehlt oder
+veraltet ist. Drei Dinge musste es dazu lernen:
+
+- **Je Variante.** Coverage bringt ein zusätzliches Plugin mit, und ein Plugin
+  ändert den Fingerabdruck des Optimierers: ein ohne Coverage gewärmter
+  Zwischenspeicher ist für `pnpm test:cov` wieder kalt. Der Vorlauf läuft
+  deshalb mit denselben Schaltern wie der Lauf, den er vorbereitet, und hat je
+  Variante eine eigene Marke.
+- **Ein geänderter Browsertest zählt.** Ein neuer Import dort zieht eine
+  Abhängigkeit herein, die der Optimierer noch nicht kennt — und wirft ihn
+  mitten im Lauf neu an. `test/browser/` und `test/setup/` gelten deshalb wie
+  `vitest.config.ts`, `nuxt.config.ts`, `package.json` und `pnpm-lock.yaml`.
+- **Bis er durchgeht, höchstens dreimal.** Bricht der Vorlauf selbst an genau
+  diesem Neuladen ab, ist der Zwischenspeicher danach halb gebaut und der
+  eigentliche Lauf wieder der erste kalte. Die Marke wird erst nach einem
+  sauberen Durchgang geschrieben.
+
+Der eigentliche Lauf findet danach einen vollständigen Zwischenspeicher; ist er
+bereits frisch, kostet die Prüfung nichts.
 
 **Wichtig:** Es wird kein Test übersprungen und keiner entschärft. Jeder Test
 läuft danach und muss bestehen. Die Umgehung kostet beim ersten Lauf einer
 frischen Arbeitskopie etwa vier Sekunden.
 
 **Wann es weg kann.** Sobald Vitest oder `@nuxt/test-utils` den Neuladevorgang
-behebt. Dann `pretest` aus `nuxt/package.json` und
+behebt. Dann alle `pretest…`-Schritte aus `nuxt/package.json` und
 `nuxt/scripts/warm-vite-cache.mjs` entfernen und die Reproduktion oben noch
 einmal durchspielen.
 
