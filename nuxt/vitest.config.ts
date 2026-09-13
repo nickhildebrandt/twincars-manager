@@ -73,10 +73,10 @@ export default defineConfig({
         // endpoints, middleware, pages and composables, so the mix is
         // representative and `pnpm test:cov:update` writes the reached values
         // back here with every package.
-        'statements': 96.44,
-        'branches': 88.76,
-        'functions': 98,
-        'lines': 98.03,
+        'statements': 97.31,
+        'branches': 90.07,
+        'functions': 98.68,
+        'lines': 98.74,
         // Geldarithmetik: jede Zeile gerechnet, jeder Rundungsfall belegt.
         // Ein blinder Fleck hier kostet Cent in echten Rechnungen.
         'shared/money.ts': {
@@ -98,16 +98,16 @@ export default defineConfig({
           lines: 90,
         },
         'server/api/**': {
-          statements: 90,
-          branches: 85,
-          functions: 90,
-          lines: 90,
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
         },
         'app/composables/**': {
-          statements: 95.45,
-          branches: 85,
-          functions: 88.23,
-          lines: 95.23,
+          statements: 97.77,
+          branches: 86.53,
+          functions: 98.07,
+          lines: 100,
         },
       },
     },

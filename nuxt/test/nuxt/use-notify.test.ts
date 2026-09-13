@@ -67,3 +67,24 @@ describe('useNotify', () => {
     expect(toastClear).toHaveBeenCalledTimes(1)
   })
 })
+
+describe('Regression', () => {
+  it('B-035: ein Fehler unterbricht den Screenreader, eine Bestätigung nicht', () => {
+    // Der Vorgänger las alles über `role=status` und `aria-live=polite` vor,
+    // auch Fehler. Wer nicht auf den Bildschirm sieht, erfuhr vom
+    // fehlgeschlagenen Speichern erst irgendwann später.
+    const notify = useNotify()
+
+    notify.error('Speichern fehlgeschlagen.')
+    expect(lastCall().type).toBe('foreground')
+
+    notify.warning('Drei von zwölf Empfängern nicht erreicht.')
+    expect(lastCall().type).toBe('foreground')
+
+    notify.success('Kunde gespeichert.')
+    expect(lastCall().type).toBe('background')
+
+    notify.info('Der Import läuft.')
+    expect(lastCall().type).toBe('background')
+  })
+})

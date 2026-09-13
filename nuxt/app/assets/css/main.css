@@ -40,6 +40,17 @@
   transform: translateY(-4px);
 }
 
+/* The busy overlay of stage three. Opacity only, so nothing shifts. */
+.overlay-enter-active,
+.overlay-leave-active {
+  transition: opacity 160ms linear;
+}
+
+.overlay-enter-from,
+.overlay-leave-to {
+  opacity: 0;
+}
+
 /* Anyone who asks for less motion gets none: no movement, no scaling.
    Opacity changes stay because they do not trigger motion sickness. */
 @media (prefers-reduced-motion: reduce) {

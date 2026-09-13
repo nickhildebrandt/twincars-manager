@@ -19,6 +19,20 @@ export const NOTIFY_DURATION = {
   error: 8_000,
 } as const
 
+/**
+ * Wie dringend eine Meldung vorgelesen wird.
+ *
+ * `foreground` unterbricht den Screenreader, `background` wartet auf eine
+ * Pause. Ein Fehler muss unterbrechen, eine gespeicherte Änderung nicht — der
+ * Vorgänger las alles höflich vor, auch Fehler (B-035).
+ */
+const POLITENESS = {
+  success: 'background',
+  info: 'background',
+  warning: 'foreground',
+  error: 'foreground',
+} as const
+
 export function useNotify() {
   const toast = useToast()
 
@@ -33,6 +47,7 @@ export function useNotify() {
       color,
       duration: options?.duration ?? NOTIFY_DURATION[color],
       icon: ICONS[color],
+      type: POLITENESS[color],
     })
 
   return {

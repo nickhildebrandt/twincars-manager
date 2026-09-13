@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended } from '@nuxt/test-utils/runtime'
 import ErrorPage from '~/error.vue'
 
@@ -46,5 +46,33 @@ describe('Fehlerseite', () => {
       message: 'Ein interner Fehler ist aufgetreten.',
     })
     expect(page.text()).not.toMatch(/at |\.ts:|SELECT/)
+  })
+})
+
+describe('Der Weg zurück', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
+  it('geht im Verlauf zurück, wenn es etwas zurückzugehen gibt', async () => {
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(3)
+
+    const page = await mount({ statusCode: 404 })
+    await page.get('[data-testid="error-back"]').trigger('click')
+
+    expect(back).toHaveBeenCalledTimes(1)
+  })
+
+  it('führt zur Startseite, wenn es keinen Verlauf gibt', async () => {
+    // Beim ersten Aufruf eines fehlerhaften Links landete der Nutzer sonst in
+    // einer Sackgasse: ein Zurück-Knopf, der nichts tut.
+    const back = vi.spyOn(window.history, 'back').mockImplementation(() => {})
+    vi.spyOn(window.history, 'length', 'get').mockReturnValue(1)
+
+    const page = await mount({ statusCode: 404 })
+    await page.get('[data-testid="error-back"]').trigger('click')
+
+    expect(back).not.toHaveBeenCalled()
   })
 })

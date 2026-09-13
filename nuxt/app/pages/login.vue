@@ -11,7 +11,7 @@
 import * as v from 'valibot'
 import { safeRedirectTarget } from '#shared/redirect'
 
-definePageMeta({ layout: false })
+definePageMeta({ layout: 'blank' })
 
 useHead({ title: 'Anmelden' })
 

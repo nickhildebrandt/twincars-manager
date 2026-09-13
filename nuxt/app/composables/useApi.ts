@@ -47,8 +47,12 @@ export function fieldsOf(error: unknown): Record<string, string> | null {
 export function useApi() {
   const notify = useNotify()
   const route = useRoute()
+  const busy = useBusy()
 
   async function request<T>(path: string, options?: FetchOptions<'json'>): Promise<T> {
+    // Jede Anfrage zählt in die eine Ladeanzeige. Lokale `busy`-Flags gibt es
+    // nicht (04-ux.md §3.3).
+    busy.start()
     try {
       // `$fetch` widens its result once Nitro knows the route types. The
       // caller states the shape it expects, and the endpoint's Valibot schema
@@ -58,6 +62,9 @@ export function useApi() {
     catch (error) {
       handle(error)
       throw error
+    }
+    finally {
+      busy.finish()
     }
   }
 

@@ -31,4 +31,10 @@ Tastaturbedienung · Verwendungsbeispiel · Nuxt-UI-Grundlage.
 Dauern und Kurven sind festgelegt und gelten überall gleich; sie stehen in den
 [UX-Vorgaben](../rewrite/04-ux.md). `prefers-reduced-motion` wird respektiert.
 
-_Noch keine eigenen Komponenten — sie entstehen ab Arbeitspaket T-008._
+## Die Seiten
+
+| Seite                               | Inhalt                                                |
+| ----------------------------------- | ----------------------------------------------------- |
+| [Die Anwendungshülle](app-shell.md) | Leiste, Kopfzeile, Schublade, Ladeanzeige, Navigation |
+
+Weitere Komponenten entstehen mit den fachlichen Paketen.

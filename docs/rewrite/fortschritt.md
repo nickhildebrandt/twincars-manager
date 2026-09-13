@@ -664,3 +664,93 @@ Weg zurück: [blocker.md](blocker.md) W-01.
 | Coverage | 96,4 % Anweisungen · 88,8 % Zweige · 98,0 % Funktionen |
 | Schwellen | ab hier auf die erreichten Werte gezogen |
 | Befund-Abdeckung | 48 von 48 fälligen Befunden mit Regressionstest |
+
+---
+
+## T-008 — App-Shell, Navigation, Zustände, Animationen · fertig
+
+**Datum:** 2026-09-13 · **Vorbedingung:** T-007 (erfüllt)
+
+Die Hülle, in der ab jetzt jede fachliche Seite liegt: Seitenleiste, Kopfzeile,
+Inhaltsbereich, auf dem Telefon eine Schublade.
+
+### Was entstanden ist
+
+| Datei | Zweck |
+| --- | --- |
+| `shared/navigation.ts` | acht Gruppen, Reihenfolge und Beschriftungen wie im Bestand |
+| `app/layouts/default.vue` | die Hülle |
+| `app/layouts/blank.vue` | ohne Hülle, für Anmeldung und Ersteinrichtung |
+| `app/components/app/AppSidebar.vue` | Leiste mit Logo, Navigation, Version |
+| `app/components/app/AppHeader.vue` | Seitentitel, Benutzermenü, Griff zur Schublade |
+| `app/components/app/AppUserMenu.vue` | wer angemeldet ist, und der Weg hinaus |
+| `app/components/app/NavigationTree.vue` | die Einträge — einmal für Leiste und Schublade |
+| `app/composables/useBusy.ts` | drei Stufen, ein Zähler |
+| `app/composables/useFormDirty.ts` | ungespeicherte Änderungen, zentral |
+| `app/composables/useNavigation.ts` | gefilterte Navigation und Seitentitel |
+
+### Entscheidungen
+
+**Ein Navigationseintrag nennt Module, keine einzelnen Schlüssel**, und darf
+mehrere nennen. Das behebt zwei Befunde auf einmal: „Stunden" verlangte genau
+`hours:write_own` (B-058), „Gesendet" stand nur unter `invoices`, obwohl die
+Historie auch Rundschreiben zeigt (B-375).
+
+**Markiert wird der längste passende Eintrag.** Der Vorgänger markierte per
+Präfix und hatte auf `/settings/inquiries` zwei Einträge gleichzeitig
+hervorgehoben (B-043).
+
+**Die Ladeleiste ist die von Nuxt.** `useBusy()` steuert sie über
+`useLoadingIndicator()`, statt eine zweite anzulegen. Jede Anfrage aus
+`useApi()` zählt mit; lokale `busy`-Flags gibt es nicht.
+
+**`NavigationTree` ist eine eigene Komponente**, damit Leiste und Schublade
+denselben Baum zeigen. Der Vorgänger pflegte beide getrennt.
+
+### Was dabei auffiel
+
+**Fehler wurden höflich vorgelesen.** Reka meldet jeden Toast als
+`type: 'foreground'`, also unterbrechend — was für Erfolge zu viel ist und für
+Fehler richtig. `useNotify()` setzt die Dringlichkeit jetzt je nach Art. Der
+Vorgänger machte es umgekehrt falsch und las alles höflich vor, auch Fehler
+(B-035).
+
+**Ein Test war grün, ohne etwas zu prüfen.** Die Attrappe für `useRoute` gab
+ein einfaches Objekt zurück; die Hülle beobachtet aber `route.fullPath` und
+bekam eine Änderung nie mit. Die Prüfung, ob sich die Schublade nach der
+Navigation schließt, wäre so immer durchgegangen. Jetzt ist die Attrappe
+reaktiv.
+
+**Der Wächter für ungespeicherte Änderungen musste einfacher werden.** Er
+antwortet nur mit ja oder nein und fasst den Verlauf nicht an — genau deshalb
+kann der zusätzliche Vorwärtseintrag aus B-038 nicht mehr entstehen.
+
+### Behobene Befunde
+
+| Befund | Was jetzt gilt |
+| --- | --- |
+| B-012 | die Fehlerseite zeigt keine englische Framework-Meldung |
+| B-014, B-057 | 401 führt zur Anmeldung, mit dem ursprünglichen Ziel |
+| B-017 | kein Bild als Logo, also auch kein Megabyte beim ersten Aufruf |
+| B-019 | die Schublade schließt sich nach Navigation und Klick |
+| B-020 | eine Quelle für den aktuellen Pfad, eine Stelle für die Markierung |
+| B-033 | die Einstellungszeile legt der Seed an, kein Lesepfad |
+| B-034 | jede Seite trägt ihren eigenen Titel |
+| B-035 | Fehler unterbrechen den Screenreader, Bestätigungen nicht |
+| B-037 | nichts Totes übernommen: kein zweiter Titelzustand, kein ungenutztes Symbol |
+| B-038 | der Wächter fasst den Verlauf nicht an |
+| B-043 | markiert wird der längste passende Eintrag |
+| B-058 | Modul sehen und Modul dürfen sind getrennt |
+| B-375 | wer Rundschreiben verschickt, sieht die Versandhistorie |
+
+### Doku
+
+`docs/ui/app-shell.md` (neu), `docs/architecture/oberflaeche.md` (neu).
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1053 (51 Dateien) |
+| Coverage | 97,3 % Anweisungen · 90,1 % Zweige · 98,7 % Funktionen |
+| Befund-Abdeckung | 58 von 58 fälligen Befunden mit Regressionstest |

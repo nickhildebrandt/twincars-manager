@@ -10,7 +10,10 @@
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
 import { customers, vehicles } from '../../server/database/schema/index.ts'
+import { installNitroGlobals } from '../setup/nitro-globals'
 import { openTestDatabase } from '../setup/drizzle'
+
+installNitroGlobals()
 
 const { db, close } = openTestDatabase()
 afterAll(close)
@@ -81,5 +84,25 @@ describe('eine gescheiterte Transaktion hinterlässt nichts', () => {
       return rows.length
     })
     expect(seen).toBe(1)
+  })
+})
+
+describe('withTransaction', () => {
+  it('benutzt dieselbe Verbindung wie die Anwendung', async () => {
+    const { withTransaction, closeDatabase } = await import('../../server/utils/db.ts')
+    try {
+      const seen = await withTransaction(async (tx) => {
+        await tx.insert(customers).values({ customerNumber: 'WT-0001', lastName: 'Transaktion' })
+        const rows = await tx.select().from(customers)
+          .where(eq(customers.customerNumber, 'WT-0001'))
+        return rows.length
+      })
+      expect(seen).toBe(1)
+
+      await db.delete(customers).where(eq(customers.customerNumber, 'WT-0001'))
+    }
+    finally {
+      await closeDatabase()
+    }
   })
 })

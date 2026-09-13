@@ -52,6 +52,36 @@ describe('consume', () => {
   })
 })
 
+describe('Die Kehrschleife', () => {
+  it('räumt Zähler weg, deren Fenster lange vorbei ist', () => {
+    // Ohne sie wüchse der Speicher mit jedem neuen Schlüssel weiter — eine
+    // Flut aus lauter verschiedenen Adressen wäre ein Angriffsweg.
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-13T07:00:00Z'))
+
+    consume('alt', 10)
+    expect(trackedKeys()).toBe(1)
+
+    // Fünf Minuten später läuft die Kehrschleife und findet einen alten Eimer.
+    vi.setSystemTime(new Date('2026-09-13T07:06:00Z'))
+    vi.advanceTimersByTime(5 * 60_000)
+
+    expect(trackedKeys()).toBe(0)
+  })
+
+  it('lässt einen frischen Zähler stehen', () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-09-13T07:00:00Z'))
+    consume('frisch', 10)
+
+    vi.setSystemTime(new Date('2026-09-13T07:05:01Z'))
+    consume('frisch', 10)
+    vi.advanceTimersByTime(5 * 60_000)
+
+    expect(trackedKeys()).toBe(1)
+  })
+})
+
 describe('resetRateLimits', () => {
   it('räumt alle Zähler weg', () => {
     consume('client-h', 10)

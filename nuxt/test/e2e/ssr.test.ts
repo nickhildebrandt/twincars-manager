@@ -26,6 +26,13 @@ describe('Die gebaute Anwendung', async () => {
       const html = await $fetch<string>('/')
       expect(html).toContain('lang="de"')
     })
+
+    it('B-034: jede Seite trägt ihren eigenen Titel', async () => {
+      // Beim Vorgänger stand in jedem Tab „TwinCarsManager"; Verlauf und
+      // Tableiste ließen sich nicht auseinanderhalten.
+      const login = await $fetch<string>('/login')
+      expect(login).toContain('<title>Anmelden · TwinCarsManager</title>')
+    })
   })
 
   describe('Gesundheitsendpunkt', () => {
