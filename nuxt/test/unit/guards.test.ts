@@ -140,38 +140,45 @@ describe('may', () => {
   })
 })
 
-describe('Sehen und Dürfen sind zweierlei', () => {
-  it('lässt die Selbstauskunft das Modul sehen', () => {
-    expect(may(userWith('hours:write_own'), 'hours')).toBe(true)
+describe('Eines von mehreren Rechten genügt', () => {
+  // Der Fall aus der Werkstatt: wer an einem Auftrag arbeitet, wählt
+  // Mitarbeiter und Katalogartikel aus, ohne das Personal- oder das
+  // Artikelmodul selbst zu besitzen.
+
+  it('lässt das Auftragsrecht an die Mitarbeiterauswahl', () => {
+    expect(requireAnyPermission(
+      eventWith(userWith('orders')),
+      'employees',
+      'orders',
+    )).toBeTruthy()
   })
 
-  it('lässt die Selbstauskunft nicht den Vollzugriff', () => {
-    // Eine Liste aller Zeiteinträge verlangt `hours`, nicht `hours:write_own`.
+  it('lässt ebenso das Personalrecht daran', () => {
+    expect(requireAnyPermission(
+      eventWith(userWith('employees')),
+      'employees',
+      'orders',
+    )).toBeTruthy()
+  })
+
+  it('nennt in der Absage beide Bereiche', () => {
     try {
-      requirePermission(eventWith(userWith('hours:write_own')), 'hours')
+      requireAnyPermission(eventWith(userWith('customers')), 'employees', 'orders')
       expect.unreachable('Der Wächter hätte werfen müssen.')
     }
     catch (error) {
       expect(statusOf(error)).toBe(403)
-      expect(messageOf(error)).toContain('Zeiterfassung')
+      expect(messageOf(error)).toBe('Sie haben keine Berechtigung für Mitarbeiter oder Aufträge.')
     }
-  })
-
-  it('lässt den Vollzugriff auch die eigene Erfassung', () => {
-    expect(requireAnyPermission(
-      eventWith(userWith('hours')),
-      'hours',
-      'hours:write_own',
-    )).toBeTruthy()
   })
 
   it('nennt denselben Bereich nur einmal', () => {
     try {
-      requireAnyPermission(eventWith(userWith('customers')), 'hours', 'hours:write_own')
+      requireAnyPermission(eventWith(userWith('customers')), 'orders', 'orders')
       expect.unreachable('Der Wächter hätte werfen müssen.')
     }
     catch (error) {
-      expect(messageOf(error)).toBe('Sie haben keine Berechtigung für Zeiterfassung.')
+      expect(messageOf(error)).toBe('Sie haben keine Berechtigung für Aufträge.')
     }
   })
 })

@@ -91,3 +91,82 @@ describe('Nichts Totes übernommen', () => {
     }
   })
 })
+
+describe('Die gemeinsamen Bausteine, von außen betrachtet', () => {
+  it('B-108: es gibt keinen selbstgebauten Dialog', () => {
+    // Neun Routen des Vorgängers rollten eigene `modal modal-open`-Dialoge,
+    // und nur drei riefen `showModal()` — Escape und Fokus verhielten sich
+    // deshalb an neun Stellen verschieden. Dialoge kommen jetzt aus Nuxt UI.
+    for (const [file, source] of appSources) {
+      expect(source, `${file} baut einen Dialog selbst`).not.toMatch(/<dialog[\s>]/)
+      expect(source, `${file} benutzt showModal`).not.toMatch(/\.showModal\(/)
+      expect(source, `${file} baut einen Dialog aus Klassen`).not.toMatch(/modal-open/)
+      expect(source, `${file} setzt role="dialog" von Hand`).not.toMatch(/role="dialog"/)
+    }
+  })
+
+  it('B-091: es gibt keinen selbstgebauten Reiter-Satz', () => {
+    // Der Vorgänger legte Radio-Eingaben in eine `role="tablist"`. Eine
+    // Vorlesehilfe meldete danach eine Radiogruppe, und doppelte Namen
+    // koppelten zwei Reiter-Sätze unbemerkt aneinander. Reiter kommen aus
+    // Nuxt UI, samt richtiger ARIA-Rollen.
+    for (const [file, source] of appSources) {
+      expect(source, `${file} setzt role="tablist" von Hand`).not.toMatch(/role="tablist"/)
+      expect(source, `${file} setzt role="tab" von Hand`).not.toMatch(/role="tab"/)
+      expect(source, `${file} benutzt das Radio-Reiter-Muster`).not.toMatch(/tabs-lift/)
+    }
+  })
+
+  it('B-106: kein Knopf sperrt sich wegen eines Prüfergebnisses', () => {
+    // Die Formularsteuerung des Vorgängers versprach in ihrer Doku eine Sperre
+    // „bis alles gültig ist" — die Richtlinie verbietet genau das. Gesperrt
+    // wird nur von der laufenden Anfrage und von einem echten Riegel.
+    const form = appSources.find(([file]) => file === 'components/form/FormPage.vue')
+    expect(form, 'FormPage.vue').toBeDefined()
+    expect(form![1]).toContain(':disabled="busy.active.value || props.locked"')
+
+    for (const [file, source] of appSources) {
+      for (const line of source.split('\n')) {
+        if (!line.includes(':disabled')) continue
+        expect(line, `${file}: ${line.trim()}`).not.toMatch(/error|invalid|valid\b/i)
+      }
+    }
+  })
+
+  it('B-107: es gibt nirgends einen Wähler für die Seitengröße', () => {
+    // Die Blätterleiste des Vorgängers trug tote `size`/`onSize`-Eigenschaften
+    // und zeichnete zwei Sätze Schaltflächen ins DOM. Es sind fest 25.
+    for (const [file, source] of appSources) {
+      expect(source, `${file} bietet eine Seitengröße an`).not.toMatch(/\bonSize\b/)
+      expect(source, `${file} setzt items-per-page frei`).not.toMatch(/pageSizeOptions/)
+    }
+  })
+
+  it('B-589: Dateigrenzen stehen nur an einer Stelle', () => {
+    // Sieben verschiedene Grenzen an sieben Stellen — 7 MB hier, 8 MiB dort,
+    // 28 MB beim Fahrzeugfoto. Wer eine ändern wollte, fand die anderen nicht.
+    for (const [file, source] of appSources) {
+      if (file.endsWith('.test.ts')) continue
+      const rawLimits = source.match(/\d+\s*\*\s*1024\s*\*\s*1024/g) ?? []
+      expect(rawLimits, `${file} rechnet eine eigene Dateigrenze aus`).toEqual([])
+    }
+  })
+
+  it('B-216: kein Endpoint enthält Fachlogik oder greift selbst zur Datenbank', () => {
+    // Beim Vorgänger wanderte Fachlogik in die Routen und die Doku zeigte
+    // danach auf Dateien, die es so nicht gab. Ein Endpoint besteht aus
+    // Wächter, Prüfung und Dienstaufruf — sonst nichts.
+    //
+    // Die eine Ausnahme: die Zustandsprüfung reicht die Verbindung an
+    // `checkHealth` weiter. Sie fragt nichts ab, sie gibt weiter.
+    const PASSES_CONNECTION_ON = 'health.get.ts'
+
+    for (const [file, source] of apiSources) {
+      if (file !== PASSES_CONNECTION_ON) {
+        expect(source, `${file} greift selbst zur Datenbank`).not.toMatch(/useDatabase\(/)
+      }
+      expect(source, `${file} baut selbst eine Abfrage`).not.toMatch(/from 'drizzle-orm'/)
+      expect(source, `${file} importiert eine Tabelle`).not.toMatch(/database\/schema/)
+    }
+  })
+})

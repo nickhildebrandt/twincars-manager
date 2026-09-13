@@ -40,4 +40,19 @@ Interna preis. Einzelheiten: [Fehlerbehandlung](../architecture/README.md).
 Eintrag hier hat. Die Seiten entstehen mit `pnpm docs:api` aus den
 Endpoint-Dateien und ihren Valibot-Schemata.
 
-_Noch keine Endpoints vorhanden — sie entstehen ab Arbeitspaket T-007._
+## Die Seiten
+
+| Endpoint | Berechtigung | Zweck |
+| --- | --- | --- |
+| [GET /api/health](health-get.md) | offen | Zustandsprüfung für den Container |
+| [GET /api/me](me-get.md) | offen | wer angemeldet ist, welche Module sichtbar sind |
+| [/api/auth/…](auth-all-.md) | offen | Anmeldung, Abmeldung, Sitzung, Passwortwechsel |
+| [GET /api/pickers/customers](pickers-customers-get.md) | `customers` | Auswahl: Kunden |
+| [GET /api/pickers/vehicles](pickers-vehicles-get.md) | `vehicles` | Auswahl: Fahrzeuge |
+| [GET /api/pickers/items](pickers-items-get.md) | `items` oder `orders` | Auswahl: Artikel und Leistungen |
+| [GET /api/pickers/tires](pickers-tires-get.md) | `tires` | Auswahl: Reifen |
+| [GET /api/pickers/employees](pickers-employees-get.md) | `employees` oder `orders` | Auswahl: Mitarbeiter |
+| [GET /api/pickers/suppliers](pickers-suppliers-get.md) | `suppliers` | Auswahl: Lieferanten |
+| [GET /api/pickers/documents](pickers-documents-get.md) | `invoices` | Auswahl: Belege |
+
+Die fachlichen Endpoints entstehen mit ihren Paketen.

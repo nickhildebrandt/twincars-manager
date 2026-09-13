@@ -1,12 +1,12 @@
 ---
 id: F-382
 title: Arbeit erfassen / Stunden-Karte auf Beleg
-status: geplant
+status: gestrichen
 modul: Angebote, Rechnungen, Storno, PDF-Pipeline, XRechnung
-paket: T-021
-permission: offen
-routes: ['/offers/[id]', '/invoices/[id]']
-endpoints: ['listTimeEntriesRemote', 'deleteTimeEntryRemote', 'QuickTimeEntryModal']
+paket: gestrichen
+permission: entfällt
+routes: []
+endpoints: []
 tables: []
 schemas: []
 components: []
@@ -16,51 +16,21 @@ updated: 2026-09-13
 
 # F-382 — Arbeit erfassen / Stunden-Karte auf Beleg
 
-> **Status: geplant.** Diese Seite hält das Zielverhalten fest, wie es im
-> Inventar des Vorgängersystems erhoben wurde. Sie wird mit Arbeitspaket
-> **T-021** ausgefüllt und auf `status: umgesetzt` gesetzt.
+> **Status: gestrichen.** Dieses Feature des Vorgängersystems wird **nicht**
+> übernommen. Die Entscheidung und ihre Begründung stehen als **M-10** in
+> [09-modellaenderungen.md](../rewrite/09-modellaenderungen.md).
 
-## Zweck
-
-Arbeit erfassen / Stunden-Karte auf Beleg
-
-## Erwartetes Verhalten
+## Was der Vorgänger tat
 
 Nur mit `hours`
 
-## Nutzersicht
+## Warum es entfällt
 
-_Wird mit T-021 ergänzt: was der Bediener sieht und tut, Schritt für Schritt._
-
-## Berechtigungen
-
-_Wird mit T-021 ergänzt._
-
-## Zustände
-
-| Zustand | Verhalten |
-| --- | --- |
-| Leer | _offen_ |
-| Laden | _offen_ |
-| Fehler | _offen_ |
-| Keine Berechtigung | _offen_ |
-
-## Technischer Bezug
-
-| | |
-| --- | --- |
-| Routen | `/offers/[id]`, `/invoices/[id]` |
-| Endpoints | `listTimeEntriesRemote`, `deleteTimeEntryRemote`, `QuickTimeEntryModal` |
-| Tabellen | — |
-| Schemata | _offen_ |
-| Tests | _offen_ |
-
-## Bekannte Grenzen
-
-_Wird mit T-021 ergänzt._
+Siehe [M-10 in 09-modellaenderungen.md](../rewrite/09-modellaenderungen.md)
+und die Übersicht „Was gestrichen wird" im selben Dokument.
 
 ## Quellen
 
 - Inventar: [F-382 in 01-inventar.md](../rewrite/01-inventar.md)
-- Arbeitspaket: [T-021 in 06-arbeitsplan.md](../rewrite/06-arbeitsplan.md)
+- Abdeckung: [06-abdeckung.md](../rewrite/06-abdeckung.md)
 - Übersicht: [docs/index.md](../index.md)

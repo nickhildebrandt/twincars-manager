@@ -15,6 +15,7 @@ import {
   hasPermission,
   moduleOf,
 } from '#shared/permissions'
+import type { ModuleKey } from '#shared/permissions'
 
 describe('das Berechtigungsmodell', () => {
   it('hat für jedes Modul eine deutsche Bezeichnung', () => {
@@ -27,13 +28,17 @@ describe('das Berechtigungsmodell', () => {
     expect(new Set(ALL_PERMISSIONS).size).toBe(ALL_PERMISSIONS.length)
   })
 
-  it('kennt keine Trennung nach Lesen und Schreiben', () => {
-    // Eine Berechtigung je Modul. Die einzige Ausnahme ist die Selbstauskunft
-    // bei den Stunden.
-    const split = ALL_PERMISSIONS.filter(
-      key => key.includes(':') && key !== 'hours:write_own',
-    )
-    expect(split).toEqual([])
+  it('M-04: kennt genau einen Schlüssel je Modul und keine Unterrechte', () => {
+    // Keine Trennung nach Lesen und Schreiben, und seit dem Wegfall der
+    // Zeiterfassung (M-10) auch keine Ausnahme mehr. Ein Doppelpunkt im
+    // Schlüssel wäre ein Unterrecht — und damit der Anfang einer
+    // Rechteverwaltung, die niemand pflegt.
+    expect(ALL_PERMISSIONS.filter(key => key.includes(':'))).toEqual([])
+
+    for (const [module, keys] of Object.entries(MODULE_PERMISSIONS)) {
+      expect(keys, module).toHaveLength(1)
+      expect(keys[0], module).toBe(module)
+    }
   })
 })
 
@@ -78,8 +83,7 @@ describe('hasAnyPermission', () => {
 describe('moduleOf', () => {
   it.each([
     ['customers', 'customers'],
-    ['hours', 'hours'],
-    ['hours:write_own', 'hours'],
+    ['tires', 'tires'],
     ['settings', 'settings'],
   ])('ordnet %s dem Modul %s zu', (key, module) => {
     expect(moduleOf(key)).toBe(module)
@@ -91,16 +95,18 @@ describe('moduleOf', () => {
 })
 
 describe('hasModule', () => {
-  it('genügt der Vollzugriff', () => {
-    expect(hasModule(new Set(['hours']), 'hours')).toBe(true)
+  it('genügt der Schlüssel des Moduls', () => {
+    expect(hasModule(new Set(['employees']), 'employees')).toBe(true)
   })
 
-  it('genügt auch die Selbstauskunft', () => {
-    expect(hasModule(new Set(['hours:write_own']), 'hours')).toBe(true)
+  it('ist ohne ihn falsch', () => {
+    expect(hasModule(new Set(['customers']), 'employees')).toBe(false)
   })
 
-  it('ist ohne beides falsch', () => {
-    expect(hasModule(new Set(['customers']), 'hours')).toBe(false)
+  it('lässt sich von einem ähnlichen Schlüssel nicht täuschen', () => {
+    // Kein Präfix-Vergleich: `customers` ist nicht `customer_inquiries`.
+    expect(hasModule(new Set(['customers']), 'calendar')).toBe(false)
+    expect(hasPermission(new Set(['customers']), 'customers:write')).toBe(false)
   })
 
   it('lässt den Platzhalter überall', () => {
@@ -111,16 +117,18 @@ describe('hasModule', () => {
 })
 
 describe('Regression', () => {
-  it('B-058: wer vollen Zugriff hat, sieht den Eintrag auch', () => {
+  it('B-058: wer ein Modul erreichen darf, sieht seinen Eintrag auch', () => {
     // Der Vorgänger verlangte im Sidebar-Eintrag genau `hours:write_own`. Eine
     // Rolle mit vollem `hours`-Zugriff verlor den Eintrag — die geseedeten
     // Rollen hielten zufällig beide Schlüssel, deshalb fiel es nicht auf.
-    const fullAccess = new Set(['hours'])
-    expect(hasModule(fullAccess, 'hours')).toBe(true)
-
-    // Und die Umkehrung stimmt weiterhin: Sehen heißt nicht alles dürfen.
-    const selfServiceOnly = new Set(['hours:write_own'])
-    expect(hasModule(selfServiceOnly, 'hours')).toBe(true)
-    expect(hasPermission(selfServiceOnly, 'hours')).toBe(false)
+    //
+    // Das Modul gibt es nicht mehr (M-10), und mit einem Schlüssel je Modul
+    // kann der Fehler nicht wiederkehren. Genau das wird hier festgehalten:
+    // für **jedes** Modul beantworten beide Fragen dasselbe.
+    for (const module of Object.keys(MODULE_PERMISSIONS) as ModuleKey[]) {
+      const holder = new Set([module])
+      expect(hasModule(holder, module), module).toBe(true)
+      expect(hasPermission(holder, module), module).toBe(true)
+    }
   })
 })

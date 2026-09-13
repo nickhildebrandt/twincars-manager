@@ -73,3 +73,26 @@ export function matchesSignature(type: string, bytes: Uint8Array): boolean {
   }
   return true
 }
+
+/**
+ * Ob dieser Medientyp überhaupt hochgeladen werden darf.
+ *
+ * Eine Zulassungsliste, geprüft im Dialog **und** beim Ablegen. Der Vorgänger
+ * prüfte beim Ablegen nur auf „irgendein Bild" und ließ damit Formate durch,
+ * die der Dialog gar nicht anbot (B-115).
+ */
+export const isAllowedUpload = (type: string): boolean =>
+  (DOCUMENT_TYPES as readonly string[]).includes(type)
+
+/** `2400000` → `2,4 MB`. Für eine Meldung, die eine Zahl nennt, die jemand kennt. */
+export function formatBytes(bytes: number): string {
+  if (bytes < 1024) return `${bytes} Byte`
+  const units = ['KB', 'MB', 'GB']
+  let value = bytes / 1024
+  let unit = 0
+  while (value >= 1024 && unit < units.length - 1) {
+    value /= 1024
+    unit += 1
+  }
+  return `${value.toFixed(value < 10 ? 1 : 0).replace('.', ',')} ${units[unit]}`
+}

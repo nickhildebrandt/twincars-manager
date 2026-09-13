@@ -256,6 +256,28 @@ Bestandsdaten. Dafür wird der Import (T-033) zum zentralen Weg, auf dem die
 Daten ins System kommen, und rückt in der Reihenfolge nach vorn. E-10 verliert
 sein Risiko, weil es keine Altbeträge umzustellen gibt.
 
+### E-21 — `@internationalized/date` als einziges Datumspaket · `entschieden`
+
+**Entscheidung.** Für Kalendertage wird `@internationalized/date` benutzt, und
+sonst nichts. Kein `date-fns`, kein `dayjs`, kein `luxon` — und vor allem kein
+`Date` in der Umrechnung.
+
+**Warum überhaupt ein Paket.** Nuxt UI bringt es ohnehin mit: `UInputDate` und
+`UCalendar` sprechen `CalendarDate`. Es selbst zu bauen hieße, dieselbe Klasse
+noch einmal zu schreiben, nur schlechter.
+
+**Warum ausgerechnet dieses.** `CalendarDate` ist ein Tag **ohne Uhrzeit und
+ohne Zeitzone** — genau das, was ein Rechnungs-, Leistungs- oder HU-Datum ist.
+Wer stattdessen ein `Date` nimmt, hat immer einen Zeitpunkt, und in
+Europe/Berlin rutscht jeder Tag zwischen 00:00 und 02:00 über die UTC-Grenze auf
+den Vortag. Genau daraus entstand B-028.
+
+**Konsequenzen.** Die Umrechnung `YYYY-MM-DD` ↔ `CalendarDate` steht an einer
+Stelle (`shared/calendar-date.ts`) und geht nie durch `Date`.
+`test/unit/calendar-date.test.ts` rechnet jeden Tag eines Jahres hin und
+zurück. Alles, was eine **Uhrzeit** braucht — Termine, Protokolle,
+Zeitstempel — bleibt bei `Date` und der einen Betriebszeitzone (B-028).
+
 ---
 
 ## Was danach noch entschieden wurde

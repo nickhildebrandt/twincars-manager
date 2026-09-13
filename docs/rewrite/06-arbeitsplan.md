@@ -639,17 +639,30 @@ Jahreswechsel, Schaltjahre, Feiertage und halbe Tage (Unit-Tabelle); die
 Abwesenheitsliste aktualisiert sich nach einer Änderung sofort (der bekannte
 Fehler des Bestands).
 
-## T-018 — Zeiterfassung, Berichte, Öffnungszeiten
+## T-018 — Öffnungszeiten
 
-**Features:** F-090, F-120, F-506–F-523 (20) · **Befunde:** B-051, B-089–B-090, B-435–B-437, B-441–B-443, B-445–B-446, B-450–B-451, B-455
-**Vorbedingungen:** T-017.
+**Features:** F-520–F-522 (3) · **Befunde:** B-051, B-089–B-090, B-435–B-437, B-441–B-443, B-445–B-446, B-450–B-451, B-455
+**Vorbedingungen:** T-010.
+**Modelländerungen:** M-10 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
-Stundenerfassung mit Selbstbedienungsrecht, Auftragsbezug, Berichte über
-Auslastung und Monat, Öffnungszeiten je Wochentag.
+Öffnungszeiten je Wochentag: sieben Zeilen, Öffnet/Schließt oder geschlossen,
+in **einer** Transaktion gespeichert. Sie sind die Grundlage für die freien
+Termine der öffentlichen Schnittstelle und für nichts sonst.
 
-**Besondere Akzeptanzkriterien:** wer nur das Selbstbedienungsrecht hat,
-sieht und ändert ausschließlich eigene Einträge — geprüft auf Endpoint-Ebene,
-nicht nur in der Oberfläche; Golden Flow G-11.
+**Die Zeiterfassung entfällt** (M-10). Es wird kein Controlling der
+Arbeitszeit betrieben: weder Stundenliste noch Selbstbedienungsrecht, weder
+Auslastungs- noch Monatsbericht, weder Innenzeiten noch eine Trennung zwischen
+erfasster und abgerechneter Zeit. Die Zeit, die dem Kunden berechnet wird,
+steht als Wert an der Auftragsposition (T-020) und wird dort gepflegt.
+Gestrichen sind damit F-090, F-120, F-382, F-506–F-519 und F-523; die
+Berechtigungen `hours` und `hours:write_own` entfallen ersatzlos. Der frei
+gewordene Golden Flow **G-11** trägt jetzt die Rückspielprobe aus T-043.
+
+**Besondere Akzeptanzkriterien:** ein offener Tag verlangt Öffnet **vor**
+Schließt, serverseitig geprüft; das Speichern der sieben Zeilen ist eine
+Transaktion, kein Reigen aus sieben Aufrufen (der bekannte Fehler des
+Bestands); ein fehlender Wochentag wird beim Lesen ergänzt, ohne dass zwei
+gleichzeitige Leser zwei Zeilen anlegen.
 
 ## T-019 — Kalender, Feiertage, Terminplanung
 
@@ -669,7 +682,7 @@ Golden Flow G-10.
 ## T-020 — Aufträge (Kanban-Arbeitsaufträge)
 
 **Features:** F-312–F-366 (55) · **Befunde:** B-268–B-270, B-272–B-273, B-275–B-276, B-280–B-281, B-283, B-285–B-289, B-292–B-296, B-298–B-299
-**Vorbedingungen:** T-012, T-014, T-018, T-019.
+**Vorbedingungen:** T-012, T-014, T-019.
 **Modelländerungen:** M-03, M-09, M-21, P-01, P-05, P-06 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Kanban mit drei Spalten, Mehrfachzuweisung von Mitarbeitern,
@@ -681,18 +694,26 @@ Rechnung (durch die Datenbank abgesichert, nicht nur durch Code); Abschluss
 und Rechnungserzeugung laufen in einer Transaktion; Ziehen und Ablegen hat
 eine Tastaturalternative; Golden Flow G-05.
 
-## T-021 — Belege-Grundlage und Angebote
+## T-021 — Belege-Grundlage und Kostenvoranschläge
 
-**Features:** F-367–F-382 (16) · **Befunde:** B-303–B-304, B-306, B-312–B-317, B-325, B-327–B-328, B-333, B-338, B-340, B-342, B-346, B-348
+**Features:** F-367–F-381 (15) · **Befunde:** B-303–B-304, B-306, B-312–B-317, B-325, B-327–B-328, B-333, B-338, B-340, B-342, B-346, B-348
 **Vorbedingungen:** T-011, T-014, T-006.
+**Modelländerungen:** M-15, M-21, P-05 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Gemeinsames Belegmodell, Positionen-Editor mit Live-Summen und gemischten
-Steuersätzen, Angebote und Kostenvoranschläge, Umwandlung in eine Rechnung.
+Steuersätzen, Kostenvoranschläge, Umwandlung in eine Rechnung.
+
+Es gibt **genau zwei Belegarten**: Kostenvoranschlag und Rechnung (M-15).
+Angebot und Auftragsbestätigung entfallen samt ihrer Felder; wo der Bestand
+„Angebot" schrieb, ist der Kostenvoranschlag gemeint — die unverbindliche
+Schätzung, nicht das rechtlich bindende Angebot. Durchlaufposten sind
+umsatzsteuerfrei und werden gesondert ausgewiesen (M-21).
 
 **Besondere Akzeptanzkriterien:** Positionsrechnung stimmt bei gemischten
 Sätzen, Rabatten und Rundung auf den Cent (Unit-Tabelle); ein Steuersatz von
 0 % bleibt 0 % (Regressionstest); die Umwandlung überträgt jede Position
-unverändert.
+unverändert; ein Kostenvoranschlag lässt sich nicht mit Mahnstufe oder
+Zahlungsziel speichern (P-05).
 
 ## T-022 — Rechnungen, Zahlungen, Storno
 
@@ -714,9 +735,12 @@ Flows G-06 und G-07.
 
 **Features:** F-047, F-121, F-395–F-404 (12) · **Befunde:** B-031, B-103, B-304, B-308, B-313, B-326, B-330, B-333
 **Vorbedingungen:** T-010 (Firmendaten), T-021.
+**Modelländerungen:** M-15, M-31 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
-Portierung aller Vorlagen: Rechnung, Storno, Angebot, Kostenvoranschlag,
-Auftragsbestätigung, Zahlungserinnerung, Verkaufsschild, Reifenetikett.
+Portierung der verbleibenden Vorlagen: Rechnung, Storno, Kostenvoranschlag,
+Zahlungserinnerung, Verkaufsschild, Reifenetikett. Angebot und
+Auftragsbestätigung entfallen (M-15). Ein erneut erzeugtes PDF eines
+importierten Belegs trägt den Vermerk **Nachdruck** (M-31).
 Zwischenspeicher in der Datenbank, getrennte Endpoints für Metadaten und
 Bytes, Vorschau im Browser.
 
@@ -1035,6 +1059,9 @@ nuxt/app/pages/settings/backup.vue
   grafisch konfigurierbar, über das Aufgabenregister aus T-006.
 - **Sichtbarer Zustand:** wann lief die letzte Sicherung, war sie erfolgreich.
   Es muss auffallen, wenn sie seit Wochen stillsteht.
+- **Golden Flow G-11:** sichern, herunterladen, auf eine leere Installation
+  zurückspielen und nachzählen. Eine Sicherung, die nie zurückgespielt wurde,
+  ist eine Vermutung.
 - Kein Schritt verlangt die Kommandozeile.
 
 **Akzeptanzkriterien**

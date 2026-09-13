@@ -621,6 +621,9 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | Gestrichen | Kennung |
 | --- | --- |
 | Tabelle **Zeiteintrag** (`time_entries`), vollständig | M-10 |
+| **Modul Zeiterfassung** mit allem daran: F-090, F-382, F-506–F-519, F-523 | M-10 |
+| Berechtigung `hours` und `hours:write_own`, Menüeintrag „Stunden" | M-10, M-04 |
+| Golden Flow „Zeiterfassung" — der Platz **G-11** trägt jetzt die Rückspielprobe | M-10, M-37 |
 | Verweis **Auftrag → Rechnung** (die Gegenrichtung bleibt) | M-08 |
 | Belegarten **Angebot** und **Auftragsbestätigung** samt Feldern | M-15 |
 | Sperrender Einzelverweis **Auftragsposition → Mitarbeiter** | M-11 |
@@ -643,10 +646,13 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | **T-007** | Drossel auch je Konto, Fehlversuche protokollieren, Bremse beim Zurücksetzen (M-36) |
 | **T-009** | Zeitstrahl- und Diagrammkomponenten (M-02, M-35) |
 | **T-011** | Kundenart steuert die Oberfläche, eBay-Käufer ausgeblendet (M-07) |
+| **T-018** | Zeiterfassung entfällt; übrig bleiben die Öffnungszeiten (M-10) |
 | **T-012 ff.** | Fahrzeugstatus, Halter-Historie, Zeitstrahl (M-05, M-06) |
 | **T-016 ff.** | Tafel mit mobiler Erfassung an der Position, Zuweisung je Position (M-11, M-13) |
 | **T-020 ff.** | Zwei Belegarten, Einfrieren beim Ausstellen, Durchlaufposten (M-03, M-15, M-21) |
+| **T-021** | Kostenvoranschlag statt Angebot; Angebot und Auftragsbestätigung entfallen (M-15) |
 | **T-022** | Zahlarten, Kassenbuch-Vorschlag nur bei bar (M-16, M-24) |
+| **T-023** | Nur noch zwei Belegvorlagen, dazu der Nachdruck-Vermerk (M-15, M-31) |
 | **T-024 ff.** | Radsatz, Ein-Klick-Service, Erinnerung am Radsatz (M-17, M-18, M-19) |
 | **T-028** | Kassenbuch: Saldo gerechnet, Herkunft, Kategorien, Anhänge (M-23…M-27) |
 | **T-033** | Import: alles, Nummernkreise getrennt, unveränderlich, Nachdruck, Prüfliste (M-28…M-32) |

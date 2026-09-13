@@ -9,8 +9,9 @@
  * Zwei Dinge sind anders als im Bestand:
  *
  *   - Ein Eintrag nennt **Module**, keine einzelnen Berechtigungsschlüssel.
- *     „Stunden" verlangte genau `hours:write_own`, sodass eine Rolle mit
- *     vollem Zugriff den Eintrag verlor (B-058).
+ *     Der Eintrag „Stunden" verlangte genau `hours:write_own`, sodass eine
+ *     Rolle mit vollem Zugriff ihn verlor (B-058). Diesen Eintrag gibt es
+ *     nicht mehr — das Muster bleibt, denn der Fehler hing nicht an ihm.
  *   - Ein Eintrag darf **mehrere** Module nennen. „Gesendet" stand nur unter
  *     `invoices`, während der Endpoint dahinter auch Angebote, Erinnerungen
  *     und Rundschreiben ausliefert — wer Rundschreiben verschickt, sah seine
@@ -105,15 +106,9 @@ export const NAVIGATION: readonly NavGroup[] = [
   {
     label: 'Personal',
     items: [
+      // Kein Eintrag „Stunden": die Zeiterfassung entfällt (M-10). Was dem
+      // Kunden berechnet wird, steht an der Auftragsposition.
       { label: 'Mitarbeiter', to: '/employees', icon: 'i-lucide-users-round', modules: ['employees'] },
-      {
-        // Sichtbar für jeden, der wenigstens seine eigene Zeit erfassen darf.
-        // Was die Seite dann zeigt, entscheidet sie selbst.
-        label: 'Stunden',
-        to: '/hours',
-        icon: 'i-lucide-wallet',
-        modules: ['hours'],
-      },
     ],
   },
   {

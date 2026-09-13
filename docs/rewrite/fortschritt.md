@@ -886,3 +886,134 @@ Halter sperrt, muss es vor dem Kunden weg.
 | Coverage | 97,4 % Anweisungen · 90,2 % Zweige · 98,7 % Funktionen |
 | Modelländerungen | 17 von 17 fälligen mit Nachweis |
 | Befund-Abdeckung | 58 von 58 fälligen mit Regressionstest |
+
+---
+
+## T-009 — Gemeinsame Komponenten und Picker · fertig
+
+**Datum:** 2026-09-13 · **Vorbedingung:** T-008 (erfüllt)
+
+Die Bausteine, aus denen ab jetzt jede fachliche Seite besteht. Nichts davon
+ist fachlich — und genau deshalb steht jede Zusage hier **einmal** statt in
+vierzig Seiten je einmal.
+
+### Was entstanden ist
+
+| Baustein | Zweck |
+| --- | --- |
+| `useListQuery` | das Listenmuster: Filter in der Adresszeile, Seitenrücksetzung, fest 25, vorheriges Ergebnis bleibt stehen |
+| `ListPage` · `DataTable` · `FilterBar` · `EmptyState` · `ErrorState` · `StatusBadge` | der Rahmen einer Liste und ihre drei Zustände |
+| `FormPage` | Titel, Fehlerzusammenfassung, Speicherleiste |
+| `DateField` · `MoneyField` · `FileDropzone` | Datum ohne `Date`, Geld in Cent, Dateien mit einer Zulassungsliste |
+| `EntityPicker` · `MultiEntityPicker` | Auswahl im modalen Dialog, Serversuche, transaktional |
+| `useConfirm` + `ConfirmDialog` | **ein** Bestätigungsdialog, als Versprechen |
+| `useCreationFlow` | anlegen, ohne den Formularstand zu verlieren |
+| `Timeline` · `TrendChart` · `StatTile` | Zeitstrahl (M-02) und Verlauf (M-35) |
+| `shared/calendar-date.ts` · `picker-labels.ts` · `chart.ts` | die Rechnungen dahinter, getrennt von der Darstellung |
+| `server/services/picker-service.ts` + sieben Endpoints | Kunden, Fahrzeuge, Artikel, Reifen, Mitarbeiter, Lieferanten, Belege |
+
+Im Arbeitsplan hieß die Datumsdatei `shared/utils/date.ts`; sie heißt
+`shared/calendar-date.ts`, weil der Name sagt, worum es geht — um
+Kalendertage ohne Uhrzeit und ohne Zeitzone.
+
+### Was dabei auffiel
+
+**Drei Unterabfragen lieferten still `NULL`.** Drizzle setzt die Tabelle vor
+eine Spalte, wenn sie in `where` steht — in der **Auswahlliste** aber nicht.
+Innerhalb einer Unterabfrage bindet ein nacktes `"id"` dann an die innere
+Tabelle: aus „das Kennzeichen dieses Fahrzeugs" wurde „das Kennzeichen, dessen
+eigene Kennung gleich seiner Fahrzeugkennung ist". Nie wahr, immer `NULL`,
+keine Fehlermeldung. Betroffen waren das aktuelle Kennzeichen und beide
+Preisabfragen — also genau die drei Werte, für die es B-084 und B-086 gibt.
+Gefunden hat das der Integrationstest; im Browser hätte niemand einen
+Unterschied zu „kein Preis hinterlegt" gesehen. Behoben mit einem Helfer
+`qualified()`, der die Tabelle ausdrücklich davorschreibt.
+
+**Der Auswahldialog hatte keinen Titel für Screenreader.** Er überschrieb den
+Kopfbereich von Nuxt UI und damit dessen `DialogTitle`; die Beschriftung des
+Dialogs zeigte auf ein Element, das es nicht gab. „Neu anlegen" hängt jetzt im
+Slot `actions`, der Titel bleibt, wo er hingehört.
+
+**Siebenmal dieselbe Zählabfrage.** Jede Auswahl zählte ihre Treffer mit einer
+eigenen Kopie — sieben Stellen, an denen jemand die Bedingung vergessen kann.
+Jetzt einmal, als `countOf`.
+
+**`pnpm test:cov` lief in denselben Zwischenspeicher-Fehler wie `pnpm test`**
+(W-01): die Vorwärmung hing an `pretest` und griff bei Coverage nicht — und
+Coverage ist eine andere Fassung des Zwischenspeichers. Sie läuft jetzt je
+Variante, und ein geänderter Browsertest zählt als Grund zum Vorwärmen, weil
+ein neuer Import dort den Optimierer mitten im Lauf neu anwirft.
+
+### Modelländerungen
+
+| Kennung | Umsetzung |
+| --- | --- |
+| M-02 | `Timeline`: Historie als Zeitstrahl, geordnete Liste, Datum maschinenlesbar |
+| M-35 | `TrendChart`: Verlauf mit runder Achse, dazu dieselben Zahlen als Tabelle für Screenreader |
+| P-09 | `runningTotal` rechnet den Bestand bei jeder Anzeige neu — geprüft in `test/unit/chart.test.ts` |
+
+### Akzeptanzkriterien
+
+| # | Kriterium | Nachweis |
+| --- | --- | --- |
+| 1 | Beim Blättern ist nie eine leere Tabelle sichtbar | `test/browser/list-paging.test.ts` — gemessen **während** der Anfrage, alle 20 ms |
+| 2 | Filterwechsel setzt auf Seite 1 und in die Adresse | `test/nuxt/use-list-query.test.ts`, `test/browser/list-url.test.ts` |
+| 3 | Neuladen stellt Filter und Seite wieder her | zur Hälfte offen, siehe unten |
+| 4 | Der Dialog fängt den Fokus, schließt mit Escape, gibt den Fokus zurück | `test/browser/dialogs.test.ts` |
+| 5 | Der Picker sucht serverseitig, nie im Client | `test/integration/pickers.test.ts`: 303 Kunden, Antwort enthält 25 |
+| 6 | Creation-Flow über zwei Ebenen stellt den Entwurf wieder her | offen, siehe unten |
+| 7 | Der Mehrfach-Picker verwirft bei „Abbrechen" | `test/nuxt/picker.test.ts`, dazu Escape im Browser |
+| 8 | Jeder Picker-Endpoint verweigert ohne Recht | `test/integration/pickers.test.ts`: 401, 403 mit deutschem Satz, 200 je erlaubtem Recht |
+| 9 | `DateField` verschiebt keine Tage | `test/unit/calendar-date.test.ts` (alle 365 Tage), `test/browser/date-field.test.ts` |
+
+### Was ausdrücklich offen bleibt
+
+Zwei Kriterien verlangen einen End-to-End-Lauf über **echte Seiten**, und die
+gibt es noch nicht: die erste Liste entsteht mit T-011, das erste Formular
+ebenso. Sie werden nicht abgeschwächt, sondern mitgenommen:
+
+- **Kriterium 3** — geprüft ist, dass jede Änderung wirklich in die Adresse
+  geschrieben wird (Browsertest, echter Verlauf) und dass eine Liste aus einer
+  gegebenen Adresse denselben Zustand herstellt (Komponententest). Der
+  Durchlauf mit echtem Neuladen reitet auf **Golden Flow G-03** in T-011.
+  `@nuxt/test-utils/browser` hängt jede Anwendung auf der Startadresse ein und
+  liest `window.location` beim zweiten Einhängen nicht erneut — hier ist es
+  also nicht zeigbar.
+- **Kriterium 6** — die Mechanik ist vollständig geprüft (Stapel über zwei
+  Ebenen, Rücksprung mit Kennung, Schleifenschutz, Verfall, volles
+  Speicherlimit). Der Weg über zwei echte Seiten gehört zu **G-04** in T-012.
+
+Dazu kommt **W-02** in [blocker.md](blocker.md): die Segmente des Datumsfeldes
+heißen für einen Screenreader englisch. Reihenfolge und Trenner stimmen und
+sind festgenagelt; die Beschriftungen erzeugt Reka UI im Inneren, und ein
+Nachbau wäre schlimmer als der Mangel.
+
+### Was nebenbei berichtigt wurde
+
+Die Modelländerung **M-10** — die Zeiterfassung entfällt vollständig — war im
+Datenmodell umgesetzt, aber nicht im übrigen Plan angekommen. Nachgezogen:
+
+- **T-018** heißt jetzt „Öffnungszeiten" und enthält keine Stundenerfassung
+  mehr; **T-020** braucht es nicht mehr als Vorbedingung.
+- 18 Features sind gestrichen (F-090, F-120, F-382, F-506–F-519, F-523). Ihre
+  Seiten unter `docs/features/` tragen `status: gestrichen` mit Begründung;
+  `06-abdeckung.md` weist sie als gestrichen aus statt als zugeordnet.
+- Der Golden Flow **G-11** trägt jetzt die Rückspielprobe aus T-043 — eine
+  Sicherung, die nie zurückgespielt wurde, ist eine Vermutung.
+- **T-021** und **T-023** sprachen noch von Angebot und Auftragsbestätigung;
+  es gibt nur zwei Belegarten (M-15).
+- Die Berechtigungen `hours` und `hours:write_own` sind entfallen. Damit hat
+  **jedes** Modul genau einen Schlüssel — das ist die Aussage von M-04, und
+  `permissions.test.ts` hält sie fest. B-058 kann dadurch nicht wiederkehren:
+  „darf das Modul sehen" und „darf hier etwas tun" beantworten für jedes Modul
+  dasselbe, und der Test prüft das für alle.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1545 (70 Dateien) |
+| Coverage | 98,1 % Anweisungen · 93,0 % Zweige · 99,3 % Funktionen · 99,3 % Zeilen |
+| Modelländerungen | 19 von 19 fälligen mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+| Doku | 665 Seiten, 10 von 10 Endpoints beschrieben |

@@ -70,7 +70,7 @@ describe('Vorgaben anlegen', () => {
     expect(keys).toContain('invoices')
   })
 
-  it('gibt dem Mitarbeiter Stunden nur für sich selbst', async () => {
+  it('M-04: verteilt an den Mitarbeiter nur ganze Module, keine Unterrechte', async () => {
     const [role] = await db
       .select()
       .from(schema.roles)
@@ -80,8 +80,16 @@ describe('Vorgaben anlegen', () => {
       .from(schema.rolePermissions)
       .where(eq(schema.rolePermissions.roleId, role!.id))
     const keys = permissions.map(p => p.permission)
-    expect(keys).toContain('hours:write_own')
-    expect(keys).not.toContain('hours')
+
+    // Rechte gelten je Modul; ein Doppelpunkt wäre ein Unterrecht.
+    expect(keys.filter(key => key.includes(':'))).toEqual([])
+
+    // Operativ ja, aber nicht Personal, Buchhaltung oder Einstellungen.
+    expect(keys).toContain('orders')
+    expect(keys).not.toContain('employees')
+    expect(keys).not.toContain('ledger')
+    expect(keys).not.toContain('settings')
+    expect(keys).not.toContain('users')
   })
 
   it('legt die acht Mailvorlagen mit deutschem Text an', async () => {

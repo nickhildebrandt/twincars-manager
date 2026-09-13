@@ -13,6 +13,8 @@ import {
   LIMITS,
   documentUploadSchema,
   fileListSchema,
+  fileSchema,
+  formatBytes,
   imageUploadSchema,
   logoUploadSchema,
   matchesSignature,
@@ -186,8 +188,38 @@ describe('Uploads', () => {
     )
   })
 
-  it('lehnt einen nicht erlaubten Typ ab', () => {
-    expect(reject(imageUploadSchema, file('application/zip', 10))).toContain('Erlaubt sind nur')
+  it('lehnt einen nicht erlaubten Typ ab und nennt, was ginge', () => {
+    // Die Meldung zählt die erlaubten Formate auf — „ungültiger Typ" sagt dem
+    // Nutzer nicht, was er stattdessen nehmen soll.
+    expect(reject(imageUploadSchema, file('application/zip', 10)))
+      .toBe('Erlaubt sind nur JPEG, PNG, WEBP.')
+  })
+
+  it('lehnt eine Liste ab, die zu lang ist', () => {
+    const many = Array.from({ length: LIMITS.image.count + 1 }, () => file('image/png', 10))
+    expect(reject(fileListSchema(imageUploadSchema, LIMITS.image.count), many))
+      .toBe(`Höchstens ${LIMITS.image.count} Dateien auf einmal.`)
+  })
+
+  it('nimmt eine Liste innerhalb der Grenze an', () => {
+    const few = [file('image/png', 10), file('image/jpeg', 10)]
+    expect(() => v.parse(fileListSchema(imageUploadSchema, LIMITS.image.count), few)).not.toThrow()
+  })
+
+  it('nennt einen Typ ohne Schrägstrich unverändert', () => {
+    // Eine Zulassungsliste muss auch mit einem Eintrag zurechtkommen, der
+    // nicht `art/unterart` heißt — sonst steht in der Meldung „UNDEFINED".
+    const schema = fileSchema(['seltsam'], 1000, 'Datei')
+    expect(reject(schema, file('image/png', 10))).toBe('Erlaubt sind nur SELTSAM.')
+  })
+
+  it('schreibt Größen so, wie jemand sie liest', () => {
+    // Die Meldung „zu groß" nennt eine Zahl. Sie muss eine sein, die jemand
+    // kennt — nicht 15728640.
+    expect(formatBytes(512)).toBe('512 Byte')
+    expect(formatBytes(2_400_000)).toBe('2,3 MB')
+    expect(formatBytes(15 * 1024 * 1024)).toBe('15 MB')
+    expect(formatBytes(3 * 1024 * 1024 * 1024)).toBe('3,0 GB')
   })
 
   it('kennt die erlaubten Bildtypen', () => {

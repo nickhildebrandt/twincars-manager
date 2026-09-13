@@ -182,10 +182,10 @@ async function seedRoles(db: Database): Promise<number> {
   inserted += await ensureRole(
     db,
     'Mitarbeiter',
-    'Operativer Zugriff auf die wichtigsten Module; Stunden nur für sich selbst.',
+    'Operativer Zugriff auf die wichtigsten Module; ohne Personal, Buchhaltung und Einstellungen.',
     [
       'customers', 'vehicles', 'suppliers', 'items', 'offers', 'invoices',
-      'orders', 'reminders', 'calendar', 'inventory', 'tires', 'hours:write_own',
+      'orders', 'reminders', 'calendar', 'inventory', 'tires',
     ],
   )
   return inserted

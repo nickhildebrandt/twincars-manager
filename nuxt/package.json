@@ -41,7 +41,10 @@
     "db:idempotent": "node scripts/make-migration-idempotent.mjs",
     "docs:domain": "node --experimental-strip-types scripts/docs-domain.mjs",
     "pretest": "node scripts/warm-vite-cache.mjs",
-    "test:modell": "node scripts/check-modell.mjs"
+    "test:modell": "node scripts/check-modell.mjs",
+    "pretest:cov": "node scripts/warm-vite-cache.mjs --coverage",
+    "pretest:cov:update": "node scripts/warm-vite-cache.mjs --coverage",
+    "pretest:browser": "node scripts/warm-vite-cache.mjs"
   },
   "lint-staged": {
     "*.{js,mjs,ts,vue,json,md,yaml,yml,css}": "eslint --fix"
@@ -70,6 +73,7 @@
   },
   "dependencies": {
     "@iconify-json/lucide": "^1.2.131",
+    "@internationalized/date": "^3.12.4",
     "@nuxt/ui": "^4.11.1",
     "@valibot/i18n": "^1.2.0",
     "better-auth": "^1.7.4",

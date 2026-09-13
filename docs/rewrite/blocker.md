@@ -67,3 +67,38 @@ einmal durchspielen.
 
 **Betroffene Fassungen:** Vitest 5.0.0, `@vitest/browser-playwright` 5.0.0,
 `@nuxt/test-utils` 4.3.2, Vite über Nuxt 4.5.2.
+
+---
+
+## W-02 — Die Segmente des Datumsfeldes heißen für den Screenreader englisch
+
+**Stand:** 13.09.2026 · **Betrifft:** T-009 · **Schwere:** klein, nicht
+umgangen
+
+**Was passiert.** `UInputDate` (Nuxt UI 4.11.1 über Reka UI) baut ein Datum aus
+drei Segmenten. Mit `:locale="de"` an `UApp` stimmen **Reihenfolge und
+Trenner**: `01.03.2026`, Tag vor Monat, Punkt als Trenner. Die
+`aria-label`-Werte der Segmente bleiben aber englisch — `day,`, `month,`,
+`year,` — und die Vorlesehilfe eines Monats lautet `1 - January`.
+
+**Warum es hier steht.** Die Oberfläche ist deutsch. Ein Screenreader liest an
+dieser einen Stelle englisch vor.
+
+**Warum es nicht umgangen wird.** Reka UI erzeugt diese Beschriftungen im
+Inneren der Komponente; es gibt keine Eigenschaft dafür. Die einzigen Wege
+wären, nach dem Rendern im DOM herumzuschreiben oder die Komponente
+nachzubauen. Beides wäre schlimmer als der Mangel: Regel 4 sagt Nuxt UI zuerst,
+und ein nachgebautes Datumsfeld verliert Tastaturbedienung, Fokusführung und
+Zeitzonenfestigkeit — also genau das, wofür die Komponente da ist.
+
+**Was stattdessen abgesichert ist.** `test/nuxt/form-fields.test.ts` nagelt die
+Reihenfolge Tag–Monat–Jahr und den Punkt als Trenner fest. Das ist der Teil,
+an dem ein Fehler Daten verfälscht: `01/03/2026` und `01.03.2026` bezeichnen
+zwei verschiedene Tage.
+
+**Wann es weg kann.** Sobald Reka UI die Segmentbeschriftungen aus der
+Sprachdatei nimmt. Dann die Zusage in `test/nuxt/form-fields.test.ts` um die
+deutschen `aria-label`-Werte erweitern und diesen Eintrag streichen.
+
+**Betroffene Fassungen:** Nuxt UI 4.11.1, Reka UI in der davon gezogenen
+Fassung.

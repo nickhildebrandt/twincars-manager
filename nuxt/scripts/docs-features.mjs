@@ -65,15 +65,65 @@ for (const line of read(join(planDir, '01-inventar.md')).split('\n')) {
 
 // ── owning work package per feature ─────────────────────────────────────────
 const paket = new Map()
+/** Features the model changes struck, with the M-id that struck them. */
+const struck = new Map()
 for (const line of read(join(planDir, '06-abdeckung.md')).split('\n')) {
   const row = line.match(/^\| (F-\d{3}) \| .* \| (.+) \|$/)
   if (!row) continue
+  const gone = row[2].match(/gestrichen\*{0,2}\s*\((M-\d{2})\)/)
+  if (gone) struck.set(row[1], gone[1])
   paket.set(row[1], [...row[2].matchAll(/T-\d{3}/g)].map(m => m[0]).join(', '))
 }
 
 const yaml = value => (value.length === 0 ? '[]' : `[${value.map(v => `'${v}'`).join(', ')}]`)
 
+/**
+ * A struck feature. It keeps its page — the id stays referenced from the
+ * inventory, and somebody will ask in a year why there is no time sheet.
+ */
+function strickenPage(f) {
+  const cause = struck.get(f.id)
+  return `---
+id: ${f.id}
+title: ${f.title.replaceAll('"', '\'')}
+status: gestrichen
+modul: ${f.modul}
+paket: gestrichen
+permission: entfällt
+routes: []
+endpoints: []
+tables: []
+schemas: []
+components: []
+tests: []
+updated: ${new Date().toISOString().slice(0, 10)}
+---
+
+# ${f.id} — ${f.title}
+
+> **Status: gestrichen.** Dieses Feature des Vorgängersystems wird **nicht**
+> übernommen. Die Entscheidung und ihre Begründung stehen als **${cause}** in
+> [09-modellaenderungen.md](../rewrite/09-modellaenderungen.md).
+
+## Was der Vorgänger tat
+
+${f.behaviour || '_Im Inventar nicht weiter ausgeführt._'}
+
+## Warum es entfällt
+
+Siehe [${cause} in 09-modellaenderungen.md](../rewrite/09-modellaenderungen.md)
+und die Übersicht „Was gestrichen wird" im selben Dokument.
+
+## Quellen
+
+- Inventar: [${f.id} in 01-inventar.md](../rewrite/01-inventar.md)
+- Abdeckung: [06-abdeckung.md](../rewrite/06-abdeckung.md)
+- Übersicht: [docs/index.md](../index.md)
+`
+}
+
 function page(f) {
+  if (struck.has(f.id)) return strickenPage(f)
   const owner = paket.get(f.id) ?? '—'
   return `---
 id: ${f.id}

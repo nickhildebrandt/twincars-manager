@@ -28,13 +28,13 @@ export default defineConfig({
         // Root component: mounted by the framework, not by tests. Its
         // behaviour is covered end-to-end (test/e2e/ssr.test.ts).
         'app/app.vue',
+        // Stylesheets are not code; V8 reports them because the Nuxt project
+        // loads them.
+        'app/assets/css/**',
         // Nitro plugins run inside the server runtime; they are exercised by
         // the production build in the end-to-end project, where V8 coverage
         // does not reach. Their logic is unit-tested through the helpers they
         // call (server/utils/errors.ts, shared/schemas/env.ts).
-        // Stylesheets are not code; V8 reports them because the Nuxt project
-        // loads them.
-        'app/assets/css/**',
         'server/plugins/**',
         // Browser wiring: event listeners, a timer, a storage key and a
         // channel. The judgement it wires up is `shared/idle.ts`, covered to
@@ -47,16 +47,8 @@ export default defineConfig({
         // covered in test/integration/health.test.ts, the wiring by the
         // end-to-end suite against the built server.
         'server/api/health.get.ts',
-        // Stylesheets are not code; V8 reports them because the Nuxt project
-        // loads them.
-        'app/assets/css/**',
         // Pure re-export barrel.
         'shared/schemas/index.ts',
-        // Endpoint wiring without logic: it hands `useDatabase()` to
-        // `checkHealth` and turns a failure into a 503. The check itself is
-        // covered in test/integration/health.test.ts, the wiring by the
-        // end-to-end suite against the built server.
-        'server/api/health.get.ts',
         // Declarative table definitions, not logic. Their correctness is
         // proven against a real database by test/integration/schema-drift,
         // which compares every table, column and constraint.
@@ -73,10 +65,10 @@ export default defineConfig({
         // endpoints, middleware, pages and composables, so the mix is
         // representative and `pnpm test:cov:update` writes the reached values
         // back here with every package.
-        'statements': 97.44,
-        'branches': 90.16,
-        'functions': 98.72,
-        'lines': 98.8,
+        'statements': 98.06,
+        'branches': 93.01,
+        'functions': 99.26,
+        'lines': 99.27,
         // Geldarithmetik: jede Zeile gerechnet, jeder Rundungsfall belegt.
         // Ein blinder Fleck hier kostet Cent in echten Rechnungen.
         'shared/money.ts': {
@@ -87,15 +79,15 @@ export default defineConfig({
         },
         'shared/schemas/**': {
           statements: 100,
-          branches: 95.74,
+          branches: 98.11,
           functions: 100,
           lines: 100,
         },
         'server/services/**': {
-          statements: 90,
-          branches: 85,
-          functions: 90,
-          lines: 90,
+          statements: 100,
+          branches: 97.29,
+          functions: 100,
+          lines: 100,
         },
         'server/api/**': {
           statements: 100,
@@ -104,9 +96,9 @@ export default defineConfig({
           lines: 100,
         },
         'app/composables/**': {
-          statements: 97.77,
-          branches: 86.53,
-          functions: 98.07,
+          statements: 97.93,
+          branches: 91.39,
+          functions: 98.94,
           lines: 100,
         },
       },

@@ -151,14 +151,24 @@ describe('titleFor', () => {
 })
 
 describe('Regression', () => {
-  it('B-058: voller Stundenzugriff behält den Eintrag', () => {
-    // Der Vorgänger verlangte im Eintrag genau `hours:write_own`.
-    const fullAccess = visibleNavigation(canWith('hours'))
-    const selfService = visibleNavigation(canWith('hours:write_own'))
-
-    for (const visible of [fullAccess, selfService]) {
-      expect(visible.flatMap(group => group.items).map(item => item.label)).toContain('Stunden')
+  it('B-058: wer ein Modul besitzt, behält dessen Eintrag', () => {
+    // Der Eintrag „Stunden" verlangte genau `hours:write_own`, sodass eine
+    // Rolle mit vollem Zugriff ihn verlor. Der Eintrag ist mit der
+    // Zeiterfassung entfallen (M-10) — die Zusage gilt für alle anderen:
+    // jeder Eintrag ist für jeden sichtbar, der eines seiner Module hat.
+    for (const item of allItems) {
+      for (const module of item.modules ?? []) {
+        const labels = visibleNavigation(canWith(module))
+          .flatMap(group => group.items)
+          .map(entry => entry.label)
+        expect(labels, `${item.label} über ${module}`).toContain(item.label)
+      }
     }
+  })
+
+  it('M-10: führt keinen Eintrag für die Zeiterfassung mehr', () => {
+    expect(allItems.map(item => item.to)).not.toContain('/hours')
+    expect(allItems.flatMap(item => item.modules ?? [])).not.toContain('hours')
   })
 
   it('B-375: wer Rundschreiben verschickt, sieht die Versandhistorie', () => {

@@ -4,10 +4,18 @@
  * A user either has access to a module or not; if they do, they can do
  * everything in it. There is no read/write/delete split — the business has
  * eight people, and a finer model would only produce configuration nobody
- * maintains.
+ * maintains (M-04).
  *
- * The single, deliberate exception is `hours:write_own`: it lets an employee
- * log their own time without seeing anyone else's.
+ * There is no exception. The predecessor had one — `hours:write_own`, for
+ * self-service time logging — and it went with the time-tracking module
+ * (M-10). What follows from that is deliberate and worth stating: since every
+ * module has exactly one key, "may see this module" and "may act in it" give
+ * the same answer today. Both questions still exist, because they are
+ * different questions; `permissions.test.ts` pins the one-key rule so the
+ * difference cannot creep back in unnoticed.
+ *
+ * Salary, holiday entitlement and weekly hours live **only** in the personnel
+ * module, because a coarse model has no other place to hide them (P-10).
  */
 
 export const WILDCARD_PERMISSION = '*'
@@ -27,8 +35,6 @@ export const MODULE_PERMISSIONS = {
   ledger: ['ledger'],
   calendar: ['calendar'],
   inventory: ['inventory'],
-  /** Full access, or self-service only. */
-  hours: ['hours', 'hours:write_own'],
   mailings: ['mailings'],
   import: ['import'],
   settings: ['settings'],
@@ -41,7 +47,7 @@ export type ModuleKey = keyof typeof MODULE_PERMISSIONS
 
 export const ALL_PERMISSIONS: readonly string[] = Object.values(MODULE_PERMISSIONS).flat()
 
-/** A single permission key, e.g. `customers` or `hours:write_own`. */
+/** A single permission key, e.g. `customers`. */
 export type PermissionKey = typeof MODULE_PERMISSIONS[ModuleKey][number]
 
 /** The module a permission key belongs to. */
@@ -66,7 +72,6 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
   ledger: 'Buchhaltung',
   calendar: 'Kalender',
   inventory: 'Zu verkaufende Fahrzeuge',
-  hours: 'Zeiterfassung',
   mailings: 'Rundschreiben',
   import: 'Datenübernahme',
   settings: 'Einstellungen',
@@ -78,9 +83,9 @@ export const MODULE_LABELS: Record<ModuleKey, string> = {
 /**
  * True when the set grants **exactly** this key, or holds the wildcard.
  *
- * Endpoints ask this. Seeing a module and being allowed to do everything in it
- * are two different questions: somebody with `hours:write_own` may log their
- * own time but must not read everyone else's.
+ * Endpoints ask this. Seeing a module and being allowed to act in it are two
+ * different questions, even where they currently have the same answer — an
+ * endpoint must name the right it needs, not the menu entry it sits behind.
  */
 export function hasPermission(permissions: Set<string>, required: string): boolean {
   return permissions.has(WILDCARD_PERMISSION) || permissions.has(required)
@@ -92,7 +97,9 @@ export function hasPermission(permissions: Set<string>, required: string): boole
  * Navigation and page visibility ask this. The predecessor's sidebar demanded
  * `hours:write_own` literally, so a role with full `hours` access lost the
  * entry entirely — the seeded roles happened to hold both keys, which is why
- * nobody noticed (B-058).
+ * nobody noticed (B-058). That module is gone (M-10) and every module now has
+ * a single key, so the two answers coincide; the function stays because the
+ * question is a different one and the next module may not be so simple.
  */
 export function hasModule(permissions: Set<string>, module: ModuleKey): boolean {
   if (permissions.has(WILDCARD_PERMISSION)) return true

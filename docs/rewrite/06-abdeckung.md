@@ -3,7 +3,15 @@
 Jede Feature-ID aus [01-inventar.md](01-inventar.md) mit dem Arbeitspaket, das
 sie umsetzt. **Eine Feature-ID ohne Arbeitspaket ist ein Fehler im Plan.**
 
-Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
+Ergebnis der Prüfung: **631 Feature-IDs, davon 613 einem Paket zugeordnet,
+18 gestrichen, 0 ohne Zuordnung.**
+
+Gestrichen sind die Features des Moduls Zeiterfassung — F-090, F-120, F-382,
+F-506–F-519 und F-523. Grund und Tragweite stehen in
+[09-modellaenderungen.md](09-modellaenderungen.md) unter **M-10**: es wird kein
+Controlling der Arbeitszeit betrieben, die berechnete Zeit steht als Wert an der
+Auftragsposition. Ihre Seiten unter `docs/features/` tragen
+`status: gestrichen`; sie werden nicht umgesetzt.
 
 ### Arbeitspakete nach Anzahl Features
 
@@ -26,10 +34,10 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | **T-015** | Reifenkatalog | 15 | F-276–F-279, F-281–F-287, F-289–F-292 |
 | **T-016** | Reifeneinlagerung, Etiketten, Erinnerungen | 17 | F-275, F-293–F-295, F-298–F-300, F-302–F-310, F-441 |
 | **T-017** | Mitarbeiter und Abwesenheiten | 26 | F-481–F-505, F-524 |
-| **T-018** | Zeiterfassung, Berichte, Öffnungszeiten | 20 | F-090, F-120, F-506–F-523 |
+| **T-018** | Öffnungszeiten | 3 | F-520–F-522 |
 | **T-019** | Kalender, Feiertage, Terminplanung | 28 | F-250, F-525, F-527–F-549, F-554, F-556, F-587 |
 | **T-020** | Aufträge (Kanban-Arbeitsaufträge) | 55 | F-312–F-366 |
-| **T-021** | Belege-Grundlage und Angebote | 16 | F-367–F-382 |
+| **T-021** | Belege-Grundlage und Kostenvoranschläge | 15 | F-367–F-381 |
 | **T-022** | Rechnungen, Zahlungen, Storno | 14 | F-383–F-393, F-407–F-409 |
 | **T-023** | PDF-Pipeline | 12 | F-047, F-121, F-395–F-404 |
 | **T-024** | XRechnung | 1 | F-394 |
@@ -145,7 +153,7 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | F-087 | Unsaved-Changes-Guard auf Auth-Formularen | **T-034** |
 | F-088 | Public-API-Token-Auth | **T-031** |
 | F-089 | Public-API-Rate-Limit | **T-031** |
-| F-090 | `hours:write_own`-Scoping | **T-018** |
+| F-090 | `hours:write_own`-Scoping | **gestrichen** (M-10) |
 | F-091 | Passwort-Hashing | **T-007** |
 | F-092 | Berechtigungs-Union über mehrere Rollen | **T-007** |
 | F-093 | better-auth-Zusatzendpunkte (technisch) | **T-007** |
@@ -175,7 +183,7 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | F-117 | Bild-Validierung und Drag&Drop | **T-009** |
 | F-118 | Fahrzeugdokumente: Liste/Upload/Anzeigen/Löschen | **T-012** |
 | F-119 | E-Mail-Composer (Betreff ≤ 200, Text ≤ 50 000, HTML-Toggle, Anhänge ≤ 10 MiB je Datei als Base64) | **T-026** |
-| F-120 | Arbeit erfassen (QuickTimeEntryModal) | **T-018** |
+| F-120 | Arbeit erfassen (QuickTimeEntryModal) | **gestrichen** (M-10) |
 | F-121 | PDF-Vorschau per Blob-Iframe (document/reminder) | **T-023** |
 | F-122 | TabGroup State-Modus mit `?tab=`-Deep-Link | **T-009** |
 | F-123 | TabGroup Nav-Modus | **T-009** |
@@ -437,7 +445,7 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | F-379 | Angebot stornieren | **T-021** |
 | F-380 | Konvertierungs-Banner | **T-021** |
 | F-381 | Angebot → Rechnung konvertieren | **T-021** |
-| F-382 | Arbeit erfassen / Stunden-Karte auf Beleg | **T-021** |
+| F-382 | Arbeit erfassen / Stunden-Karte auf Beleg | **gestrichen** (M-10) |
 | F-383 | Rechnungsliste mit Suche, Statusfilter, Bezahlt-Spalte | **T-022** |
 | F-384 | Rechnung löschen (Liste + Detail) | **T-022** |
 | F-385 | Rechnung anlegen | **T-022** |
@@ -561,24 +569,24 @@ Ergebnis der Prüfung: **631 Feature-IDs, davon 631 zugeordnet, 0 ohne Paket.**
 | F-503 | Abwesenheit ändern (Datum/Typ/Notiz/Halbtag) | **T-017** |
 | F-504 | Abwesenheits-Anhang (AU-Scan) | **T-017** |
 | F-505 | Abwesenheiten im Kalender | **T-017** |
-| F-506 | Stundenliste (Manager) mit Scope-Tabs, Datumsfilter, Mitarbeiterfilter, Auftrags-Deep-Link | **T-018** |
-| F-507 | Stundenliste (Self-Service) | **T-018** |
-| F-508 | Stundeneintrag anlegen (Manager) | **T-018** |
-| F-509 | Stundeneintrag anlegen (Self-Service) | **T-018** |
-| F-510 | Kunde aus Stundenformular anlegen (Creation-Flow) | **T-018** |
-| F-511 | Stundeneintrag-Detail | **T-018** |
-| F-512 | Stundeneintrag bearbeiten | **T-018** |
-| F-513 | Stundeneintrag löschen | **T-018** |
-| F-514 | Auftrags-Write-Through-Zeilen read-only | **T-018** |
-| F-515 | "Arbeit erfassen" vom Beleg (QuickTimeEntryModal) | **T-018** |
-| F-516 | Karte "Erfasste Stunden" auf Beleg-Detail | **T-018** |
-| F-517 | Auslastungs-Report | **T-018** |
-| F-518 | Monatsauswertung | **T-018** |
-| F-519 | Reports-Tabs mit Deep-Link | **T-018** |
+| F-506 | Stundenliste (Manager) mit Scope-Tabs, Datumsfilter, Mitarbeiterfilter, Auftrags-Deep-Link | **gestrichen** (M-10) |
+| F-507 | Stundenliste (Self-Service) | **gestrichen** (M-10) |
+| F-508 | Stundeneintrag anlegen (Manager) | **gestrichen** (M-10) |
+| F-509 | Stundeneintrag anlegen (Self-Service) | **gestrichen** (M-10) |
+| F-510 | Kunde aus Stundenformular anlegen (Creation-Flow) | **gestrichen** (M-10) |
+| F-511 | Stundeneintrag-Detail | **gestrichen** (M-10) |
+| F-512 | Stundeneintrag bearbeiten | **gestrichen** (M-10) |
+| F-513 | Stundeneintrag löschen | **gestrichen** (M-10) |
+| F-514 | Auftrags-Write-Through-Zeilen read-only | **gestrichen** (M-10) |
+| F-515 | "Arbeit erfassen" vom Beleg (QuickTimeEntryModal) | **gestrichen** (M-10) |
+| F-516 | Karte "Erfasste Stunden" auf Beleg-Detail | **gestrichen** (M-10) |
+| F-517 | Auslastungs-Report | **gestrichen** (M-10) |
+| F-518 | Monatsauswertung | **gestrichen** (M-10) |
+| F-519 | Reports-Tabs mit Deep-Link | **gestrichen** (M-10) |
 | F-520 | Öffnungszeiten je Wochentag pflegen | **T-018** |
 | F-521 | Öffnungszeiten-Defaults / Lazy-Seed | **T-018** |
 | F-522 | Öffnungszeiten-Verwendung | **T-018** |
-| F-523 | Zwei-Stufen-Berechtigung Stunden | **T-018** |
+| F-523 | Zwei-Stufen-Berechtigung Stunden | **gestrichen** (M-10) |
 | F-524 | Berechtigung Mitarbeiter/Abwesenheiten | **T-017** |
 | F-525 | Feiertagsberücksichtigung nach Firmen-Bundesland | **T-019** |
 | F-526 | Deutsche Fehlerübersetzung der Feldnamen | **T-004** |

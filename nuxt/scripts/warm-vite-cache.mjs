@@ -16,43 +16,87 @@
  * suite before. **No test is skipped or softened by this** — every test still
  * runs and must pass afterwards.
  *
- * Remove this together with `pnpm test`'s pretest step once Vitest or
- * @nuxt/test-utils fixes the reload. Recorded in ../../docs/rewrite/blocker.md.
+ * **Warming happens per variant.** Coverage adds a plugin, and a plugin
+ * changes the optimiser's fingerprint: a cache warmed without coverage is
+ * cold again for `pnpm test:cov`. The variant is therefore part of the
+ * marker, and the warm-up runs with the same flags as the run it prepares.
+ *
+ *   node scripts/warm-vite-cache.mjs             for `pnpm test`
+ *   node scripts/warm-vite-cache.mjs --coverage  for `pnpm test:cov`
+ *
+ * Remove this together with the `pretest*` steps in `package.json` once Vitest
+ * or @nuxt/test-utils fixes the reload. Recorded in ../../docs/rewrite/blocker.md.
  */
 import { spawnSync } from 'node:child_process'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, utimesSync, writeFileSync } from 'node:fs'
+import { dirname } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const root = fileURLToPath(new URL('..', import.meta.url))
 const cache = fileURLToPath(new URL('../node_modules/.cache/vite/client', import.meta.url))
 
+const withCoverage = process.argv.includes('--coverage')
+const variant = withCoverage ? 'coverage' : 'plain'
+const marker = fileURLToPath(
+  new URL(`../node_modules/.cache/twincars-warm-${variant}`, import.meta.url),
+)
+
 /**
  * Files whose change makes Vite throw the cache away.
  *
- * Missing is not the only stale state: editing the Vitest configuration or
- * installing a package invalidates the optimiser just as thoroughly, and then
- * the same reload happens again.
+ * Missing is not the only stale state. Three things invalidate the optimiser
+ * just as thoroughly, and then the same reload happens again:
+ *
+ *   - the Vitest or Nuxt configuration changed,
+ *   - a package was installed,
+ *   - a **browser test file changed** — a new import there can pull in a
+ *     dependency the optimiser has not seen, and it re-optimises mid-run.
  */
 const INVALIDATORS = ['vitest.config.ts', 'nuxt.config.ts', 'package.json', 'pnpm-lock.yaml']
+const WATCHED_DIRECTORIES = ['test/browser', 'test/setup']
 
 const modifiedAt = (relative) => {
   const path = fileURLToPath(new URL(`../${relative}`, import.meta.url))
   return existsSync(path) ? statSync(path).mtimeMs : 0
 }
 
-function cacheIsFresh() {
-  if (!existsSync(cache)) return false
-  const builtAt = statSync(cache).mtimeMs
-  return INVALIDATORS.every(file => modifiedAt(file) <= builtAt)
+/** The newest modification time anywhere below a directory. */
+function newestIn(relative) {
+  const directory = fileURLToPath(new URL(`../${relative}`, import.meta.url))
+  if (!existsSync(directory)) return 0
+  let newest = statSync(directory).mtimeMs
+  for (const entry of readdirSync(directory, { withFileTypes: true })) {
+    const child = `${relative}/${entry.name}`
+    const at = entry.isDirectory() ? newestIn(child) : modifiedAt(child)
+    if (at > newest) newest = at
+  }
+  return newest
 }
 
-if (cacheIsFresh()) {
+function alreadyWarm() {
+  if (!existsSync(cache) || !existsSync(marker)) return false
+  const warmedAt = statSync(marker).mtimeMs
+  return INVALIDATORS.every(file => modifiedAt(file) <= warmedAt)
+    && WATCHED_DIRECTORIES.every(directory => newestIn(directory) <= warmedAt)
+}
+
+if (alreadyWarm()) {
   process.exit(0)
 }
 
-console.log('[warm] Vite-Zwischenspeicher fehlt oder ist veraltet — Browser-Projekt vorwärmen.')
-spawnSync('./node_modules/.bin/vitest', ['run', '--project', 'browser', '--silent'], {
-  cwd: root,
-  stdio: 'ignore',
-})
+console.log(`[warm] Vite-Zwischenspeicher (${variant}) fehlt oder ist veraltet — Browser-Projekt vorwärmen.`)
+
+const args = ['run', '--project', 'browser', '--silent']
+if (withCoverage) args.push('--coverage')
+
+spawnSync('./node_modules/.bin/vitest', args, { cwd: root, stdio: 'ignore' })
+
+mkdirSync(dirname(marker), { recursive: true })
+writeFileSync(marker, `${new Date().toISOString()}\n`)
+// Der Zeitstempel entscheidet, nicht der Inhalt — er wird ausdrücklich auf
+// jetzt gesetzt, damit ein Dateisystem mit grober Auflösung nicht daneben
+// liegt.
+const now = new Date()
+utimesSync(marker, now, now)
+
 console.log('[warm] fertig.')

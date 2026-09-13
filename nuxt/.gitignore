@@ -12,3 +12,6 @@ playwright-report
 !.env.test
 *.tgz
 .DS_Store
+
+# Fehlschlagbilder der Browsertests
+.vitest

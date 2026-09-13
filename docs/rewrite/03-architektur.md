@@ -801,9 +801,12 @@ Vollständige Begründung und Migrationsschritte:
 
 ### 9.2 Rechte
 
-`shared/permissions.ts` übernimmt `MODULE_PERMISSIONS` unverändert: ein
-Schlüssel je Modul, Platzhalter `*`, Sonderfall `hours:write_own`. Geprüft
-wird an drei Stellen:
+`shared/permissions.ts` führt `MODULE_PERMISSIONS`: **genau ein Schlüssel je
+Modul**, dazu der Platzhalter `*`. Der frühere Sonderfall `hours:write_own`
+entfällt mit dem Modul Zeiterfassung (M-10); feingranulare Rechte werden nicht
+angelegt (M-04). Damit fallen „darf dieses Modul sehen" und „darf hier etwas
+tun" zusammen — das ist gewollt und wird in `permissions.test.ts` festgehalten,
+damit es nicht unbemerkt wieder auseinanderläuft. Geprüft wird an drei Stellen:
 
 1. **Server**: `requirePermission(event, 'customers')` als erste Anweisung.
 2. **Route**: `definePageMeta({ permission: 'customers' })` +
