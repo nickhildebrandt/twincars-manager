@@ -86,7 +86,7 @@ CREATE TABLE IF NOT EXISTS "item_price_versions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"item_id" uuid NOT NULL,
 	"valid_from" date NOT NULL,
-	"unit_price_net" numeric(12, 2) NOT NULL,
+	"unit_price_net" integer NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -97,7 +97,7 @@ CREATE TABLE IF NOT EXISTS "items" (
 	"description" text NOT NULL,
 	"kind" varchar(20) DEFAULT 'article' NOT NULL,
 	"unit" varchar(20),
-	"purchase_price_net" numeric(12, 2),
+	"purchase_price_net" integer,
 	"stock_on_hand" integer DEFAULT 0 NOT NULL,
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -119,7 +119,7 @@ CREATE TABLE IF NOT EXISTS "tire_price_versions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"tire_id" uuid NOT NULL,
 	"valid_from" date NOT NULL,
-	"unit_price_net" numeric(12, 2) NOT NULL,
+	"unit_price_net" integer NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -149,7 +149,7 @@ CREATE TABLE IF NOT EXISTS "tires" (
 	"snow_flake" boolean DEFAULT false NOT NULL,
 	"ev_certified" boolean DEFAULT false NOT NULL,
 	"description" text,
-	"purchase_price_net" numeric(12, 2),
+	"purchase_price_net" integer,
 	"stock_on_hand" integer DEFAULT 0 NOT NULL,
 	"online_sellable" boolean DEFAULT false NOT NULL,
 	"notes" text,
@@ -254,7 +254,7 @@ CREATE TABLE IF NOT EXISTS "customers" (
 	"archived" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"kind" varchar(20) DEFAULT 'regular' NOT NULL,
+	"kind" varchar(20) DEFAULT 'privat' NOT NULL,
 	"ebay_handle" varchar(100),
 	"wants_broadcast" boolean DEFAULT false NOT NULL,
 	"wants_tire_reminders" boolean DEFAULT false NOT NULL
@@ -293,11 +293,11 @@ CREATE TABLE IF NOT EXISTS "document_items" (
 	"description" text NOT NULL,
 	"quantity" numeric(12, 3) DEFAULT '1' NOT NULL,
 	"unit" varchar(20),
-	"unit_price_net" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"unit_price_net" integer DEFAULT 0 NOT NULL,
 	"discount_percent" numeric(5, 2) DEFAULT '0' NOT NULL,
 	"tax_rate" numeric(5, 2) DEFAULT '19.00' NOT NULL,
-	"line_total_net" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"line_total_gross" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"line_total_net" integer DEFAULT 0 NOT NULL,
+	"line_total_gross" integer DEFAULT 0 NOT NULL,
 	"tire_id" uuid,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -307,7 +307,7 @@ CREATE TABLE IF NOT EXISTS "document_payments" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"document_id" uuid NOT NULL,
 	"payment_date" date NOT NULL,
-	"amount" numeric(12, 2) NOT NULL,
+	"amount" integer NOT NULL,
 	"method" varchar(30),
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -337,10 +337,10 @@ CREATE TABLE IF NOT EXISTS "documents" (
 	"due_date" date,
 	"payment_method" varchar(30),
 	"tax_rate" numeric(5, 2) DEFAULT '19.00' NOT NULL,
-	"net_total" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"tax_total" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"gross_total" numeric(12, 2) DEFAULT '0' NOT NULL,
-	"discount_total" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"net_total" integer DEFAULT 0 NOT NULL,
+	"tax_total" integer DEFAULT 0 NOT NULL,
+	"gross_total" integer DEFAULT 0 NOT NULL,
+	"discount_total" integer DEFAULT 0 NOT NULL,
 	"header" text,
 	"footer" text,
 	"notes" text,
@@ -400,8 +400,8 @@ CREATE TABLE IF NOT EXISTS "employee_salary_versions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"employee_id" uuid NOT NULL,
 	"valid_from" date NOT NULL,
-	"monthly_salary" numeric(12, 2),
-	"hourly_wage" numeric(8, 2),
+	"monthly_salary" integer,
+	"hourly_wage" integer,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
@@ -510,7 +510,7 @@ CREATE TABLE IF NOT EXISTS "ebay_listings" (
 	"ebay_item_id" varchar(30) NOT NULL,
 	"sku" varchar(80),
 	"title" varchar(255) NOT NULL,
-	"price_value" numeric(12, 2),
+	"price_value" integer,
 	"price_currency" varchar(3),
 	"quantity_available" integer,
 	"quantity_sold" integer,
@@ -543,9 +543,9 @@ CREATE TABLE IF NOT EXISTS "ledger_entries" (
 	"entry_number" varchar(50),
 	"direction" varchar(10) NOT NULL,
 	"entry_date" date NOT NULL,
-	"amount_gross" numeric(12, 2) NOT NULL,
-	"amount_net" numeric(12, 2) NOT NULL,
-	"tax_amount" numeric(12, 2) DEFAULT '0' NOT NULL,
+	"amount_gross" integer NOT NULL,
+	"amount_net" integer NOT NULL,
+	"tax_amount" integer DEFAULT 0 NOT NULL,
 	"tax_rate" numeric(5, 2) DEFAULT '19.00' NOT NULL,
 	"category_id" uuid,
 	"description" text NOT NULL,
@@ -573,7 +573,7 @@ CREATE TABLE IF NOT EXISTS "work_order_items" (
 	"description" text NOT NULL,
 	"quantity" numeric(12, 3) DEFAULT '1' NOT NULL,
 	"unit" varchar(20),
-	"unit_price_net" numeric(12, 2) NOT NULL,
+	"unit_price_net" integer NOT NULL,
 	"employee_id" uuid,
 	"hours" numeric(6, 2),
 	"done_at" date NOT NULL,
@@ -698,10 +698,12 @@ CREATE TABLE IF NOT EXISTS "vehicle_listings" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"vehicle_id" uuid NOT NULL,
 	"status" varchar(20) DEFAULT 'available' NOT NULL,
-	"sales_price_gross" numeric(12, 2),
+	"sales_price_gross" integer,
 	"differential_tax" boolean DEFAULT false NOT NULL,
+	"equipment" jsonb DEFAULT '[]'::jsonb,
 	"highlights" text,
 	"location" varchar(100),
+	"internal_notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -720,7 +722,7 @@ CREATE TABLE IF NOT EXISTS "vehicle_purchases" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"vehicle_id" uuid NOT NULL,
 	"purchase_date" date NOT NULL,
-	"purchase_price" numeric(12, 2) NOT NULL,
+	"purchase_price" integer NOT NULL,
 	"previous_owner" varchar(200),
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
@@ -732,7 +734,7 @@ CREATE TABLE IF NOT EXISTS "vehicle_sales" (
 	"customer_id" uuid NOT NULL,
 	"invoice_id" uuid,
 	"sale_date" date NOT NULL,
-	"sales_price_gross" numeric(12, 2) NOT NULL,
+	"sales_price_gross" integer NOT NULL,
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
@@ -785,11 +787,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "calendar_entries" ADD CONSTRAINT "calendar_entries_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -813,7 +815,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "customer_inquiries" ADD CONSTRAINT "customer_inquiries_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "customer_inquiries" ADD CONSTRAINT "customer_inquiries_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -841,11 +843,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "documents" ADD CONSTRAINT "documents_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "documents" ADD CONSTRAINT "documents_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "documents" ADD CONSTRAINT "documents_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -885,7 +887,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -905,7 +907,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "ledger_entries" ADD CONSTRAINT "ledger_entries_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -933,11 +935,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -957,11 +959,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;
+  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -993,11 +995,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "vehicle_sales" ADD CONSTRAINT "vehicle_sales_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE restrict ON UPDATE no action;
+  ALTER TABLE "vehicle_sales" ADD CONSTRAINT "vehicle_sales_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -1112,7 +1114,6 @@ CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_plate_idx" ON "vehicl
 CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_license_plate_versions_veh_from_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id","valid_from");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_vehicle_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_listings_vehicle_unique" ON "vehicle_listings" USING btree ("vehicle_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "vehicle_listings_vehicle_id_idx" ON "vehicle_listings" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_photos_vehicle_id_idx" ON "vehicle_photos" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_purchases_vehicle_id_idx" ON "vehicle_purchases" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_sales_invoice_id_idx" ON "vehicle_sales" USING btree ("invoice_id");--> statement-breakpoint

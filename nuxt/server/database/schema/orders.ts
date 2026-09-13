@@ -42,12 +42,12 @@ export const workOrders = pgTable('work_orders', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'work_orders_customer_id_customers_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('cascade'),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'work_orders_vehicle_id_vehicles_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.appointmentId],
     foreignColumns: [calendarEntries.id],
@@ -70,7 +70,7 @@ export const workOrderItems = pgTable('work_order_items', {
   description: text().notNull(),
   quantity: numeric({ precision: 12, scale: 3 }).default('1').notNull(),
   unit: varchar({ length: 20 }),
-  unitPriceNet: numeric('unit_price_net', { precision: 12, scale: 2 }).notNull(),
+  unitPriceNet: integer('unit_price_net').notNull(),
   employeeId: uuid('employee_id'),
   hours: numeric({ precision: 6, scale: 2 }),
   doneAt: date('done_at').notNull(),

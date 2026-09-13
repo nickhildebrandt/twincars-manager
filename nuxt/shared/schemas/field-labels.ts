@@ -23,6 +23,7 @@ export const FIELD_LABELS: Record<string, string> = {
   title: 'Titel',
   status: 'Status',
   kind: 'Art',
+  customerKind: 'Kundenart',
   type: 'Typ',
   active: 'Aktiv',
   archived: 'Archiviert',
@@ -56,6 +57,9 @@ export const FIELD_LABELS: Record<string, string> = {
   taxNumber: 'Steuernummer',
   vatId: 'Umsatzsteuer-Identifikationsnummer',
   smallBusinessExempt: 'Kleinunternehmerregelung',
+  equipment: 'Ausstattung',
+  internalNotes: 'Interne Notiz',
+  highlights: 'Besonderheiten',
 
   // money
   unitPriceNet: 'Einzelpreis netto',

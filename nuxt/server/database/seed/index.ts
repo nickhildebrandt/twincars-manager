@@ -222,7 +222,7 @@ async function ensureRole(
  * The catalogue item that carries the workshop hourly rate. Work-order labour
  * lines snapshot its current price, so it must exist before the first order.
  * Only a newly created item gets the zero starting price; an operator edit is
- * never overwritten.
+ * never overwritten. The price is in cents (decision E-10).
  */
 async function seedLabourItem(db: Database): Promise<number> {
   let [item] = await db
@@ -247,7 +247,7 @@ async function seedLabourItem(db: Database): Promise<number> {
       await db.insert(itemPriceVersions).values({
         itemId: item.id,
         validFrom: new Date().toISOString().slice(0, 10),
-        unitPriceNet: '0',
+        unitPriceNet: 0,
       })
     }
   }

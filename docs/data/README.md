@@ -21,8 +21,12 @@ Zurück zur [Übersicht](../index.md).
 - Belege sind unveränderlich: Korrekturen laufen über eine Stornierung.
 - Preise und Gehälter sind **versioniert**; Belege halten den damals gültigen
   Wert als Schnappschuss.
-- Kunden, Fahrzeuge, Lieferanten und Mitarbeiter werden **archiviert**, nicht
-  gelöscht.
+- **Geldbeträge sind ganze Zahlen in Cent**, nie Kommazahlen —
+  [Geldbeträge](../architecture/money.md).
+- Kunden, Fahrzeuge, Lieferanten und Mitarbeiter lassen sich **archivieren**.
+  Löschen ist möglich und nimmt mit, was zum Datensatz gehört; sobald eine
+  ausgestellte Rechnung daranhängt, bleibt nur das Archiv —
+  [Löschen und Archivieren](../architecture/loeschen-und-archivieren.md).
 
 ## Migrationen
 
@@ -32,8 +36,8 @@ Jede ist wiederholbar geschrieben. Einzelheiten:
 
 ## Vollständigkeit
 
-Die Tabellenübersicht entsteht mit `pnpm docs:data` aus dem Drizzle-Schema.
+Die Tabellenübersicht entsteht mit `pnpm docs:data` aus dem Drizzle-Schema:
+[Tabellen](tabellen.md) — 51 Tabellen, Stand des Arbeitspakets T-005.
 
-_Noch kein Schema vorhanden — es entsteht mit Arbeitspaket T-005. Der
-vollständige Katalog des Vorgängersystems liegt bis dahin im
-[Datenmodell-Inventar](../rewrite/inventar/datamodel.md)._
+Der Katalog des Vorgängersystems steht zum Vergleich im
+[Datenmodell-Inventar](../rewrite/inventar/datamodel.md).

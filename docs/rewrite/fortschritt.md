@@ -351,3 +351,95 @@ Regressionstest dann dort.
 | Coverage | 92,1 % Anweisungen · 82,5 % Zweige · 88,9 % Funktionen |
 | Seeds | 3 Rollen, 8 Mailvorlagen, 13 Kategorien, 10 Nummernkreise, 7 Öffnungszeiten |
 | Befund-Abdeckung | 27 von 27 fälligen Befunden mit Regressionstest |
+
+---
+
+## T-005, dritter Durchgang — die Entscheidungen im Datenmodell
+
+**Datum:** 2026-09-13 · **Auslöser:** die elf Festlegungen aus
+[08-entscheidungen.md](08-entscheidungen.md)
+
+Vier der elf Entscheidungen ändern das Datenmodell und öffnen damit ein bereits
+abgeschlossenes Paket wieder. Das ist gewollt: lieber eine Änderung an 22
+Spalten als eine Umstellung, nachdem die erste Rechnung geschrieben ist.
+
+### E-10 — Geld ist eine ganze Zahl in Cent
+
+**22 Spalten** von `numeric(12,2)` beziehungsweise `numeric(8,2)` auf `integer`
+umgestellt: Rechnungs- und Positionssummen, Einkaufs- und Verkaufspreise,
+Kassenbuchbeträge, Zahlungen, Gehälter und Stundenlöhne, der eBay-Preis.
+Prozentsätze, Mengen, Stunden, Profiltiefen und Geokoordinaten bleiben
+`numeric` — das sind keine Beträge.
+
+Dazu die Rechenschicht `shared/money.ts`: `parseEuro`, `formatEuro`,
+`sumCents`, `applyPercent`, `addVat`, `splitVat`, `lineTotal`. Zwei
+Feinheiten, die bewusst so sind: gerundet wird kaufmännisch **von der Null
+weg**, damit Gutschriften stimmen, und `splitVat` rundet nur den Nettobetrag
+und nimmt die Steuer als Rest — dadurch ergibt netto plus Steuer immer genau
+den Bruttobetrag, den der Kunde zahlt.
+
+`moneySchema` hört jetzt exakt dort auf, wo die Spalte aufhört
+(`MAX_MONEY_CENTS` = 2.147.483.647). Ein Bruchteil eines Cents wird vom Schema
+abgewiesen — und zusätzlich von der Datenbank, geprüft mit einer Buchung über
+12,5 Cent.
+
+### E-13 — die Inseratfelder kommen zurück
+
+`vehicle_listings.equipment` und `internal_notes` waren in T-005 als tot
+entfernt worden. Mit der Entscheidung für die vollständige Inserat-Oberfläche
+bekommen sie eine Verwendung und gehören damit wieder ins Modell. Der
+Regressionstest, der ihre Abwesenheit prüfte, prüft jetzt ihre Anwesenheit.
+
+### E-16 — die Kundenart ist ein Feld
+
+`customers.kind` trägt jetzt `privat`, `firma` oder `ebay` statt `regular` oder
+`ebay`. Damit schließt sich B-200: aus einem leeren Firmenfeld wird kein
+Privatkunde mehr erschlossen.
+
+### E-11 — Löschregeln
+
+**13 Fremdschlüssel** neu geregelt. Was zum Kunden gehört, geht mit ihm:
+Fahrzeuge, Aufträge, Termine, Anfragen, Zeiteinträge, Reifeneinlagerung,
+Verkäufe. Was belegnah ist, sperrt: Belege und Kassenbuchzeilen. Dasselbe für
+das Fahrzeug — die eigenen Unterlagen gehen mit, Belege und Aufträge sperren.
+
+**Kein Verweis wird mehr stillschweigend auf `NULL` gesetzt** (B-190).
+
+Die Sperre ist `no action`, nicht `restrict`. Der Unterschied ist der
+Zeitpunkt: `no action` prüft erst am Ende der Anweisung, `restrict` sofort.
+Eine berechtigte Kaskade, die die verweisende Zeile im selben Zug entfernt,
+bleibt dadurch möglich; mit `restrict` wäre schon das Löschen eines Kunden
+samt seiner Aufträge gescheitert. Beide Fälle sind als Verhalten geprüft, nicht
+nur als Deklaration.
+
+### Was dabei auffiel
+
+**Der Drift-Test hätte die ganze Umstellung nicht bemerkt.** Er verglich
+Existenz, Pflichtfeld und Spaltenbreite — nicht den Typ. 22 Spalten wechselten
+von `numeric` auf `integer`, und die Prüfung blieb grün. Der Test vergleicht
+jetzt für jede Spalte `format_type` aus PostgreSQL mit dem, was Drizzle
+deklariert, und listet die verbliebenen `numeric`-Spalten namentlich auf.
+
+Nebenbei: `vehicle_listings` trug zwei Indizes auf derselben Spalte, einen
+eindeutigen und einen gewöhnlichen. Der gewöhnliche ist weg.
+
+### Dokumentation
+
+Zwei neue Seiten im Wissensnetz:
+[Geldbeträge](../architecture/money.md) und
+[Löschen und Archivieren](../architecture/loeschen-und-archivieren.md). Das
+Entscheidungsregister führt jetzt E-10 bis E-20 und hält fest, welche ADRs des
+Vorgängers dadurch abgelöst sind: ADR-004 durch E-19, ADR-009 durch E-12. Der
+Datenkatalog nennt nicht mehr T-005 als ausstehend, weil er es nicht mehr ist.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tabellen | 51 (13 Domänendateien) |
+| Baseline | 229 wiederholbare Anweisungen, 118 Indizes, 60 Fremdschlüssel |
+| Geldspalten | 22, alle `integer` in Cent |
+| Tests | 310 (20 Dateien), davon 92 Integrationstests |
+| Coverage | 92,7 % Anweisungen · 84,0 % Zweige · 90,0 % Funktionen |
+| `shared/money.ts` | 100 % Anweisungen, Zweige, Funktionen und Zeilen |
+| Befund-Abdeckung | 27 von 27 fälligen Befunden mit Regressionstest |

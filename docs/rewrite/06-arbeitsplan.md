@@ -538,13 +538,22 @@ Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts.
 **Vorbedingungen:** T-009.
 
 Das Referenzmodul: Liste mit Suche, Art-Filter, Archiv, Detailseite mit
-Registerkarten, Formular, Archivieren und Reaktivieren, Löschwächter mit
-vollständiger Zählung aller Verweise. Lieferanten bekommen dieselbe
-Archiv-Bedienung (A-10). Kundenart wird ein ausdrückliches Feld (E-16).
+Registerkarten, Formular, Archivieren und Reaktivieren. Lieferanten bekommen
+dieselbe Archiv-Bedienung (A-10). **Kundenart ist ein ausdrückliches Feld**
+`privat | firma | ebay` (E-16).
+
+**Löschen nach E-11:** Ein Kunde lässt sich samt allem Zugehörigen löschen —
+Fahrzeuge, Aufträge, Angebote, Termine, Reifeneinlagerungen, Anfragen,
+Zeiteinträge. Der Dialog zählt vorher auf, was mitgeht (04-ux.md §3.11).
+**Sobald eine ausgestellte Rechnung existiert, ist Löschen gesperrt** und die
+Anwendung bietet nur Archivieren an.
 
 **Besondere Akzeptanzkriterien:** ein geleertes Feld ist nach dem Speichern
-leer (Regressionstest); der Löschwächter nennt **alle** verknüpften Arten auf
-Deutsch und löscht nichts still; Golden Flow G-03.
+leer (Regressionstest); der Löschdialog zählt jede betroffene Art mit der
+richtigen Anzahl auf; ein Kunde mit ausgestellter Rechnung lässt sich
+serverseitig **nicht** löschen (409), auch nicht an der Oberfläche vorbei;
+nach dem Löschen bleibt kein verwaister Datensatz zurück (Integrationstest
+zählt alle Fremdschlüssel nach); Golden Flow G-03.
 
 ## T-012 — Fahrzeuge, Dokumente, Fotos
 
@@ -566,8 +575,9 @@ serverseitiger Verkleinerung.
 **Vorbedingungen:** T-012, T-022 (Verkauf über Rechnung), T-023 (Schild).
 
 Ankauf eines Kundenfahrzeugs in den Bestand mit Vorbesitzer-Schnappschuss,
-Differenzbesteuerung, Verkaufsinserat mit eigener Oberfläche (E-13),
-Verkaufsschild als A4-PDF, Verkauf über die bezahlte Rechnung.
+Differenzbesteuerung, **vollständige Inserat-Oberfläche** mit Preis,
+§25a-Kennzeichen, Standort, Ausstattung, Highlights, internen Notizen und
+Status (E-13), Verkaufsschild als A4-PDF, Verkauf über die bezahlte Rechnung.
 
 **Besondere Akzeptanzkriterien:** Ankauf und Verkauf laufen je in einer
 Transaktion; Fotos gibt es nur für Bestandsfahrzeuge (serverseitig
@@ -681,9 +691,10 @@ unverändert.
 **Features:** F-383–F-393, F-407–F-409 (14) · **Befunde:** B-301, B-303–B-305, B-313–B-314, B-316–B-317, B-323, B-325, B-338–B-339, B-342–B-343
 **Vorbedingungen:** T-021, T-023.
 
-Rechnungen mit Statusautomat, echte Zahlungserfassung inklusive Teilzahlungen
-(E-14), Storno mit Gegenbeleg und automatischem Wiederöffnen des Auftrags,
-GoBD-Löschschutz.
+Rechnungen mit Statusautomat, **echte Zahlungserfassung inklusive
+Teilzahlungen** (E-14): Datum, Betrag und Zahlungsart je Zahlung, „bezahlt"
+ergibt sich aus der Summe statt aus einem Schalter. Storno mit Gegenbeleg und
+automatischem Wiederöffnen des Auftrags, GoBD-Löschschutz.
 
 **Besondere Akzeptanzkriterien:** jeder unerlaubte Statuswechsel wird
 serverseitig mit 409 abgewiesen; Storno erzeugt Beleg **und** PDF in einer
@@ -726,10 +737,13 @@ Liste offener Rechnungen mit Verzugstagen und offenem Betrag (Teilzahlungen
 berücksichtigt), manueller und stapelweiser Versand, Wiederholung nach
 Intervall, Einstellungen, Verlauf.
 
+Der Versand läuft **werktags um 7:30 Uhr automatisch** (E-12); der Knopf
+„Jetzt prüfen" bleibt zusätzlich.
+
 **Besondere Akzeptanzkriterien:** ohne E-Mail-Adresse oder bei SMTP-Fehler
 meldet die Oberfläche **keinen** Erfolg; zweimaliges Auslösen am selben Tag
-verschickt nichts doppelt; der offene Betrag zieht Teilzahlungen ab; Golden
-Flow G-09.
+verschickt nichts doppelt — beim Zeitplan ist das Voraussetzung, nicht Kür;
+der offene Betrag zieht Teilzahlungen ab; Golden Flow G-09.
 
 ## T-026 — SMTP, Vorlagen, Versand, Gesendet
 
@@ -826,14 +840,30 @@ Protokoll; der Import ist wiederholbar, ohne Dubletten zu erzeugen.
 **Features:** F-054, F-251, F-479, F-555, F-607–F-631 (29) · **Befunde:** B-480, B-526, B-533, B-535, B-537–B-538, B-542, B-545–B-548, B-554, B-558–B-559
 **Vorbedingungen:** alle fachlichen Slices, deren Tabellen der Import füllt.
 
-Hochladen der Access-Datei, Vorschau ohne Speichern, Import mit Fortschritt
-und Bericht, Nummernkreise werden fortgeführt. Zusätzlich abgesichert durch
-ausdrückliche Bestätigung und die Bedingung „Datenbank praktisch leer" (E-19).
+**Der Import wird zum wiederholbaren Abgleich** (E-19) — das ist die größte
+fachliche Änderung gegenüber dem Bestand. Er leert nichts mehr:
+
+| Fall | Verhalten |
+| --- | --- |
+| nur in Kfz-Kaufmann | wird angelegt |
+| hier vorhanden, seit dem letzten Import nicht bearbeitet | wird ersetzt |
+| hier vorhanden und hier bearbeitet | bleibt, erscheint im Bericht |
+| nur hier angelegt | bleibt unberührt |
+| in Kfz-Kaufmann gelöscht | bleibt hier bestehen |
+
+Da die Access-Tabellen kein Änderungsdatum führen, merkt sich die Anwendung je
+Datensatz den Stand des letzten Imports und vergleicht. Hochladen der Datei,
+Vorschau ohne Speichern, Fortschritt und Bericht bleiben.
+
+**Weil der Bestand ausschließlich über diesen Weg ins System kommt (E-20),
+rückt das Paket in der Reihenfolge nach vorn** — sobald Kunden, Fahrzeuge,
+Artikel und Belege stehen.
 
 **Besondere Akzeptanzkriterien:** die Vorschau schreibt nachweislich nichts;
-der Import läuft in einer Transaktion oder bricht folgenlos ab; alle Tabellen
-werden **vor** dem Leeren gelesen; Dateinamen werden nie in eine Shell
-gereicht.
+zwei Läufe mit derselben Datei ergeben denselben Stand; ein hier bearbeiteter
+Datensatz überlebt den nächsten Import unverändert und steht im Bericht; ein
+hier neu angelegter Datensatz wird nie angefasst; der Import löscht unter
+keinen Umständen; Dateinamen werden nie in eine Shell gereicht.
 
 ## T-034 — Benutzer, Rollen, eigenes Konto
 
@@ -951,15 +981,19 @@ einen Zusammenführungsversuch bei rotem Test; eine Freigabe erzeugt Version,
 **Features:** — · **Befunde:** —
 **Vorbedingungen:** alle.
 
-Sicherung, Anwendung der Baseline auf die Produktionsdatenbank,
-Übernahme-Skript für die Migrationstabelle, Umschalten des Containers,
-Nachlauf; Verschiebung von `nuxt/` ins Repo-Root, Entfernen des Altbestands
-und der überholten Dokumentationsseiten.
+**Deutlich kleiner als ursprünglich geplant** (E-20): die neue Anwendung
+startet mit leerer Datenbank, die Daten der jetzigen Installation werden nicht
+übernommen. Es gibt also keine Datenmigration, keinen Abgleich der
+Migrationstabelle und keinen Rückrollpfad für Bestandsdaten.
 
-**Besondere Akzeptanzkriterien:** der Umstieg ist an einer Kopie der
-Produktionsdatenbank vollständig geprobt; bestehende Anmeldungen
-funktionieren ohne Passwortzurücksetzung; ein Rückweg ist beschrieben und
-einmal durchgespielt.
+Bleibt: neue Datenbank anlegen, Baseline anwenden, Vorgaben einspielen, ersten
+Administrator über den Assistenten anlegen, Bestand über den Import ziehen,
+Container umschalten. Dazu die Verschiebung von `nuxt/` ins Repo-Root und das
+Entfernen des Altbestands samt überholter Dokumentationsseiten.
+
+**Besondere Akzeptanzkriterien:** eine leere Datenbank ist in einem Durchlauf
+betriebsbereit (Migration, Vorgaben, Assistent, Import); der Weg ist einmal
+vollständig geprobt; ein Rückweg auf die alte Installation ist beschrieben.
 
 ---
 

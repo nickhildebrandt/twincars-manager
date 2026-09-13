@@ -1,5 +1,5 @@
 {
-  "id": "d6ea9a09-30bd-455b-9c19-202b1c662638",
+  "id": "b6f60383-de6b-4e69-b432-20bfb2642563",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -763,7 +763,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "calendar_entries_vehicle_id_vehicles_id_fk": {
@@ -776,7 +776,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "calendar_entries_employee_id_employees_id_fk": {
@@ -824,7 +824,7 @@
         },
         "unit_price_net": {
           "name": "unit_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -939,7 +939,7 @@
         },
         "purchase_price_net": {
           "name": "purchase_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -1146,7 +1146,7 @@
         },
         "unit_price_net": {
           "name": "unit_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -1366,7 +1366,7 @@
         },
         "purchase_price_net": {
           "name": "purchase_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -2110,7 +2110,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -2296,7 +2296,7 @@
           "type": "varchar(20)",
           "primaryKey": false,
           "notNull": true,
-          "default": "'regular'"
+          "default": "'privat'"
         },
         "ebay_handle": {
           "name": "ebay_handle",
@@ -2649,10 +2649,10 @@
         },
         "unit_price_net": {
           "name": "unit_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "discount_percent": {
           "name": "discount_percent",
@@ -2670,17 +2670,17 @@
         },
         "line_total_net": {
           "name": "line_total_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "line_total_gross": {
           "name": "line_total_gross",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "tire_id": {
           "name": "tire_id",
@@ -2822,7 +2822,7 @@
         },
         "amount": {
           "name": "amount",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -3059,31 +3059,31 @@
         },
         "net_total": {
           "name": "net_total",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "tax_total": {
           "name": "tax_total",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "gross_total": {
           "name": "gross_total",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "discount_total": {
           "name": "discount_total",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "header": {
           "name": "header",
@@ -3343,7 +3343,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "documents_vehicle_id_vehicles_id_fk": {
@@ -3356,7 +3356,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "documents_cancelled_by_fk": {
@@ -3803,13 +3803,13 @@
         },
         "monthly_salary": {
           "name": "monthly_salary",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
         "hourly_wage": {
           "name": "hourly_wage",
-          "type": "numeric(8, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -4356,7 +4356,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "time_entries_work_order_item_id_work_order_items_id_fk": {
@@ -4719,7 +4719,7 @@
         },
         "price_value": {
           "name": "price_value",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -4985,22 +4985,22 @@
         },
         "amount_gross": {
           "name": "amount_gross",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
         "amount_net": {
           "name": "amount_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
         "tax_amount": {
           "name": "tax_amount",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true,
-          "default": "'0'"
+          "default": 0
         },
         "tax_rate": {
           "name": "tax_rate",
@@ -5196,7 +5196,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "ledger_entries_document_id_documents_id_fk": {
@@ -5352,7 +5352,7 @@
         },
         "unit_price_net": {
           "name": "unit_price_net",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -5680,7 +5680,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "work_orders_vehicle_id_vehicles_id_fk": {
@@ -5693,7 +5693,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "work_orders_appointment_id_calendar_entries_id_fk": {
@@ -6372,7 +6372,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "tire_storage_vehicle_id_fk": {
@@ -6385,7 +6385,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -6625,7 +6625,7 @@
         },
         "sales_price_gross": {
           "name": "sales_price_gross",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": false
         },
@@ -6636,6 +6636,13 @@
           "notNull": true,
           "default": false
         },
+        "equipment": {
+          "name": "equipment",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": false,
+          "default": "'[]'::jsonb"
+        },
         "highlights": {
           "name": "highlights",
           "type": "text",
@@ -6645,6 +6652,12 @@
         "location": {
           "name": "location",
           "type": "varchar(100)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "internal_notes": {
+          "name": "internal_notes",
+          "type": "text",
           "primaryKey": false,
           "notNull": false
         },
@@ -6675,21 +6688,6 @@
             }
           ],
           "isUnique": true,
-          "concurrently": false,
-          "method": "btree",
-          "with": {}
-        },
-        "vehicle_listings_vehicle_id_idx": {
-          "name": "vehicle_listings_vehicle_id_idx",
-          "columns": [
-            {
-              "expression": "vehicle_id",
-              "isExpression": false,
-              "asc": true,
-              "nulls": "last"
-            }
-          ],
-          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -6830,7 +6828,7 @@
         },
         "purchase_price": {
           "name": "purchase_price",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -6929,7 +6927,7 @@
         },
         "sales_price_gross": {
           "name": "sales_price_gross",
-          "type": "numeric(12, 2)",
+          "type": "integer",
           "primaryKey": false,
           "notNull": true
         },
@@ -7031,7 +7029,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "restrict",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         }
       },
@@ -7282,7 +7280,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "set null",
+          "onDelete": "cascade",
           "onUpdate": "no action"
         },
         "vehicles_previous_owner_customer_id_customers_id_fk": {

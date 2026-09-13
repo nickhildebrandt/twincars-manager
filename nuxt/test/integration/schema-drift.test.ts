@@ -113,6 +113,210 @@ describe('Schema und Datenbank stimmen überein', () => {
   })
 })
 
+describe('Spaltentypen stimmen überein', () => {
+  /**
+   * `varchar(30)` im Schema, `character varying(30)` in der Datenbank — beide
+   * Schreibweisen auf eine Form bringen, damit der Vergleich den Typ meint und
+   * nicht die Formatierung.
+   */
+  const normalise = (type: string) =>
+    type
+      .toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/^varchar\(/, 'charactervarying(')
+      .replace(/^time$/, 'timewithouttimezone')
+
+  it('jede Spalte hat in der Datenbank den Typ, den das Schema deklariert', async () => {
+    // Ohne diesen Vergleich bleibt ein Typwechsel unbemerkt: die Umstellung der
+    // Geldspalten von `numeric` auf Ganzzahl-Cent (E-10) lief zunächst genau so
+    // durch, weil nur Existenz und Pflichtfeld geprüft wurden.
+    const rows = await sql<{ table_name: string, column_name: string, type: string }[]>`
+      SELECT c.relname AS table_name,
+             a.attname AS column_name,
+             format_type(a.atttypid, a.atttypmod) AS type
+      FROM pg_attribute a
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r'
+        AND a.attnum > 0 AND NOT a.attisdropped
+    `
+    const inDatabase = new Map(rows.map(row => [`${row.table_name}.${row.column_name}`, row.type]))
+
+    const mismatches: string[] = []
+    for (const [, table] of tables) {
+      const tableName = getTableName(table)
+      for (const column of Object.values(getTableColumns(table))) {
+        const actual = inDatabase.get(`${tableName}.${column.name}`)
+        if (actual === undefined) continue
+        if (normalise(column.getSQLType()) !== normalise(actual)) {
+          mismatches.push(`${tableName}.${column.name}: Schema ${column.getSQLType()}, Datenbank ${actual}`)
+        }
+      }
+    }
+    expect(mismatches).toEqual([])
+  })
+})
+
+describe('E-10: Geld ist eine Ganzzahl in Cent', () => {
+  /** Spalten, deren Name einen Geldbetrag ankündigt. */
+  const MONEY = /(amount|price|total|salary|wage|discount)/
+
+  it('keine Geldspalte ist mehr eine Kommazahl', async () => {
+    // `numeric` plus JavaScript-Fließkomma war die Ursache der Rundungsfehler
+    // in Rechnungssummen. Geld ist jetzt durchgehend `integer` in Cent.
+    const rows = await sql<{ table_name: string, column_name: string, data_type: string }[]>`
+      SELECT table_name, column_name, data_type
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND data_type = 'numeric'
+    `
+    // `_percent` und `_rate` sind Prozentsätze, keine Beträge.
+    const money = rows.filter(
+      row => MONEY.test(row.column_name) && !/_(percent|rate)$/.test(row.column_name),
+    )
+    expect(money.map(row => `${row.table_name}.${row.column_name}`)).toEqual([])
+  })
+
+  it('die verbliebenen Kommazahlen sind keine Beträge', async () => {
+    const rows = await sql<{ table_name: string, column_name: string }[]>`
+      SELECT table_name, column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND data_type = 'numeric'
+      ORDER BY table_name, column_name
+    `
+    // Prozentsätze, Mengen, Stunden, Profiltiefe, Geokoordinaten.
+    expect(rows.map(row => `${row.table_name}.${row.column_name}`)).toEqual([
+      'company_settings.default_vat_rate',
+      'company_settings.geo_lat',
+      'company_settings.geo_lon',
+      'document_items.discount_percent',
+      'document_items.quantity',
+      'document_items.tax_rate',
+      'documents.tax_rate',
+      'employees.weekly_hours',
+      'ledger_categories.default_tax_rate',
+      'ledger_entries.tax_rate',
+      'time_entries.hours',
+      'tire_storage.profile_mm',
+      'work_order_items.hours',
+      'work_order_items.quantity',
+    ])
+  })
+
+  it('eine Geldspalte nimmt nur ganze Zahlen auf', async () => {
+    // Die Datenbank selbst weist den Bruchteil ab — nicht erst eine Prüfung
+    // in der Anwendung, die jemand vergessen kann.
+    await expect(sql`
+      INSERT INTO ledger_entries (booking_date, description, amount_gross, amount_net, direction)
+      VALUES (CURRENT_DATE, 'Bruchteil', 12.5, 12.5, 'in')
+    `).rejects.toThrow()
+  })
+
+  it('das Eingabeschema erlaubt nicht mehr, als die Spalte trägt', () => {
+    // Genau die Klasse aus B-556: ein Schema, das mehr durchlässt als die
+    // Spalte fasst, macht aus einem Tippfehler einen Serverfehler.
+    expect(primitives.MAX_MONEY_CENTS).toBe(2_147_483_647)
+    expect(v.safeParse(primitives.moneySchema, 2_147_483_648).success).toBe(false)
+    expect(v.safeParse(primitives.moneySchema, 2_147_483_647).success).toBe(true)
+  })
+})
+
+describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
+  const ruleOf = async (table: string, column: string) => {
+    const rows = await sql<{ confdeltype: string }[]>`
+      SELECT c.confdeltype FROM pg_constraint c
+      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+      WHERE c.contype = 'f' AND c.conrelid = ${table}::regclass AND a.attname = ${column}
+    `
+    return { a: 'no action', r: 'restrict', c: 'cascade', n: 'set null', d: 'set default' }[
+      rows[0]?.confdeltype ?? ''
+    ]
+  }
+
+  it.each([
+    ['vehicles', 'customer_id'],
+    ['work_orders', 'customer_id'],
+    ['calendar_entries', 'customer_id'],
+    ['customer_inquiries', 'customer_id'],
+    ['time_entries', 'customer_id'],
+    ['tire_storage', 'customer_id'],
+    ['tire_reminder_log', 'customer_id'],
+    ['vehicle_sales', 'customer_id'],
+  ])('%s.%s gehört zum Kunden und geht mit ihm', async (table, column) => {
+    expect(await ruleOf(table, column)).toBe('cascade')
+  })
+
+  it.each([
+    ['documents', 'customer_id'],
+    ['ledger_entries', 'customer_id'],
+    ['documents', 'vehicle_id'],
+    ['work_orders', 'vehicle_id'],
+    ['calendar_entries', 'vehicle_id'],
+    ['tire_storage', 'vehicle_id'],
+  ])('%s.%s ist belegnah und sperrt statt still zu löschen', async (table, column) => {
+    // B-190: kein Verweis wird mehr stillschweigend auf NULL gesetzt.
+    expect(await ruleOf(table, column)).toBe('no action')
+  })
+
+  it('ein Kunde nimmt sein Fahrzeug und seinen Auftrag mit', async () => {
+    const [customer] = await sql<{ id: string }[]>`
+      INSERT INTO customers (customer_number, last_name)
+      VALUES ('E11-KASKADE', 'Testfall') RETURNING id
+    `
+    const [vehicle] = await sql<{ id: string }[]>`
+      INSERT INTO vehicles (customer_id, make, model)
+      VALUES (${customer!.id}, 'VW', 'Golf') RETURNING id
+    `
+    await sql`
+      INSERT INTO work_orders (order_number, customer_id, vehicle_id, title)
+      VALUES ('E11-AU-1', ${customer!.id}, ${vehicle!.id}, 'Inspektion')
+    `
+
+    await sql`DELETE FROM customers WHERE id = ${customer!.id}`
+
+    const left = await sql<{ count: string }[]>`
+      SELECT (SELECT count(*) FROM vehicles WHERE id = ${vehicle!.id})
+           + (SELECT count(*) FROM work_orders WHERE order_number = 'E11-AU-1') AS count
+    `
+    expect(Number(left[0]!.count)).toBe(0)
+  })
+
+  it('eine Rechnung sperrt das Löschen des Kunden', async () => {
+    const [customer] = await sql<{ id: string }[]>`
+      INSERT INTO customers (customer_number, last_name)
+      VALUES ('E11-SPERRE', 'Testfall') RETURNING id
+    `
+    await sql`
+      INSERT INTO documents (document_number, type, customer_id, issue_date)
+      VALUES ('E11-RE-1', 'invoice', ${customer!.id}, CURRENT_DATE)
+    `
+
+    await expect(
+      sql`DELETE FROM customers WHERE id = ${customer!.id}`,
+    ).rejects.toThrow()
+
+    // Archivieren bleibt der Weg, der immer offen steht.
+    await sql`UPDATE customers SET archived = true WHERE id = ${customer!.id}`
+    const rows = await sql<{ archived: boolean }[]>`
+      SELECT archived FROM customers WHERE id = ${customer!.id}
+    `
+    expect(rows[0]?.archived).toBe(true)
+
+    await sql`DELETE FROM documents WHERE document_number = 'E11-RE-1'`
+    await sql`DELETE FROM customers WHERE id = ${customer!.id}`
+  })
+})
+
+describe('E-16: die Kundenart ist ein ausdrückliches Feld', () => {
+  it('ein neuer Kunde ist ohne Angabe privat', async () => {
+    // B-200: der Vorgänger schloss aus einem leeren Firmenfeld auf einen
+    // Privatkunden. Jetzt steht die Art im Datensatz.
+    const rows = await sql<{ column_default: string | null }[]>`
+      SELECT column_default FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'customers' AND column_name = 'kind'
+    `
+    expect(rows[0]?.column_default).toContain('privat')
+  })
+})
+
 describe('Eingabegrenzen passen zu den Spalten', () => {
   /**
    * Reads the `maxLength` a schema enforces, so it can be compared against the
@@ -282,10 +486,20 @@ describe('Strukturhärtung aus dem Inventar', () => {
       SELECT column_name FROM information_schema.columns
       WHERE table_schema = 'public'
         AND ((table_name = 'ledger_entries' AND column_name = 'recurring_template_id')
-          OR (table_name = 'vehicle_sales' AND column_name = 'trade_in_value')
-          OR (table_name = 'vehicle_listings' AND column_name IN ('equipment', 'internal_notes')))
+          OR (table_name = 'vehicle_sales' AND column_name = 'trade_in_value'))
     `
     expect(rows).toEqual([])
+  })
+
+  it('E-13: die Inseratfelder sind zurück, weil sie eine Oberfläche bekommen', async () => {
+    // In T-005 als tot entfernt — mit der Entscheidung E-13 bekommen sie eine
+    // vollständige Oberfläche und gehören damit wieder ins Modell.
+    const rows = await sql<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'vehicle_listings'
+        AND column_name IN ('equipment', 'internal_notes')
+    `
+    expect(rows.map(r => r.column_name).sort()).toEqual(['equipment', 'internal_notes'])
   })
 
   it('B-561: Öffnungszeiten sind eine echte Uhrzeit, kein Text', async () => {

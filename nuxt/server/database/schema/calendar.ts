@@ -35,12 +35,12 @@ export const calendarEntries = pgTable('calendar_entries', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'calendar_entries_customer_id_customers_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('cascade'),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'calendar_entries_vehicle_id_vehicles_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.employeeId],
     foreignColumns: [employees.id],

@@ -7,7 +7,7 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
 
 export const items = pgTable('items', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -16,7 +16,7 @@ export const items = pgTable('items', {
   description: text().notNull(),
   kind: varchar({ length: 20 }).default('article').notNull(),
   unit: varchar({ length: 20 }),
-  purchasePriceNet: numeric('purchase_price_net', { precision: 12, scale: 2 }),
+  purchasePriceNet: integer('purchase_price_net'),
   stockOnHand: integer('stock_on_hand').default(0).notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -32,7 +32,7 @@ export const itemPriceVersions = pgTable('item_price_versions', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   itemId: uuid('item_id').notNull(),
   validFrom: date('valid_from').notNull(),
-  unitPriceNet: numeric('unit_price_net', { precision: 12, scale: 2 }).notNull(),
+  unitPriceNet: integer('unit_price_net').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
   uniqueIndex('item_price_versions_item_from_idx').using('btree', table.itemId.asc().nullsLast(), table.validFrom.asc().nullsLast()),
@@ -70,7 +70,7 @@ export const tires = pgTable('tires', {
   snowFlake: boolean('snow_flake').default(false).notNull(),
   evCertified: boolean('ev_certified').default(false).notNull(),
   description: text(),
-  purchasePriceNet: numeric('purchase_price_net', { precision: 12, scale: 2 }),
+  purchasePriceNet: integer('purchase_price_net'),
   stockOnHand: integer('stock_on_hand').default(0).notNull(),
   onlineSellable: boolean('online_sellable').default(false).notNull(),
   notes: text(),
@@ -89,7 +89,7 @@ export const tirePriceVersions = pgTable('tire_price_versions', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   tireId: uuid('tire_id').notNull(),
   validFrom: date('valid_from').notNull(),
-  unitPriceNet: numeric('unit_price_net', { precision: 12, scale: 2 }).notNull(),
+  unitPriceNet: integer('unit_price_net').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
   uniqueIndex('tire_price_versions_tire_from_idx').using('btree', table.tireId.asc().nullsLast(), table.validFrom.asc().nullsLast()),

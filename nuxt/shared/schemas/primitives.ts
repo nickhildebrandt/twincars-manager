@@ -119,20 +119,33 @@ export const bicSchema = v.pipe(
 /* ── money and numbers ────────────────────────────────────────────────── */
 
 /**
- * Money in euro, as entered. Bounded so a hostile payload cannot overflow
- * `numeric(12, 2)` and turn into an unhandled server error.
+ * The largest amount an `integer` column holds: 21.474.836,47 €.
+ *
+ * The schema stops exactly where the column does, so no accepted input can
+ * ever overflow it — the class of defect B-556 described.
+ */
+export const MAX_MONEY_CENTS = 2_147_483_647
+
+/**
+ * Money is a **whole number of cents** (decision E-10).
+ *
+ * Never a float, never a string: 0.1 + 0.2 is not 0.3, and a rounding error in
+ * an invoice total is a real one. Euro values exist only at the surface, where
+ * `parseEuro` and `formatEuro` in `#shared/money` convert them.
  */
 export const moneySchema = v.pipe(
   v.number(MESSAGES.notANumber),
-  v.minValue(-99_999_999.99, 'Der Betrag ist unrealistisch klein.'),
-  v.maxValue(99_999_999.99, 'Der Betrag ist unrealistisch groß.'),
+  v.integer('Beträge werden in ganzen Cent geführt.'),
+  v.minValue(-MAX_MONEY_CENTS, 'Der Betrag ist unrealistisch klein.'),
+  v.maxValue(MAX_MONEY_CENTS, 'Der Betrag ist unrealistisch groß.'),
 )
 
-/** Money that cannot be negative — prices, totals. */
+/** Money that cannot be negative — prices, totals. Also in cents. */
 export const positiveMoneySchema = v.pipe(
   v.number(MESSAGES.notANumber),
+  v.integer('Beträge werden in ganzen Cent geführt.'),
   v.minValue(0, MESSAGES.negative),
-  v.maxValue(99_999_999.99, 'Der Betrag ist unrealistisch groß.'),
+  v.maxValue(MAX_MONEY_CENTS, 'Der Betrag ist unrealistisch groß.'),
 )
 
 export const percentSchema = v.pipe(

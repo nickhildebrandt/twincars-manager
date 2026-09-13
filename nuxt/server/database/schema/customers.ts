@@ -37,7 +37,13 @@ export const customers = pgTable('customers', {
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
-  kind: varchar({ length: 20 }).default('regular').notNull(),
+  /**
+   * Kundenart: `privat`, `firma` oder `ebay` (Entscheidung E-16).
+   *
+   * Ein ausdrückliches Feld, kein Rückschluss aus einem leeren
+   * Firmennamen — genau das war Befund B-200.
+   */
+  kind: varchar({ length: 20 }).default('privat').notNull(),
   ebayHandle: varchar('ebay_handle', { length: 100 }),
   wantsBroadcast: boolean('wants_broadcast').default(false).notNull(),
   wantsTireReminders: boolean('wants_tire_reminders').default(false).notNull(),
@@ -100,5 +106,5 @@ export const customerInquiries = pgTable('customer_inquiries', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'customer_inquiries_customer_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('cascade'),
 ])

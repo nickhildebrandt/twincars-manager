@@ -7,7 +7,7 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, timestamp, index, foreignKey, text, unique } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, timestamp, index, foreignKey, text, unique, integer } from 'drizzle-orm/pg-core'
 import { customers, suppliers } from './customers.ts'
 import { documents } from './documents.ts'
 
@@ -27,9 +27,9 @@ export const ledgerEntries = pgTable('ledger_entries', {
   entryNumber: varchar('entry_number', { length: 50 }),
   direction: varchar({ length: 10 }).notNull(),
   entryDate: date('entry_date').notNull(),
-  amountGross: numeric('amount_gross', { precision: 12, scale: 2 }).notNull(),
-  amountNet: numeric('amount_net', { precision: 12, scale: 2 }).notNull(),
-  taxAmount: numeric('tax_amount', { precision: 12, scale: 2 }).default('0').notNull(),
+  amountGross: integer('amount_gross').notNull(),
+  amountNet: integer('amount_net').notNull(),
+  taxAmount: integer('tax_amount').default(0).notNull(),
   taxRate: numeric('tax_rate', { precision: 5, scale: 2 }).default('19.00').notNull(),
   categoryId: uuid('category_id'),
   description: text().notNull(),
@@ -61,7 +61,7 @@ export const ledgerEntries = pgTable('ledger_entries', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'ledger_entries_customer_id_customers_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.documentId],
     foreignColumns: [documents.id],

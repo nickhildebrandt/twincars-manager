@@ -3,7 +3,7 @@ id: F-044
 title: Form-Validierungs-Primitive
 status: geplant
 modul: Plattform, Shell, Login, Dashboard, Suche
-paket: T-004
+paket: T-009
 permission: offen
 routes: []
 endpoints: ['useFormValidation']
@@ -18,7 +18,7 @@ updated: 2026-09-13
 
 > **Status: geplant.** Diese Seite hält das Zielverhalten fest, wie es im
 > Inventar des Vorgängersystems erhoben wurde. Sie wird mit Arbeitspaket
-> **T-004** ausgefüllt und auf `status: umgesetzt` gesetzt.
+> **T-009** ausgefüllt und auf `status: umgesetzt` gesetzt.
 
 ## Zweck
 
@@ -30,11 +30,11 @@ Erste Issue je Feld, touched-Gating der Anzeige, englische Defaults → generisc
 
 ## Nutzersicht
 
-_Wird mit T-004 ergänzt: was der Bediener sieht und tut, Schritt für Schritt._
+_Wird mit T-009 ergänzt: was der Bediener sieht und tut, Schritt für Schritt._
 
 ## Berechtigungen
 
-_Wird mit T-004 ergänzt._
+_Wird mit T-009 ergänzt._
 
 ## Zustände
 
@@ -57,10 +57,10 @@ _Wird mit T-004 ergänzt._
 
 ## Bekannte Grenzen
 
-_Wird mit T-004 ergänzt._
+_Wird mit T-009 ergänzt._
 
 ## Quellen
 
 - Inventar: [F-044 in 01-inventar.md](../rewrite/01-inventar.md)
-- Arbeitspaket: [T-004 in 06-arbeitsplan.md](../rewrite/06-arbeitsplan.md)
+- Arbeitspaket: [T-009 in 06-arbeitsplan.md](../rewrite/06-arbeitsplan.md)
 - Übersicht: [docs/index.md](../index.md)

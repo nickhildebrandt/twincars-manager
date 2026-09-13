@@ -117,137 +117,157 @@ wenn sie zum ersten Mal geöffnet wird, und behält ihren Zustand danach.
 
 ---
 
-## Offene Punkte
+## Entschieden am 2026-09-13 (Rückfragerunde)
 
-Für jeden steht, wie ohne Antwort verfahren wird. Diese Punkte sind die
-Rückfragen am Ende der Planung.
+Die elf offenen Punkte sind beantwortet. Die Antworten stehen hier mit ihren
+Folgen; die betroffenen Arbeitspakete sind in
+[06-arbeitsplan.md](06-arbeitsplan.md) nachgezogen.
 
-### E-10 — Geldbeträge als Ganzzahl in Cent? · `offen`
+### E-10 — Geldbeträge als Ganzzahl in Cent · `entschieden`
 
-**Kontext.** Heute `numeric(12,2)` in der Datenbank, `number` (Gleitkomma) in
-der Anwendung, Rundung über eine eigene Hilfsfunktion mit den bekannten
-Gleitkomma-Artefakten (B-027).
+**Entscheidung: vollständig auf Cent umstellen**, auch die Spalten. Aus
+`numeric(12,2)` wird eine Ganzzahl, die Cent zählt; umgerechnet wird nur an der
+Oberfläche.
 
-**Optionen.** (a) Ganzzahl in Cent, Umrechnung nur an der Oberfläche ·
-(b) `numeric` behalten, aber im Server konsequent als Zeichenkette führen und
-mit einer Dezimalbibliothek rechnen · (c) so lassen.
+**Konsequenzen.** Betrifft 22 Spalten (Belegsummen, Positionen, Preise,
+Einkaufspreise, Gehälter, Stundenlohn, Buchungsbeträge, Zahlungen). Die sonst
+nötige Datenmigration über alle Belege entfällt, weil die Anwendung ohnehin mit
+leerer Datenbank startet (E-20). Rundungsfehler verschwinden damit an der
+Wurzel statt durch eine Hilfsfunktion. Prozentsätze, Mengen, Stunden,
+Profiltiefen und Geokoordinaten bleiben `numeric` — das sind keine Geldbeträge.
 
-**Vorgehen ohne Antwort: (a) für alle _neuen_ Berechnungen vorbereiten, aber
-die Spalten in dieser Runde nicht umstellen.** Heißt: eine Geld-Hilfsschicht
-mit Cent-Ganzzahlen im Kern, Umrechnung an der Datenbankgrenze. Die
-Spaltenumstellung wäre eine Datenmigration über alle Belege und ist das
-Risiko in einem Rewrite nicht wert, solange die Rechenkerne stimmen.
+### E-11 — Löschen bleibt, mit Kaskade und Vorschau · `entschieden`
 
-### E-11 — Löschen oder nur archivieren? · `offen`
+**Entscheidung.** Löschen ist ausdrücklich erwünscht:
 
-**Kontext.** Kunden und Fahrzeuge können archiviert **und** gelöscht werden.
-Die Löschwächter zählen nur einen Teil der Verweise; sechs Fremdschlüssel
-werden still auf `NULL` gesetzt, einer führt zu einem unbehandelten Fehler
-(B-190). Belege sind aus GoBD-Gründen ohnehin unlöschbar.
+- **Kunde löschen** entfernt alles, was zu ihm gehört: Fahrzeuge, Aufträge,
+  Angebote, Termine, Reifeneinlagerungen, Anfragen, Zeiteinträge. Der
+  Bestätigungsdialog **zählt vorher genau auf, was mitgeht**.
+- **Sobald eine ausgestellte Rechnung existiert, ist Löschen gesperrt.** Die
+  Anwendung bietet dann nur noch Archivieren an und sagt auch warum
+  (Aufbewahrungspflicht).
+- **Fahrzeug löschen** entfernt nur dieses Fahrzeug, **Auftrag löschen** nur
+  diesen Auftrag samt seiner Positionen — nicht die daraus entstandenen
+  Rechnungen.
+- **Archivieren bleibt in jedem Fall möglich** und ist der ruhige Weg.
 
-**Optionen.** (a) Löschen ganz abschaffen, nur noch archivieren ·
-(b) Löschen behalten, aber alle Verweise zählen und blockieren ·
-(c) Löschen nur für Datensätze ohne jede Verknüpfung.
+**Konsequenzen.** Der Löschwächter zählt künftig **alle** Fremdschlüssel, nicht
+mehr nur drei. Nichts wird still auf `NULL` gesetzt (B-190). Die Löschregeln in
+der Datenbank werden entsprechend gesetzt: Kaskade für das, was zum Kunden
+gehört, Sperre für alles Belegnahe.
 
-**Vorgehen ohne Antwort: (c)** — das entspricht der heutigen Absicht, nur
-korrekt umgesetzt: alle Fremdschlüssel werden gezählt, die Meldung nennt sie
-auf Deutsch, und nichts wird still entkoppelt.
+### E-12 — Erinnerungen laufen automatisch · `entschieden`
 
-### E-12 — Zeitplan für Erinnerungen einschalten? · `offen`
+**Entscheidung: werktags morgens automatisch**, der Knopf „Jetzt prüfen" bleibt
+zusätzlich. Vorgeschlagene Zeit: **werktags 7:30 Uhr** (Europe/Berlin).
 
-**Optionen.** (a) aus, wie heute (jemand drückt „Jetzt prüfen") ·
-(b) werktags morgens automatisch, Knopf bleibt zusätzlich.
+**Konsequenzen.** Nitro-Zeitplan statt reiner Bedienerauslösung. Jede Aufgabe
+muss wiederholsicher sein: zweimal ausgeführt verschickt sie nichts doppelt.
+Der Zeitplan ist über die Konfiguration abschaltbar.
 
-**Vorgehen ohne Antwort: (a)**, technisch so vorbereitet, dass (b) eine
-Einstellung ist.
+### E-13 — Verkaufsinserate mit allen Feldern · `entschieden`
 
-### E-13 — Anzeigen und Preise für Bestandsfahrzeuge · `offen`
+**Entscheidung: die vollständige Oberfläche**, also alle Felder der Tabelle —
+Preis, §25a-Kennzeichen, Standort, Ausstattung, Highlights, interne Notizen,
+Status.
 
-**Kontext.** Die Tabelle für Verkaufsinserate (Preis, §25a, Standort,
-Ausstattung, Status) existiert, hat aber **keine Oberfläche** (B-222).
-Bestandsliste, Verkaufsschild und die öffentliche Schnittstelle laufen deshalb
-faktisch immer ohne Preis.
+**Konsequenzen.** Die in T-005 entfernten Spalten `equipment` und
+`internal_notes` kommen zurück, da sie jetzt eine Oberfläche bekommen.
+Bestandsliste, Verkaufsschild und die öffentliche Schnittstelle führen endlich
+einen Preis (B-222).
 
-**Optionen.** (a) Oberfläche bauen, Felder wie in der Tabelle ·
-(b) Felder auf das Nötige eindampfen (Preis, §25a, Standort, Highlights) ·
-(c) Tabelle entfernen und Preis ans Fahrzeug hängen.
+### E-14 — Echte Zahlungserfassung · `entschieden`
 
-**Vorgehen ohne Antwort: (b).**
+**Entscheidung: Zahlungen mit Datum, Betrag und Zahlungsart erfassen**;
+„bezahlt" ergibt sich aus der Summe der Zahlungen.
 
-### E-14 — Zahlungen: Teilzahlungen erfassen? · `offen`
+**Konsequenzen.** Teilzahlungen werden möglich. Die Zahlungserinnerung nennt
+den tatsächlich offenen Betrag statt des vollen Rechnungsbetrags (B-314). Der
+Status einer Rechnung wird berechnet, nicht geschaltet.
 
-**Kontext.** Die Tabelle für Zahlungseingänge wird nur vom Legacy-Import
-befüllt; in der Anwendung ist „bezahlt" ein einfacher Schalter (B-314). Die
-offenen Beträge in den Zahlungserinnerungen ignorieren Teilzahlungen.
+### E-15 — Umsatz sind ausgestellte Rechnungen · `entschieden`
 
-**Optionen.** (a) echte Zahlungserfassung mit Datum, Betrag, Zahlungsart;
-„bezahlt" ergibt sich aus der Summe · (b) Schalter behalten, Tabelle entfernen.
+**Entscheidung: nur ausgestellte Rechnungen** zählen — versendet, bezahlt,
+storniert. Entwürfe nicht.
 
-**Vorgehen ohne Antwort: (a)** — die Daten dafür existieren bereits, und die
-Zahlungserinnerung wird erst damit korrekt.
+**Konsequenzen.** Rechnungsausgangsbuch und DATEV-Export benutzen dieselbe
+Definition und widersprechen sich nicht mehr (B-333).
 
-### E-15 — Was zählt als Umsatz? · `offen`
+### E-16 — Kundenart wird ein echtes Feld · `entschieden`
 
-**Kontext.** Das Rechnungsausgangsbuch zählt auch Entwürfe, der DATEV-Export
-nur ausgestellte Rechnungen. Beide Auswertungen widersprechen sich (B-333).
+**Entscheidung: ein ausdrückliches Feld** mit den Werten `privat`, `firma`
+oder `ebay`.
 
-**Optionen.** (a) nur ausgestellte (versendet, bezahlt, storniert) ·
-(b) alles außer Entwürfen.
+**Konsequenzen.** Die Filter der Kundenliste werden eindeutig. Ein leeres
+Firmenfeld macht aus einer Firma keinen Privatkunden mehr (B-200). Der Import
+setzt das Feld beim Anlegen.
 
-**Vorgehen ohne Antwort: (a).**
+### E-17 — Dateien bleiben in der Datenbank · `entschieden`
 
-### E-16 — Kundenart sauber modellieren? · `offen`
+**Entscheidung: so lassen**, mit zwei Auflagen: Bytes werden **nie** in einer
+Listenabfrage geladen, und Bilder werden vor dem Speichern verkleinert.
 
-**Kontext.** „Privat" und „Firma" sind keine gespeicherte Eigenschaft, sondern
-werden daraus abgeleitet, ob das Firmenfeld gefüllt ist; „eBay" ist dagegen
-eine eigene Art. Zwei Konzepte in einer Spalte plus Heuristik (B-200).
+**Konsequenzen.** Eine Sicherung umfasst weiterhin alles, es gibt keinen
+zweiten Speicherort im Betrieb.
 
-**Optionen.** (a) ausdrückliches Feld `privat | firma | ebay` mit Datenmigration ·
-(b) so lassen.
+### E-18 — eBay unverändert · `entschieden`
 
-**Vorgehen ohne Antwort: (a)** — die Migration ist eine einzelne, gut
-prüfbare Anweisung, und die Filter der Kundenliste werden damit eindeutig.
+**Entscheidung: vollständig portieren** — Pflichtendpunkt, OAuth-Verbindung und
+Angebotsimport. Der Rewrite verliert keinen Umfang.
 
-### E-17 — Große Dateien: Datenbank oder Dateisystem? · `offen`
+### E-19 — Der Import wird ein wiederholbarer Abgleich · `entschieden`
 
-**Kontext.** PDFs, Fahrzeugfotos, Artikelbilder, Dokumente und das Firmenlogo
-liegen als Binärdaten in PostgreSQL. Das hält Sicherungen einfach, lässt die
-Datenbank aber wachsen und belastet Abfragen, die versehentlich die Bytes
-mitladen.
+**Das ist die größte Änderung gegenüber dem Bestand.** Der Import leert nichts
+mehr. Er gleicht ab, und zwar wiederholt, während die Anwendung eingeführt wird.
 
-**Optionen.** (a) so lassen · (b) Dateien auf ein Volume, Verweis in der
-Datenbank · (c) Objektspeicher.
+**Regeln.**
 
-**Vorgehen ohne Antwort: (a)**, aber mit zwei Korrekturen: Bytes werden nie in
-Listenabfragen geladen, und Bilder werden vor dem Speichern verkleinert.
+| Fall | Verhalten |
+| --- | --- |
+| Datensatz nur in Kfz-Kaufmann | wird angelegt |
+| Datensatz hier vorhanden, seit dem letzten Import **nicht** bearbeitet | wird durch den Importstand ersetzt |
+| Datensatz hier vorhanden und seit dem letzten Import **hier bearbeitet** | bleibt unverändert, erscheint im Importbericht als übersprungen |
+| Datensatz nur hier angelegt | bleibt unberührt |
+| Datensatz in Kfz-Kaufmann gelöscht | bleibt hier bestehen; der Import löscht nie |
 
-### E-18 — eBay-Anbindung: Umfang · `offen`
+**Warum diese Regel.** Die Access-Tabellen führen **kein Änderungsdatum**
+(geprüft: `kunden` hat nur `geboren`). „Neuer" lässt sich also nicht aus den
+Importdaten ableiten. Stattdessen merkt sich die Anwendung je Datensatz den
+Stand des letzten Imports und vergleicht ihn mit dem aktuellen: wurde hier
+nichts geändert, gewinnt Kfz-Kaufmann; wurde hier etwas geändert, gewinnt die
+hiesige Fassung.
 
-**Kontext.** Der Angebotsimport ist gebaut, aber laut Dokumentation steht die
-Freigabe des Betreibers aus; die beidseitige Synchronisierung ist
-zurückgestellt.
+**Konsequenzen.** Ersetzt ADR-004 („wipe-first") vollständig. Jede importierte
+Zeile braucht einen stabilen Legacy-Schlüssel (Kunden-Nr., Rechnungsnummer,
+Artikelnummer, Fahrzeug-Id — alle vorhanden) und einen gespeicherten
+Importstand. Der Importbericht bekommt eine dritte Kategorie neben „angelegt"
+und „übersprungen": **„ersetzt"** und **„wegen lokaler Änderung behalten"**.
 
-**Optionen.** (a) unverändert portieren · (b) auf den Pflichtendpunkt und die
-Verbindung eindampfen, Import später · (c) ganz weglassen.
+### E-20 — Leerer Start, Bestand aus dem Import · `entschieden`
 
-**Vorgehen ohne Antwort: (a)** — der Rewrite soll keinen Umfang verlieren.
+**Entscheidung.** Die neue Anwendung startet mit **leerer Datenbank**. Die
+Daten der jetzigen Installation (produktiv seit Juni 2026) werden **nicht**
+übernommen. Der Bestand kommt aus Kfz-Kaufmann und wird während der Einführung
+mehrfach nachgezogen (E-19).
 
-### E-19 — Legacy-Import nach dem Umstieg · `offen`
+**Konsequenzen.** Das Cutover-Paket T-042 wird deutlich kleiner: keine
+Datenmigration, kein Abgleich der Migrationstabelle, kein Rückrollpfad für
+Bestandsdaten. Dafür wird der Import (T-033) zum zentralen Weg, auf dem die
+Daten ins System kommen, und rückt in der Reihenfolge nach vorn. E-10 verliert
+sein Risiko, weil es keine Altbeträge umzustellen gibt.
 
-**Kontext.** Der Import aus der alten Access-Datenbank löscht die Zieltabellen
-und liest alles neu ein. Nach dem produktiven Umstieg ist das gefährlich und
-vermutlich einmalig gewesen.
+---
 
-**Optionen.** (a) unverändert portieren · (b) portieren, aber hinter eine
-ausdrückliche Bestätigung und die Bedingung „Datenbank praktisch leer" legen ·
-(c) als Skript aus der Anwendung herauslösen.
+## Was daraus folgt
 
-**Vorgehen ohne Antwort: (b).**
-
-### E-20 — Umgang mit den Altdaten beim Umstieg · `offen`
-
-**Optionen.** (a) dieselbe Datenbank weiterbenutzen, Baseline anwenden ·
-(b) frische Datenbank, Daten per Dump übernehmen · (c) frisch anfangen.
-
-**Vorgehen ohne Antwort: (a)** mit Sicherung davor — der Betrieb arbeitet
-täglich mit diesen Daten.
+| Paket | Änderung |
+| --- | --- |
+| T-005 | Geldspalten auf Ganzzahl-Cent; `equipment` und `internal_notes` bleiben; Kundenart als Feld; Löschregeln nach E-11 |
+| T-006 | Geld-Hilfsschicht rechnet in Cent, Formatierung nur an der Oberfläche |
+| T-011 | Löschen mit Kaskade und Vorschau, Sperre bei ausgestellter Rechnung, Kundenart-Feld |
+| T-013 | vollständige Inserat-Oberfläche |
+| T-022 | Zahlungen statt Schalter; Status wird berechnet |
+| T-025 | Zeitplan werktags 7:30 Uhr, Knopf bleibt |
+| T-028, T-029 | eine Umsatzdefinition für Ausgangsbuch und DATEV |
+| T-033 | Abgleich statt Leeren; rückt in der Reihenfolge nach vorn |
+| T-042 | nur noch Auslieferung, keine Datenübernahme |

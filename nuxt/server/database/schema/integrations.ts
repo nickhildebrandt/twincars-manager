@@ -7,7 +7,7 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, integer, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
 import { sql } from 'drizzle-orm'
 import { tires } from './catalog.ts'
 
@@ -31,7 +31,7 @@ export const ebayListings = pgTable('ebay_listings', {
   ebayItemId: varchar('ebay_item_id', { length: 30 }).notNull(),
   sku: varchar({ length: 80 }),
   title: varchar({ length: 255 }).notNull(),
-  priceValue: numeric('price_value', { precision: 12, scale: 2 }),
+  priceValue: integer('price_value'),
   priceCurrency: varchar('price_currency', { length: 3 }),
   quantityAvailable: integer('quantity_available'),
   quantitySold: integer('quantity_sold'),

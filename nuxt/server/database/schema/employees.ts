@@ -81,8 +81,8 @@ export const employeeSalaryVersions = pgTable('employee_salary_versions', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   employeeId: uuid('employee_id').notNull(),
   validFrom: date('valid_from').notNull(),
-  monthlySalary: numeric('monthly_salary', { precision: 12, scale: 2 }),
-  hourlyWage: numeric('hourly_wage', { precision: 8, scale: 2 }),
+  monthlySalary: integer('monthly_salary'),
+  hourlyWage: integer('hourly_wage'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
   uniqueIndex('employee_salary_versions_emp_from_idx').using('btree', table.employeeId.asc().nullsLast(), table.validFrom.asc().nullsLast()),
@@ -130,7 +130,7 @@ export const timeEntries = pgTable('time_entries', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'time_entries_customer_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('cascade'),
   foreignKey({
     columns: [table.workOrderItemId],
     foreignColumns: [workOrderItems.id],

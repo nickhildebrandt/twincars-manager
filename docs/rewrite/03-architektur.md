@@ -640,17 +640,25 @@ Verbindliche Bereinigungen (jede mit Befund-Beleg, Details in
 7. **`ON DELETE RESTRICT`** für GoBD-relevante Kindtabellen.
 8. **Zeittypen korrigieren** (`workshop_hours` als `time`).
 
-**Offen (Entscheidung):** Geldbeträge als Integer-Cents statt `numeric(12,2)`
-(B-027). Empfehlung und Begründung in [08-entscheidungen.md](08-entscheidungen.md) E-03.
+9. **Geldbeträge sind Ganzzahlen in Cent** statt `numeric(12,2)` (B-027,
+   entschieden in [08-entscheidungen.md](08-entscheidungen.md) E-10). Betroffen
+   sind 22 Spalten: Belegsummen, Positionen, Preise, Einkaufspreise, Gehälter,
+   Stundenlohn, Buchungsbeträge, Zahlungen. Umgerechnet wird ausschließlich an
+   der Oberfläche. Prozentsätze, Mengen, Stunden, Profiltiefen und
+   Geokoordinaten bleiben `numeric` — das sind keine Geldbeträge.
+10. **Kundenart wird ein ausdrückliches Feld** (`privat | firma | ebay`) statt
+    einer Ableitung aus dem Firmenfeld (B-200, E-16).
+11. **Löschregeln nach E-11**: Kaskade für alles, was zu einem Kunden gehört;
+    Sperre für alles Belegnahe. Kein stilles Entkoppeln auf `NULL`.
 
 ### 7.2 Migrationen
 
-- **Squash-Baseline.** `drizzle-kit pull` gegen einen Wiederherstellungsstand
-  der Produktionsdatenbank erzeugt `0000_baseline.sql`; die Bereinigungen aus
-  §7.1 folgen als `0001…`. Grund: die Snapshot-Kette des Bestands ist seit
-  Migration 0007 gebrochen, `drizzle-kit generate` ist dort unbrauchbar
-  (B-543). Abwägung beider Varianten:
-  [`inventar/datamodel.md`](inventar/datamodel.md) §10.3.
+- **Eine Baseline.** Sie entsteht aus dem bereinigten Schema und ist der
+  Ausgangspunkt jeder Installation. Grund: die Snapshot-Kette des Bestands ist
+  seit Migration 0007 gebrochen, `drizzle-kit generate` war dort unbrauchbar
+  (B-543). Da die Anwendung mit **leerer Datenbank** startet
+  ([08-entscheidungen.md](08-entscheidungen.md) E-20), gibt es keine
+  Bestandsdaten abzugleichen und keine Migrationstabelle zu reparieren.
 - Migrationen laufen **nie im Request**. `node scripts/migrate.mjs` läuft vor
   dem Serverstart, wie heute.
 - Jede Migration ist **idempotent** (`IF NOT EXISTS`, `DO $$ … EXCEPTION`).
@@ -800,14 +808,14 @@ auszulösen. Deshalb:
 
 - Die fachliche Arbeit lebt in `server/tasks/<name>.ts` — **eine** Umsetzung.
 - Der Knopf „Jetzt prüfen" ruft `runTask('<name>')` über einen bewachten
-  Endpoint auf. Das Verhalten für die Bedienung bleibt exakt wie heute.
-- Zusätzlich darf ein Zeitplan eingetragen werden (Empfehlung: werktags 7:30
-  Uhr für Zahlungserinnerungen). Er ist über `runtimeConfig` abschaltbar und
-  ist **standardmäßig aus**, damit sich das Verhalten beim Umstieg nicht
-  unbemerkt ändert. Einschalten ist eine Betriebsentscheidung
-  ([08-entscheidungen.md](08-entscheidungen.md) E-05).
+  Endpoint auf und bleibt erhalten.
+- **Der Zeitplan ist eingeschaltet**: werktags 7:30 Uhr (Europe/Berlin) für
+  Zahlungserinnerungen und Reifen-Erinnerungen
+  ([08-entscheidungen.md](08-entscheidungen.md) E-12). Über `runtimeConfig`
+  abschaltbar.
 - Jede Aufgabe ist **wiederholsicher**: zweimal ausgeführt verschickt sie
-  nichts doppelt.
+  nichts doppelt. Bei einem eingeschalteten Zeitplan ist das keine Kür, sondern
+  Voraussetzung.
 
 ---
 

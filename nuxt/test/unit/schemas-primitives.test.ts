@@ -12,6 +12,7 @@ import {
   isRealDate,
   isValidIban,
   licensePlateSchema,
+  MAX_MONEY_CENTS,
   moneySchema,
   notesSchema,
   optionalText,
@@ -166,24 +167,36 @@ describe('bicSchema', () => {
 })
 
 describe('Geldbeträge', () => {
-  it('nimmt einen normalen Betrag an', () => {
-    expect(ok(moneySchema, 1234.56)).toBe(1234.56)
+  it('nimmt einen normalen Betrag in Cent an', () => {
+    expect(ok(moneySchema, 123_456)).toBe(123_456)
   })
 
   it('nimmt einen negativen Betrag an (Gutschrift)', () => {
-    expect(ok(moneySchema, -10)).toBe(-10)
+    expect(ok(moneySchema, -1000)).toBe(-1000)
+  })
+
+  it('nimmt die Null an', () => {
+    expect(ok(positiveMoneySchema, 0)).toBe(0)
+  })
+
+  it('lehnt einen Bruchteil eines Cents ab', () => {
+    expect(reject(moneySchema, 1234.5)).toBe('Beträge werden in ganzen Cent geführt.')
   })
 
   it('lehnt einen negativen Preis ab', () => {
-    expect(reject(positiveMoneySchema, -0.01)).toBe('Darf nicht negativ sein.')
+    expect(reject(positiveMoneySchema, -1)).toBe('Darf nicht negativ sein.')
   })
 
   it('lehnt einen Betrag jenseits der Spaltenbreite ab', () => {
-    expect(reject(moneySchema, 100_000_000)).toBe('Der Betrag ist unrealistisch groß.')
+    expect(reject(moneySchema, MAX_MONEY_CENTS + 1)).toBe('Der Betrag ist unrealistisch groß.')
   })
 
   it('nimmt genau die Obergrenze an', () => {
-    expect(ok(moneySchema, 99_999_999.99)).toBe(99_999_999.99)
+    expect(ok(moneySchema, MAX_MONEY_CENTS)).toBe(MAX_MONEY_CENTS)
+  })
+
+  it('nimmt genau die Untergrenze an', () => {
+    expect(ok(moneySchema, -MAX_MONEY_CENTS)).toBe(-MAX_MONEY_CENTS)
   })
 
   it('lehnt Text ab', () => {

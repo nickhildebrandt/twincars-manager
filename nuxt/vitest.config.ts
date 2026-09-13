@@ -54,6 +54,14 @@ export default defineConfig({
         'branches': 75,
         'functions': 80,
         'lines': 80,
+        // Geldarithmetik: jede Zeile gerechnet, jeder Rundungsfall belegt.
+        // Ein blinder Fleck hier kostet Cent in echten Rechnungen.
+        'shared/money.ts': {
+          statements: 100,
+          branches: 100,
+          functions: 100,
+          lines: 100,
+        },
         'shared/schemas/**': {
           statements: 100,
           branches: 95.74,

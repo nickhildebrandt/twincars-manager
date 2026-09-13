@@ -38,12 +38,12 @@ export const tireStorage = pgTable('tire_storage', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'tire_storage_customer_id_fk',
-  }).onDelete('restrict'),
+  }).onDelete('cascade'),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'tire_storage_vehicle_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('no action'),
 ])
 
 export const tireReminderLog = pgTable('tire_reminder_log', {

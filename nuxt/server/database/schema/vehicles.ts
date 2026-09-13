@@ -7,7 +7,7 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb } from 'drizzle-orm/pg-core'
 import { documents } from './documents.ts'
 import { bytea } from './_types.ts'
 import { customers } from './customers.ts'
@@ -47,7 +47,7 @@ export const vehicles = pgTable('vehicles', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'vehicles_customer_id_customers_id_fk',
-  }).onDelete('set null'),
+  }).onDelete('cascade'),
   foreignKey({
     columns: [table.previousOwnerCustomerId],
     foreignColumns: [customers.id],
@@ -76,7 +76,7 @@ export const vehiclePurchases = pgTable('vehicle_purchases', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   vehicleId: uuid('vehicle_id').notNull(),
   purchaseDate: date('purchase_date').notNull(),
-  purchasePrice: numeric('purchase_price', { precision: 12, scale: 2 }).notNull(),
+  purchasePrice: integer('purchase_price').notNull(),
   previousOwner: varchar('previous_owner', { length: 200 }),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
@@ -95,7 +95,7 @@ export const vehicleSales = pgTable('vehicle_sales', {
   customerId: uuid('customer_id').notNull(),
   invoiceId: uuid('invoice_id'),
   saleDate: date('sale_date').notNull(),
-  salesPriceGross: numeric('sales_price_gross', { precision: 12, scale: 2 }).notNull(),
+  salesPriceGross: integer('sales_price_gross').notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
@@ -116,22 +116,25 @@ export const vehicleSales = pgTable('vehicle_sales', {
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'vehicle_sales_customer_id_customers_id_fk',
-  }).onDelete('restrict'),
+  }).onDelete('cascade'),
 ])
 
 export const vehicleListings = pgTable('vehicle_listings', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   vehicleId: uuid('vehicle_id').notNull(),
   status: varchar({ length: 20 }).default('available').notNull(),
-  salesPriceGross: numeric('sales_price_gross', { precision: 12, scale: 2 }),
+  salesPriceGross: integer('sales_price_gross'),
   differentialTax: boolean('differential_tax').default(false).notNull(),
+  /** Ausstattungsmerkmale als Liste, z. B. „Klimaanlage". */
+  equipment: jsonb().$type<string[]>().default([]),
   highlights: text(),
   location: varchar({ length: 100 }),
+  /** Nur intern sichtbar — erscheint in keinem Inserat und keiner Schnittstelle. */
+  internalNotes: text('internal_notes'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   uniqueIndex('vehicle_listings_vehicle_unique').using('btree', table.vehicleId.asc().nullsLast()),
-  index('vehicle_listings_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],

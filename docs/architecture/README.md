@@ -43,3 +43,10 @@ Kurz: Nuxt-Bordmittel vor Fremdpaketen · Valibot an jeder Grenze · Berechtigun
 als erste Anweisung jedes Endpoints · serverseitige Pagination mit fester Größe
 · Toast bei jeder Änderung · Transaktion, sobald mehr als eine Anweisung
 schreibt · kein eigenes CSS · ESLint formatiert.
+
+## Querschnittsregeln der neuen Fassung
+
+| Regel                                | Seite                                                  |
+| ------------------------------------ | ------------------------------------------------------ |
+| Geld ist eine ganze Zahl in Cent     | [Geldbeträge](money.md)                                |
+| Löschen, Archivieren und was mitgeht | [Löschen und Archivieren](loeschen-und-archivieren.md) |
