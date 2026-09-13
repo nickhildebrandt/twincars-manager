@@ -47,7 +47,7 @@ Fachlichkeit, aber jede spätere Zeile hängt an ihnen.
 
 ## T-001 — Projektgerüst und Toolchain
 
-**Features:** <!--IDS:T-001--> (<!--ANZAHL:T-001-->) · **Befunde:** <!--BEFUNDE:T-001-->
+**Features:** F-052, F-447 (2) · **Befunde:** –
 **Vorbedingungen:** keine.
 
 **Zu erstellen**
@@ -108,7 +108,7 @@ Test, der die Existenz genau einer CSS-Datei und das Fehlen von
 
 ## T-002 — Teststack und Testdatenbank
 
-**Features:** <!--IDS:T-002--> (<!--ANZAHL:T-002-->) · **Befunde:** <!--BEFUNDE:T-002-->
+**Features:** – (0) · **Befunde:** –
 **Vorbedingungen:** T-001.
 
 **Zu erstellen**
@@ -155,7 +155,7 @@ wie läuft die Testdatenbank).
 
 ## T-003 — Dokumentationsgerüst
 
-**Features:** <!--IDS:T-003--> (<!--ANZAHL:T-003-->) · **Befunde:** <!--BEFUNDE:T-003-->
+**Features:** – (0) · **Befunde:** –
 **Vorbedingungen:** T-001.
 
 **Zu erstellen**
@@ -197,7 +197,7 @@ nuxt/scripts/docs-check.mjs  nuxt/scripts/docs-api.mjs  nuxt/scripts/docs-data.m
 - `pnpm docs:api` erzeugt `docs/api/` aus den Dateien unter `server/api/**`
   und den referenzierten Valibot-Schemata; `pnpm docs:data` erzeugt
   `docs/data/tabellen.md` aus dem Drizzle-Schema.
-- **Alle <!--GESAMT--> Feature-Seiten werden angelegt** — zunächst als Rumpf
+- **Alle 631 Feature-Seiten werden angelegt** — zunächst als Rumpf
   mit `status: geplant`, Titel und Verweis auf die Inventarzeile. Damit ist die
   Abdeckungsprüfung ab sofort scharf, und jedes Paket füllt nur noch seine
   Seiten aus.
@@ -219,7 +219,7 @@ Vorlage wann.
 
 ## T-004 — Valibot-Fundament und Fehler-Trichter
 
-**Features:** <!--IDS:T-004--> (<!--ANZAHL:T-004-->) · **Befunde:** <!--BEFUNDE:T-004-->
+**Features:** F-007–F-008, F-044, F-444, F-526 (5) · **Befunde:** B-012, B-022, B-042, B-044, B-363
 **Vorbedingungen:** T-001, T-002.
 
 **Zu erstellen**
@@ -271,7 +271,7 @@ nuxt/app/error.vue
 
 ## T-005 — Datenbankschema, Baseline-Migration, Seeds
 
-**Features:** <!--IDS:T-005--> (<!--ANZAHL:T-005-->) · **Befunde:** <!--BEFUNDE:T-005-->
+**Features:** F-006, F-070, F-153–F-159, F-480 (10) · **Befunde:** B-015, B-079, B-137, B-139–B-140, B-411, B-560–B-565, B-567–B-568, B-570–B-571, B-574–B-575, B-577–B-579, B-582–B-589, B-594
 **Vorbedingungen:** T-002, T-004.
 
 **Zu erstellen**
@@ -317,7 +317,7 @@ Relationsdiagramm, Migrationsstrategie), `docs/decisions/` für die Baseline.
 
 ## T-006 — Server-Grundgerüst und Infrastruktur-Helfer
 
-**Features:** <!--IDS:T-006--> (<!--ANZAHL:T-006-->) · **Befunde:** <!--BEFUNDE:T-006-->
+**Features:** F-045–F-046, F-048–F-049, F-053, F-170–F-171, F-406, F-411 (9) · **Befunde:** B-011, B-018, B-026, B-028, B-304, B-335
 **Vorbedingungen:** T-004, T-005.
 
 **Zu erstellen**
@@ -363,7 +363,7 @@ nuxt/server/tasks/_registry.ts nuxt/server/api/health.get.ts
 
 ## T-007 — Authentifizierung, Sitzungen, Rechte
 
-**Features:** <!--IDS:T-007--> (<!--ANZAHL:T-007-->) · **Befunde:** <!--BEFUNDE:T-007-->
+**Features:** F-001–F-003, F-005, F-011–F-013, F-015–F-016, F-055–F-066, F-091–F-093 (24) · **Befunde:** B-002–B-003, B-013–B-014, B-018, B-041, B-051–B-052, B-054, B-056–B-058, B-071–B-072, B-080
 **Vorbedingungen:** T-005, T-006.
 
 **Zu erstellen**
@@ -413,7 +413,7 @@ zu better-auth.
 
 ## T-008 — App-Shell, Navigation, Zustände, Animationen
 
-**Features:** <!--IDS:T-008--> (<!--ANZAHL:T-008-->) · **Befunde:** <!--BEFUNDE:T-008-->
+**Features:** F-009–F-010, F-014, F-018–F-026, F-042, F-067, F-069, F-085–F-086, F-132–F-134, F-136, F-173–F-174, F-445 (24) · **Befunde:** B-012, B-014, B-017, B-019–B-020, B-033–B-035, B-038, B-043, B-058, B-375
 **Vorbedingungen:** T-007.
 
 **Zu erstellen**
@@ -459,7 +459,7 @@ nuxt/shared/navigation.ts
 
 ## T-009 — Gemeinsame Komponenten und Picker
 
-**Features:** <!--IDS:T-009--> (<!--ANZAHL:T-009-->) · **Befunde:** <!--BEFUNDE:T-009-->
+**Features:** F-043, F-095–F-113, F-115–F-117, F-122–F-131, F-137, F-247 (35) · **Befunde:** B-082–B-084, B-086–B-087, B-091, B-093, B-096, B-100, B-106–B-109, B-111, B-113–B-116, B-216, B-225
 **Vorbedingungen:** T-008.
 
 **Zu erstellen**
@@ -519,7 +519,7 @@ Deshalb stehen unten nur die Besonderheiten.
 
 ## T-010 — Setup-Assistent und Firmeneinstellungen
 
-**Features:** <!--IDS:T-010--> (<!--ANZAHL:T-010-->) · **Befunde:** <!--BEFUNDE:T-010-->
+**Features:** F-017, F-068, F-071, F-094, F-138–F-152, F-160–F-169, F-172, F-176–F-177, F-446 (33) · **Befunde:** B-001, B-046, B-077, B-117–B-118, B-120–B-126, B-128–B-131, B-141–B-144, B-148, B-150, B-152
 **Vorbedingungen:** T-007, T-009.
 
 Acht Schritte, Zwischenspeicherung, Wiederaufnahme nach Neuladen, Abschluss
@@ -534,7 +534,7 @@ Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts.
 
 ## T-011 — Kunden und Lieferanten
 
-**Features:** <!--IDS:T-011--> (<!--ANZAHL:T-011-->) · **Befunde:** <!--BEFUNDE:T-011-->
+**Features:** F-178–F-220 (43) · **Befunde:** B-153–B-157, B-159–B-162, B-165–B-166, B-170–B-174, B-176–B-179, B-181–B-186, B-189, B-191–B-194
 **Vorbedingungen:** T-009.
 
 Das Referenzmodul: Liste mit Suche, Art-Filter, Archiv, Detailseite mit
@@ -548,7 +548,7 @@ Deutsch und löscht nichts still; Golden Flow G-03.
 
 ## T-012 — Fahrzeuge, Dokumente, Fotos
 
-**Features:** <!--IDS:T-012--> (<!--ANZAHL:T-012-->) · **Befunde:** <!--BEFUNDE:T-012-->
+**Features:** F-118, F-221–F-240, F-255–F-256 (23) · **Befunde:** B-105, B-197, B-202–B-204, B-206, B-209–B-210, B-214–B-215, B-217–B-218, B-226, B-228
 **Vorbedingungen:** T-011.
 
 Fahrzeugliste mit Suche über alle Kennzeichen-Versionen, FIN, Marke, Modell,
@@ -562,7 +562,7 @@ serverseitiger Verkleinerung.
 
 ## T-013 — Bestand, Ankauf und Verkauf, Verkaufsschild
 
-**Features:** <!--IDS:T-013--> (<!--ANZAHL:T-013-->) · **Befunde:** <!--BEFUNDE:T-013-->
+**Features:** F-241–F-246, F-252–F-254 (9) · **Befunde:** B-197, B-203, B-207, B-210, B-213, B-216, B-225
 **Vorbedingungen:** T-012, T-022 (Verkauf über Rechnung), T-023 (Schild).
 
 Ankauf eines Kundenfahrzeugs in den Bestand mit Vorbesitzer-Schnappschuss,
@@ -576,7 +576,7 @@ abgewiesen); der QR-Code des Schildes zeigt auf eine **erreichbare,
 
 ## T-014 — Artikel und Leistungen
 
-**Features:** <!--IDS:T-014--> (<!--ANZAHL:T-014-->) · **Befunde:** <!--BEFUNDE:T-014-->
+**Features:** F-257–F-274, F-280, F-288, F-296–F-297, F-301, F-311 (24) · **Befunde:** B-229, B-231, B-233, B-236–B-243, B-248–B-249, B-251, B-257–B-260, B-263–B-265
 **Vorbedingungen:** T-009.
 
 Katalog mit Kategorien, Einheiten, Steuersatz, Preisversionen (gültig ab),
@@ -588,7 +588,7 @@ bestehenden Beleg.
 
 ## T-015 — Reifenkatalog
 
-**Features:** <!--IDS:T-015--> (<!--ANZAHL:T-015-->) · **Befunde:** <!--BEFUNDE:T-015-->
+**Features:** F-276–F-279, F-281–F-287, F-289–F-292 (15) · **Befunde:** B-232, B-234, B-239, B-242–B-243, B-245–B-247, B-250, B-257, B-260, B-263, B-265
 **Vorbedingungen:** T-014.
 
 Eigene Stammdaten mit Dimension, Saison, Hersteller, EU-Label, Preisversionen
@@ -599,7 +599,7 @@ wieder zusammengesetzt (Unit-Tests über eine Tabelle realer Größen).
 
 ## T-016 — Reifeneinlagerung, Etiketten, Erinnerungen
 
-**Features:** <!--IDS:T-016--> (<!--ANZAHL:T-016-->) · **Befunde:** <!--BEFUNDE:T-016-->
+**Features:** F-275, F-293–F-295, F-298–F-300, F-302–F-310, F-441 (17) · **Befunde:** B-229–B-230, B-235, B-239–B-241, B-246–B-248, B-250, B-252–B-253, B-255, B-258–B-259, B-263–B-264
 **Vorbedingungen:** T-015, T-023, T-026.
 
 Einlagerungen mit Nummernkreis, Lagerplatz, QR-Etikett, Scan-Seite,
@@ -611,7 +611,7 @@ Betrieb tatsächlich erreichbar ist; Golden Flow G-13.
 
 ## T-017 — Mitarbeiter und Abwesenheiten
 
-**Features:** <!--IDS:T-017--> (<!--ANZAHL:T-017-->) · **Befunde:** <!--BEFUNDE:T-017-->
+**Features:** F-481–F-505, F-524 (26) · **Befunde:** B-420–B-423, B-426, B-428, B-430–B-433, B-449–B-451, B-453–B-455
 **Vorbedingungen:** T-009, T-019 (Feiertage).
 
 Stammdaten mit versionierten Gehältern, Abwesenheiten mit
@@ -625,7 +625,7 @@ Fehler des Bestands).
 
 ## T-018 — Zeiterfassung, Berichte, Öffnungszeiten
 
-**Features:** <!--IDS:T-018--> (<!--ANZAHL:T-018-->) · **Befunde:** <!--BEFUNDE:T-018-->
+**Features:** F-090, F-120, F-506–F-523 (20) · **Befunde:** B-051, B-089–B-090, B-435–B-437, B-441–B-443, B-445–B-446, B-450–B-451, B-455
 **Vorbedingungen:** T-017.
 
 Stundenerfassung mit Selbstbedienungsrecht, Auftragsbezug, Berichte über
@@ -637,7 +637,7 @@ nicht nur in der Oberfläche; Golden Flow G-11.
 
 ## T-019 — Kalender, Feiertage, Terminplanung
 
-**Features:** <!--IDS:T-019--> (<!--ANZAHL:T-019-->) · **Befunde:** <!--BEFUNDE:T-019-->
+**Features:** F-250, F-525, F-527–F-549, F-554, F-556, F-587 (28) · **Befunde:** B-456–B-458, B-460–B-462, B-470–B-472, B-477–B-478, B-482–B-485, B-516
 **Vorbedingungen:** T-009.
 
 Monatsraster und Agenda, Termine, Betriebsschließungen, Abwesenheiten,
@@ -651,7 +651,7 @@ Golden Flow G-10.
 
 ## T-020 — Aufträge (Kanban-Arbeitsaufträge)
 
-**Features:** <!--IDS:T-020--> (<!--ANZAHL:T-020-->) · **Befunde:** <!--BEFUNDE:T-020-->
+**Features:** F-312–F-366 (55) · **Befunde:** B-268–B-270, B-272–B-273, B-275–B-276, B-280–B-281, B-283, B-285–B-289, B-292–B-296, B-298–B-299
 **Vorbedingungen:** T-012, T-014, T-018, T-019.
 
 Kanban mit drei Spalten, Mehrfachzuweisung von Mitarbeitern,
@@ -665,7 +665,7 @@ eine Tastaturalternative; Golden Flow G-05.
 
 ## T-021 — Belege-Grundlage und Angebote
 
-**Features:** <!--IDS:T-021--> (<!--ANZAHL:T-021-->) · **Befunde:** <!--BEFUNDE:T-021-->
+**Features:** F-367–F-382 (16) · **Befunde:** B-303–B-304, B-306, B-312–B-317, B-325, B-327–B-328, B-333, B-338, B-340, B-342, B-346, B-348
 **Vorbedingungen:** T-011, T-014, T-006.
 
 Gemeinsames Belegmodell, Positionen-Editor mit Live-Summen und gemischten
@@ -678,7 +678,7 @@ unverändert.
 
 ## T-022 — Rechnungen, Zahlungen, Storno
 
-**Features:** <!--IDS:T-022--> (<!--ANZAHL:T-022-->) · **Befunde:** <!--BEFUNDE:T-022-->
+**Features:** F-383–F-393, F-407–F-409 (14) · **Befunde:** B-301, B-303–B-305, B-313–B-314, B-316–B-317, B-323, B-325, B-338–B-339, B-342–B-343
 **Vorbedingungen:** T-021, T-023.
 
 Rechnungen mit Statusautomat, echte Zahlungserfassung inklusive Teilzahlungen
@@ -692,7 +692,7 @@ Flows G-06 und G-07.
 
 ## T-023 — PDF-Pipeline
 
-**Features:** <!--IDS:T-023--> (<!--ANZAHL:T-023-->) · **Befunde:** <!--BEFUNDE:T-023-->
+**Features:** F-047, F-121, F-395–F-404 (12) · **Befunde:** B-031, B-103, B-304, B-308, B-313, B-326, B-330, B-333
 **Vorbedingungen:** T-010 (Firmendaten), T-021.
 
 Portierung aller Vorlagen: Rechnung, Storno, Angebot, Kostenvoranschlag,
@@ -707,7 +707,7 @@ niemals Bytes.
 
 ## T-024 — XRechnung
 
-**Features:** <!--IDS:T-024--> (<!--ANZAHL:T-024-->) · **Befunde:** <!--BEFUNDE:T-024-->
+**Features:** F-394 (1) · **Befunde:** B-309, B-330
 **Vorbedingungen:** T-022.
 
 EN-16931-konformes XML je Rechnung, mit den in
@@ -719,7 +719,7 @@ trägt den richtigen Belegtyp; Rabatte erscheinen als solche.
 
 ## T-025 — Zahlungserinnerungen
 
-**Features:** <!--IDS:T-025--> (<!--ANZAHL:T-025-->) · **Befunde:** <!--BEFUNDE:T-025-->
+**Features:** F-428–F-435 (8) · **Befunde:** B-349, B-352–B-355, B-369–B-373, B-377, B-384
 **Vorbedingungen:** T-022, T-026.
 
 Liste offener Rechnungen mit Verzugstagen und offenem Betrag (Teilzahlungen
@@ -733,7 +733,7 @@ Flow G-09.
 
 ## T-026 — SMTP, Vorlagen, Versand, Gesendet
 
-**Features:** <!--IDS:T-026--> (<!--ANZAHL:T-026-->) · **Befunde:** <!--BEFUNDE:T-026-->
+**Features:** F-119, F-405, F-414–F-421, F-426–F-427, F-436–F-440 (17) · **Befunde:** B-101, B-116, B-345, B-349–B-351, B-355, B-360–B-363, B-365–B-366, B-368, B-373, B-375–B-377, B-380
 **Vorbedingungen:** T-006, T-010.
 
 Transport mit Zeitüberschreitungen, verschlüsseltem Passwort und Testversand;
@@ -747,7 +747,7 @@ gegen Einschleusung geschützt.
 
 ## T-027 — Rundschreiben
 
-**Features:** <!--IDS:T-027--> (<!--ANZAHL:T-027-->) · **Befunde:** <!--BEFUNDE:T-027-->
+**Features:** F-422–F-425 (4) · **Befunde:** B-351, B-358, B-380, B-383
 **Vorbedingungen:** T-026.
 
 Empfängerkreis aus zugestimmten Kunden, Versand in Blindkopie-Blöcken,
@@ -759,7 +759,7 @@ Kunden mit Zustimmung erscheinen.
 
 ## T-028 — Buchhaltung und DATEV-Export
 
-**Features:** <!--IDS:T-028--> (<!--ANZAHL:T-028-->) · **Befunde:** <!--BEFUNDE:T-028-->
+**Features:** F-448–F-477 (30) · **Befunde:** B-385–B-387, B-389–B-390, B-393–B-400, B-405–B-406, B-409–B-410, B-412, B-418
 **Vorbedingungen:** T-006, T-022.
 
 Buchungen mit Kategorien, Monatsansicht, Summen, Export als
@@ -772,7 +772,7 @@ funktioniert auch bei großen Zeiträumen; Golden Flow G-14.
 
 ## T-029 — Rechnungsausgangsbuch
 
-**Features:** <!--IDS:T-029--> (<!--ANZAHL:T-029-->) · **Befunde:** <!--BEFUNDE:T-029-->
+**Features:** F-410, F-478 (2) · **Befunde:** B-319–B-320, B-405, B-417
 **Vorbedingungen:** T-022, T-028.
 
 Lesesicht über die Rechnungen mit Zeitraum, Summen und Blätterung.
@@ -783,7 +783,7 @@ DATEV-Export (E-15); Zeitraumgrenzen stimmen auch am Monatsanfang und
 
 ## T-030 — Beiträge und Kundenanfragen
 
-**Features:** <!--IDS:T-030--> (<!--ANZAHL:T-030-->) · **Befunde:** <!--BEFUNDE:T-030-->
+**Features:** F-575–F-586 (12) · **Befunde:** B-486, B-491, B-498, B-503–B-504, B-506, B-517, B-519–B-520
 **Vorbedingungen:** T-009, T-026.
 
 Nachrichtenbeiträge für die Website mit Veröffentlichungsstatus, Titelbild und
@@ -796,7 +796,7 @@ Anfrage lässt sich als erledigt markieren und einem Kunden zuordnen.
 
 ## T-031 — Öffentliche REST-API
 
-**Features:** <!--IDS:T-031--> (<!--ANZAHL:T-031-->) · **Befunde:** <!--BEFUNDE:T-031-->
+**Features:** F-004, F-088–F-089, F-175, F-248, F-412, F-442–F-443, F-550–F-552, F-557–F-574 (29) · **Befunde:** B-003, B-054, B-205–B-206, B-225, B-351, B-380, B-463–B-464, B-466–B-467, B-469, B-484, B-488, B-490–B-493, B-495–B-496, B-498–B-499, B-501, B-503, B-510, B-516
 **Vorbedingungen:** T-013, T-015, T-019, T-030.
 
 Alle Endpunkte für die Website: Gebrauchtwagen, Reifen, Leistungen, freie
@@ -811,7 +811,7 @@ konfigurierte Token 503; die Antwortform ist gegen ein Schema geprüft.
 
 ## T-032 — eBay-Anbindung
 
-**Features:** <!--IDS:T-032--> (<!--ANZAHL:T-032-->) · **Befunde:** <!--BEFUNDE:T-032-->
+**Features:** F-588–F-606 (19) · **Befunde:** B-522–B-527, B-529, B-531–B-532, B-550–B-553
 **Vorbedingungen:** T-006, T-010.
 
 Verbindung über OAuth mit verschlüsselten Token, Pflichtendpunkt für
@@ -823,7 +823,7 @@ Protokoll; der Import ist wiederholbar, ohne Dubletten zu erzeugen.
 
 ## T-033 — Legacy-Import (KFZ-Kaufmann)
 
-**Features:** <!--IDS:T-033--> (<!--ANZAHL:T-033-->) · **Befunde:** <!--BEFUNDE:T-033-->
+**Features:** F-054, F-251, F-479, F-555, F-607–F-631 (29) · **Befunde:** B-480, B-526, B-533, B-535, B-537–B-538, B-542, B-545–B-548, B-554, B-558–B-559
 **Vorbedingungen:** alle fachlichen Slices, deren Tabellen der Import füllt.
 
 Hochladen der Access-Datei, Vorschau ohne Speichern, Import mit Fortschritt
@@ -837,7 +837,7 @@ gereicht.
 
 ## T-034 — Benutzer, Rollen, eigenes Konto
 
-**Features:** <!--IDS:T-034--> (<!--ANZAHL:T-034-->) · **Befunde:** <!--BEFUNDE:T-034-->
+**Features:** F-072–F-084, F-087, F-135 (15) · **Befunde:** B-046–B-051, B-059–B-061, B-064–B-067, B-073, B-077–B-078, B-080, B-093
 **Vorbedingungen:** T-007.
 
 Verwaltung von Benutzern und Rollen mit Rechtematrix, Passwortzurücksetzung
@@ -851,7 +851,7 @@ Golden Flow G-15.
 
 ## T-035 — Dashboard und globale Suche
 
-**Features:** <!--IDS:T-035--> (<!--ANZAHL:T-035-->) · **Befunde:** <!--BEFUNDE:T-035-->
+**Features:** F-027–F-041, F-114, F-249, F-413, F-553 (19) · **Befunde:** B-006–B-011, B-028–B-029, B-035–B-036, B-042, B-045, B-088, B-093, B-109, B-113, B-475–B-476
 **Vorbedingungen:** alle Module, deren Zahlen das Dashboard zeigt.
 
 Kennzahlen, Schnellaktionen, anstehende Termine; Suche über neun Bereiche mit
@@ -868,7 +868,7 @@ per Tastatur erreichbar.
 
 ## T-036 — PWA und Service Worker
 
-**Features:** <!--IDS:T-036--> (<!--ANZAHL:T-036-->) · **Befunde:** <!--BEFUNDE:T-036-->
+**Features:** F-050–F-051 (2) · **Befunde:** B-004, B-017
 **Vorbedingungen:** T-008.
 
 Installierbarkeit, Manifest, Symbole. **Der Zwischenspeicher fasst
@@ -882,7 +882,7 @@ und angeboten.
 
 ## T-037 — Leistung, Indizes, Lastverhalten
 
-**Features:** — · **Befunde:** <!--BEFUNDE:T-037-->
+**Features:** — · **Befunde:** –
 **Vorbedingungen:** alle fachlichen Slices.
 
 Messung der Listen- und Detailabfragen gegen eine Datenbank mit realistischer
@@ -895,7 +895,7 @@ Abfragen; keine Antwort überschreitet 500 KB ohne Anhang.
 
 ## T-038 — Barrierefreiheit und Bewegungsreduktion
 
-**Features:** — · **Befunde:** <!--BEFUNDE:T-038-->
+**Features:** — · **Befunde:** –
 **Vorbedingungen:** alle Oberflächen-Pakete.
 
 Durchgang über alle Seiten: Tastaturreihenfolge, Fokusfallen, zugängliche
@@ -931,7 +931,7 @@ zwei Klicks erreichbar (durch das Prüfskript gemessen).
 
 ## T-041 — Container, CI, Release
 
-**Features:** — · **Befunde:** <!--BEFUNDE:T-041-->
+**Features:** — · **Befunde:** B-595–B-602, B-604, B-607–B-611, B-613–B-617
 **Vorbedingungen:** T-039.
 
 Mehrstufiges Abbild auf `node:24-slim`, ohne Rootrechte, mit
