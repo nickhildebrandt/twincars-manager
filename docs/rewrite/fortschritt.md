@@ -58,3 +58,54 @@ bestätigt (mehrzeiliges Array behält sein nachgestelltes Komma).
 - `nuxt typecheck` gibt eine Warnung zu `vue-router/volar/sfc-route-blocks`
   aus (Pfad in `vue-router` 4.6.4 nicht exportiert). Der Lauf endet mit 0;
   reine Ausgabe-Unruhe. Beobachten, bei Bedarf mit T-002 nachziehen.
+
+---
+
+## T-002 — Teststack und Testdatenbank · fertig 2026-09-13
+
+**Ergebnis:** Fünf Vitest-Projekte laufen, jedes einzeln und gemeinsam; die
+Integrationsschicht arbeitet gegen echtes PostgreSQL mit einer Datenbank je
+Worker.
+
+| Akzeptanzkriterium | Ergebnis |
+| --- | --- |
+| Jedes Projekt läuft einzeln | `unit`, `nuxt`, `integration`, `browser`, `e2e` — alle grün |
+| Nuxt-Projekt mountet eine Komponente | `mountSuspended` auf Startseite und Standard-Layout |
+| Browser startet Chromium **ohne Download** | gecachter Build 1234 wird benutzt |
+| Integrationstest erreicht eine echte Datenbank | `current_database()` liefert `twincars_test_w<n>` |
+| Zwei Integrationsdateien stören sich nicht | jede sieht nur ihre eigene Tabelle |
+| Coverage-Bericht mit greifenden Schwellen | zuerst rot bei 66 %, nach Abdeckung des Layouts grün bei 100 % |
+| `test:befunde` erkennt fehlende Regressionstests | 429 Befunde erfasst, `--all` meldet alle 429 als offen |
+
+**Gesamtlauf:** 5 Testdateien, 12 Tests, 13,7 s inklusive Produktionsbau für
+die End-to-End-Prüfung. `pnpm lint` und `pnpm typecheck` grün.
+
+**Entscheidungen unterwegs**
+
+- **Kein `globalSetup` für die Datenbank.** Es ist eine Wurzel-Option und würde
+  bei *jedem* Lauf greifen — auch bei reinen Unit-Tests. Die Vorbereitung
+  liegt jetzt in den `setupFiles` des Integrationsprojekts, serialisiert über
+  ein Postgres-Sperrobjekt. Unit-, Nuxt- und Browsertests brauchen damit keine
+  Datenbank.
+- **Verbindung über den Unix-Socket.** Die lokale Rolle `admin` darf keine
+  Datenbanken anlegen, die Socket-Rolle schon. Der Treiber versteht die
+  `?host=/pfad`-Form in der URL nicht, deshalb übersetzt
+  `test/setup/database-helpers.ts` sie in Verbindungsoptionen.
+- **Chromium wird nie heruntergeladen.** Playwright 1.63 verlangt Build 1243,
+  der Zwischenspeicher hat 1234. `test/setup/chromium.ts` löst den neuesten
+  vorhandenen Build auf; sowohl das Browser-Projekt als auch Playwright
+  bekommen ihn über `launchOptions.executablePath`.
+- **`app/app.vue` ist von der Coverage ausgenommen** — die Wurzelkomponente
+  mountet das Framework, nicht der Test; ihr Verhalten deckt die
+  End-to-End-Prüfung ab.
+- Das Umgebungs-Setup liest `.env.test` über `process.cwd()` statt über
+  `import.meta.url`: in der Nuxt-Testumgebung ist die Modul-URL keine
+  `file:`-URL.
+
+**Offen aus diesem Paket**
+
+- `test/factories/` ist angelegt, aber leer — Factories entstehen mit dem
+  ersten fachlichen Paket, das Daten braucht (T-005/T-011).
+- Die Coverage-Schwellen stehen auf den Zielwerten aus
+  [05-teststrategie.md](05-teststrategie.md) §7. Sie sind aktuell mit 100 %
+  erfüllt, weil noch wenig Code existiert; ab T-004 werden sie aussagekräftig.
