@@ -11,6 +11,20 @@ Erzeugt aus dem Drizzle-Schema mit `pnpm docs:data`. Nicht von Hand ändern.
 
 Zurück zur [Daten-Übersicht](README.md).
 
+## `audit_log`
+
+Drizzle-Export `auditLog` in `server/database/schema/audit.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
+## `sign_in_attempts`
+
+Drizzle-Export `signInAttempts` in `server/database/schema/audit.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
 ## `users`
 
 Drizzle-Export `users` in `server/database/schema/auth.ts`.
@@ -214,13 +228,6 @@ Drizzle-Export `employeeSalaryVersions` in `server/database/schema/employees.ts`
 | Spalte | Typ |
 | ------ | --- |
 
-## `time_entries`
-
-Drizzle-Export `timeEntries` in `server/database/schema/employees.ts`.
-
-| Spalte | Typ |
-| ------ | --- |
-
 ## `workshop_hours`
 
 Drizzle-Export `workshopHours` in `server/database/schema/employees.ts`.
@@ -270,6 +277,13 @@ Drizzle-Export `ledgerEntries` in `server/database/schema/ledger.ts`.
 | Spalte | Typ |
 | ------ | --- |
 
+## `ledger_attachments`
+
+Drizzle-Export `ledgerAttachments` in `server/database/schema/ledger.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
 ## `work_orders`
 
 Drizzle-Export `workOrders` in `server/database/schema/orders.ts`.
@@ -284,9 +298,9 @@ Drizzle-Export `workOrderItems` in `server/database/schema/orders.ts`.
 | Spalte | Typ |
 | ------ | --- |
 
-## `work_order_assignees`
+## `work_order_item_assignees`
 
-Drizzle-Export `workOrderAssignees` in `server/database/schema/orders.ts`.
+Drizzle-Export `workOrderItemAssignees` in `server/database/schema/orders.ts`.
 
 | Spalte | Typ |
 | ------ | --- |
@@ -301,20 +315,6 @@ Drizzle-Export `companySettings` in `server/database/schema/settings.ts`.
 ## `number_ranges`
 
 Drizzle-Export `numberRanges` in `server/database/schema/settings.ts`.
-
-| Spalte | Typ |
-| ------ | --- |
-
-## `tire_storage`
-
-Drizzle-Export `tireStorage` in `server/database/schema/tire-storage.ts`.
-
-| Spalte | Typ |
-| ------ | --- |
-
-## `tire_reminder_log`
-
-Drizzle-Export `tireReminderLog` in `server/database/schema/tire-storage.ts`.
 
 | Spalte | Typ |
 | ------ | --- |
@@ -364,6 +364,27 @@ Drizzle-Export `vehiclePhotos` in `server/database/schema/vehicles.ts`.
 ## `vehicle_documents`
 
 Drizzle-Export `vehicleDocuments` in `server/database/schema/vehicles.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
+## `vehicle_owner_history`
+
+Drizzle-Export `vehicleOwnerHistory` in `server/database/schema/vehicles.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
+## `wheel_sets`
+
+Drizzle-Export `wheelSets` in `server/database/schema/wheel-sets.ts`.
+
+| Spalte | Typ |
+| ------ | --- |
+
+## `tire_reminder_log`
+
+Drizzle-Export `tireReminderLog` in `server/database/schema/wheel-sets.ts`.
 
 | Spalte | Typ |
 | ------ | --- |

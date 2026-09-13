@@ -11,8 +11,11 @@
 import { isExposedAuthEndpoint } from '../../utils/auth-paths.ts'
 import { useAuth } from '../../utils/auth.ts'
 import { notFound } from '../../utils/errors.ts'
+import { toWebRequestWithBody } from '../../utils/web-request.ts'
 
-export default defineEventHandler((event) => {
+export default defineEventHandler(async (event) => {
   if (!isExposedAuthEndpoint(event.path)) throw notFound('Die Seite')
-  return useAuth().handler(toWebRequest(event))
+  // Nicht `toWebRequest`: die Drossel hat den Rumpf schon gelesen, und ein
+  // Strom lässt sich nur einmal lesen — siehe server/utils/web-request.ts.
+  return useAuth().handler(await toWebRequestWithBody(event))
 })

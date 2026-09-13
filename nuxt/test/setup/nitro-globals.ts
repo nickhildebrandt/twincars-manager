@@ -48,7 +48,13 @@ const H3_GLOBALS = {
   toWebRequest,
 }
 
-/** Defines `useRuntimeConfig` and the h3 helpers for the current test file. */
+/**
+ * Defines `useRuntimeConfig` and the h3 helpers for the current test file.
+ *
+ * The returned object is the **same** one `useRuntimeConfig()` hands out, so a
+ * test can change a setting mid-file — `config.trustProxy = 'on'` — and the
+ * next request sees it.
+ */
 export function installNitroGlobals(overrides: Partial<StubConfig> = {}): StubConfig {
   const config: StubConfig = {
     databaseUrl: testDatabaseUrl(),

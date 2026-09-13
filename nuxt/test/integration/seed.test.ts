@@ -101,7 +101,7 @@ describe('Vorgaben anlegen', () => {
     expect(byKind.get('invoice')).toBe('{N}')
     expect(byKind.get('customer')).toBe('{N}')
     // Neue Bereiche starten bei 1 mit Jahresangabe.
-    expect(byKind.get('tire_storage')).toBe('L-{YYYY}-{NNNN}')
+    expect(byKind.get('wheel_set')).toBe('RS-{YYYY}-{NNNN}')
     expect(byKind.get('storno')).toBe('S-{N}')
     for (const row of rows) expect(row.nextValue, row.kind).toBe(1)
   })

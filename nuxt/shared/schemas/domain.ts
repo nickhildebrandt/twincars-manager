@@ -10,6 +10,7 @@ import * as v from 'valibot'
 import type { Domain } from '../domain'
 import {
   absenceStatuses,
+  auditActions,
   absenceTypes,
   appointmentStatuses,
   calendarKinds,
@@ -20,6 +21,7 @@ import {
   ebayListingStatuses,
   importRunStatuses,
   inquiryReferenceTypes,
+  inquiryStatuses,
   itemKinds,
   itemLineKinds,
   ledgerDirections,
@@ -28,6 +30,7 @@ import {
   listingStatuses,
   messageKinds,
   messageStatuses,
+  messageSubjects,
   numberKinds,
   paymentMethods,
   reminderSeasons,
@@ -36,6 +39,8 @@ import {
   smtpSecurities,
   tireConstructions,
   tireSeasons,
+  vehicleStatuses,
+  wheelSetStates,
   workOrderItemKinds,
   workOrderStatuses,
 } from '../domain'
@@ -66,6 +71,11 @@ export const customerKindSchema = pick(customerKinds, 'Kundenart')
 export const messageStatusSchema = pick(messageStatuses, 'Versandstatus')
 export const messageKindSchema = pick(messageKinds, 'Nachrichtenart')
 export const inquiryReferenceTypeSchema = pick(inquiryReferenceTypes, 'Bezug')
+export const inquiryStatusSchema = pick(inquiryStatuses, 'Bearbeitungsstand')
+export const messageSubjectSchema = pick(messageSubjects, 'Bezug der Nachricht')
+export const vehicleStatusSchema = pick(vehicleStatuses, 'Fahrzeugstatus')
+export const wheelSetStateSchema = pick(wheelSetStates, 'Zustand des Radsatzes')
+export const auditActionSchema = pick(auditActions, 'Art der Änderung')
 export const reminderStatusSchema = pick(reminderStatuses, 'Erinnerungsstatus')
 export const listingStatusSchema = pick(listingStatuses, 'Inseratstatus')
 export const tireSeasonSchema = pick(tireSeasons, 'Saison')

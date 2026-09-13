@@ -14,12 +14,15 @@ import { createApp, defineEventHandler, toWebHandler } from 'h3'
 import { eq } from 'drizzle-orm'
 import { installNitroGlobals, TEST_ORIGIN } from '../setup/nitro-globals'
 
-installNitroGlobals()
+const config = installNitroGlobals()
 
 const throttle = (await import('../../server/middleware/00.throttle.ts')).default
 const session = (await import('../../server/middleware/01.auth.ts')).default
 const apiGuard = (await import('../../server/middleware/02.api-guard.ts')).default
 const { resetRateLimits } = await import('../../server/utils/rate-limit.ts')
+const { SIGN_IN_ATTEMPTS_PER_ACCOUNT } = await import('../../server/middleware/00.throttle.ts')
+const { recordSignInAttempt, failedAttemptsSince } = await import('../../server/utils/sign-in-log.ts')
+const { signInAttempts } = await import('../../server/database/schema/index.ts')
 const { resetAuth, SIGN_IN_ATTEMPTS_PER_MINUTE } = await import('../../server/utils/auth.ts')
 const { createUserWithCredential } = await import('../../server/utils/auth-accounts.ts')
 const { rolePermissions, roles, userRoles, users } = await import('../../server/database/schema/index.ts')
@@ -113,6 +116,7 @@ async function createAccount(username: string, permissions: string[] = []) {
 
 beforeEach(async () => {
   resetRateLimits()
+  await db.delete(signInAttempts)
   await db.delete(users)
   await db.delete(roles)
 })
@@ -371,5 +375,119 @@ describe('GET /api/health', () => {
     const response = await request('/api/health')
     expect(response.status).toBe(200)
     expect(await response.json()).toMatchObject({ status: 'ok', database: 'ok' })
+  })
+})
+
+describe('M-36: die Drossel zählt auch je Konto', () => {
+  it('M-36: der Kontozähler greift, auch wenn die Adresse jedes Mal wechselt', async () => {
+    // Der eigentliche Fall. Ohne diesen Zähler verteilt ein Angreifer seine
+    // Versuche über viele Adressen auf ein einziges Konto und füllt nie einen
+    // Eimer. Hier bekommt jeder Versuch eine andere Adresse — der Adresszähler
+    // greift also nie, und trotzdem ist nach einer Weile Schluss.
+    await createAccount('mmustermann')
+    config.trustProxy = 'on'
+    try {
+      const statuses: number[] = []
+      for (let attempt = 0; attempt <= SIGN_IN_ATTEMPTS_PER_ACCOUNT; attempt++) {
+        statuses.push((await signIn('mmustermann', 'falsch-aber-lang-genug', {
+          'x-forwarded-for': `203.0.113.${attempt}`,
+        })).status)
+      }
+
+      // Kein einziger Versuch lief in den Adresszähler …
+      expect(statuses.slice(0, SIGN_IN_ATTEMPTS_PER_ACCOUNT)).not.toContain(429)
+      // … und trotzdem ist der letzte gesperrt.
+      expect(statuses.at(-1)).toBe(429)
+    }
+    finally {
+      config.trustProxy = 'off'
+    }
+  })
+
+  it('M-36: die Sperre wegen Drossel steht im Protokoll', async () => {
+    await createAccount('mmustermann')
+    config.trustProxy = 'on'
+    try {
+      for (let attempt = 0; attempt <= SIGN_IN_ATTEMPTS_PER_ACCOUNT; attempt++) {
+        await signIn('mmustermann', 'falsch-aber-lang-genug', {
+          'x-forwarded-for': `198.51.100.${attempt}`,
+        })
+      }
+    }
+    finally {
+      config.trustProxy = 'off'
+    }
+
+    const rows = await db.select().from(signInAttempts)
+    expect(rows.map(row => row.reason)).toContain('drossel')
+  })
+
+  it('M-36: ein Versuch ohne brauchbaren Benutzernamen füllt keinen Kontozähler', async () => {
+    // Sonst legte ein Angreifer mit leerem Feld beliebig viele Eimer an.
+    const response = await request('/api/auth/sign-in/username', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ password: 'ohne-namen' }),
+    })
+    expect(response.status).not.toBe(429)
+  })
+
+  it('M-36: der Kontozähler ist großzügiger als der Adresszähler', () => {
+    // Im Betrieb sitzen mehrere Leute hinter derselben Adresse und dürfen sich
+    // vertippen. Aber nicht beliebig oft auf dasselbe Konto.
+    expect(SIGN_IN_ATTEMPTS_PER_ACCOUNT).toBeGreaterThan(SIGN_IN_ATTEMPTS_PER_MINUTE)
+    expect(SIGN_IN_ATTEMPTS_PER_ACCOUNT).toBeLessThanOrEqual(30)
+  })
+
+  it('M-36: gescheiterte Versuche hinterlassen eine Spur', async () => {
+    // Eine Drossel hält das Durchprobieren auf, macht es aber nicht sichtbar.
+    const since = new Date(Date.now() - 60_000)
+
+    await recordSignInAttempt({
+      username: 'MMustermann',
+      clientAddress: '203.0.113.7',
+      succeeded: false,
+      reason: 'passwort',
+    }, db)
+    await recordSignInAttempt({
+      username: 'mmustermann',
+      clientAddress: '203.0.113.8',
+      succeeded: false,
+      reason: 'unbekannt',
+    }, db)
+    await recordSignInAttempt({
+      username: 'mmustermann',
+      clientAddress: '203.0.113.7',
+      succeeded: true,
+    }, db)
+
+    // Groß geschrieben oder klein — derselbe Zugang, derselbe Zähler.
+    expect(await failedAttemptsSince('mmustermann', since, db)).toBe(2)
+  })
+
+  it('M-36: auch ein Versuch auf einen Namen, den es nicht gibt, wird notiert', async () => {
+    // Gerade der ist interessant: wer erfundene Namen durchprobiert, sucht.
+    await recordSignInAttempt({
+      username: 'gibtsnicht',
+      clientAddress: '203.0.113.9',
+      succeeded: false,
+      reason: 'unbekannt',
+    }, db)
+
+    const rows = await db.select().from(signInAttempts)
+    expect(rows.map(row => row.username)).toContain('gibtsnicht')
+  })
+
+  it('M-36: ein Fehler beim Protokollieren sperrt niemanden aus', async () => {
+    // Ein volles oder kaputtes Protokoll darf die Anmeldung nicht anhalten.
+    const broken = {
+      insert: () => {
+        throw new Error('Protokoll kaputt')
+      },
+    }
+    await expect(recordSignInAttempt(
+      { username: 'egal', clientAddress: null, succeeded: true },
+      broken as never,
+    )).resolves.toBeUndefined()
   })
 })

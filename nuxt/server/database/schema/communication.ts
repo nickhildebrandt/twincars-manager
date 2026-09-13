@@ -7,15 +7,27 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, integer, boolean, timestamp, index, uniqueIndex, text, jsonb, check } from 'drizzle-orm/pg-core'
 import { oneOf } from './_checks.ts'
-import { messageKinds, messageStatuses, smtpSecurities } from '../../../shared/domain.ts'
+import { messageKinds, messageStatuses, messageSubjects, smtpSecurities } from '../../../shared/domain.ts'
 import { sql } from 'drizzle-orm'
-import { documents } from './documents.ts'
 
 export const sentMessages = pgTable('sent_messages', {
   id: uuid().defaultRandom().primaryKey().notNull(),
-  documentId: uuid('document_id'),
+
+  /**
+   * Worauf sich die Nachricht bezog (M-34).
+   *
+   * Beim Vorgänger stand hier ein Verweis auf einen Beleg und sonst nichts,
+   * obwohl Zahlungserinnerungen, Reifen-Erinnerungen und Antworten auf Anfragen
+   * denselben Weg nehmen. Jetzt zwei Felder: die Art des Vorgangs und seine
+   * Kennung. Kein Fremdschlüssel — das Protokoll muss den Vorgang überleben,
+   * sonst verschwände mit ihm die Spur, dass etwas rausging.
+   */
+  subjectType: varchar('subject_type', { length: 30 }).notNull(),
+  subjectId: varchar('subject_id', { length: 64 }),
+
+  /** Welche Art Nachricht es war — für den Filter der Versandhistorie. */
   documentType: varchar('document_type', { length: 30 }).notNull(),
   recipientEmail: varchar('recipient_email', { length: 254 }).notNull(),
   recipientName: varchar('recipient_name', { length: 200 }),
@@ -26,19 +38,15 @@ export const sentMessages = pgTable('sent_messages', {
   // Die Zeile entsteht VOR dem Versand, damit ein Absturz eine Spur
   // hinterlässt. Der Vorgabewert war beim Vorgänger 'sent', während jeder
   // Sendeweg 'pending' eintrug — ein Widerspruch, der nur nicht auffiel.
-  status: varchar({ length: 20 }).default('pending').notNull(),
+  status: varchar({ length: 20 }).default('wartend').notNull(),
   errorMessage: text('error_message'),
   smtpMessageId: varchar('smtp_message_id', { length: 200 }),
 }, table => [
   check('sent_messages_status_check', oneOf(table.status, messageStatuses.values)),
   check('sent_messages_document_type_check', oneOf(table.documentType, messageKinds.values)),
-  index('sent_messages_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
+  check('sent_messages_subject_type_check', oneOf(table.subjectType, messageSubjects.values)),
+  index('sent_messages_subject_idx').using('btree', table.subjectType.asc().nullsLast(), table.subjectId.asc().nullsLast()),
   index('sent_messages_sent_at_idx').using('btree', table.sentAt.asc().nullsLast()),
-  foreignKey({
-    columns: [table.documentId],
-    foreignColumns: [documents.id],
-    name: 'sent_messages_document_id_documents_id_fk',
-  }).onDelete('set null'),
 ])
 
 export const mailTemplates = pgTable('mail_templates', {

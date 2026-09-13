@@ -27,6 +27,43 @@ export type NumberKind
     | 'storno' | 'reminder' | 'customer' | 'tire' | 'tire_storage' | 'work_order'
 
 /**
+ * Whether this executor is a transaction.
+ *
+ * Drizzle gives a transaction a `rollback` method and the pool none. That is
+ * the only reliable difference, and it is enough for the check below.
+ */
+const isTransaction = (executor: Executor): boolean =>
+  typeof (executor as { rollback?: unknown }).rollback === 'function'
+
+/**
+ * Draws the number of a document that is being issued (M-14, P-02).
+ *
+ * **Only inside a transaction**, and it refuses otherwise. That is the whole
+ * point: the number and the document have to become real together. The
+ * predecessor consumed the number when the draft was created, so deleting a
+ * draft left a gap — and a gap in an invoice sequence has to be explained to
+ * the tax office.
+ *
+ * The lock comes from the single `UPDATE … RETURNING`: PostgreSQL locks the
+ * row for the duration of that statement, and inside a transaction it holds
+ * the lock until the commit. A second caller waits rather than reading the
+ * same counter. Reading first and writing afterwards — what the predecessor
+ * did — can hand the same invoice number to two requests.
+ */
+export async function issueNumber(
+  transaction: Executor,
+  kind: NumberKind,
+  at: Date = new Date(),
+): Promise<string> {
+  if (!isTransaction(transaction)) {
+    throw new Error(
+      `Die Nummer für "${kind}" darf nur innerhalb einer Transaktion gezogen werden.`,
+    )
+  }
+  return allocateNumber(transaction, kind, at)
+}
+
+/**
  * Takes the next number for `kind` and renders it through the template.
  *
  * Throws when the range is missing. That is deliberate: the ranges are seeded

@@ -17,7 +17,7 @@ describe('Datenbankschema', () => {
   it('löst gegenseitige Verweise zwischen Domänen auf', () => {
     // documents ↔ orders und employees ↔ orders verweisen wechselseitig
     // aufeinander. Zeigt einer davon auf undefined, ist die Aufteilung kaputt.
-    for (const name of ['documents', 'workOrders', 'timeEntries', 'workOrderAssignees']) {
+    for (const name of ['documents', 'workOrders', 'workOrderItems', 'workOrderItemAssignees']) {
       expect(schema[name as keyof typeof schema], name).toBeTruthy()
     }
   })

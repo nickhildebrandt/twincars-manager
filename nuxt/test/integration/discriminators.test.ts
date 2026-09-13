@@ -35,12 +35,17 @@ const GUARDED: [string, string, Domain<string>][] = [
   ['employee_absences', 'status', domain.absenceStatuses],
   ['customers', 'kind', domain.customerKinds],
   ['customer_inquiries', 'reference_type', domain.inquiryReferenceTypes],
+  ['customer_inquiries', 'status', domain.inquiryStatuses],
   ['customer_inquiries', 'notification_status', domain.messageStatuses],
   ['sent_messages', 'status', domain.messageStatuses],
   ['sent_messages', 'document_type', domain.messageKinds],
+  ['sent_messages', 'subject_type', domain.messageSubjects],
   ['smtp_settings', 'secure', domain.smtpSecurities],
   ['vehicle_listings', 'status', domain.listingStatuses],
-  ['tire_storage', 'season', domain.tireSeasons],
+  ['vehicles', 'status', domain.vehicleStatuses],
+  ['audit_log', 'action', domain.auditActions],
+  ['wheel_sets', 'season', domain.tireSeasons],
+  ['wheel_sets', 'state', domain.wheelSetStates],
   ['tire_reminder_log', 'season', domain.reminderSeasons],
   ['ledger_categories', 'direction', domain.ledgerDirections],
   ['ledger_entries', 'direction', domain.ledgerDirections],
@@ -87,8 +92,8 @@ describe('jeder Diskriminator ist in der Datenbank abgesichert', () => {
 describe('die Prüfbedingung wirkt auch wirklich', () => {
   it('weist einen erfundenen Belegstatus ab', async () => {
     await expect(sql`
-      INSERT INTO documents (document_number, type, status, issue_date)
-      VALUES ('CHK-1', 'invoice', 'irgendwas', CURRENT_DATE)
+      INSERT INTO documents (type, status, issue_date)
+      VALUES ('invoice', 'irgendwas', CURRENT_DATE)
     `).rejects.toThrow()
   })
 
@@ -96,8 +101,8 @@ describe('die Prüfbedingung wirkt auch wirklich', () => {
     // `credit_note` stand beim Vorgänger in einem Suchfilter, wurde aber nie
     // geschrieben — und hatte in der Statusliste keine Bezeichnung (B-011).
     await expect(sql`
-      INSERT INTO documents (document_number, type, issue_date)
-      VALUES ('CHK-2', 'credit_note', CURRENT_DATE)
+      INSERT INTO documents (type, issue_date)
+      VALUES ('credit_note', CURRENT_DATE)
     `).rejects.toThrow()
   })
 
@@ -115,8 +120,8 @@ describe('die Prüfbedingung wirkt auch wirklich', () => {
     // Der Vorgänger speicherte die Beschriftung selbst; jetzt steht ein Code
     // in der Spalte und die Beschriftung in der Oberfläche.
     await expect(sql`
-      INSERT INTO documents (document_number, type, payment_method, issue_date)
-      VALUES ('CHK-4', 'invoice', 'Überweisung', CURRENT_DATE)
+      INSERT INTO documents (type, payment_method, issue_date)
+      VALUES ('invoice', 'Bar', CURRENT_DATE)
     `).rejects.toThrow()
   })
 
@@ -130,22 +135,23 @@ describe('die Prüfbedingung wirkt auch wirklich', () => {
 
   it('weist eine negative Erinnerungsstufe ab', async () => {
     await expect(sql`
-      INSERT INTO documents (document_number, type, reminder_level, issue_date)
-      VALUES ('CHK-6', 'invoice', -1, CURRENT_DATE)
+      INSERT INTO documents (type, reminder_level, issue_date)
+      VALUES ('invoice', -1, CURRENT_DATE)
     `).rejects.toThrow()
   })
 })
 
 describe('Aufräumen aus dem Inventar', () => {
-  it('führt die Anfrage keinen Status mehr, den niemand pflegt', async () => {
-    // F-582: der Posteingang filtert über den Benachrichtigungsstatus; ein
-    // zweiter Status wurde nie geschrieben und nie gelesen.
-    const rows = await sql`
-      SELECT column_name FROM information_schema.columns
+  it('M-33: die Anfrage führt wieder einen Bearbeitungsstand', async () => {
+    // In T-006 als tot entfernt, weil niemand sie pflegte. Anfragen werden
+    // jetzt in der Anwendung bearbeitet statt im Postfach — damit bekommt der
+    // Stand eine Aufgabe: neu, in Bearbeitung, erledigt.
+    const rows = await sql<{ column_default: string }[]>`
+      SELECT column_default FROM information_schema.columns
       WHERE table_schema = 'public' AND table_name = 'customer_inquiries'
         AND column_name = 'status'
     `
-    expect(rows).toEqual([])
+    expect(rows[0]?.column_default).toContain('neu')
   })
 
   it('legt eine Nachricht als wartend an, nicht als gesendet', async () => {
@@ -156,7 +162,7 @@ describe('Aufräumen aus dem Inventar', () => {
       WHERE table_schema = 'public' AND table_name = 'sent_messages'
         AND column_name = 'status'
     `
-    expect(rows[0]?.column_default).toContain('pending')
+    expect(rows[0]?.column_default).toContain('wartend')
   })
 })
 
@@ -168,7 +174,7 @@ describe('Regression', () => {
     expect(await constraintFor('documents', 'type')).toBeTruthy()
     expect(await constraintFor('documents', 'status')).toBeTruthy()
 
-    for (const alias of ['open', 'overdue', 'draft']) {
+    for (const alias of ['open', 'overdue', 'offen']) {
       await expect(sql`
         INSERT INTO documents (document_number, type, status, issue_date)
         VALUES (${`B335-${alias}`}, 'invoice', ${alias}, CURRENT_DATE)

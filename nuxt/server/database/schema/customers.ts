@@ -9,7 +9,7 @@
  */
 import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, check } from 'drizzle-orm/pg-core'
 import { oneOf, oneOfOrNull } from './_checks.ts'
-import { customerKinds, inquiryReferenceTypes, messageStatuses } from '../../../shared/domain.ts'
+import { customerKinds, inquiryReferenceTypes, messageStatuses, inquiryStatuses } from '../../../shared/domain.ts'
 
 export const customers = pgTable('customers', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -95,6 +95,18 @@ export const customerInquiries = pgTable('customer_inquiries', {
   message: text().notNull(),
   referenceId: varchar('reference_id', { length: 64 }),
   referenceType: varchar('reference_type', { length: 20 }),
+
+  /**
+   * Wie weit die Anfrage ist (M-33).
+   *
+   * Anfragen werden **in der Anwendung** bearbeitet, nicht im Postfach. So
+   * geht nichts unter, und es ist sichtbar, wie viele zu Aufträgen wurden.
+   * Der Kundenverweis bleibt leer, bis jemand die Anfrage zuordnet oder daraus
+   * einen Kunden anlegt — wer ein Formular ausfüllt, ist zunächst nur ein Name
+   * mit Telefonnummer.
+   */
+  status: varchar({ length: 20 }).default('neu').notNull(),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   notificationStatus: varchar('notification_status', { length: 20 }).default('pending').notNull(),
   notificationSentAt: timestamp('notification_sent_at', { withTimezone: true, mode: 'string' }),
@@ -104,6 +116,8 @@ export const customerInquiries = pgTable('customer_inquiries', {
   check('customer_inquiries_notification_status_check', oneOf(table.notificationStatus, messageStatuses.values)),
   index('customer_inquiries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('customer_inquiries_created_at_idx').using('btree', table.createdAt.asc().nullsLast()),
+  check('customer_inquiries_status_check', oneOf(table.status, inquiryStatuses.values)),
+  index('customer_inquiries_status_idx').using('btree', table.status.asc().nullsLast()),
   index('customer_inquiries_notification_status_idx').using('btree', table.notificationStatus.asc().nullsLast()),
   foreignKey({
     columns: [table.customerId],

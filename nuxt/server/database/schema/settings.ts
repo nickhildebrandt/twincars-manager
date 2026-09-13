@@ -47,11 +47,35 @@ export const companySettings = pgTable('company_settings', {
   reminderRecurEveryDays: integer('reminder_recur_every_days').default(14).notNull(),
   geoLat: numeric('geo_lat', { precision: 9, scale: 6 }),
   geoLon: numeric('geo_lon', { precision: 9, scale: 6 }),
+  /* ── Standardartikel (M-22) ────────────────────────────────────────────
+     Der Ein-Klick-Reifenservice setzt diese Positionen ein. Fest verdrahtet
+     müsste bei jeder Preisänderung der Entwickler ran. */
   laborItemId: uuid('labor_item_id'),
+  tireChangeItemId: uuid('tire_change_item_id'),
+  wheelBalanceItemId: uuid('wheel_balance_item_id'),
+  tireStorageItemId: uuid('tire_storage_item_id'),
 }, table => [
   check('company_settings_salutation_style_check', oneOf(table.salutationStyle, salutationStyles.values)),
   uniqueIndex('company_settings_singleton').using('btree', sql`((true))`),
   index('company_settings_labor_item_id_idx').using('btree', table.laborItemId.asc().nullsLast()),
+  index('company_settings_tire_change_item_id_idx').using('btree', table.tireChangeItemId.asc().nullsLast()),
+  index('company_settings_wheel_balance_item_id_idx').using('btree', table.wheelBalanceItemId.asc().nullsLast()),
+  index('company_settings_tire_storage_item_id_idx').using('btree', table.tireStorageItemId.asc().nullsLast()),
+  foreignKey({
+    columns: [table.tireChangeItemId],
+    foreignColumns: [items.id],
+    name: 'company_settings_tire_change_item_id_fk',
+  }).onDelete('no action'),
+  foreignKey({
+    columns: [table.wheelBalanceItemId],
+    foreignColumns: [items.id],
+    name: 'company_settings_wheel_balance_item_id_fk',
+  }).onDelete('no action'),
+  foreignKey({
+    columns: [table.tireStorageItemId],
+    foreignColumns: [items.id],
+    name: 'company_settings_tire_storage_item_id_fk',
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.laborItemId],
     foreignColumns: [items.id],

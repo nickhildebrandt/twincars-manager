@@ -63,6 +63,16 @@ Export `appointmentStatuses`.
 | `completed` | Abgeschlossen |
 | `cancelled` | Abgesagt      |
 
+### auditActions
+
+Export `auditActions`.
+
+| Wert        | Beschriftung |
+| ----------- | ------------ |
+| `angelegt`  | Angelegt     |
+| `geaendert` | Geändert     |
+| `geloescht` | Gelöscht     |
+
 ### Kalendereinträge
 
 Export `calendarKinds`.
@@ -88,6 +98,7 @@ Export `documentStatuses`.
 
 | Wert        | Beschriftung          |
 | ----------- | --------------------- |
+| `draft`     | Entwurf               |
 | `created`   | Angelegt              |
 | `sent`      | Versendet             |
 | `paid`      | Bezahlt               |
@@ -99,12 +110,10 @@ Export `documentStatuses`.
 
 Export `documentTypes`.
 
-| Wert                 | Beschriftung        |
-| -------------------- | ------------------- |
-| `invoice`            | Rechnung            |
-| `offer`              | Angebot             |
-| `cost_estimate`      | Kostenvoranschlag   |
-| `order_confirmation` | Auftragsbestätigung |
+| Wert            | Beschriftung      |
+| --------------- | ----------------- |
+| `cost_estimate` | Kostenvoranschlag |
+| `invoice`       | Rechnung          |
 
 ### eBay-Umgebung
 
@@ -144,6 +153,16 @@ Export `inquiryReferenceTypes`.
 | `article`  | Artikel      |
 | `tire`     | Reifen       |
 | `general`  | Allgemein    |
+
+### inquiryStatuses
+
+Export `inquiryStatuses`.
+
+| Wert             | Beschriftung   |
+| ---------------- | -------------- |
+| `neu`            | Neu            |
+| `in_bearbeitung` | In Bearbeitung |
+| `erledigt`       | Erledigt       |
 
 ### Artikelarten im Katalog
 
@@ -191,10 +210,10 @@ Export `ledgerPaymentStatuses`.
 
 Export `ledgerSources`.
 
-| Wert      | Beschriftung       |
-| --------- | ------------------ |
-| `manual`  | Manuell erfasst    |
-| `invoice` | Aus einer Rechnung |
+| Wert        | Beschriftung      |
+| ----------- | ----------------- |
+| `anwendung` | Aus der Anwendung |
+| `manuell`   | Von Hand erfasst  |
 
 ### Inseratstatus
 
@@ -209,54 +228,62 @@ Export `listingStatuses`.
 
 Export `messageKinds`.
 
-| Wert                       | Beschriftung        |
-| -------------------------- | ------------------- |
-| `invoice`                  | Rechnung            |
-| `offer`                    | Angebot             |
-| `cost_estimate`            | Kostenvoranschlag   |
-| `order_confirmation`       | Auftragsbestätigung |
-| `reminder`                 | Zahlungserinnerung  |
-| `mailing`                  | Rundschreiben       |
-| `tire_reminder`            | Reifen-Erinnerung   |
-| `appointment_confirmation` | Terminbestätigung   |
+| Wert                       | Beschriftung             |
+| -------------------------- | ------------------------ |
+| `invoice`                  | Rechnung                 |
+| `cost_estimate`            | Kostenvoranschlag        |
+| `reminder`                 | Zahlungserinnerung       |
+| `mailing`                  | Rundschreiben            |
+| `tire_reminder`            | Reifen-Erinnerung        |
+| `appointment_confirmation` | Terminbestätigung        |
+| `inquiry_answer`           | Antwort auf eine Anfrage |
 
 ### Versandstatus
 
 Export `messageStatuses`.
 
-| Wert      | Beschriftung     |
-| --------- | ---------------- |
-| `pending` | In Warteschlange |
-| `sent`    | Gesendet         |
-| `failed`  | Fehlgeschlagen   |
+| Wert         | Beschriftung          |
+| ------------ | --------------------- |
+| `wartend`    | In Warteschlange      |
+| `angenommen` | Vom Server angenommen |
+| `abgelehnt`  | Vom Server abgelehnt  |
+| `fehler`     | Fehler beim Versand   |
+
+### messageSubjects
+
+Export `messageSubjects`.
+
+| Wert        | Beschriftung       |
+| ----------- | ------------------ |
+| `document`  | Beleg              |
+| `reminder`  | Zahlungserinnerung |
+| `wheel_set` | Radsatz            |
+| `inquiry`   | Anfrage            |
+| `mailing`   | Rundschreiben      |
 
 ### Nummernkreise
 
 Export `numberKinds`.
 
-| Wert                 | Beschriftung        |
-| -------------------- | ------------------- |
-| `invoice`            | Rechnung            |
-| `offer`              | Angebot             |
-| `cost_estimate`      | Kostenvoranschlag   |
-| `order_confirmation` | Auftragsbestätigung |
-| `storno`             | Stornorechnung      |
-| `reminder`           | Zahlungserinnerung  |
-| `customer`           | Kunde               |
-| `tire`               | Reifen              |
-| `tire_storage`       | Reifeneinlagerung   |
-| `work_order`         | Auftrag             |
+| Wert            | Beschriftung       |
+| --------------- | ------------------ |
+| `invoice`       | Rechnung           |
+| `cost_estimate` | Kostenvoranschlag  |
+| `storno`        | Stornorechnung     |
+| `reminder`      | Zahlungserinnerung |
+| `customer`      | Kunde              |
+| `tire`          | Reifen             |
+| `wheel_set`     | Radsatz            |
+| `work_order`    | Auftrag            |
 
 ### Zahlungsarten
 
 Export `paymentMethods`.
 
-| Wert           | Beschriftung |
-| -------------- | ------------ |
-| `transfer`     | Überweisung  |
-| `cash`         | Bar          |
-| `direct_debit` | Lastschrift  |
-| `card`         | Karte        |
+| Wert   | Beschriftung |
+| ------ | ------------ |
+| `cash` | Bar          |
+| `card` | Karte        |
 
 ### Saison der Reifen-Erinnerung
 
@@ -315,6 +342,25 @@ Export `tireSeasons`.
 | `summer`    | Sommer       |
 | `winter`    | Winter       |
 | `allseason` | Ganzjahres   |
+
+### vehicleStatuses
+
+Export `vehicleStatuses`.
+
+| Wert             | Beschriftung   |
+| ---------------- | -------------- |
+| `kundenfahrzeug` | Kundenfahrzeug |
+| `bestand`        | Im Bestand     |
+| `verkauft`       | Verkauft       |
+
+### wheelSetStates
+
+Export `wheelSetStates`.
+
+| Wert          | Beschriftung |
+| ------------- | ------------ |
+| `montiert`    | Montiert     |
+| `eingelagert` | Eingelagert  |
 
 ### Positionsarten im Auftrag
 

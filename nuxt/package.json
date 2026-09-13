@@ -16,7 +16,7 @@
     "lint": "eslint .",
     "lint:fix": "eslint . --fix",
     "typecheck": "nuxt typecheck",
-    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:befunde && pnpm docs:check",
+    "verify": "pnpm lint && pnpm typecheck && pnpm test && pnpm test:befunde && pnpm test:modell && pnpm docs:check",
     "test": "vitest run",
     "test:unit": "vitest run --project unit",
     "test:nuxt": "vitest run --project nuxt",
@@ -40,7 +40,8 @@
     "docs:build": "pnpm docs:features && pnpm docs:api && pnpm docs:data && pnpm docs:domain",
     "db:idempotent": "node scripts/make-migration-idempotent.mjs",
     "docs:domain": "node --experimental-strip-types scripts/docs-domain.mjs",
-    "pretest": "node scripts/warm-vite-cache.mjs"
+    "pretest": "node scripts/warm-vite-cache.mjs",
+    "test:modell": "node scripts/check-modell.mjs"
   },
   "lint-staged": {
     "*.{js,mjs,ts,vue,json,md,yaml,yml,css}": "eslint --fix"

@@ -11,6 +11,7 @@ import * as v from 'valibot'
 import { createApp, createRouter, defineEventHandler, toWebHandler } from 'h3'
 import {
   coerceQuery,
+  peekValidatedBody,
   firstFieldMessage,
   toFieldErrors,
   useValidatedBody,
@@ -252,5 +253,56 @@ describe('Hilfsfunktionen', () => {
     const result = v.safeParse(customerSchema, { lastName: '' })
     const fields = toFieldErrors(result.success ? [] : result.issues)
     expect(Object.keys(fields)).toEqual(['lastName'])
+  })
+})
+
+describe('peekValidatedBody', () => {
+  /** Eine Anwendung, die nur hineinschaut und nie daran scheitert. */
+  const peek = toWebHandler((() => {
+    const app = createApp()
+    app.use(defineEventHandler(async event => ({
+      gesehen: await peekValidatedBody(event, v.object({
+        username: v.pipe(v.string(), v.trim(), v.minLength(1)),
+      })) ?? null,
+    })))
+    return app
+  })())
+
+  const send = (init: RequestInit) => peek(new Request('http://localhost/peek', init))
+
+  it('gibt zurück, was passt', async () => {
+    const response = await send({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: '  mmustermann ' }),
+    })
+    expect(await response.json()).toEqual({ gesehen: { username: 'mmustermann' } })
+  })
+
+  it('gibt nichts zurück, wenn es nicht passt — und wirft nicht', async () => {
+    // Über die Gültigkeit entscheidet der Endpoint gleich danach. Seine
+    // Antwort ist die, die der Nutzer sehen soll.
+    const response = await send({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ username: '' }),
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ gesehen: null })
+  })
+
+  it('verträgt einen Rumpf, der gar kein JSON ist', async () => {
+    const response = await send({
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: 'kein JSON',
+    })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ gesehen: null })
+  })
+
+  it('verträgt eine Anfrage ganz ohne Rumpf', async () => {
+    const response = await send({ method: 'POST' })
+    expect(await response.json()).toEqual({ gesehen: null })
   })
 })

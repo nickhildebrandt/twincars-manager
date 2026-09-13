@@ -8,8 +8,8 @@
  */
 import { afterAll, beforeEach, describe, expect, it } from 'vitest'
 import { eq } from 'drizzle-orm'
-import { numberRanges } from '../../server/database/schema/index.ts'
-import { allocateNumber, peekNumber } from '../../server/utils/numbering.ts'
+import { documents, numberRanges } from '../../server/database/schema/index.ts'
+import { allocateNumber, issueNumber, peekNumber } from '../../server/utils/numbering.ts'
 import { DEFAULT_NUMBER_RANGES } from '../../server/database/seed/index.ts'
 import { openTestDatabase } from '../setup/drizzle'
 
@@ -56,15 +56,16 @@ describe('allocateNumber', () => {
   })
 
   it('lässt keine Lücke, wenn die Transaktion scheitert', async () => {
-    await allocateNumber(db, 'offer')
+    await allocateNumber(db, 'cost_estimate')
 
     await expect(db.transaction(async (tx) => {
-      await allocateNumber(tx, 'offer')
+      await allocateNumber(tx, 'cost_estimate')
       throw new Error('Der Beleg konnte nicht geschrieben werden.')
     })).rejects.toThrow('Der Beleg konnte nicht geschrieben werden.')
 
-    // Die zurückgerollte Nummer wird wieder vergeben.
-    expect(await allocateNumber(db, 'offer')).toBe('2')
+    // Die zurückgerollte Nummer wird wieder vergeben. Der Kostenvoranschlag
+    // trägt ein Jahresformat, also steht die Zählnummer am Ende.
+    expect(await allocateNumber(db, 'cost_estimate')).toMatch(/0002$/)
   })
 
   it('meldet einen fehlenden Nummernkreis, statt eine Nummer zu erfinden', async () => {
@@ -99,5 +100,54 @@ describe('Regression', () => {
 
     const next = await allocateNumber(db, 'invoice')
     expect(Number(next)).toBe(Number(first) + 1)
+  })
+})
+
+describe('Die Nummer wird beim Ausstellen gezogen', () => {
+  it('M-14: ein Entwurf bekommt gar keine Nummer', async () => {
+    // Der Vorgänger verbrauchte die Nummer beim Anlegen. Ein gelöschter
+    // Entwurf hinterließ dadurch eine Lücke — und Lücken in einer
+    // Rechnungsfolge muss man dem Finanzamt erklären.
+    const [entwurf] = await db.insert(documents).values({
+      type: 'invoice',
+      issueDate: '2026-09-13',
+    }).returning()
+
+    expect(entwurf!.documentNumber).toBeNull()
+    expect(entwurf!.status).toBe('draft')
+
+    await db.delete(documents).where(eq(documents.id, entwurf!.id))
+  })
+
+  it('P-02: die Nummer lässt sich nur innerhalb einer Transaktion ziehen', async () => {
+    // Die Nummer und der Beleg müssen gemeinsam wirklich werden. Außerhalb
+    // einer Transaktion kann das eine gelingen und das andere scheitern.
+    await expect(issueNumber(db, 'invoice')).rejects.toThrow(
+      'Die Nummer für "invoice" darf nur innerhalb einer Transaktion gezogen werden.',
+    )
+  })
+
+  it('P-02: zwei gleichzeitige Transaktionen bekommen verschiedene Nummern', async () => {
+    // Der entscheidende Fall. Die eine Transaktion hält die Zeile gesperrt, bis
+    // sie festschreibt; die andere wartet. Lesen und danach schreiben — was der
+    // Vorgänger tat — gäbe beiden dieselbe Rechnungsnummer.
+    const nummern = await Promise.all([
+      db.transaction(tx => issueNumber(tx, 'invoice')),
+      db.transaction(tx => issueNumber(tx, 'invoice')),
+      db.transaction(tx => issueNumber(tx, 'invoice')),
+    ])
+    expect(new Set(nummern).size).toBe(3)
+  })
+
+  it('P-02: eine zurückgerollte Ausstellung gibt die Nummer wieder frei', async () => {
+    const vorher = await db.transaction(tx => issueNumber(tx, 'invoice'))
+
+    await expect(db.transaction(async (tx) => {
+      await issueNumber(tx, 'invoice')
+      throw new Error('Der Beleg konnte nicht geschrieben werden.')
+    })).rejects.toThrow()
+
+    const nachher = await db.transaction(tx => issueNumber(tx, 'invoice'))
+    expect(Number(nachher)).toBe(Number(vorher) + 1)
   })
 })

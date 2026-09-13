@@ -19,6 +19,9 @@ const { db, close } = openTestDatabase()
 afterAll(close)
 
 beforeEach(async () => {
+  // Fahrzeuge zuerst: sie sperren ihren Halter, seit ein Auto den Kunden
+  // überlebt (M-05).
+  await db.delete(vehicles)
   await db.delete(customers)
 })
 

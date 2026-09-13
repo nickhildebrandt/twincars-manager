@@ -258,6 +258,25 @@ sein Risiko, weil es keine Altbeträge umzustellen gibt.
 
 ---
 
+## Was danach noch entschieden wurde
+
+Am 13.09.2026 ist der Inhaber die fertige Modellübersicht durchgegangen und hat
+eine ganze Reihe weiterer Festlegungen getroffen — vom Ereignisprotokoll bis zur
+Datensicherung. Sie stehen vollständig in
+[09-modellaenderungen.md](09-modellaenderungen.md) und **gewinnen gegen jede
+frühere Festlegung hier**, wo sie ihr widersprechen.
+
+Betroffen sind namentlich:
+
+| Frühere Festlegung | Was sich ändert |
+| --- | --- |
+| E-11 (Löschen mit Kaskade) | Das Fahrzeug geht **nicht** mehr mit dem Kunden (M-05). Der Rest gilt. |
+| E-14 (echte Zahlungserfassung) | Zahlungen bekommen eine Zahlart; nur bar geht ins Kassenbuch (M-16). |
+| E-16 (Kundenart als Feld) | Bleibt. Die Art steuert zusätzlich die Oberfläche (M-07). |
+| E-19 (Import als Abgleich) | Bleibt. Dazu: alles übernehmen, Nummern trennen, Belege unveränderlich (M-28 bis M-32). |
+
+---
+
 ## Was daraus folgt
 
 | Paket | Änderung |

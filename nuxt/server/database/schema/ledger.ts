@@ -9,6 +9,7 @@
  */
 import { pgTable, uuid, varchar, date, numeric, timestamp, index, foreignKey, text, unique, integer, check } from 'drizzle-orm/pg-core'
 import { oneOf, oneOfOrNull } from './_checks.ts'
+import { bytea } from './_types.ts'
 import { ledgerDirections, ledgerPaymentStatuses, ledgerSources, paymentMethods } from '../../../shared/domain.ts'
 import { customers, suppliers } from './customers.ts'
 import { documents } from './documents.ts'
@@ -74,4 +75,32 @@ export const ledgerEntries = pgTable('ledger_entries', {
     foreignColumns: [documents.id],
     name: 'ledger_entries_document_id_documents_id_fk',
   }).onDelete('no action'),
+])
+
+/**
+ * Der Lieferantenbeleg zur Buchung (M-27).
+ *
+ * Das fehlte bisher vollständig: es gab PDFs für **eigene** Rechnungen, aber
+ * keinen Platz für den Beleg, der ins Haus kommt. Der Anhang ist der Nachweis
+ * fürs Finanzamt und bleibt in jedem Fall erhalten.
+ *
+ * Eine spätere automatische Erkennung (Stufe 2) schlägt Betrag, Datum,
+ * Lieferant und Steuersatz **vor**; entschieden wird von Hand. Die Anwendung
+ * muss ohne Erkennung vollständig benutzbar sein.
+ */
+export const ledgerAttachments = pgTable('ledger_attachments', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  entryId: uuid('entry_id').notNull(),
+  fileName: varchar('file_name', { length: 200 }).notNull(),
+  mimeType: varchar('mime_type', { length: 100 }).notNull(),
+  byteSize: integer('byte_size').notNull(),
+  data: bytea('data').notNull(),
+  uploadedAt: timestamp('uploaded_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, table => [
+  index('ledger_attachments_entry_id_idx').using('btree', table.entryId.asc().nullsLast()),
+  foreignKey({
+    columns: [table.entryId],
+    foreignColumns: [ledgerEntries.id],
+    name: 'ledger_attachments_entry_id_fk',
+  }).onDelete('cascade'),
 ])

@@ -7,13 +7,9 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, time, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, time, check } from 'drizzle-orm/pg-core'
 import { oneOf } from './_checks.ts'
 import { absenceStatuses, absenceTypes } from '../../../shared/domain.ts'
-import { sql } from 'drizzle-orm'
-import { customers } from './customers.ts'
-import { documents } from './documents.ts'
-import { workOrderItems, workOrders } from './orders.ts'
 
 export const employees = pgTable('employees', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -95,52 +91,6 @@ export const employeeSalaryVersions = pgTable('employee_salary_versions', {
     columns: [table.employeeId],
     foreignColumns: [employees.id],
     name: 'employee_salary_versions_employee_id_employees_id_fk',
-  }).onDelete('cascade'),
-])
-
-export const timeEntries = pgTable('time_entries', {
-  id: uuid().defaultRandom().primaryKey().notNull(),
-  employeeId: uuid('employee_id').notNull(),
-  date: date().notNull(),
-  hours: numeric({ precision: 6, scale: 2 }).notNull(),
-  documentId: uuid('document_id'),
-  customerId: uuid('customer_id'),
-  task: varchar({ length: 200 }),
-  note: text(),
-  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
-  updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
-  // Deferred reference, see documents.ts — time entries and work orders
-  // reference each other across domain files.
-  // Dieselbe Regel wie für die Position weiter unten. Vorher widersprachen
-  // sich die beiden: die Position kaskadierte, der Auftrag setzte auf NULL.
-  workOrderId: uuid('work_order_id').references((): AnyPgColumn => workOrders.id, { onDelete: 'cascade' }),
-  workOrderItemId: uuid('work_order_item_id'),
-}, table => [
-  index('time_entries_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
-  index('time_entries_date_idx').using('btree', table.date.asc().nullsLast()),
-  index('time_entries_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
-  index('time_entries_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
-  index('time_entries_work_order_id_idx').using('btree', table.workOrderId.asc().nullsLast()),
-  uniqueIndex('time_entries_work_order_item_id_idx').using('btree', table.workOrderItemId.asc().nullsLast()).where(sql`(work_order_item_id IS NOT NULL)`),
-  foreignKey({
-    columns: [table.employeeId],
-    foreignColumns: [employees.id],
-    name: 'time_entries_employee_id_fk',
-  }).onDelete('cascade'),
-  foreignKey({
-    columns: [table.documentId],
-    foreignColumns: [documents.id],
-    name: 'time_entries_document_id_fk',
-  }).onDelete('set null'),
-  foreignKey({
-    columns: [table.customerId],
-    foreignColumns: [customers.id],
-    name: 'time_entries_customer_id_fk',
-  }).onDelete('cascade'),
-  foreignKey({
-    columns: [table.workOrderItemId],
-    foreignColumns: [workOrderItems.id],
-    name: 'time_entries_work_order_item_id_work_order_items_id_fk',
   }).onDelete('cascade'),
 ])
 

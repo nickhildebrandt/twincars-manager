@@ -118,3 +118,26 @@ export function coerceQuery(query: Record<string, unknown>): Record<string, unkn
   }
   return out
 }
+
+/**
+ * Schaut in den Rumpf, ohne die Anfrage scheitern zu lassen.
+ *
+ * Für den einen Fall, in dem ein Wert gebraucht wird, **bevor** der Endpoint
+ * ihn regulär prüft: die Anmeldedrossel muss wissen, auf welches Konto gezielt
+ * wird, darf aber nicht selbst über die Gültigkeit entscheiden — das tut die
+ * Anmeldung gleich danach, und ihre Antwort ist die, die der Nutzer sehen soll.
+ *
+ * Gibt `undefined` zurück, wenn nichts Brauchbares darin steht. Wirft nie.
+ */
+export async function peekValidatedBody<T extends Schema>(
+  event: H3Event,
+  schema: T,
+): Promise<v.InferOutput<T> | undefined> {
+  try {
+    const result = await v.safeParseAsync(schema as v.GenericSchemaAsync, await readBody(event))
+    return result.success ? (result.output as v.InferOutput<T>) : undefined
+  }
+  catch {
+    return undefined
+  }
+}

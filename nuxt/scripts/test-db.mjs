@@ -10,8 +10,11 @@
 import {
   TEMPLATE_DATABASE,
   adminSql,
+  databaseNameOf,
+  dropBaseDatabase,
   dropTemplateDatabase,
   dropWorkerDatabases,
+  ensureDatabase,
   ensureTemplateDatabase,
   loadTestEnv,
 } from '../test/setup/database-helpers.ts'
@@ -21,15 +24,22 @@ loadTestEnv()
 
 const sql = adminSql()
 try {
+  const base = databaseNameOf(process.env.DATABASE_URL ?? '')
+
   if (command === 'drop' || command === 'reset') {
     const workers = await dropWorkerDatabases(sql)
     await dropTemplateDatabase(sql)
-    console.log(`Verworfen: Vorlage + ${workers} Worker-Datenbank(en).`)
+    // Auch die Datenbank, gegen die das End-to-End-Projekt baut: die Baseline
+    // ist wiederholbar geschrieben, ergänzt eine bestehende Datenbank also
+    // nicht um neue Spalten.
+    await dropBaseDatabase(sql, base)
+    console.log(`Verworfen: Vorlage, "${base}" + ${workers} Worker-Datenbank(en).`)
   }
 
   if (command === 'reset') {
     await ensureTemplateDatabase(sql)
-    console.log(`Vorlage "${TEMPLATE_DATABASE}" neu gebaut.`)
+    await ensureDatabase(sql, base)
+    console.log(`Vorlage "${TEMPLATE_DATABASE}" und "${base}" neu gebaut.`)
   }
 
   if (command === 'status') {

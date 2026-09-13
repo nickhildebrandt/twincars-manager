@@ -16,6 +16,7 @@ Vorwissen ihn allein abarbeiten kann.
 | wissen wollen, was die Anwendung können muss | [01-inventar.md](01-inventar.md) |
 | wissen wollen, was am Vorgänger kaputt ist | [02-befunde.md](02-befunde.md) |
 | eine technische Entscheidung brauchen | [03-architektur.md](03-architektur.md), [08-entscheidungen.md](08-entscheidungen.md) |
+| wissen wollen, was am Modell geändert wurde | [09-modellaenderungen.md](09-modellaenderungen.md) |
 | wissen wollen, wie sich etwas bedienen soll | [04-ux.md](04-ux.md) |
 | einen Test schreiben | [05-teststrategie.md](05-teststrategie.md) |
 | den Stand sehen wollen | [fortschritt.md](fortschritt.md), [blocker.md](blocker.md) |
@@ -34,6 +35,7 @@ Vorwissen ihn allein abarbeiten kann.
 | [06-abdeckung.md](06-abdeckung.md) | **Abdeckungstabelle**: jede Feature-ID einem Arbeitspaket zugeordnet, jeder zu behebende Befund ebenso. |
 | [07-ausfuehrung.md](07-ausfuehrung.md) | Anleitung für die umsetzende Sitzung, inklusive Entwurf für `nuxt/CLAUDE.md`. |
 | [08-entscheidungen.md](08-entscheidungen.md) | Getroffene Entscheidungen, Annahmen und die offenen Punkte samt Vorgehen ohne Antwort. |
+| [09-modellaenderungen.md](09-modellaenderungen.md) | **Verbindlich.** Was der Inhaber nach der Modelldurchsicht geändert haben will — Kennungen `M-nn` und Prüfregeln `P-nn`. Gewinnt gegen jede frühere Festlegung. |
 | [fortschritt.md](fortschritt.md) | Ein Eintrag je abgeschlossenem Paket. |
 | `blocker.md` | Wird angelegt, sobald ein Akzeptanzkriterium nicht erreichbar ist. |
 

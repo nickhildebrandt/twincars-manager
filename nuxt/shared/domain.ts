@@ -47,14 +47,19 @@ export function optionsOf<T extends string>(from: Domain<T>): { value: T, label:
 /* ── documents ────────────────────────────────────────────────────────── */
 
 /**
- * The four Beleg kinds. A cancellation is **not** a kind of its own: it is an
- * invoice with status `storno` that points at the original (ADR-015).
+ * Two Beleg kinds, and no more (M-15).
+ *
+ * The workshop writes an estimate and then an invoice. An *Angebot* is legally
+ * binding; a *Kostenvoranschlag* is an estimate that may be exceeded by about
+ * 15 %. In a workshop the second is always what is meant, so the first is gone,
+ * along with the Auftragsbestätigung nobody wrote.
+ *
+ * A cancellation is **not** a kind of its own: it is an invoice with status
+ * `storno` that points at the original (ADR-015).
  */
 export const documentTypes = domain({
-  invoice: 'Rechnung',
-  offer: 'Angebot',
   cost_estimate: 'Kostenvoranschlag',
-  order_confirmation: 'Auftragsbestätigung',
+  invoice: 'Rechnung',
 })
 export type DocumentType = typeof documentTypes.values[number]
 
@@ -67,6 +72,7 @@ export type DocumentType = typeof documentTypes.values[number]
  * let the filters and the labels disagree.
  */
 export const documentStatuses = domain({
+  draft: 'Entwurf',
   created: 'Angelegt',
   sent: 'Versendet',
   paid: 'Bezahlt',
@@ -74,18 +80,34 @@ export const documentStatuses = domain({
   storno: 'Stornorechnung',
   converted: 'In Rechnung überführt',
 })
+
+/**
+ * A draft carries **no number** (M-14).
+ *
+ * The number is drawn when the document is issued, so deleting a draft leaves
+ * no gap in the sequence — and gaps in an invoice sequence have to be explained
+ * to the tax office.
+ */
+export const DRAFT_STATUS = 'draft'
 export type DocumentStatus = typeof documentStatuses.values[number]
 
 /** Which statuses count as issued — one definition for turnover (E-15). */
 export const ISSUED_DOCUMENT_STATUSES = ['sent', 'paid', 'cancelled', 'storno'] as const
 
-/** How the customer pays. The stored value is a code, the label is German. */
+/**
+ * How the customer pays (M-16).
+ *
+ * Two ways, because those are the two the workshop has. **Only cash reaches
+ * the cash book** — a card payment never touches the till, so booking it there
+ * would make the counted cash disagree with the book (P-07).
+ */
 export const paymentMethods = domain({
-  transfer: 'Überweisung',
   cash: 'Bar',
-  direct_debit: 'Lastschrift',
   card: 'Karte',
 })
+
+/** Payment methods that belong in the cash book. */
+export const CASH_BOOK_METHODS = ['cash'] as const
 export type PaymentMethod = typeof paymentMethods.values[number]
 
 /** What a billed line is. Drives grouping and wording, never the price. */
@@ -167,11 +189,18 @@ export type CustomerKind = typeof customerKinds.values[number]
 
 /* ── communication ────────────────────────────────────────────────────── */
 
-/** What happened to one outgoing mail. */
+/**
+ * What happened to one outgoing mail — named honestly (M-34).
+ *
+ * Through our own outgoing server the only thing that can be established is
+ * that the server **accepted** the mail. Whether it was delivered is not
+ * knowable, so nothing here says "delivered".
+ */
 export const messageStatuses = domain({
-  pending: 'In Warteschlange',
-  sent: 'Gesendet',
-  failed: 'Fehlgeschlagen',
+  wartend: 'In Warteschlange',
+  angenommen: 'Vom Server angenommen',
+  abgelehnt: 'Vom Server abgelehnt',
+  fehler: 'Fehler beim Versand',
 })
 export type MessageStatus = typeof messageStatuses.values[number]
 
@@ -183,20 +212,46 @@ export type MessageStatus = typeof messageStatuses.values[number]
  */
 export const messageKinds = domain({
   invoice: 'Rechnung',
-  offer: 'Angebot',
   cost_estimate: 'Kostenvoranschlag',
-  order_confirmation: 'Auftragsbestätigung',
   reminder: 'Zahlungserinnerung',
   mailing: 'Rundschreiben',
   tire_reminder: 'Reifen-Erinnerung',
   appointment_confirmation: 'Terminbestätigung',
+  inquiry_answer: 'Antwort auf eine Anfrage',
 })
 export type MessageKind = typeof messageKinds.values[number]
 
+/**
+ * What an outgoing mail was about (M-34).
+ *
+ * The predecessor's log pointed at a document and nothing else, although
+ * payment reminders, tire reminders and answers to enquiries go out the same
+ * way. Two fields now: the kind of thing, and its id.
+ */
+export const messageSubjects = domain({
+  document: 'Beleg',
+  reminder: 'Zahlungserinnerung',
+  wheel_set: 'Radsatz',
+  inquiry: 'Anfrage',
+  mailing: 'Rundschreiben',
+})
+export type MessageSubject = typeof messageSubjects.values[number]
+
 /** Mails that carry a PDF. Everything else is text only. */
-export const MESSAGE_KINDS_WITH_PDF = [
-  'invoice', 'offer', 'cost_estimate', 'order_confirmation', 'reminder',
-] as const
+export const MESSAGE_KINDS_WITH_PDF = ['invoice', 'cost_estimate', 'reminder'] as const
+
+/**
+ * How far an enquiry has come (M-33).
+ *
+ * Enquiries are worked on **in the application**, not in a mailbox. That way
+ * nothing gets lost, and it is visible how many turned into orders.
+ */
+export const inquiryStatuses = domain({
+  neu: 'Neu',
+  in_bearbeitung: 'In Bearbeitung',
+  erledigt: 'Erledigt',
+})
+export type InquiryStatus = typeof inquiryStatuses.values[number]
 
 /** What a contact-form enquiry refers to. */
 export const inquiryReferenceTypes = domain({
@@ -217,6 +272,20 @@ export const reminderStatuses = domain({
 export type ReminderStatus = typeof reminderStatuses.values[number]
 
 /* ── vehicles and tires ───────────────────────────────────────────────── */
+
+/**
+ * What the vehicle is to the business right now (M-05).
+ *
+ * The predecessor had no such field: a vehicle was either attached to a
+ * customer or it was stock, and deleting the customer took the car with it.
+ * A car without a keeper is not a data error.
+ */
+export const vehicleStatuses = domain({
+  kundenfahrzeug: 'Kundenfahrzeug',
+  bestand: 'Im Bestand',
+  verkauft: 'Verkauft',
+})
+export type VehicleStatus = typeof vehicleStatuses.values[number]
 
 /** Whether a stock vehicle is still on offer. */
 export const listingStatuses = domain({
@@ -247,6 +316,18 @@ export const tireConstructions = domain({
 })
 export type TireConstruction = typeof tireConstructions.values[number]
 
+/**
+ * Where a wheel set is (M-17).
+ *
+ * Exactly one set per vehicle is fitted; the rest are in the rack. Changing
+ * over swaps the two states (P-03).
+ */
+export const wheelSetStates = domain({
+  montiert: 'Montiert',
+  eingelagert: 'Eingelagert',
+})
+export type WheelSetState = typeof wheelSetStates.values[number]
+
 /** Which half of the year a tire reminder belongs to. */
 export const reminderSeasons = domain({
   spring: 'Frühjahr',
@@ -269,24 +350,41 @@ export const ledgerPaymentStatuses = domain({
 })
 export type LedgerPaymentStatus = typeof ledgerPaymentStatuses.values[number]
 
-/** Where a booking came from. */
+/**
+ * Where a booking came from (M-25).
+ *
+ * In the reference year about 150 of 809 bookings could come from the
+ * application — workshop invoices, vehicle and tire sales, supplier credits.
+ * The other 630 are supplier purchases and inspection fees, entered by hand.
+ */
 export const ledgerSources = domain({
-  manual: 'Manuell erfasst',
-  invoice: 'Aus einer Rechnung',
+  anwendung: 'Aus der Anwendung',
+  manuell: 'Von Hand erfasst',
 })
 export type LedgerSource = typeof ledgerSources.values[number]
+
+/**
+ * What happened to a record (M-01).
+ *
+ * One entry per save, not per field — that is what a timeline wants to show.
+ * The changed fields with their old and new values ride along in the entry.
+ */
+export const auditActions = domain({
+  angelegt: 'Angelegt',
+  geaendert: 'Geändert',
+  geloescht: 'Gelöscht',
+})
+export type AuditAction = typeof auditActions.values[number]
 
 /** One row per number sequence. Each is a separate, gapless counter. */
 export const numberKinds = domain({
   invoice: 'Rechnung',
-  offer: 'Angebot',
   cost_estimate: 'Kostenvoranschlag',
-  order_confirmation: 'Auftragsbestätigung',
   storno: 'Stornorechnung',
   reminder: 'Zahlungserinnerung',
   customer: 'Kunde',
   tire: 'Reifen',
-  tire_storage: 'Reifeneinlagerung',
+  wheel_set: 'Radsatz',
   work_order: 'Auftrag',
 })
 export type NumberKind = typeof numberKinds.values[number]

@@ -14,7 +14,6 @@ import { sql } from 'drizzle-orm'
 import { calendarEntries } from './calendar.ts'
 import { items } from './catalog.ts'
 import { customers } from './customers.ts'
-import { documents } from './documents.ts'
 import { employees } from './employees.ts'
 import { vehicles } from './vehicles.ts'
 
@@ -27,7 +26,6 @@ export const workOrders = pgTable('work_orders', {
   customerId: uuid('customer_id'),
   vehicleId: uuid('vehicle_id'),
   appointmentId: uuid('appointment_id'),
-  invoiceId: uuid('invoice_id'),
   completedAt: timestamp('completed_at', { withTimezone: true, mode: 'string' }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
@@ -39,7 +37,6 @@ export const workOrders = pgTable('work_orders', {
   index('work_orders_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   uniqueIndex('work_orders_appointment_id_idx').using('btree', table.appointmentId.asc().nullsLast()).where(sql`(appointment_id IS NOT NULL)`),
   index('work_orders_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
-  index('work_orders_invoice_id_idx').using('btree', table.invoiceId.asc().nullsLast()),
   index('work_orders_status_idx').using('btree', table.status.asc().nullsLast()),
   foreignKey({
     columns: [table.customerId],
@@ -56,11 +53,6 @@ export const workOrders = pgTable('work_orders', {
     foreignColumns: [calendarEntries.id],
     name: 'work_orders_appointment_id_calendar_entries_id_fk',
   }).onDelete('set null'),
-  foreignKey({
-    columns: [table.invoiceId],
-    foreignColumns: [documents.id],
-    name: 'work_orders_invoice_id_documents_id_fk',
-  }).onDelete('set null'),
   unique('work_orders_order_number_unique').on(table.orderNumber),
 ])
 
@@ -74,14 +66,12 @@ export const workOrderItems = pgTable('work_order_items', {
   quantity: numeric({ precision: 12, scale: 3 }).default('1').notNull(),
   unit: varchar({ length: 20 }),
   unitPriceNet: integer('unit_price_net').notNull(),
-  employeeId: uuid('employee_id'),
   hours: numeric({ precision: 6, scale: 2 }),
   doneAt: date('done_at').notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
 }, table => [
   check('work_order_items_kind_check', oneOf(table.kind, workOrderItemKinds.values)),
-  index('work_order_items_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   index('work_order_items_item_id_idx').using('btree', table.itemId.asc().nullsLast()),
   index('work_order_items_work_order_id_idx').using('btree', table.workOrderId.asc().nullsLast()),
   foreignKey({
@@ -94,27 +84,32 @@ export const workOrderItems = pgTable('work_order_items', {
     foreignColumns: [items.id],
     name: 'work_order_items_item_id_items_id_fk',
   }).onDelete('set null'),
-  foreignKey({
-    columns: [table.employeeId],
-    foreignColumns: [employees.id],
-    name: 'work_order_items_employee_id_employees_id_fk',
-  }).onDelete('no action'),
 ])
 
-export const workOrderAssignees = pgTable('work_order_assignees', {
-  workOrderId: uuid('work_order_id').notNull(),
+/**
+ * Wer an einer Position gearbeitet hat (M-11).
+ *
+ * Beim Vorgänger hing die Position an **genau einem** Mitarbeiter, und zwar
+ * sperrend. Das ging nicht auf: an einer Bremse arbeiten zwei, und wer die
+ * Zuweisung auf den ganzen Auftrag legt, weiß hinterher nicht, wer was gemacht
+ * hat. Die Position wird zur Rechnungszeile, also gehört die Zuweisung dorthin.
+ */
+export const workOrderItemAssignees = pgTable('work_order_item_assignees', {
+  workOrderItemId: uuid('work_order_item_id').notNull(),
   employeeId: uuid('employee_id').notNull(),
 }, table => [
-  index('work_order_assignees_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
+  index('work_order_item_assignees_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
   foreignKey({
-    columns: [table.workOrderId],
-    foreignColumns: [workOrders.id],
-    name: 'work_order_assignees_work_order_id_work_orders_id_fk',
+    columns: [table.workOrderItemId],
+    foreignColumns: [workOrderItems.id],
+    name: 'work_order_item_assignees_work_order_item_id_fk',
   }).onDelete('cascade'),
+  // Ein Mitarbeiter wird deaktiviert, nicht gelöscht (M-12). Ginge er doch,
+  // verschwände die Auskunft, wer die Arbeit gemacht hat.
   foreignKey({
     columns: [table.employeeId],
     foreignColumns: [employees.id],
-    name: 'work_order_assignees_employee_id_employees_id_fk',
-  }).onDelete('cascade'),
-  primaryKey({ columns: [table.workOrderId, table.employeeId], name: 'work_order_assignees_work_order_id_employee_id_pk' }),
+    name: 'work_order_item_assignees_employee_id_fk',
+  }).onDelete('no action'),
+  primaryKey({ columns: [table.workOrderItemId, table.employeeId], name: 'work_order_item_assignees_pk' }),
 ])

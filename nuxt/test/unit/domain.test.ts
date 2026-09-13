@@ -56,9 +56,9 @@ describe('jede Werteliste', () => {
 
 describe('labelOf', () => {
   it('nennt die deutsche Bezeichnung', () => {
-    expect(labelOf(documentTypes, 'order_confirmation')).toBe('Auftragsbestätigung')
+    expect(labelOf(documentTypes, 'cost_estimate')).toBe('Kostenvoranschlag')
     expect(labelOf(documentStatuses, 'storno')).toBe('Stornorechnung')
-    expect(labelOf(paymentMethods, 'transfer')).toBe('Überweisung')
+    expect(labelOf(paymentMethods, 'cash')).toBe('Bar')
   })
 
   it.each([null, undefined, '', 'credit_note', 'irgendwas'])(
@@ -106,7 +106,7 @@ describe('die Schemata kommen aus denselben Listen', () => {
     const message = result.issues![0]!.message
     expect(message).toContain('Belegart')
     expect(message).toContain('Rechnung')
-    expect(message).toContain('Auftragsbestätigung')
+    expect(message).toContain('Kostenvoranschlag')
   })
 })
 
@@ -135,6 +135,34 @@ describe('die Vokabeln sind vereinheitlicht', () => {
     expect(domain.messageKinds.values).toContain('reminder')
     expect(domain.messageKinds.values).not.toContain('reminder_2')
   })
+
+  it('M-15: es gibt nur Kostenvoranschlag und Rechnung', () => {
+    // Das Angebot ist rechtlich verbindlich, der Kostenvoranschlag eine
+    // Schätzung mit rund 15 % zulässiger Überschreitung. In der Werkstatt ist
+    // immer der Kostenvoranschlag gemeint. Die Auftragsbestätigung schrieb nie
+    // jemand.
+    expect(documentTypes.values).toEqual(['cost_estimate', 'invoice'])
+    expect(domain.numberKinds.values).not.toContain('offer')
+    expect(domain.numberKinds.values).not.toContain('order_confirmation')
+  })
+
+  it('M-16: es gibt genau zwei Zahlarten, und nur eine geht ins Kassenbuch', () => {
+    expect(paymentMethods.values).toEqual(['cash', 'card'])
+    expect(domain.CASH_BOOK_METHODS).toEqual(['cash'])
+  })
+
+  it('M-34: kein Versandstatus behauptet eine Zustellung', () => {
+    // Über den eigenen Postausgang ist nur feststellbar, dass der Server die
+    // Mail angenommen hat. Alles andere wäre eine Behauptung.
+    expect(domain.messageStatuses.values).toEqual(['wartend', 'angenommen', 'abgelehnt', 'fehler'])
+    for (const label of Object.values(domain.messageStatuses.labels)) {
+      expect(label.toLowerCase()).not.toContain('zugestellt')
+    }
+  })
+
+  it('M-25: eine Buchung kommt aus der Anwendung oder von Hand', () => {
+    expect(domain.ledgerSources.values).toEqual(['anwendung', 'manuell'])
+  })
 })
 
 describe('die Nummernkreise stehen an genau einer Stelle', () => {
@@ -149,12 +177,11 @@ describe('die Nummernkreise stehen an genau einer Stelle', () => {
 describe('Regression', () => {
   it('B-011: es gibt genau eine Quelle für Beschriftungen', () => {
     // Der Vorgänger hatte zwei Karten, die sich widersprachen: die Suche nannte
-    // `order_confirmation` „Auftrag", die Statusliste „Auftragsbestätigung".
-    // `credit_note` fehlte in der Statusliste ganz und leckte als englischer
-    // Rohwert in die Oberfläche. Die Reifensaison hatte sogar eine dritte,
-    // eigene Karte in der Suche.
-    expect(labelOf(documentTypes, 'order_confirmation')).toBe('Auftragsbestätigung')
-    expect(labelOf(domain.messageKinds, 'order_confirmation')).toBe('Auftragsbestätigung')
+    // dieselbe Belegart anders als die Statusliste. `credit_note` fehlte in der
+    // Statusliste ganz und leckte als englischer Rohwert in die Oberfläche. Die
+    // Reifensaison hatte sogar eine dritte, eigene Karte in der Suche.
+    expect(labelOf(documentTypes, 'cost_estimate')).toBe('Kostenvoranschlag')
+    expect(labelOf(domain.messageKinds, 'cost_estimate')).toBe('Kostenvoranschlag')
 
     // Ein unbekannter Wert erreicht die Oberfläche nie als Rohwert.
     expect(labelOf(documentTypes, 'credit_note')).toBe('—')

@@ -1,7 +1,10 @@
 /**
  * Fahrzeuge, Bestand und Fahrzeugunterlagen
  *
- * Ein Fahrzeug ohne Kunde ist ein Bestandsfahrzeug. Kennzeichen sind versioniert, damit alte Belege ihr damaliges Kennzeichen behalten.
+ * Ein Fahrzeug überlebt seinen Halter (M-05): der Verweis auf den Kunden
+ * sperrt, statt mitzulöschen, und ein Statusfeld sagt, was das Fahrzeug für den
+ * Betrieb ist. Kennzeichen und Halter sind versioniert, damit alte Belege ihren
+ * damaligen Stand behalten.
  *
  * Erzeugt aus dem Stand des Vorgängersystems (38 Migrationen) und in
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
@@ -9,7 +12,7 @@
  */
 import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
 import { oneOf } from './_checks.ts'
-import { listingStatuses } from '../../../shared/domain.ts'
+import { listingStatuses, vehicleStatuses } from '../../../shared/domain.ts'
 import { documents } from './documents.ts'
 import { bytea } from './_types.ts'
 import { customers } from './customers.ts'
@@ -35,6 +38,11 @@ export const vehicles = pgTable('vehicles', {
   gearbox: varchar({ length: 30 }),
   bodyType: varchar('body_type', { length: 50 }),
   notes: text(),
+  /**
+   * Was das Fahrzeug für den Betrieb ist (M-05): Kundenfahrzeug, im Bestand
+   * oder verkauft. In allen drei Fällen bleiben die Daten vollständig.
+   */
+  status: varchar({ length: 20 }).default('kundenfahrzeug').notNull(),
   archived: boolean().default(false).notNull(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
@@ -45,11 +53,15 @@ export const vehicles = pgTable('vehicles', {
   index('vehicles_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('vehicles_next_hu_idx').using('btree', table.nextHu.asc().nullsLast()),
   index('vehicles_vin_idx').using('btree', table.vin.asc().nullsLast()),
+  check('vehicles_status_check', oneOf(table.status, vehicleStatuses.values)),
+  index('vehicles_status_idx').using('btree', table.status.asc().nullsLast()),
+  // M-05: Das Fahrzeug überlebt den Kunden. Es zu löschen, weil sein Halter
+  // geht, wäre Datenverlust — ein Auto ohne Halter ist kein Fehler.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'vehicles_customer_id_customers_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.previousOwnerCustomerId],
     foreignColumns: [customers.id],
@@ -179,4 +191,35 @@ export const vehicleDocuments = pgTable('vehicle_documents', {
     foreignColumns: [vehicles.id],
     name: 'vehicle_documents_vehicle_id_vehicles_id_fk',
   }).onDelete('cascade'),
+])
+
+/**
+ * Wer wann Halter war (M-06).
+ *
+ * Neben der Kennzeichenhistorie die zweite Zeitleiste am Fahrzeug. `bis` bleibt
+ * offen, solange der Eintrag der aktuelle ist.
+ */
+export const vehicleOwnerHistory = pgTable('vehicle_owner_history', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  vehicleId: uuid('vehicle_id').notNull(),
+  customerId: uuid('customer_id'),
+  /** Name zum Zeitpunkt des Halterwechsels — überlebt ein gelöschtes Konto. */
+  customerName: varchar('customer_name', { length: 200 }),
+  ownerFrom: date('owner_from').notNull(),
+  ownerUntil: date('owner_until'),
+  note: varchar({ length: 200 }),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, table => [
+  index('vehicle_owner_history_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast(), table.ownerFrom.desc().nullsLast()),
+  index('vehicle_owner_history_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
+  foreignKey({
+    columns: [table.vehicleId],
+    foreignColumns: [vehicles.id],
+    name: 'vehicle_owner_history_vehicle_id_fk',
+  }).onDelete('cascade'),
+  foreignKey({
+    columns: [table.customerId],
+    foreignColumns: [customers.id],
+    name: 'vehicle_owner_history_customer_id_fk',
+  }).onDelete('set null'),
 ])

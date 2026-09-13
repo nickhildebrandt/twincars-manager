@@ -7,7 +7,7 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, timestamp, index, uniqueIndex, foreignKey, text, unique, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, unique, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
 import { notNegative, oneOf, oneOfOrNull } from './_checks.ts'
 import { documentStatuses, documentTypes, itemLineKinds, paymentMethods, reminderStatuses } from '../../../shared/domain.ts'
 import { bytea } from './_types.ts'
@@ -18,10 +18,30 @@ import { vehicles } from './vehicles.ts'
 
 export const documents = pgTable('documents', {
   id: uuid().defaultRandom().primaryKey().notNull(),
-  documentNumber: varchar('document_number', { length: 50 }).notNull(),
+  /**
+   * Leer, solange der Beleg ein Entwurf ist (M-14).
+   *
+   * Die Nummer wird erst beim endgültigen Ausstellen gezogen, in einer
+   * Transaktion mit Zeilensperre. Ein gelöschter Entwurf hinterlässt dadurch
+   * keine Lücke — und Lücken in einer Rechnungsfolge muss man dem Finanzamt
+   * erklären.
+   */
+  documentNumber: varchar('document_number', { length: 50 }),
+
+  /**
+   * Die Originalnummer aus dem Altsystem (M-29).
+   *
+   * Importierte Belege laufen **nicht** in den neuen Zähler; sie behalten ihre
+   * alte Nummer hier, damit ein Kunde mit einem Ausdruck von 2018 wiederfindbar
+   * bleibt.
+   */
   legacyDocumentNumber: varchar('legacy_document_number', { length: 50 }),
+
+  /** Aus dem Altsystem übernommen und damit unveränderlich (M-30, P-08). */
+  imported: boolean().default(false).notNull(),
+
   type: varchar({ length: 30 }).notNull(),
-  status: varchar({ length: 30 }).default('created').notNull(),
+  status: varchar({ length: 30 }).default('draft').notNull(),
   customerId: uuid('customer_id'),
   vehicleId: uuid('vehicle_id'),
   issueDate: date('issue_date').notNull(),
@@ -36,6 +56,27 @@ export const documents = pgTable('documents', {
   header: text(),
   footer: text(),
   notes: text(),
+
+  /* ── Eingefroren beim Ausstellen (M-03) ────────────────────────────────
+     Ein ausgestellter Beleg holt sich nichts mehr von woanders. Zieht der
+     Kunde um oder ändert die Firma ihre Steuernummer, darf sich die Rechnung
+     von 2019 nicht rückwirkend ändern. Leer, solange der Beleg ein Entwurf
+     ist — dann zeigt die Oberfläche den aktuellen Stand. */
+
+  issuedAt: timestamp('issued_at', { withTimezone: true, mode: 'string' }),
+
+  billedName: varchar('billed_name', { length: 200 }),
+  billedStreet: varchar('billed_street', { length: 200 }),
+  billedZip: varchar('billed_zip', { length: 10 }),
+  billedCity: varchar('billed_city', { length: 150 }),
+  billedCountry: varchar('billed_country', { length: 100 }),
+  billedVatId: varchar('billed_vat_id', { length: 30 }),
+
+  companyName: varchar('company_name', { length: 200 }),
+  companyAddress: text('company_address'),
+  companyTaxNumber: varchar('company_tax_number', { length: 40 }),
+  companyVatId: varchar('company_vat_id', { length: 30 }),
+  companyFooter: text('company_footer'),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   convertedToInvoiceId: uuid('converted_to_invoice_id'),
@@ -61,6 +102,8 @@ export const documents = pgTable('documents', {
   index('documents_cancels_idx').using('btree', table.cancelsDocumentId.asc().nullsLast()),
   index('documents_converted_to_invoice_idx').using('btree', table.convertedToInvoiceId.asc().nullsLast()),
   index('documents_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
+  index('documents_imported_idx').using('btree', table.imported.asc().nullsLast()),
+  index('documents_legacy_document_number_idx').using('btree', table.legacyDocumentNumber.asc().nullsLast()),
   uniqueIndex('documents_document_number_idx').using('btree', table.documentNumber.asc().nullsLast()),
   index('documents_issue_date_idx').using('btree', table.issueDate.asc().nullsLast()),
   index('documents_type_status_idx').using('btree', table.type.asc().nullsLast(), table.status.asc().nullsLast()),

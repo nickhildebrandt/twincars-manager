@@ -98,6 +98,20 @@ export async function ensureTemplateDatabase(sql: Sql): Promise<boolean> {
   }
 }
 
+/**
+ * Drops the database the end-to-end project builds against.
+ *
+ * The baseline is written to be repeatable, so applying it to an existing
+ * database adds nothing — a new column stays missing and the built server
+ * fails on a query nobody changed. During the rewrite the baseline moves
+ * often, so a reset has to take this one with it.
+ */
+export async function dropBaseDatabase(sql: Sql, database: string): Promise<void> {
+  if (database === 'postgres' || database === 'template1') return
+  await terminateConnections(sql, database)
+  await sql.unsafe(`DROP DATABASE IF EXISTS "${database}"`)
+}
+
 /** Drops the template, e.g. to force a rebuild after a schema change. */
 export async function dropTemplateDatabase(sql: Sql): Promise<void> {
   await terminateConnections(sql, TEMPLATE_DATABASE)

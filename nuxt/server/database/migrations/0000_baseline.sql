@@ -1,3 +1,25 @@
+CREATE TABLE IF NOT EXISTS "audit_log" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"at" timestamp with time zone DEFAULT now() NOT NULL,
+	"user_id" text,
+	"user_name" varchar(200),
+	"entity" varchar(60) NOT NULL,
+	"entity_id" varchar(64) NOT NULL,
+	"action" varchar(20) NOT NULL,
+	"changes" jsonb DEFAULT '[]'::jsonb NOT NULL,
+	"note" varchar(300),
+	CONSTRAINT "audit_log_action_check" CHECK ("audit_log"."action" IN ('angelegt', 'geaendert', 'geloescht'))
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "sign_in_attempts" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"at" timestamp with time zone DEFAULT now() NOT NULL,
+	"username" varchar(64) NOT NULL,
+	"client_address" varchar(64),
+	"succeeded" boolean NOT NULL,
+	"reason" varchar(20)
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "accounts" (
 	"id" text PRIMARY KEY NOT NULL,
 	"user_id" text NOT NULL,
@@ -187,7 +209,8 @@ CREATE TABLE IF NOT EXISTS "posts" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "sent_messages" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"document_id" uuid,
+	"subject_type" varchar(30) NOT NULL,
+	"subject_id" varchar(64),
 	"document_type" varchar(30) NOT NULL,
 	"recipient_email" varchar(254) NOT NULL,
 	"recipient_name" varchar(200),
@@ -195,11 +218,12 @@ CREATE TABLE IF NOT EXISTS "sent_messages" (
 	"body_text" text NOT NULL,
 	"attachment_meta" jsonb DEFAULT '[]'::jsonb,
 	"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"status" varchar(20) DEFAULT 'pending' NOT NULL,
+	"status" varchar(20) DEFAULT 'wartend' NOT NULL,
 	"error_message" text,
 	"smtp_message_id" varchar(200),
-	CONSTRAINT "sent_messages_status_check" CHECK ("sent_messages"."status" IN ('pending', 'sent', 'failed')),
-	CONSTRAINT "sent_messages_document_type_check" CHECK ("sent_messages"."document_type" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation', 'reminder', 'mailing', 'tire_reminder', 'appointment_confirmation'))
+	CONSTRAINT "sent_messages_status_check" CHECK ("sent_messages"."status" IN ('wartend', 'angenommen', 'abgelehnt', 'fehler')),
+	CONSTRAINT "sent_messages_document_type_check" CHECK ("sent_messages"."document_type" IN ('invoice', 'cost_estimate', 'reminder', 'mailing', 'tire_reminder', 'appointment_confirmation', 'inquiry_answer')),
+	CONSTRAINT "sent_messages_subject_type_check" CHECK ("sent_messages"."subject_type" IN ('document', 'reminder', 'wheel_set', 'inquiry', 'mailing'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "smtp_settings" (
@@ -227,12 +251,14 @@ CREATE TABLE IF NOT EXISTS "customer_inquiries" (
 	"message" text NOT NULL,
 	"reference_id" varchar(64),
 	"reference_type" varchar(20),
+	"status" varchar(20) DEFAULT 'neu' NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"notification_status" varchar(20) DEFAULT 'pending' NOT NULL,
 	"notification_sent_at" timestamp with time zone,
 	"notification_error" text,
 	CONSTRAINT "customer_inquiries_reference_type_check" CHECK ("customer_inquiries"."reference_type" IS NULL OR "customer_inquiries"."reference_type" IN ('used-car', 'article', 'tire', 'general')),
-	CONSTRAINT "customer_inquiries_notification_status_check" CHECK ("customer_inquiries"."notification_status" IN ('pending', 'sent', 'failed'))
+	CONSTRAINT "customer_inquiries_notification_status_check" CHECK ("customer_inquiries"."notification_status" IN ('wartend', 'angenommen', 'abgelehnt', 'fehler')),
+	CONSTRAINT "customer_inquiries_status_check" CHECK ("customer_inquiries"."status" IN ('neu', 'in_bearbeitung', 'erledigt'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "customers" (
@@ -322,7 +348,7 @@ CREATE TABLE IF NOT EXISTS "document_payments" (
 	"method" varchar(30),
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_payments_method_check" CHECK ("document_payments"."method" IS NULL OR "document_payments"."method" IN ('transfer', 'cash', 'direct_debit', 'card'))
+	CONSTRAINT "document_payments_method_check" CHECK ("document_payments"."method" IS NULL OR "document_payments"."method" IN ('cash', 'card'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "document_pdfs" (
@@ -338,10 +364,11 @@ CREATE TABLE IF NOT EXISTS "document_pdfs" (
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "documents" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"document_number" varchar(50) NOT NULL,
+	"document_number" varchar(50),
 	"legacy_document_number" varchar(50),
+	"imported" boolean DEFAULT false NOT NULL,
 	"type" varchar(30) NOT NULL,
-	"status" varchar(30) DEFAULT 'created' NOT NULL,
+	"status" varchar(30) DEFAULT 'draft' NOT NULL,
 	"customer_id" uuid,
 	"vehicle_id" uuid,
 	"issue_date" date NOT NULL,
@@ -356,6 +383,18 @@ CREATE TABLE IF NOT EXISTS "documents" (
 	"header" text,
 	"footer" text,
 	"notes" text,
+	"issued_at" timestamp with time zone,
+	"billed_name" varchar(200),
+	"billed_street" varchar(200),
+	"billed_zip" varchar(10),
+	"billed_city" varchar(150),
+	"billed_country" varchar(100),
+	"billed_vat_id" varchar(30),
+	"company_name" varchar(200),
+	"company_address" text,
+	"company_tax_number" varchar(40),
+	"company_vat_id" varchar(30),
+	"company_footer" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"converted_to_invoice_id" uuid,
@@ -365,9 +404,9 @@ CREATE TABLE IF NOT EXISTS "documents" (
 	"cancelled_by_document_id" uuid,
 	"cancels_document_id" uuid,
 	"work_order_id" uuid,
-	CONSTRAINT "documents_type_check" CHECK ("documents"."type" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation')),
-	CONSTRAINT "documents_status_check" CHECK ("documents"."status" IN ('created', 'sent', 'paid', 'cancelled', 'storno', 'converted')),
-	CONSTRAINT "documents_payment_method_check" CHECK ("documents"."payment_method" IS NULL OR "documents"."payment_method" IN ('transfer', 'cash', 'direct_debit', 'card')),
+	CONSTRAINT "documents_type_check" CHECK ("documents"."type" IN ('cost_estimate', 'invoice')),
+	CONSTRAINT "documents_status_check" CHECK ("documents"."status" IN ('draft', 'created', 'sent', 'paid', 'cancelled', 'storno', 'converted')),
+	CONSTRAINT "documents_payment_method_check" CHECK ("documents"."payment_method" IS NULL OR "documents"."payment_method" IN ('cash', 'card')),
 	CONSTRAINT "documents_reminder_level_check" CHECK ("documents"."reminder_level" >= 0)
 );
 --> statement-breakpoint
@@ -461,21 +500,6 @@ CREATE TABLE IF NOT EXISTS "employees" (
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "time_entries" (
-	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"employee_id" uuid NOT NULL,
-	"date" date NOT NULL,
-	"hours" numeric(6, 2) NOT NULL,
-	"document_id" uuid,
-	"customer_id" uuid,
-	"task" varchar(200),
-	"note" text,
-	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"work_order_id" uuid,
-	"work_order_item_id" uuid
-);
---> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "workshop_hours" (
 	"weekday" integer PRIMARY KEY NOT NULL,
 	"opens_at" time DEFAULT '08:00:00' NOT NULL,
@@ -553,6 +577,16 @@ CREATE TABLE IF NOT EXISTS "ebay_listings" (
 	CONSTRAINT "ebay_listings_environment_check" CHECK ("ebay_listings"."environment" IN ('production', 'sandbox'))
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "ledger_attachments" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entry_id" uuid NOT NULL,
+	"file_name" varchar(200) NOT NULL,
+	"mime_type" varchar(100) NOT NULL,
+	"byte_size" integer NOT NULL,
+	"data" "bytea" NOT NULL,
+	"uploaded_at" timestamp with time zone DEFAULT now() NOT NULL
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "ledger_categories" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"direction" varchar(10) NOT NULL,
@@ -584,14 +618,14 @@ CREATE TABLE IF NOT EXISTS "ledger_entries" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ledger_entries_direction_check" CHECK ("ledger_entries"."direction" IN ('income', 'expense')),
 	CONSTRAINT "ledger_entries_payment_status_check" CHECK ("ledger_entries"."payment_status" IN ('paid', 'open', 'partial')),
-	CONSTRAINT "ledger_entries_payment_method_check" CHECK ("ledger_entries"."payment_method" IS NULL OR "ledger_entries"."payment_method" IN ('transfer', 'cash', 'direct_debit', 'card')),
-	CONSTRAINT "ledger_entries_source_check" CHECK ("ledger_entries"."source" IN ('manual', 'invoice'))
+	CONSTRAINT "ledger_entries_payment_method_check" CHECK ("ledger_entries"."payment_method" IS NULL OR "ledger_entries"."payment_method" IN ('cash', 'card')),
+	CONSTRAINT "ledger_entries_source_check" CHECK ("ledger_entries"."source" IN ('anwendung', 'manuell'))
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "work_order_assignees" (
-	"work_order_id" uuid NOT NULL,
+CREATE TABLE IF NOT EXISTS "work_order_item_assignees" (
+	"work_order_item_id" uuid NOT NULL,
 	"employee_id" uuid NOT NULL,
-	CONSTRAINT "work_order_assignees_work_order_id_employee_id_pk" PRIMARY KEY("work_order_id","employee_id")
+	CONSTRAINT "work_order_item_assignees_pk" PRIMARY KEY("work_order_item_id","employee_id")
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "work_order_items" (
@@ -604,7 +638,6 @@ CREATE TABLE IF NOT EXISTS "work_order_items" (
 	"quantity" numeric(12, 3) DEFAULT '1' NOT NULL,
 	"unit" varchar(20),
 	"unit_price_net" integer NOT NULL,
-	"employee_id" uuid,
 	"hours" numeric(6, 2),
 	"done_at" date NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -621,7 +654,6 @@ CREATE TABLE IF NOT EXISTS "work_orders" (
 	"customer_id" uuid,
 	"vehicle_id" uuid,
 	"appointment_id" uuid,
-	"invoice_id" uuid,
 	"completed_at" timestamp with time zone,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -666,6 +698,9 @@ CREATE TABLE IF NOT EXISTS "company_settings" (
 	"geo_lat" numeric(9, 6),
 	"geo_lon" numeric(9, 6),
 	"labor_item_id" uuid,
+	"tire_change_item_id" uuid,
+	"wheel_balance_item_id" uuid,
+	"tire_storage_item_id" uuid,
 	CONSTRAINT "company_settings_salutation_style_check" CHECK ("company_settings"."salutation_style" IN ('Sie', 'Du'))
 );
 --> statement-breakpoint
@@ -677,38 +712,40 @@ CREATE TABLE IF NOT EXISTS "number_ranges" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "number_ranges_kind_unique" UNIQUE("kind"),
-	CONSTRAINT "number_ranges_kind_check" CHECK ("number_ranges"."kind" IN ('invoice', 'offer', 'cost_estimate', 'order_confirmation', 'storno', 'reminder', 'customer', 'tire', 'tire_storage', 'work_order'))
+	CONSTRAINT "number_ranges_kind_check" CHECK ("number_ranges"."kind" IN ('invoice', 'cost_estimate', 'storno', 'reminder', 'customer', 'tire', 'wheel_set', 'work_order'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "tire_reminder_log" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"customer_id" uuid NOT NULL,
+	"wheel_set_id" uuid NOT NULL,
 	"season" varchar(20) NOT NULL,
 	"year" integer NOT NULL,
 	"sent_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "tire_reminder_log_unique" UNIQUE("customer_id","season","year"),
+	CONSTRAINT "tire_reminder_log_unique" UNIQUE("wheel_set_id","season","year"),
 	CONSTRAINT "tire_reminder_log_season_check" CHECK ("tire_reminder_log"."season" IN ('spring', 'autumn'))
 );
 --> statement-breakpoint
-CREATE TABLE IF NOT EXISTS "tire_storage" (
+CREATE TABLE IF NOT EXISTS "wheel_sets" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
-	"storage_number" varchar(50) NOT NULL,
-	"customer_id" uuid NOT NULL,
-	"vehicle_id" uuid,
+	"set_number" varchar(50) NOT NULL,
+	"vehicle_id" uuid NOT NULL,
+	"tire_id" uuid,
+	"state" varchar(20) DEFAULT 'eingelagert' NOT NULL,
+	"season" varchar(20),
 	"brand" varchar(80),
 	"model" varchar(120),
 	"size" varchar(40),
 	"profile_mm" numeric(4, 1),
 	"dot_year" integer,
-	"season" varchar(20),
 	"quantity" integer DEFAULT 4 NOT NULL,
+	"storage_place" varchar(60),
 	"photos" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"notes" text,
-	"stored_at" date DEFAULT now() NOT NULL,
-	"retrieved_at" date,
+	"last_changed_at" date,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "tire_storage_season_check" CHECK ("tire_storage"."season" IS NULL OR "tire_storage"."season" IN ('summer', 'winter', 'allseason'))
+	CONSTRAINT "wheel_sets_state_check" CHECK ("wheel_sets"."state" IN ('montiert', 'eingelagert')),
+	CONSTRAINT "wheel_sets_season_check" CHECK ("wheel_sets"."season" IS NULL OR "wheel_sets"."season" IN ('summer', 'winter', 'allseason'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "vehicle_documents" (
@@ -743,6 +780,17 @@ CREATE TABLE IF NOT EXISTS "vehicle_listings" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "vehicle_listings_status_check" CHECK ("vehicle_listings"."status" IN ('available', 'sold'))
+);
+--> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "vehicle_owner_history" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"vehicle_id" uuid NOT NULL,
+	"customer_id" uuid,
+	"customer_name" varchar(200),
+	"owner_from" date NOT NULL,
+	"owner_until" date,
+	"note" varchar(200),
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "vehicle_photos" (
@@ -797,10 +845,12 @@ CREATE TABLE IF NOT EXISTS "vehicles" (
 	"gearbox" varchar(30),
 	"body_type" varchar(50),
 	"notes" text,
+	"status" varchar(20) DEFAULT 'kundenfahrzeug' NOT NULL,
 	"archived" boolean DEFAULT false NOT NULL,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"previous_owner_customer_id" uuid
+	"previous_owner_customer_id" uuid,
+	CONSTRAINT "vehicles_status_check" CHECK ("vehicles"."status" IN ('kundenfahrzeug', 'bestand', 'verkauft'))
 );
 --> statement-breakpoint
 DO $$ BEGIN
@@ -845,10 +895,6 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
   ALTER TABLE "tire_price_versions" ADD CONSTRAINT "tire_price_versions_tire_id_fk" FOREIGN KEY ("tire_id") REFERENCES "public"."tires"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "sent_messages" ADD CONSTRAINT "sent_messages_document_id_documents_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -916,27 +962,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_employee_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_document_id_fk" FOREIGN KEY ("document_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "time_entries" ADD CONSTRAINT "time_entries_work_order_item_id_work_order_items_id_fk" FOREIGN KEY ("work_order_item_id") REFERENCES "public"."work_order_items"("id") ON DELETE cascade ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
   ALTER TABLE "ebay_listings" ADD CONSTRAINT "ebay_listings_tire_id_tires_id_fk" FOREIGN KEY ("tire_id") REFERENCES "public"."tires"("id") ON DELETE set null ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "ledger_attachments" ADD CONSTRAINT "ledger_attachments_entry_id_fk" FOREIGN KEY ("entry_id") REFERENCES "public"."ledger_entries"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -956,11 +986,11 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_order_assignees" ADD CONSTRAINT "work_order_assignees_work_order_id_work_orders_id_fk" FOREIGN KEY ("work_order_id") REFERENCES "public"."work_orders"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "work_order_item_assignees" ADD CONSTRAINT "work_order_item_assignees_work_order_item_id_fk" FOREIGN KEY ("work_order_item_id") REFERENCES "public"."work_order_items"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_order_assignees" ADD CONSTRAINT "work_order_assignees_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "work_order_item_assignees" ADD CONSTRAINT "work_order_item_assignees_employee_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -969,10 +999,6 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
   ALTER TABLE "work_order_items" ADD CONSTRAINT "work_order_items_item_id_items_id_fk" FOREIGN KEY ("item_id") REFERENCES "public"."items"("id") ON DELETE set null ON UPDATE no action;
-EXCEPTION WHEN duplicate_object THEN NULL;
-END $$;--> statement-breakpoint
-DO $$ BEGIN
-  ALTER TABLE "work_order_items" ADD CONSTRAINT "work_order_items_employee_id_employees_id_fk" FOREIGN KEY ("employee_id") REFERENCES "public"."employees"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -988,7 +1014,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "work_orders" ADD CONSTRAINT "work_orders_invoice_id_documents_id_fk" FOREIGN KEY ("invoice_id") REFERENCES "public"."documents"("id") ON DELETE set null ON UPDATE no action;
+  ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_tire_change_item_id_fk" FOREIGN KEY ("tire_change_item_id") REFERENCES "public"."items"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_wheel_balance_item_id_fk" FOREIGN KEY ("wheel_balance_item_id") REFERENCES "public"."items"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "company_settings" ADD CONSTRAINT "company_settings_tire_storage_item_id_fk" FOREIGN KEY ("tire_storage_item_id") REFERENCES "public"."items"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -996,15 +1030,15 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "tire_reminder_log" ADD CONSTRAINT "tire_reminder_log_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "tire_reminder_log" ADD CONSTRAINT "tire_reminder_log_wheel_set_id_fk" FOREIGN KEY ("wheel_set_id") REFERENCES "public"."wheel_sets"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "wheel_sets" ADD CONSTRAINT "wheel_sets_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE cascade ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "tire_storage" ADD CONSTRAINT "tire_storage_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
+  ALTER TABLE "wheel_sets" ADD CONSTRAINT "wheel_sets_tire_id_fk" FOREIGN KEY ("tire_id") REFERENCES "public"."tires"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -1017,6 +1051,14 @@ EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
   ALTER TABLE "vehicle_listings" ADD CONSTRAINT "vehicle_listings_vehicle_id_vehicles_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "vehicle_owner_history" ADD CONSTRAINT "vehicle_owner_history_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE cascade ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "vehicle_owner_history" ADD CONSTRAINT "vehicle_owner_history_customer_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
@@ -1040,13 +1082,19 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_customer_id_customers_id_fk" FOREIGN KEY ("customer_id") REFERENCES "public"."customers"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
   ALTER TABLE "vehicles" ADD CONSTRAINT "vehicles_previous_owner_customer_id_customers_id_fk" FOREIGN KEY ("previous_owner_customer_id") REFERENCES "public"."customers"("id") ON DELETE set null ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "audit_log_entity_idx" ON "audit_log" USING btree ("entity","entity_id","at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "audit_log_at_idx" ON "audit_log" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "audit_log_user_id_idx" ON "audit_log" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "sign_in_attempts_at_idx" ON "sign_in_attempts" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "sign_in_attempts_username_idx" ON "sign_in_attempts" USING btree ("username","at" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "sign_in_attempts_address_idx" ON "sign_in_attempts" USING btree ("client_address","at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "accounts_user_id_idx" ON "accounts" USING btree ("user_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "roles_name_idx" ON "roles" USING btree ("name");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "sessions_token_idx" ON "sessions" USING btree ("token");--> statement-breakpoint
@@ -1076,11 +1124,12 @@ CREATE INDEX IF NOT EXISTS "tires_size_idx" ON "tires" USING btree ("width","asp
 CREATE UNIQUE INDEX IF NOT EXISTS "mail_templates_key_idx" ON "mail_templates" USING btree ("key");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "posts_published_idx" ON "posts" USING btree ("published","published_at");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "posts_slug_idx" ON "posts" USING btree ("slug");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "sent_messages_document_id_idx" ON "sent_messages" USING btree ("document_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "sent_messages_subject_idx" ON "sent_messages" USING btree ("subject_type","subject_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sent_messages_sent_at_idx" ON "sent_messages" USING btree ("sent_at");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "smtp_settings_singleton" ON "smtp_settings" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_customer_id_idx" ON "customer_inquiries" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_created_at_idx" ON "customer_inquiries" USING btree ("created_at");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "customer_inquiries_status_idx" ON "customer_inquiries" USING btree ("status");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customer_inquiries_notification_status_idx" ON "customer_inquiries" USING btree ("notification_status");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_created_at_idx" ON "customers" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "customers_company_idx" ON "customers" USING btree ("company");--> statement-breakpoint
@@ -1101,6 +1150,8 @@ CREATE INDEX IF NOT EXISTS "documents_cancelled_by_idx" ON "documents" USING btr
 CREATE INDEX IF NOT EXISTS "documents_cancels_idx" ON "documents" USING btree ("cancels_document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_converted_to_invoice_idx" ON "documents" USING btree ("converted_to_invoice_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_customer_id_idx" ON "documents" USING btree ("customer_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "documents_imported_idx" ON "documents" USING btree ("imported");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "documents_legacy_document_number_idx" ON "documents" USING btree ("legacy_document_number");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "documents_document_number_idx" ON "documents" USING btree ("document_number");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_issue_date_idx" ON "documents" USING btree ("issue_date");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "documents_type_status_idx" ON "documents" USING btree ("type","status");--> statement-breakpoint
@@ -1115,45 +1166,43 @@ CREATE UNIQUE INDEX IF NOT EXISTS "employee_salary_versions_emp_from_idx" ON "em
 CREATE INDEX IF NOT EXISTS "employee_salary_versions_employee_idx" ON "employee_salary_versions" USING btree ("employee_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "employees_created_at_idx" ON "employees" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "employees_personnel_number_idx" ON "employees" USING btree ("personnel_number");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "time_entries_customer_id_idx" ON "time_entries" USING btree ("customer_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "time_entries_date_idx" ON "time_entries" USING btree ("date");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "time_entries_document_id_idx" ON "time_entries" USING btree ("document_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "time_entries_employee_id_idx" ON "time_entries" USING btree ("employee_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "time_entries_work_order_id_idx" ON "time_entries" USING btree ("work_order_id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "time_entries_work_order_item_id_idx" ON "time_entries" USING btree ("work_order_item_id") WHERE (work_order_item_id IS NOT NULL);--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "ebay_credentials_singleton" ON "ebay_credentials" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ebay_listings_tire_id_idx" ON "ebay_listings" USING btree ("tire_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "ebay_listings_env_item_idx" ON "ebay_listings" USING btree ("environment","ebay_item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ebay_listings_status_idx" ON "ebay_listings" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "ledger_attachments_entry_id_idx" ON "ledger_attachments" USING btree ("entry_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_customer_id_idx" ON "ledger_entries" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_document_id_idx" ON "ledger_entries" USING btree ("document_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_supplier_id_idx" ON "ledger_entries" USING btree ("supplier_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_category_id_idx" ON "ledger_entries" USING btree ("category_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_direction_idx" ON "ledger_entries" USING btree ("direction");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "ledger_entries_entry_date_idx" ON "ledger_entries" USING btree ("entry_date");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "work_order_assignees_employee_id_idx" ON "work_order_assignees" USING btree ("employee_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "work_order_items_employee_id_idx" ON "work_order_items" USING btree ("employee_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "work_order_item_assignees_employee_id_idx" ON "work_order_item_assignees" USING btree ("employee_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_order_items_item_id_idx" ON "work_order_items" USING btree ("item_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_order_items_work_order_id_idx" ON "work_order_items" USING btree ("work_order_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_created_at_idx" ON "work_orders" USING btree ("created_at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_vehicle_id_idx" ON "work_orders" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "work_orders_appointment_id_idx" ON "work_orders" USING btree ("appointment_id") WHERE (appointment_id IS NOT NULL);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_customer_id_idx" ON "work_orders" USING btree ("customer_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "work_orders_invoice_id_idx" ON "work_orders" USING btree ("invoice_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "work_orders_status_idx" ON "work_orders" USING btree ("status");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "company_settings_singleton" ON "company_settings" USING btree (((true)));--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "company_settings_labor_item_id_idx" ON "company_settings" USING btree ("labor_item_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "tire_reminder_log_customer_id_idx" ON "tire_reminder_log" USING btree ("customer_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "company_settings_tire_change_item_id_idx" ON "company_settings" USING btree ("tire_change_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "company_settings_wheel_balance_item_id_idx" ON "company_settings" USING btree ("wheel_balance_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "company_settings_tire_storage_item_id_idx" ON "company_settings" USING btree ("tire_storage_item_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "tire_reminder_log_wheel_set_id_idx" ON "tire_reminder_log" USING btree ("wheel_set_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "tire_reminder_log_season_year_idx" ON "tire_reminder_log" USING btree ("season","year");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "tire_storage_vehicle_id_idx" ON "tire_storage" USING btree ("vehicle_id");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "tire_storage_active_idx" ON "tire_storage" USING btree ("retrieved_at");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "tire_storage_customer_id_idx" ON "tire_storage" USING btree ("customer_id");--> statement-breakpoint
-CREATE UNIQUE INDEX IF NOT EXISTS "tire_storage_storage_number_idx" ON "tire_storage" USING btree ("storage_number");--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "wheel_sets_set_number_idx" ON "wheel_sets" USING btree ("set_number");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "wheel_sets_vehicle_id_idx" ON "wheel_sets" USING btree ("vehicle_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "wheel_sets_state_idx" ON "wheel_sets" USING btree ("state");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "wheel_sets_tire_id_idx" ON "wheel_sets" USING btree ("tire_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_documents_vehicle_id_idx" ON "vehicle_documents" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_plate_idx" ON "vehicle_license_plate_versions" USING btree ("license_plate");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_license_plate_versions_veh_from_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id","valid_from");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_license_plate_versions_vehicle_idx" ON "vehicle_license_plate_versions" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE UNIQUE INDEX IF NOT EXISTS "vehicle_listings_vehicle_unique" ON "vehicle_listings" USING btree ("vehicle_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "vehicle_owner_history_vehicle_id_idx" ON "vehicle_owner_history" USING btree ("vehicle_id","owner_from" DESC NULLS LAST);--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "vehicle_owner_history_customer_id_idx" ON "vehicle_owner_history" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_photos_vehicle_id_idx" ON "vehicle_photos" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_purchases_vehicle_id_idx" ON "vehicle_purchases" USING btree ("vehicle_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicle_sales_invoice_id_idx" ON "vehicle_sales" USING btree ("invoice_id");--> statement-breakpoint
@@ -1163,4 +1212,5 @@ CREATE INDEX IF NOT EXISTS "vehicles_created_at_idx" ON "vehicles" USING btree (
 CREATE INDEX IF NOT EXISTS "vehicles_previous_owner_customer_id_idx" ON "vehicles" USING btree ("previous_owner_customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicles_customer_id_idx" ON "vehicles" USING btree ("customer_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "vehicles_next_hu_idx" ON "vehicles" USING btree ("next_hu");--> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "vehicles_vin_idx" ON "vehicles" USING btree ("vin");
+CREATE INDEX IF NOT EXISTS "vehicles_vin_idx" ON "vehicles" USING btree ("vin");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "vehicles_status_idx" ON "vehicles" USING btree ("status");

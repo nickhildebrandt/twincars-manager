@@ -273,6 +273,7 @@ nuxt/app/error.vue
 
 **Features:** F-006, F-070, F-153–F-159, F-480 (10) · **Befunde:** B-015, B-079, B-137, B-139–B-140, B-411, B-560–B-565, B-567–B-568, B-570–B-571, B-574–B-575, B-577–B-579, B-582–B-589, B-594
 **Vorbedingungen:** T-002, T-004.
+**Modelländerungen:** M-01, M-05, M-06, M-08, M-10, M-11, M-15, M-17, M-19, M-22, M-25, M-29, M-33, M-34 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 **Zu erstellen**
 
@@ -319,6 +320,7 @@ Relationsdiagramm, Migrationsstrategie), `docs/decisions/` für die Baseline.
 
 **Features:** F-045–F-046, F-048–F-049, F-053, F-170–F-171, F-406, F-411 (9) · **Befunde:** B-011, B-018, B-026, B-028, B-304, B-335
 **Vorbedingungen:** T-004, T-005.
+**Modelländerungen:** M-14, P-02 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 **Zu erstellen**
 
@@ -365,6 +367,7 @@ nuxt/server/tasks/_registry.ts nuxt/server/api/health.get.ts
 
 **Features:** F-001–F-003, F-005, F-011–F-013, F-015–F-016, F-055–F-066, F-091–F-093 (24) · **Befunde:** B-002–B-003, B-013–B-014, B-018, B-041, B-051–B-052, B-054, B-056–B-058, B-071–B-072, B-080
 **Vorbedingungen:** T-005, T-006.
+**Modelländerungen:** M-36 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 **Zu erstellen**
 
@@ -461,6 +464,7 @@ nuxt/shared/navigation.ts
 
 **Features:** F-043, F-095–F-113, F-115–F-117, F-122–F-131, F-137, F-247 (35) · **Befunde:** B-082–B-084, B-086–B-087, B-091, B-093, B-096, B-100, B-106–B-109, B-111, B-113–B-116, B-216, B-225
 **Vorbedingungen:** T-008.
+**Modelländerungen:** M-02, M-35 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 **Zu erstellen**
 
@@ -536,6 +540,7 @@ Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts.
 
 **Features:** F-178–F-220 (43) · **Befunde:** B-153–B-157, B-159–B-162, B-165–B-166, B-170–B-174, B-176–B-179, B-181–B-186, B-189, B-191–B-194
 **Vorbedingungen:** T-009.
+**Modelländerungen:** M-07 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Das Referenzmodul: Liste mit Suche, Art-Filter, Archiv, Detailseite mit
 Registerkarten, Formular, Archivieren und Reaktivieren. Lieferanten bekommen
@@ -611,6 +616,7 @@ wieder zusammengesetzt (Unit-Tests über eine Tabelle realer Größen).
 
 **Features:** F-275, F-293–F-295, F-298–F-300, F-302–F-310, F-441 (17) · **Befunde:** B-229–B-230, B-235, B-239–B-241, B-246–B-248, B-250, B-252–B-253, B-255, B-258–B-259, B-263–B-264
 **Vorbedingungen:** T-015, T-023, T-026.
+**Modelländerungen:** M-13 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Einlagerungen mit Nummernkreis, Lagerplatz, QR-Etikett, Scan-Seite,
 saisonale Erinnerungsmails an Kunden mit Zustimmung.
@@ -649,6 +655,7 @@ nicht nur in der Oberfläche; Golden Flow G-11.
 
 **Features:** F-250, F-525, F-527–F-549, F-554, F-556, F-587 (28) · **Befunde:** B-456–B-458, B-460–B-462, B-470–B-472, B-477–B-478, B-482–B-485, B-516
 **Vorbedingungen:** T-009.
+**Modelländerungen:** M-04, M-12, P-10 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Monatsraster und Agenda, Termine, Betriebsschließungen, Abwesenheiten,
 HU-Fälligkeiten und geplante Aufträge in einer Ansicht; berechnete Feiertage
@@ -663,6 +670,7 @@ Golden Flow G-10.
 
 **Features:** F-312–F-366 (55) · **Befunde:** B-268–B-270, B-272–B-273, B-275–B-276, B-280–B-281, B-283, B-285–B-289, B-292–B-296, B-298–B-299
 **Vorbedingungen:** T-012, T-014, T-018, T-019.
+**Modelländerungen:** M-03, M-09, M-21, P-01, P-05, P-06 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Kanban mit drei Spalten, Mehrfachzuweisung von Mitarbeitern,
 Arbeitspositionen mit Preis-Schnappschuss, Terminverknüpfung, Abschluss
@@ -690,6 +698,7 @@ unverändert.
 
 **Features:** F-383–F-393, F-407–F-409 (14) · **Befunde:** B-301, B-303–B-305, B-313–B-314, B-316–B-317, B-323, B-325, B-338–B-339, B-342–B-343
 **Vorbedingungen:** T-021, T-023.
+**Modelländerungen:** M-16, P-07 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Rechnungen mit Statusautomat, **echte Zahlungserfassung inklusive
 Teilzahlungen** (E-14): Datum, Betrag und Zahlungsart je Zahlung, „bezahlt"
@@ -720,6 +729,7 @@ niemals Bytes.
 
 **Features:** F-394 (1) · **Befunde:** B-309, B-330
 **Vorbedingungen:** T-022.
+**Modelländerungen:** M-18, M-20, P-03, P-04 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 EN-16931-konformes XML je Rechnung, mit den in
 [02-befunde.md](02-befunde.md) belegten Formatfehlern behoben.
@@ -775,6 +785,7 @@ Kunden mit Zustimmung erscheinen.
 
 **Features:** F-448–F-477 (30) · **Befunde:** B-385–B-387, B-389–B-390, B-393–B-400, B-405–B-406, B-409–B-410, B-412, B-418
 **Vorbedingungen:** T-006, T-022.
+**Modelländerungen:** M-23, M-24, M-26, M-27, P-09 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Buchungen mit Kategorien, Monatsansicht, Summen, Export als
 DATEV-Buchungsstapel.
@@ -839,6 +850,7 @@ Protokoll; der Import ist wiederholbar, ohne Dubletten zu erzeugen.
 
 **Features:** F-054, F-251, F-479, F-555, F-607–F-631 (29) · **Befunde:** B-480, B-526, B-533, B-535, B-537–B-538, B-542, B-545–B-548, B-554, B-558–B-559
 **Vorbedingungen:** alle fachlichen Slices, deren Tabellen der Import füllt.
+**Modelländerungen:** M-28, M-30, M-31, M-32, P-08 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 **Der Import wird zum wiederholbaren Abgleich** (E-19) — das ist die größte
 fachliche Änderung gegenüber dem Bestand. Er leert nichts mehr:
@@ -997,6 +1009,49 @@ vollständig geprobt; ein Rückweg auf die alte Installation ist beschrieben.
 
 ---
 
+## T-043 — Datensicherung über die Oberfläche
+
+**Features:** neu · **Befunde:** — · **Modelländerungen:** M-37 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Vorbedingungen:** T-005, T-026 (Verschlüsselung), T-030 (Dateiablage).
+
+**Zu erstellen**
+
+```
+nuxt/server/services/backup-service.ts   restore-service.ts
+nuxt/server/tasks/backup.ts
+nuxt/server/api/settings/backup/*.ts
+nuxt/app/pages/settings/backup.vue
+```
+
+**Inhalt**
+
+- **Export von Hand:** alle Daten **samt Anhängen und PDFs** in einem offenen
+  Format. Ein Archiv, das sich ohne diese Anwendung öffnen lässt.
+- **Import desselben Archivs auf eine leere Installation.** Ohne diesen Weg
+  ist der Export kein Backup, sondern ein Download. Nummernkreise, Verweise
+  und Dateien müssen danach stimmen.
+- **Automatisch:** versionierte Sicherung über SSH, verschlüsselt, mit einer
+  **Schlüsseldatei, die über die Oberfläche hochgeladen wird**. Zeitplan
+  grafisch konfigurierbar, über das Aufgabenregister aus T-006.
+- **Sichtbarer Zustand:** wann lief die letzte Sicherung, war sie erfolgreich.
+  Es muss auffallen, wenn sie seit Wochen stillsteht.
+- Kein Schritt verlangt die Kommandozeile.
+
+**Akzeptanzkriterien**
+
+| #   | Kriterium                                                                      | Prüfung          |
+| --- | ------------------------------------------------------------------------------ | ---------------- |
+| 1   | Ein Export lässt sich auf eine **leere** Datenbank zurückspielen, alle Zahlen stimmen | Integrationstest |
+| 2   | Anhänge und PDFs sind nach dem Zurückspielen unverändert lesbar                 | Integrationstest |
+| 3   | Nummernkreise stehen danach oberhalb des höchsten zurückgespielten Werts        | Integrationstest |
+| 4   | Eine fehlende oder falsche Schlüsseldatei bricht mit deutschem Satz ab          | Integrationstest |
+| 5   | Der Zustand meldet eine seit über 48 Stunden ausgebliebene Sicherung als Warnung | Komponententest  |
+| 6   | Beim Aufsetzen ist die Rückspielung **einmal erprobt** und protokolliert        | Ausführungsschritt |
+
+**Doku:** `docs/operations/datensicherung.md`, `docs/api/settings-backup-*`.
+
+---
+
 ## Reihenfolge und Abhängigkeiten
 
 ```
@@ -1010,7 +1065,7 @@ T-001 ─┬─ T-002 ─┬─ T-004 ── T-005 ── T-006 ── T-007 ─
    │ T-034 → T-035                                                      │
    └────────────────────────────────────────────────────────────────────┘
                                     ▼
-        T-036 → T-037 → T-038 → T-039 → T-040 → T-041 → T-042
+        T-036 → T-037 → T-038 → T-039 → T-040 → T-041 → T-043 → T-042
 ```
 
 Begründung der weniger offensichtlichen Kanten:
@@ -1021,3 +1076,5 @@ Begründung der weniger offensichtlichen Kanten:
 - **T-013 nach T-022**: der Fahrzeugverkauf läuft über eine bezahlte Rechnung.
 - **T-033 zuletzt in Phase 1**: der Import füllt fast jede Tabelle.
 - **T-035 zuletzt**: Dashboard und Suche greifen auf alle Module zu.
+- **T-043 vor T-042**: eine Auslieferung ohne erprobte Rückspielung wäre eine
+  Vermutung, keine Sicherung.

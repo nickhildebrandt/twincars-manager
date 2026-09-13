@@ -194,8 +194,7 @@ describe('E-10: Geld ist eine Ganzzahl in Cent', () => {
       'employees.weekly_hours',
       'ledger_categories.default_tax_rate',
       'ledger_entries.tax_rate',
-      'time_entries.hours',
-      'tire_storage.profile_mm',
+      'wheel_sets.profile_mm',
       'work_order_items.hours',
       'work_order_items.quantity',
     ])
@@ -232,16 +231,19 @@ describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
   }
 
   it.each([
-    ['vehicles', 'customer_id'],
     ['work_orders', 'customer_id'],
     ['calendar_entries', 'customer_id'],
     ['customer_inquiries', 'customer_id'],
-    ['time_entries', 'customer_id'],
-    ['tire_storage', 'customer_id'],
-    ['tire_reminder_log', 'customer_id'],
     ['vehicle_sales', 'customer_id'],
   ])('%s.%s gehört zum Kunden und geht mit ihm', async (table, column) => {
     expect(await ruleOf(table, column)).toBe('cascade')
+  })
+
+  it('M-05: das Fahrzeug geht nicht mehr mit dem Kunden', async () => {
+    // Beim ersten Entwurf hing das Fahrzeug am Halter und wurde mitgelöscht,
+    // während der Vorbesitzer bloß entkoppelt wurde — dieselbe Art Beziehung
+    // mit zwei verschiedenen Regeln. Ein Auto ohne Halter ist kein Fehler.
+    expect(await ruleOf('vehicles', 'customer_id')).toBe('no action')
   })
 
   it.each([
@@ -250,31 +252,51 @@ describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
     ['documents', 'vehicle_id'],
     ['work_orders', 'vehicle_id'],
     ['calendar_entries', 'vehicle_id'],
-    ['tire_storage', 'vehicle_id'],
   ])('%s.%s ist belegnah und sperrt statt still zu löschen', async (table, column) => {
     // B-190: kein Verweis wird mehr stillschweigend auf NULL gesetzt.
     expect(await ruleOf(table, column)).toBe('no action')
   })
 
-  it('ein Kunde nimmt sein Fahrzeug und seinen Auftrag mit', async () => {
+  it('M-05: ein Kunde mit Fahrzeug lässt sich nicht einfach löschen', async () => {
     const [customer] = await sql<{ id: string }[]>`
       INSERT INTO customers (customer_number, last_name)
-      VALUES ('E11-KASKADE', 'Testfall') RETURNING id
+      VALUES ('M05-SPERRE', 'Testfall') RETURNING id
     `
     const [vehicle] = await sql<{ id: string }[]>`
       INSERT INTO vehicles (customer_id, make, model)
       VALUES (${customer!.id}, 'VW', 'Golf') RETURNING id
     `
+
+    // Das Fahrzeug sperrt. Wer den Kunden loswerden will, muss das Auto
+    // vorher umschreiben oder in den Bestand nehmen — bewusst, nicht nebenbei.
+    await expect(sql`DELETE FROM customers WHERE id = ${customer!.id}`).rejects.toThrow()
+
+    await sql`UPDATE vehicles SET customer_id = NULL, status = 'bestand' WHERE id = ${vehicle!.id}`
+    await sql`DELETE FROM customers WHERE id = ${customer!.id}`
+
+    const left = await sql`SELECT 1 FROM vehicles WHERE id = ${vehicle!.id}`
+    expect(left).toHaveLength(1)
+  })
+
+  it('ein Kunde nimmt seinen Auftrag und seinen Termin mit', async () => {
+    const [customer] = await sql<{ id: string }[]>`
+      INSERT INTO customers (customer_number, last_name)
+      VALUES ('E11-KASKADE', 'Testfall') RETURNING id
+    `
     await sql`
-      INSERT INTO work_orders (order_number, customer_id, vehicle_id, title)
-      VALUES ('E11-AU-1', ${customer!.id}, ${vehicle!.id}, 'Inspektion')
+      INSERT INTO work_orders (order_number, customer_id, title)
+      VALUES ('E11-AU-1', ${customer!.id}, 'Inspektion')
+    `
+    await sql`
+      INSERT INTO calendar_entries (kind, customer_id, title, starts_at, ends_at)
+      VALUES ('appointment', ${customer!.id}, 'Termin', now(), now())
     `
 
     await sql`DELETE FROM customers WHERE id = ${customer!.id}`
 
     const left = await sql<{ count: string }[]>`
-      SELECT (SELECT count(*) FROM vehicles WHERE id = ${vehicle!.id})
-           + (SELECT count(*) FROM work_orders WHERE order_number = 'E11-AU-1') AS count
+      SELECT (SELECT count(*) FROM work_orders WHERE order_number = 'E11-AU-1')
+           + (SELECT count(*) FROM calendar_entries WHERE title = 'Termin') AS count
     `
     expect(Number(left[0]!.count)).toBe(0)
   })
@@ -433,7 +455,7 @@ describe('Strukturhärtung aus dem Inventar', () => {
   it('B-568: die fehlenden Fremdschlüssel sind deklariert', async () => {
     const rows = await sql<{ conname: string }[]>`
       SELECT conname FROM pg_constraint
-      WHERE conname IN ('tire_reminder_log_customer_id_fk', 'vehicle_sales_invoice_id_fk')
+      WHERE conname IN ('tire_reminder_log_wheel_set_id_fk', 'vehicle_sales_invoice_id_fk')
     `
     expect(rows).toHaveLength(2)
   })
@@ -631,8 +653,8 @@ describe('Vorgaben und Migrationen sind nicht mehr an den Request gebunden', () 
     // automatisch auf.
     const rows = await sql<{ column_default: string | null }[]>`
       SELECT column_default FROM information_schema.columns
-      WHERE table_schema = 'public' AND table_name = 'tire_storage'
-        AND column_name = 'stored_at'
+      WHERE table_schema = 'public' AND table_name = 'wheel_sets'
+        AND column_name = 'state'
     `
     expect(rows).toHaveLength(1)
   })
@@ -694,14 +716,8 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
   const DELIBERATE_SET_NULL: Record<string, string> = {
     'work_orders.appointment_id':
       'Der Termin wird abgesagt, der Auftrag in der Werkstatt läuft weiter.',
-    'sent_messages.document_id':
-      'Die Versandhistorie überlebt den Beleg — sie ist die Spur, dass etwas rausging.',
-    'time_entries.document_id':
-      'Wird ein Entwurf gelöscht, ist die Zeit wieder unabgerechnet. Genau das ist gemeint.',
     'vehicle_sales.invoice_id':
       'Der Verkauf bleibt, die Rechnung dazu kann neu geschrieben werden.',
-    'work_orders.invoice_id':
-      'Nach dem Löschen eines Rechnungsentwurfs ist der Auftrag wieder abrechenbar.',
     'document_items.item_id':
       'Die Position trägt Bezeichnung und Preis als eigene Kopie; sie bleibt lesbar.',
     'document_items.tire_id':
@@ -709,7 +725,11 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
     'work_order_items.item_id':
       'Dasselbe für eine Position im Auftrag: Bezeichnung und Preis sind kopiert.',
     'ebay_listings.tire_id':
-      'Das Angebot behält seine eBay-Daten, auch wenn der Reifen aus dem Katalog geht.',
+      'Das beendete Angebot behält seine eBay-Daten, auch ohne Reifen im Katalog.',
+    'wheel_sets.tire_id':
+      'Marke, Größe und Saison stehen als eigene Kopie im Radsatz; er bleibt lesbar.',
+    'vehicle_owner_history.customer_id':
+      'Der Name des damaligen Halters steht als Kopie im Eintrag und bleibt erhalten.',
     'vehicles.previous_owner_customer_id':
       'Der Vorbesitzer ist eine Zusatzangabe, nicht der Eigentümer.',
   }
@@ -732,6 +752,25 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
       expect(reason, rule).toMatch(/^[A-ZÄÖÜ].*\.$/)
       expect(reason.length, rule).toBeGreaterThan(30)
     }
+  })
+
+  it('M-34: das Versandprotokoll verweist ohne Fremdschlüssel', async () => {
+    // Es muss den Vorgang überleben, auf den es zeigt — sonst verschwände mit
+    // einem gelöschten Entwurf die Spur, dass etwas rausging. Statt eines
+    // Verweises zwei Felder: Art des Vorgangs und dessen Kennung.
+    const fks = await sql`
+      SELECT 1 FROM pg_constraint
+      WHERE contype = 'f' AND conrelid = 'sent_messages'::regclass
+    `
+    expect(fks).toEqual([])
+
+    const columns = await sql<{ column_name: string }[]>`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'sent_messages'
+        AND column_name IN ('subject_type', 'subject_id')
+      ORDER BY column_name
+    `
+    expect(columns.map(row => row.column_name)).toEqual(['subject_id', 'subject_type'])
   })
 
   it('was einen Beleg oder eine Buchung betrifft, sperrt statt zu nullen', async () => {
@@ -782,17 +821,22 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
     expect(rows.map(row => `${row.table_name}.${row.column_name}`)).toEqual([])
   })
 
-  it('die Zeiterfassung folgt einer Regel, nicht zweien', async () => {
-    // Vorher kaskadierte der Verweis auf die Position und der auf den Auftrag
-    // setzte auf NULL — dieselbe Löschung, zwei verschiedene Folgen.
-    const rows = await sql<{ column_name: string, rule: string }[]>`
-      SELECT a.attname AS column_name, c.confdeltype::text AS rule
-      FROM pg_constraint c
-      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-      WHERE c.contype = 'f' AND c.conrelid = 'time_entries'::regclass
-        AND a.attname IN ('work_order_id', 'work_order_item_id')
-      ORDER BY column_name
+  it('M-10: die Zeiterfassung gibt es nicht mehr', async () => {
+    // Sie trug fünf Verweise, drei davon redundant, und widersprach sich
+    // selbst: der Verweis auf die Position kaskadierte, der auf den Auftrag
+    // nullte. Es wird kein Controlling der Arbeitszeit betrieben — die Zeit
+    // steht als Wert an der Auftragsposition.
+    const rows = await sql`
+      SELECT table_name FROM information_schema.tables
+      WHERE table_schema = 'public' AND table_name = 'time_entries'
     `
-    expect(rows.map(row => row.rule)).toEqual(['c', 'c'])
+    expect(rows).toEqual([])
+
+    const hours = await sql`
+      SELECT column_name FROM information_schema.columns
+      WHERE table_schema = 'public' AND table_name = 'work_order_items'
+        AND column_name = 'hours'
+    `
+    expect(hours).toHaveLength(1)
   })
 })

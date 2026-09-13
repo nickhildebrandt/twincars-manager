@@ -651,6 +651,33 @@ Verbindliche Bereinigungen (jede mit Befund-Beleg, Details in
 11. **Löschregeln nach E-11**: Kaskade für alles, was zu einem Kunden gehört;
     Sperre für alles Belegnahe. Kein stilles Entkoppeln auf `NULL`.
 
+**Nach der Modelldurchsicht kommen hinzu**
+([09-modellaenderungen.md](09-modellaenderungen.md), gewinnt im Zweifel):
+
+12. **Ein Ereignisprotokoll** ersetzt weitere Versionstabellen (M-01). Es
+    bleiben genau drei: Reifenpreis, Artikelpreis, Gehaltsstand — Werte, die
+    **ab einem Datum** gelten und in der Zukunft liegen dürfen.
+13. **Der Beleg friert beim Ausstellen ein** (M-03): Firmendaten, Kundenname
+    und -anschrift, Steuernummer, Bezeichnungen, Preise und Steuersatz werden
+    hineinkopiert. Die Firmeneinstellung wird **nicht** versioniert.
+14. **Das Fahrzeug überlebt den Kunden** (M-05). Der Halter-Verweis sperrt;
+    ein Statusfeld unterscheidet Kundenfahrzeug, Bestand und verkauft. Dazu
+    eine **Halter-Historie** (M-06).
+15. **Gestrichen:** die Tabelle `time_entries` (M-10), der Verweis
+    `work_orders.invoice_id` (M-08), der sperrende Einzelverweis
+    `work_order_items.employee_id` (M-11), die Belegarten Angebot und
+    Auftragsbestätigung (M-15), `tire_storage` in seiner alten Form (M-17).
+16. **Der Radsatz** gehört zum Fahrzeug, kennt montiert und eingelagert, und
+    trägt die Wechsel-Erinnerung (M-17, M-19).
+17. **Die Belegnummer** wird erst beim Ausstellen gezogen, in einer
+    Transaktion mit Zeilensperre (M-14, P-02).
+18. **Der Kassenbuch-Saldo ist kein Feld** (M-23, P-09), jede Buchung nennt
+    ihre Herkunft (M-25) und kann einen Beleganhang tragen (M-27).
+19. **Das Versandprotokoll** verweist allgemein auf Art und Kennung eines
+    Vorgangs, nicht mehr nur auf einen Beleg (M-34).
+20. **Importierte Belege** behalten ihre Originalnummer in einem eigenen Feld
+    und sind unveränderlich (M-29, M-30, P-08).
+
 ### 7.2 Migrationen
 
 - **Eine Baseline.** Sie entsteht aus dem bereinigten Schema und ist der

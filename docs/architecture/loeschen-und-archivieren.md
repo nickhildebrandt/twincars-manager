@@ -32,16 +32,18 @@ irrtümlich angelegt hat, soll ihn loswerden können.
 
 ### Was mitgeht
 
-Beim Löschen eines **Kunden** geht mit, was ihm gehört: Fahrzeuge, Aufträge,
-Termine, Anfragen, Reifeneinlagerungen, Zeiteinträge, Verkäufe. Der
-Bestätigungsdialog **zählt vorher genau auf, was verschwindet**, zum Beispiel:
+Beim Löschen eines **Kunden** geht mit, was ihm gehört: Aufträge, Termine,
+Anfragen, Verkäufe. **Sein Fahrzeug nicht** — das überlebt ihn und wechselt in
+den Bestand oder zu einem neuen Halter (M-05). Der Bestätigungsdialog **zählt
+vorher genau auf, was verschwindet**, zum Beispiel:
 
-> Kunde Meier GmbH löschen? Mitgelöscht werden: 3 Fahrzeuge, 7 Aufträge,
-> 2 Angebote, 5 Termine, 1 Reifeneinlagerung, 12 Zeiteinträge. Das lässt sich
-> nicht rückgängig machen.
+> Kunde Meier GmbH löschen? Mitgelöscht werden: 7 Aufträge, 2
+> Kostenvoranschläge, 5 Termine. Die 3 Fahrzeuge bleiben und gehen in den
+> Bestand. Das lässt sich nicht rückgängig machen.
 
 Beim Löschen eines **Fahrzeugs** geht nur dieses Fahrzeug samt seiner Fotos,
-Papiere, Kennzeichenhistorie, Ankaufs- und Verkaufsdaten. Beim Löschen eines
+Papiere, Kennzeichen- und Halterhistorie, Radsätze, Ankaufs- und
+Verkaufsdaten. Beim Löschen eines
 **Auftrags** gehen nur seine Positionen und Zuweisungen. Die daraus
 entstandenen Rechnungen bleiben in beiden Fällen.
 

@@ -2,6 +2,7 @@
  * Gesamtes Datenbankschema. Dienste importieren von hier, nicht aus den
  * einzelnen Domänendateien.
  */
+export * from './audit.ts'
 export * from './auth.ts'
 export * from './calendar.ts'
 export * from './catalog.ts'
@@ -13,5 +14,5 @@ export * from './integrations.ts'
 export * from './ledger.ts'
 export * from './orders.ts'
 export * from './settings.ts'
-export * from './tire-storage.ts'
+export * from './wheel-sets.ts'
 export * from './vehicles.ts'

@@ -806,3 +806,83 @@ lässt ihn scheitern — und wer sie hinzufügt, muss den Grund aufschreiben.
 | davon sperrend | 16 (vorher 6) |
 | davon entkoppelnd | 10 (vorher 20) |
 | Tests | 1059 |
+
+---
+
+## Modelldurchsicht — der Plan und die Schemaarbeit
+
+**Datum:** 13.09.2026 · **Auslöser:**
+[09-modellaenderungen.md](09-modellaenderungen.md), die Festlegungen des
+Inhabers nach der Entitätsübersicht
+
+37 Modelländerungen `M-01` bis `M-37` und zehn Prüfregeln `P-01` bis `P-10`.
+Sie sind in den Plan aufgenommen, auf Arbeitspakete verteilt und werden von
+`pnpm test:modell` nachgehalten — dieselbe Mechanik wie bei den Befunden: ein
+Test je Kennung, fällig sobald das Paket fertig ist.
+
+### Was am Plan geändert wurde
+
+`00-uebersicht.md` und `08-entscheidungen.md` verweisen auf das neue Dokument
+und halten fest, wo es frühere Festlegungen ablöst. `03-architektur.md` §7.1
+hat neun weitere verbindliche Punkte. Zwölf Arbeitspakete nennen jetzt ihre
+Kennungen; **T-043 Datensicherung** ist neu und steht vor dem Cutover — eine
+Auslieferung ohne erprobte Rückspielung wäre eine Vermutung.
+
+### Was am Datenmodell umgesetzt wurde
+
+| Kennung | Änderung |
+| --- | --- |
+| M-01 | neue Tabelle `audit_log`: ein Eintrag je Speichervorgang, mit altem und neuem Wert |
+| M-05 | `vehicles.status` mit drei Werten; der Halter-Verweis sperrt, statt mitzulöschen |
+| M-06 | neue Tabelle `vehicle_owner_history` mit eingefrorenem Namen |
+| M-08 | `work_orders.invoice_id` gestrichen — nur noch der Beleg zeigt auf den Auftrag |
+| M-10 | `time_entries` vollständig gestrichen; die Zeit steht an der Auftragsposition |
+| M-11 | `work_order_assignees` → `work_order_item_assignees`; der Einzelverweis ist weg |
+| M-14 | `documents.document_number` darf leer sein; Entwürfe tragen keine Nummer |
+| M-15 | zwei Belegarten; Angebot und Auftragsbestätigung samt Nummernkreisen gestrichen |
+| M-16 | Zahlarten auf bar und Karte |
+| M-17 | `tire_storage` → `wheel_sets` am Fahrzeug, mit Zustand und Lagerplatz |
+| M-19 | die Wechsel-Erinnerung hängt am Radsatz |
+| M-22 | vier Standardartikel in der Firmeneinstellung |
+| M-25 | Buchungsherkunft: aus der Anwendung oder von Hand |
+| M-27 | neue Tabelle `ledger_attachments` für den Lieferantenbeleg |
+| M-29 | `documents.imported` und die Originalnummer in eigener Spalte |
+| M-33 | die Anfrage führt wieder einen Bearbeitungsstand — jetzt mit Aufgabe |
+| M-34 | Versandprotokoll mit Art und Kennung statt Belegverweis; ehrliche Statuswerte |
+| M-36 | Drossel je Konto, neue Tabelle `sign_in_attempts` |
+| P-02 | `issueNumber` verweigert die Arbeit außerhalb einer Transaktion |
+
+Das Schema hat jetzt **54 Tabellen** (vorher 51) und **62 Beziehungen**.
+
+### Was dabei auffiel
+
+**Die Drossel hat die Anmeldung lahmgelegt.** Um zu wissen, auf welches Konto
+gezielt wird, muss sie den Anfragerumpf lesen — und ein Strom lässt sich nur
+einmal lesen. Die Anmeldebibliothek bekam danach einen leeren Rumpf und
+antwortete mit einer Meldung, die nichts mit der Ursache zu tun hatte. Die
+Anfrage wird jetzt aus dem gelesenen Rumpf neu zusammengesetzt
+(`server/utils/web-request.ts`), samt entfernter Längenangabe, die nach dem
+Neuaufbau nicht mehr stimmte.
+
+**Ein Test war grün, ohne den Kontozähler je zu erreichen.** Der Adresszähler
+greift bei zehn Versuchen, der Kontozähler bei zwanzig — von einer Adresse aus
+ist der zweite also nie dran. Der Test bekam sein 429 vom falschen Zähler.
+Jetzt schickt er jeden Versuch von einer anderen Adresse und weist nach, dass
+kein einziger in den Adresszähler lief.
+
+**Die End-to-End-Datenbank blieb auf dem alten Schema stehen.** Die Baseline
+ist wiederholbar geschrieben, ergänzt eine bestehende Datenbank also nicht um
+neue Spalten. `pnpm test:db:reset` verwirft sie jetzt mit.
+
+**Die Aufräumreihenfolge in zwei Tests war falsch.** Seit das Fahrzeug seinen
+Halter sperrt, muss es vor dem Kunden weg.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tabellen | 54 |
+| Tests | 1122 (53 Dateien) |
+| Coverage | 97,4 % Anweisungen · 90,2 % Zweige · 98,7 % Funktionen |
+| Modelländerungen | 17 von 17 fälligen mit Nachweis |
+| Befund-Abdeckung | 58 von 58 fälligen mit Regressionstest |

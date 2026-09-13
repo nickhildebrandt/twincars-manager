@@ -34,12 +34,10 @@ type Database = ReturnType<typeof useDatabase>
  */
 export const DEFAULT_NUMBER_RANGES = [
   { kind: 'invoice', formatTemplate: '{N}' },
-  { kind: 'offer', formatTemplate: '{N}' },
-  { kind: 'cost_estimate', formatTemplate: '{N}' },
-  { kind: 'order_confirmation', formatTemplate: '{N}' },
+  { kind: 'cost_estimate', formatTemplate: 'KV-{YYYY}-{NNNN}' },
   { kind: 'customer', formatTemplate: '{N}' },
   { kind: 'reminder', formatTemplate: 'ZE-{YYYY}-{NNNN}' },
-  { kind: 'tire_storage', formatTemplate: 'L-{YYYY}-{NNNN}' },
+  { kind: 'wheel_set', formatTemplate: 'RS-{YYYY}-{NNNN}' },
   { kind: 'work_order', formatTemplate: 'AU-{YYYY}-{NNNN}' },
   { kind: 'tire', formatTemplate: '{N}' },
   // Cancellations keep the invoice counter style with an S prefix, so an
