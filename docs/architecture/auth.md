@@ -69,7 +69,15 @@ Auskunft darüber, welche Zugänge es gibt.
 
 ## Die Drossel
 
-Zehn Anmeldeversuche je Minute und Adresse, danach 429 mit `Retry-After`.
+Zwei Zähler, beide über eine Minute, danach 429 mit `Retry-After`:
+
+| Zähler          | Grenze | Wogegen                                        |
+| --------------- | ------ | ---------------------------------------------- |
+| je Adresse      | 10     | ein Rechner, der durchprobiert                 |
+| je Benutzername | 20     | derselbe Angriff, verteilt über viele Adressen |
+
+Der Kontozähler ist absichtlich großzügiger: im Betrieb sitzen mehrere Leute
+hinter derselben Adresse und dürfen sich vertippen.
 
 Gezählt wird **nicht** vom eingebauten Zähler der Bibliothek. Der liest
 `x-forwarded-for` von sich aus und akzeptiert einen einwertigen Header; ohne
@@ -77,6 +85,57 @@ Proxy davor schickt ein Angreifer bei jedem Versuch eine andere Adresse, landet
 nie im selben Eimer, und der Schutz tut nichts (B-003, B-054). Die eigene
 Drossel glaubt den Header nur, wenn `TRUST_PROXY=on` gesetzt ist — sonst
 entscheidet die Socket-Adresse, die niemand wählen kann.
+
+## Die Kontosperre (P-13)
+
+Eine Minutengrenze ist eine **Bremse**, keine Sperre: wer wartet, kommt durch.
+Über zwanzig Versuche je Minute und wechselnde Adressen sind das rechnerisch
+knapp 29.000 am Tag auf ein Konto. Im Haus ist das theoretisch; auf einem
+eigenen Server im Internet nicht mehr.
+
+Deshalb zählt `server/utils/account-lock.ts` zusätzlich über eine **Stunde**:
+**20 Fehlversuche darin, und das Konto ruht 15 Minuten.** Die Ruhezeit läuft ab
+dem **letzten** Versuch — sonst wartete jemand die Stunde ab und klopfte weiter.
+
+**Der Zustand wird gerechnet, nicht gespeichert.** Es gibt kein Feld
+„gesperrt", das jemand zurücksetzen müsste; ein vergessener Aufräumer sperrte
+sonst dauerhaft aus. Zwei Dinge beenden die Zählung vorzeitig:
+
+- eine **gelungene Anmeldung** — wer durchkam, war offensichtlich der Richtige;
+- das **Entsperren durch den Administrator**, das `users.unlocked_at` setzt.
+  Alles davor zählt nicht mehr mit. Das Protokoll bleibt unangetastet: es ist
+  eine Spur und wird nicht bereinigt. Wer entsperrt hat, steht im
+  Ereignisprotokoll (M-01).
+
+Die Oberfläche dazu — Entsperren, letzte Fehlversuche, Passwort neu setzen —
+entsteht mit T-034 auf der Benutzerseite.
+
+**Ein Zurücksetzen als Selbstbedienung gibt es nicht und soll es nicht geben.**
+Ein Weg über die E-Mail machte das Postfach zum Schlüssel für die Anwendung,
+und hinter dem Postfach steht kein zweiter Faktor. Bei acht Leuten mit
+erreichbarem Chef ist der Nutzen gering.
+
+## Das Protokoll der Versuche
+
+Jeder Versuch steht in `sign_in_attempts`, auch der erfolgreiche, auch der mit
+einem Benutzernamen, den es gar nicht gibt — gerade der ist interessant. Der
+Grund steht in **einem Wort** aus `shared/domain.ts`:
+
+| Grund         | Bedeutung                      |
+| ------------- | ------------------------------ |
+| `passwort`    | Falsches Passwort              |
+| `unbekannt`   | Unbekannter Benutzername       |
+| `deaktiviert` | Konto abgeschaltet, dauerhaft  |
+| `drossel`     | Minutengrenze erreicht         |
+| `kontosperre` | die 15 Minuten aus P-13 laufen |
+
+`deaktiviert` und `kontosperre` werden auseinandergehalten: das eine hat der
+Administrator abgeschaltet, das andere endet von selbst. Wer beides gleich
+nennt, sieht in der Liste nicht, ob jemand ausgesperrt wurde oder angegriffen
+wird.
+
+Scheitert das Schreiben des Protokolls, scheitert **nicht** die Anmeldung. Ein
+volles Protokoll darf niemanden aussperren.
 
 ## Nur vier Endpunkte der Bibliothek
 

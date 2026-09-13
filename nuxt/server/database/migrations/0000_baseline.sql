@@ -17,7 +17,8 @@ CREATE TABLE IF NOT EXISTS "sign_in_attempts" (
 	"username" varchar(64) NOT NULL,
 	"client_address" varchar(64),
 	"succeeded" boolean NOT NULL,
-	"reason" varchar(20)
+	"reason" varchar(20),
+	CONSTRAINT "sign_in_attempts_reason_check" CHECK ("sign_in_attempts"."reason" IS NULL OR "sign_in_attempts"."reason" IN ('passwort', 'unbekannt', 'deaktiviert', 'drossel', 'kontosperre'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "accounts" (
@@ -77,7 +78,8 @@ CREATE TABLE IF NOT EXISTS "users" (
 	"display_username" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,
-	"active" boolean DEFAULT true NOT NULL
+	"active" boolean DEFAULT true NOT NULL,
+	"unlocked_at" timestamp with time zone
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "verifications" (
@@ -1034,7 +1036,7 @@ DO $$ BEGIN
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN
-  ALTER TABLE "wheel_sets" ADD CONSTRAINT "wheel_sets_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE cascade ON UPDATE no action;
+  ALTER TABLE "wheel_sets" ADD CONSTRAINT "wheel_sets_vehicle_id_fk" FOREIGN KEY ("vehicle_id") REFERENCES "public"."vehicles"("id") ON DELETE no action ON UPDATE no action;
 EXCEPTION WHEN duplicate_object THEN NULL;
 END $$;--> statement-breakpoint
 DO $$ BEGIN

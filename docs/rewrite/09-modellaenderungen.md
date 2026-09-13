@@ -118,6 +118,30 @@ In allen drei Fällen bleiben die Fahrzeugdaten vollständig erhalten.
 **Folge für E-11:** die dort beschlossene Kaskade vom Kunden auf das Fahrzeug
 entfällt. Der Rest von E-11 gilt weiter.
 
+**Was beim Löschen eines Fahrzeugs geschieht** (festgelegt am 13.09.2026). Der
+Alltagsweg ist **Archivieren** — ein archiviertes Fahrzeug verschwindet aus
+Listen und Auswahlen und bleibt vollständig erhalten. Gelöscht wird nur, was es
+nie hätte geben dürfen: die Dublette, der Tippfehler. Dafür gilt die Grenze
+zwischen **Buchhaltung** und **Arbeitsorganisation**:
+
+| Was daran hängt | Regel | Warum |
+| --- | --- | --- |
+| **Rechnung**, auch stornierte | **sperrt** | Buchungsbeleg mit lückenloser Nummer und Aufbewahrungspflicht. Ohne Fahrzeug stünde auf der Rechnung nicht mehr, wofür sie war. |
+| **Kostenvoranschlag** | Verweis entfällt | Unverbindliche Schätzung, keine lückenlose Nummer, keine Aufbewahrungspflicht (M-15). |
+| **Termin** | Verweis entfällt | Arbeitsorganisation. Der Eintrag bleibt mit seinem Text stehen. |
+| **Auftrag** | Verweis entfällt | Dito. Der Auftrag bleibt lesbar. |
+| **Radsatz, montiert** | geht mit | Die Räder sitzen am Auto. |
+| **Radsatz, eingelagert** | **sperrt** | Vier Räder stehen körperlich im Regal auf einem Lagerplatz. Erst auslagern, dann löschen. Das ist Inventar, keine Datenregel. |
+| Kennzeichen, Halter-Historie, Ankauf, Verkauf, Inserat, Fotos, Unterlagen | geht mit | Gehört zum Fahrzeug und sonst nirgendwohin. |
+
+**Der Bediener entscheidet nichts davon.** Der Bestätigungsdialog zeigt nur an,
+was geschieht — „Dieses Fahrzeug hängt an 2 Aufträgen und 1 Termin. Die Verweise
+entfallen, die Einträge bleiben." Hängt eine Rechnung daran, steht dort, dass
+nur Archivieren möglich ist. Eine Auswahl je Verweisart wäre eine
+Modellentscheidung, die niemand treffen soll, der morgens Reifen wechselt.
+
+Siehe **P-11** und **P-12**.
+
 ### M-06 — Halter-Historie
 
 Neue Historie neben der Kennzeichen-Historie: **welcher Kunde war wann Halter**.
@@ -559,10 +583,37 @@ Netz nicht vertrauenswürdig.
   damit Durchprobieren sofort abgeblockt wird
 - **Fehlversuche protokollieren**, damit sichtbar wird, wenn jemand systematisch
   probiert
-- **Dieselbe Bremse beim Passwort-Zurücksetzen** — sonst läuft der Angriff dort
-  entlang
 - Allgemeine Begrenzung auch auf den übrigen Schnittstellen, nicht nur bei der
   Anmeldung
+
+**Ergänzt am 13.09.2026.** Die Drossel je Minute ist eine Bremse, keine Sperre:
+wer geduldig ist und die Adresse wechselt, kommt auf 20 Versuche je Minute. Im
+Haus ist das theoretisch — sobald die Anwendung auf einem eigenen Server im
+Internet steht, ist es das nicht mehr. Deshalb zusätzlich:
+
+- **Gestaffelte Sperre.** Nach **20 Fehlversuchen auf dasselbe Konto binnen
+  einer Stunde** ist das Konto **15 Minuten gesperrt**, mit deutschem Satz und
+  der Angabe, wann es weitergeht. Die Minutengrenzen bleiben, wie sie sind: 10
+  je Adresse, 20 je Konto. Sie sind für einen geteilten Arbeitsplatz bemessen,
+  an dem sich mehrere Leute vertippen dürfen; sie zu senken kostet täglich
+  Reibung und kauft gegen einen Angreifer nur den Faktor zwei.
+- **Der Administrator hebt die Sperre sofort auf.** Auf der Benutzerseite ein
+  Knopf dafür, daneben die letzten Fehlversuche und „Passwort neu setzen".
+  Damit ist der einzige echte Einwand gegen eine Sperre — jemand sperrt einen
+  Kollegen absichtlich aus — im Betrieb in einer Minute erledigt. Siehe
+  **P-13**.
+- **Das Passwort ist die einzige Hürde**, weil es keinen zweiten Faktor gibt.
+  Gegen ein schwaches Passwort hilft keine Drossel: `sommer2024` findet man
+  nicht mit 29.000 Versuchen am Tag, sondern mit dreien. Beim **Setzen** eines
+  Passworts gilt deshalb eine Mindestanforderung, und es wird gegen eine Liste
+  bekannter Passwörter geprüft. Das wirkt mehr als jede Verschärfung der
+  Zähler. Siehe **P-14** und **E-23**.
+- **Kein Zurücksetzen als Selbstbedienung.** Ein Weg über die E-Mail macht das
+  Postfach zum Schlüssel für die Anwendung — neue Angriffsfläche, und ohne
+  zweiten Faktor dahinter. Bei acht Leuten mit erreichbarem Chef ist der Nutzen
+  gering. Der Administrator setzt das Passwort neu, auf derselben Seite wie den
+  Entsperr-Knopf. Damit entfällt auch die frühere Forderung nach einer Bremse
+  beim Zurücksetzen: es gibt keinen Weg, den man bremsen müsste.
 
 ---
 
@@ -611,6 +662,10 @@ Kennung beginnt.
 | **P-08** | Importierte Belege sind **unveränderlich** | M-30 |
 | **P-09** | **Saldo und Kennzahlen** werden gerechnet, nie gespeichert | M-23, M-35 |
 | **P-10** | Gehaltsdaten sind **ausschließlich** über das Personalmodul erreichbar | M-04 |
+| **P-11** | Eine **Rechnung sperrt** das Löschen des Fahrzeugs; Kostenvoranschlag, Termin und Auftrag verlieren nur den Verweis | M-05 |
+| **P-12** | Ein **eingelagerter Radsatz sperrt** das Löschen des Fahrzeugs; ein montierter geht mit | M-05, M-17 |
+| **P-13** | Nach **20 Fehlversuchen je Konto binnen einer Stunde** ist das Konto 15 Minuten gesperrt; der Administrator hebt das sofort auf | M-36 |
+| **P-14** | Ein neu gesetztes Passwort erfüllt die **Mindestanforderung** und steht **nicht auf der Liste bekannter Passwörter** | M-36 |
 
 ---
 
@@ -634,6 +689,8 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | **Trennung erfasste/abgerechnete Zeit** — nicht anlegen | M-10 |
 | **Erfassung von Innenzeiten** — nicht anlegen | M-10 |
 | **Automatische Terminbuchung** aus der Anfrage — nicht anlegen | M-33 |
+| **Passwort-Zurücksetzen als Selbstbedienung** — nicht anlegen | M-36 |
+| **Bremse beim Zurücksetzen** — hinfällig, es gibt keinen solchen Weg | M-36 |
 
 ---
 
@@ -643,11 +700,12 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | --- | --- |
 | **T-005** | Datenmodell erneut: Ereignisprotokoll, Radsatz, Halter-Historie, Belegfelder, gestrichene Tabellen und Verweise |
 | **T-006** | Nummernvergabe mit Zeilensperre (P-02); Kennzahlen nie speichern (P-09) |
-| **T-007** | Drossel auch je Konto, Fehlversuche protokollieren, Bremse beim Zurücksetzen (M-36) |
+| **T-007** | Drossel auch je Konto, Fehlversuche protokollieren, gestaffelte Kontosperre (M-36, P-13) |
+| **T-010** | Mindestanforderung und Abgleich beim Setzen des ersten Passworts (P-14) |
 | **T-009** | Zeitstrahl- und Diagrammkomponenten (M-02, M-35) |
 | **T-011** | Kundenart steuert die Oberfläche, eBay-Käufer ausgeblendet (M-07) |
 | **T-018** | Zeiterfassung entfällt; übrig bleiben die Öffnungszeiten (M-10) |
-| **T-012 ff.** | Fahrzeugstatus, Halter-Historie, Zeitstrahl (M-05, M-06) |
+| **T-012 ff.** | Fahrzeugstatus, Halter-Historie, Zeitstrahl, Löschregeln mit Vorschau (M-05, M-06, P-11, P-12) |
 | **T-016 ff.** | Tafel mit mobiler Erfassung an der Position, Zuweisung je Position (M-11, M-13) |
 | **T-020 ff.** | Zwei Belegarten, Einfrieren beim Ausstellen, Durchlaufposten (M-03, M-15, M-21) |
 | **T-021** | Kostenvoranschlag statt Angebot; Angebot und Auftragsbestätigung entfallen (M-15) |
@@ -656,6 +714,7 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | **T-024 ff.** | Radsatz, Ein-Klick-Service, Erinnerung am Radsatz (M-17, M-18, M-19) |
 | **T-028** | Kassenbuch: Saldo gerechnet, Herkunft, Kategorien, Anhänge (M-23…M-27) |
 | **T-033** | Import: alles, Nummernkreise getrennt, unveränderlich, Nachdruck, Prüfliste (M-28…M-32) |
+| **T-034** | Entsperren, letzte Fehlversuche, Passwort neu setzen — alles auf der Benutzerseite (P-13, P-14) |
 | **neu** | Datensicherung über die Oberfläche (M-37) |
 
 Die genaue Umarbeitung der Pakete steht in
@@ -718,3 +777,7 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-08 | T-033 | importierte Belege unveränderlich |
 | P-09 | T-028 | Saldo und Kennzahlen gerechnet |
 | P-10 | T-019 | Gehaltsdaten nur über das Personalmodul |
+| P-11 | T-012 | Rechnung sperrt das Löschen des Fahrzeugs |
+| P-12 | T-012 | eingelagerter Radsatz sperrt das Löschen |
+| P-13 | T-007 | Kontosperre nach 20 Fehlversuchen je Stunde |
+| P-14 | T-010 | Mindestanforderung und Abgleich beim Passwort |

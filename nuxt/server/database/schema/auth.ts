@@ -26,6 +26,21 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'date' }).defaultNow().notNull().$onUpdate(() => new Date()),
   active: boolean().default(true).notNull(),
+
+  /**
+   * Ab wann Fehlversuche wieder zählen (P-13).
+   *
+   * Die Kontosperre wird **gerechnet**, nicht gespeichert: sie ergibt sich aus
+   * den Fehlversuchen der letzten Stunde in `sign_in_attempts`. Ein
+   * gespeicherter Zustand „gesperrt" müsste irgendwer wieder aufräumen, und
+   * ein vergessener Aufräumer sperrt jemanden dauerhaft aus.
+   *
+   * Hebt der Administrator die Sperre auf, steht hier der Zeitpunkt, und alles
+   * davor zählt nicht mehr mit. Das Protokoll selbst bleibt unangetastet — es
+   * ist eine Spur und wird nicht bereinigt. Wer entsperrt hat, steht im
+   * Ereignisprotokoll (M-01).
+   */
+  unlockedAt: timestamp('unlocked_at', { withTimezone: true, mode: 'date' }),
 }, table => [
   uniqueIndex('users_email_idx').using('btree', table.email.asc().nullsLast()),
   uniqueIndex('users_username_idx').using('btree', table.username.asc().nullsLast()),

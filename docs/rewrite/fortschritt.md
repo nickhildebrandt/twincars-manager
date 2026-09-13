@@ -1017,3 +1017,90 @@ Datenmodell umgesetzt, aber nicht im übrigen Plan angekommen. Nachgezogen:
 | Modelländerungen | 19 von 19 fälligen mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
 | Doku | 665 Seiten, 10 von 10 Endpoints beschrieben |
+
+---
+
+## Nachtrag — zwei offene Fragen beantwortet · 2026-09-13
+
+Der Inhaber hat die beiden Fragen entschieden, die aus T-007 und T-009 offen
+standen. Beides ist im Plan nachgezogen und, soweit schon fällig, umgesetzt.
+
+### Fahrzeug löschen (M-05, P-11, P-12)
+
+Die Grenze läuft zwischen **Buchhaltung** und **Arbeitsorganisation** — und
+zwar nicht bei „Beleg", sondern bei „Rechnung". Ein Kostenvoranschlag ist kein
+Buchungsbeleg: keine lückenlose Nummer, keine Aufbewahrungspflicht (M-15).
+
+| Was daran hängt | Regel |
+| --- | --- |
+| Rechnung, auch stornierte | **sperrt** |
+| Kostenvoranschlag, Termin, Auftrag | Verweis entfällt |
+| Radsatz **montiert** | geht mit |
+| Radsatz **eingelagert** | **sperrt** — vier Räder stehen im Regal, das ist Inventar |
+
+Damit löst sich der Alltagsfall von selbst: die versehentlich angelegte
+Dublette mit einem Kostenvoranschlag ist löschbar, ohne die Buchhaltung
+anzufassen.
+
+**Der Bediener entscheidet nichts davon.** Der Dialog zeigt nur, was geschieht.
+Eine Auswahl je Verweisart wäre eine Modellentscheidung, die niemand treffen
+soll, der morgens Reifen wechselt.
+
+### Anmeldebremse (M-36, P-13, P-14)
+
+Gestaffelte Sperre **plus** Entsperr-Knopf: nach 20 Fehlversuchen je Konto
+binnen einer Stunde ruht es 15 Minuten, und der Administrator hebt das sofort
+auf. Die Minutengrenzen bleiben, wie sie sind — sie sind für einen geteilten
+Arbeitsplatz bemessen, und sie zu halbieren kostet täglich Reibung und kauft
+gegen einen Angreifer nur den Faktor zwei.
+
+Dazu zwei Festlegungen, die weiter reichen als die Zähler:
+
+- **Passwortgüte statt schärferer Zähler.** Ohne zweiten Faktor ist das
+  Passwort die einzige Hürde, und gegen `sommer2024` hilft keine Drossel — das
+  findet man mit drei Versuchen, nicht mit 29.000. Beim Setzen gilt künftig
+  eine Mindestanforderung und ein Abgleich gegen bekannte Passwörter (P-14,
+  entsteht mit T-010).
+- **Kein Zurücksetzen als Selbstbedienung.** Der Weg über die E-Mail machte das
+  Postfach zum Schlüssel für die Anwendung. Damit entfällt auch die frühere
+  Forderung nach einer Bremse beim Zurücksetzen: es gibt keinen Weg, den man
+  bremsen müsste.
+
+### Was davon schon umgesetzt ist
+
+| Teil | Stand |
+| --- | --- |
+| **P-13** Kontosperre, Entsperren, eigener Protokollgrund | **fertig**, 16 Tests in `auth-middleware.test.ts` |
+| Löschregel im Schema: der Radsatz sperrt jetzt | **fertig**, festgehalten in `schema-drift.test.ts` |
+| Werteliste der Fehlgründe mit Prüfregel in der Datenbank | **fertig** |
+| **P-11/P-12** Löschvorgang mit Vorschau | Plan steht, Umsetzung in **T-012** |
+| **P-14** Passwortgüte | Plan steht, Umsetzung in **T-010** |
+| Entsperr-Knopf und Fehlversuchsliste | Plan steht, Umsetzung in **T-034** |
+
+### Was dabei auffiel
+
+**Der naheliegende Kunstgriff funktioniert nicht.** Eine Löschregel, die von
+einem Feldwert abhängt, lässt sich scheinbar über eine erzeugte Spalte
+(`CASE WHEN type = 'invoice' THEN vehicle_id END`) mit eigenem Fremdschlüssel
+ausdrücken. PostgreSQL erlaubt das auch — nur greift es nie: die Aktion der
+anderen Beziehung läuft zuerst und rechnet die erzeugte Spalte auf NULL. Mit
+`RESTRICT` ebenso wenig. Ausprobiert, nicht vermutet; das Ergebnis steht als
+**E-22** fest, damit es niemand ein zweites Mal versucht.
+
+**`gesperrt` hieß zweierlei.** Der Protokollgrund war für „Konto deaktiviert"
+gedacht und wäre jetzt auch für die zeitweilige Sperre benutzt worden. Zwei
+verschiedene Dinge unter einem Wort — in einer Liste von Fehlversuchen wäre
+danach nicht mehr zu sehen, ob jemand ausgesperrt wurde oder angegriffen wird.
+Die Gründe stehen jetzt als Werteliste in `shared/domain.ts`, mit Prüfregel in
+der Datenbank und deutscher Beschriftung für T-034.
+
+**Eine Aufräumreihenfolge war wieder falsch.** Seit der Radsatz das Fahrzeug
+sperrt, muss er vor ihm weg. Der Modelltest hat es sofort gezeigt.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1565 (70 Dateien) |
+| Modelländerungen | 51 Kennungen, 20 fällig, 20 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |

@@ -408,6 +408,13 @@ nuxt/app/pages/403.vue
 | 6   | `?redirectTo=//evil.com` und `?redirectTo=/\evil.com` werden abgewiesen | Unit- und E2E-Test                           |
 | 7   | Untätigkeit meldet ab, Vorwarnung erscheint, alle Tabs folgen           | Browsertest                                  |
 | 8   | Jeder Endpoint beginnt mit einem Guard                                  | Querschnittstest                             |
+| 9   | **P-13** — 20 Fehlversuche je Konto binnen einer Stunde sperren es 15 Minuten | Integrationstest                             |
+| 10  | Entsperren wirkt sofort; der nächste Versuch kommt durch                | Integrationstest                             |
+
+**Nachgetragen am 13.09.2026:** die gestaffelte Kontosperre aus **P-13**. Die
+Minutengrenzen bleiben (10 je Adresse, 20 je Konto); darüber hinaus zählt eine
+**Stunde**, und nach 20 Fehlversuchen darin ruht das Konto 15 Minuten. Die
+Oberfläche zum Entsperren gehört zu T-034; der Dienst dahinter steht hier.
 
 **Doku:** `docs/architecture/auth.md`, `docs/api/auth/*`, Entscheidungsseite
 zu better-auth.
@@ -525,6 +532,7 @@ Deshalb stehen unten nur die Besonderheiten.
 
 **Features:** F-017, F-068, F-071, F-094, F-138–F-152, F-160–F-169, F-172, F-176–F-177, F-446 (33) · **Befunde:** B-001, B-046, B-077, B-117–B-118, B-120–B-126, B-128–B-131, B-141–B-144, B-148, B-150, B-152
 **Vorbedingungen:** T-007, T-009.
+**Modelländerungen:** M-22, P-14 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Acht Schritte, Zwischenspeicherung, Wiederaufnahme nach Neuladen, Abschluss
 legt den ersten Administrator an und schaltet die Anwendung frei. Danach ist
@@ -532,9 +540,17 @@ legt den ersten Administrator an und schaltet die Anwendung frei. Danach ist
 Standard-Steuersatz, Zahlungsziel, Stundensatz, Endtext für Belege.
 **Das Setup-Gate läuft serverseitig**, nicht im Client.
 
+**Hier entsteht das erste Passwort der Anwendung** — und es ist die einzige
+Hürde, weil es keinen zweiten Faktor gibt (M-36). Die Prüfung aus **P-14**
+(Mindestanforderung, Abgleich gegen die mitgelieferte Liste bekannter
+Passwörter, E-23) entsteht deshalb in diesem Paket und wird von T-034 und vom
+eigenen Passwortwechsel mitbenutzt.
+
 **Besondere Akzeptanzkriterien:** frische Datenbank → Assistent → Dashboard
 ohne Umweg (E2E, Golden Flow G-01); ein zweiter Aufruf von `/setup` nach
-Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts.
+Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts;
+**P-14** — `sommer2024` wird abgewiesen, mit einem Satz, der sagt warum, und
+die Prüfung läuft **ohne Internet**.
 
 ## T-011 — Kunden und Lieferanten
 
@@ -564,15 +580,27 @@ zählt alle Fremdschlüssel nach); Golden Flow G-03.
 
 **Features:** F-118, F-221–F-240, F-255–F-256 (23) · **Befunde:** B-105, B-197, B-202–B-204, B-206, B-209–B-210, B-214–B-215, B-217–B-218, B-226, B-228
 **Vorbedingungen:** T-011.
+**Modelländerungen:** M-05, M-06, P-11, P-12 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Fahrzeugliste mit Suche über alle Kennzeichen-Versionen, FIN, Marke, Modell,
 Halter. Kennzeichen-Versionierung, Detailseite mit allen Registerkarten,
 Dokumente (Upload als Multipart, Typprüfung über Magic Bytes), Fotos mit
-serverseitiger Verkleinerung.
+serverseitiger Verkleinerung, Halter-Historie im Zeitstrahl (M-02, M-06).
+
+**Archivieren und Löschen.** Archivieren ist der Alltagsweg; gelöscht wird nur,
+was es nie hätte geben dürfen. Das Löschen läuft in **einer Transaktion** nach
+E-22: Kostenvoranschläge, Termine und Aufträge verlieren ihren Fahrzeugverweis,
+montierte Radsätze gehen mit, und **eine Rechnung oder ein eingelagerter
+Radsatz sperrt**. Der Bestätigungsdialog **zeigt** nur, was geschieht — er
+lässt nicht je Verweisart wählen.
 
 **Besondere Akzeptanzkriterien:** Suche findet ein Fahrzeug über ein
 **früheres** Kennzeichen; eine als PDF getarnte Datei wird abgewiesen; ein
-6000-px-Bild landet verkleinert in der Datenbank; Golden Flow G-04.
+6000-px-Bild landet verkleinert in der Datenbank; **P-11** — ein Fahrzeug mit
+Rechnung lässt sich nicht löschen, auch nicht mit stornierter, und der Versuch
+lässt die Rechnung unangetastet; **P-12** — ein eingelagerter Radsatz sperrt,
+ein montierter geht mit; die Vorschau nennt die Zahlen, die danach wirklich
+eintreten; Golden Flow G-04.
 
 ## T-013 — Bestand, Ankauf und Verkauf, Verkaufsschild
 
@@ -905,15 +933,24 @@ keinen Umständen; Dateinamen werden nie in eine Shell gereicht.
 
 **Features:** F-072–F-084, F-087, F-135 (15) · **Befunde:** B-046–B-051, B-059–B-061, B-064–B-067, B-073, B-077–B-078, B-080, B-093
 **Vorbedingungen:** T-007.
+**Modelländerungen:** M-04, P-13, P-14 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Verwaltung von Benutzern und Rollen mit Rechtematrix, Passwortzurücksetzung
 durch die Verwaltung, Deaktivierung, eigenes Passwort ändern.
+
+**Die Benutzerseite trägt drei Dinge nebeneinander** (M-36): „Passwort neu
+setzen", „Sperre aufheben" und die letzten Fehlversuche mit Zeitpunkt, Adresse
+und Grund. Ein Zurücksetzen als Selbstbedienung gibt es nicht und soll es nicht
+geben — der Administrator ist im Haus erreichbar, und ein Weg über die E-Mail
+machte das Postfach zum Schlüssel für die Anwendung.
 
 **Besondere Akzeptanzkriterien:** der letzte **aktive** Inhaber aller Rechte
 lässt sich weder löschen noch deaktivieren noch entrechten (der Bestand prüft
 den Aktiv-Zustand nicht); eine Passwortänderung beendet die übrigen
 Sitzungen; Benutzernamen lassen sich nicht über einen Umweg selbst ändern;
-Golden Flow G-15.
+**P-13** — „Sperre aufheben" wirkt sofort, und der nächste Versuch kommt durch;
+**P-14** — ein Passwort von der Liste bekannter Passwörter wird abgewiesen, mit
+einem Satz, der sagt warum; Golden Flow G-15.
 
 ## T-035 — Dashboard und globale Suche
 

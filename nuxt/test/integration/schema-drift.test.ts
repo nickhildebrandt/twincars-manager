@@ -218,18 +218,19 @@ describe('E-10: Geld ist eine Ganzzahl in Cent', () => {
   })
 })
 
-describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
-  const ruleOf = async (table: string, column: string) => {
-    const rows = await sql<{ confdeltype: string }[]>`
-      SELECT c.confdeltype FROM pg_constraint c
-      JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
-      WHERE c.contype = 'f' AND c.conrelid = ${table}::regclass AND a.attname = ${column}
-    `
-    return { a: 'no action', r: 'restrict', c: 'cascade', n: 'set null', d: 'set default' }[
-      rows[0]?.confdeltype ?? ''
-    ]
-  }
+/** Die Löschregel einer Beziehung, so wie die Datenbank sie wirklich führt. */
+const ruleOf = async (table: string, column: string) => {
+  const rows = await sql<{ confdeltype: string }[]>`
+    SELECT c.confdeltype FROM pg_constraint c
+    JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1]
+    WHERE c.contype = 'f' AND c.conrelid = ${table}::regclass AND a.attname = ${column}
+  `
+  return { a: 'no action', r: 'restrict', c: 'cascade', n: 'set null', d: 'set default' }[
+    rows[0]?.confdeltype ?? ''
+  ]
+}
 
+describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
   it.each([
     ['work_orders', 'customer_id'],
     ['calendar_entries', 'customer_id'],
@@ -751,6 +752,26 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
     for (const [rule, reason] of Object.entries(DELIBERATE_SET_NULL)) {
       expect(reason, rule).toMatch(/^[A-ZÄÖÜ].*\.$/)
       expect(reason.length, rule).toBeGreaterThan(30)
+    }
+  })
+
+  it('M-05: was ein Fahrzeug überleben soll, sperrt sein Löschen', async () => {
+    // Die Löschregeln hängen an einem Feldwert — eine Rechnung sperrt, ein
+    // Kostenvoranschlag nicht; ein eingelagerter Radsatz sperrt, ein montierter
+    // geht mit. Ein Fremdschlüssel kann das nicht unterscheiden, also sperrt
+    // er, und der Löschvorgang räumt das Erlaubte vorher ausdrücklich weg
+    // (E-22). Das Entscheidende hier: **keine** dieser vier Beziehungen darf
+    // auf „Verweis entfällt" oder „geht mit" stehen, sonst verschwände der
+    // Fahrzeugbezug einer Rechnung still.
+    const sperren = [
+      ['documents', 'vehicle_id'],
+      ['calendar_entries', 'vehicle_id'],
+      ['work_orders', 'vehicle_id'],
+      ['wheel_sets', 'vehicle_id'],
+    ] as const
+
+    for (const [table, column] of sperren) {
+      expect(await ruleOf(table, column), `${table}.${column}`).toBe('no action')
     }
   })
 

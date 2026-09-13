@@ -65,11 +65,17 @@ export const wheelSets = pgTable('wheel_sets', {
   index('wheel_sets_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('wheel_sets_state_idx').using('btree', table.state.asc().nullsLast()),
   index('wheel_sets_tire_id_idx').using('btree', table.tireId.asc().nullsLast()),
+  // **Sperrt**, statt mitzugehen (M-05, P-12). Ein montierter Satz sitzt am
+  // Auto und geht mit ihm — aber ein eingelagerter steht körperlich im Regal
+  // auf einem Lagerplatz. Welcher von beiden es ist, steht in `state`, und das
+  // kann ein Fremdschlüssel nicht unterscheiden. Also sperrt er beide, und der
+  // Löschvorgang räumt die montierten vorher ausdrücklich weg (E-22). Bleibt
+  // ein eingelagerter stehen, scheitert das Löschen hier — und das ist richtig.
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'wheel_sets_vehicle_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   // Der Katalogreifen darf verschwinden; Marke, Modell und Größe stehen als
   // eigene Kopie im Satz, wie bei einer Belegposition.
   foreignKey({

@@ -376,6 +376,26 @@ export const auditActions = domain({
 })
 export type AuditAction = typeof auditActions.values[number]
 
+/**
+ * Warum ein Anmeldeversuch scheiterte (M-36).
+ *
+ * In einem Wort, damit sich das Protokoll zählen lässt: „zwölfmal `passwort`
+ * von einer Adresse" ist eine Auskunft, ein Fließtext nicht.
+ *
+ * `deaktiviert` und `kontosperre` sind zweierlei und werden auseinandergehalten:
+ * das eine hat der Administrator dauerhaft abgeschaltet, das andere ruht
+ * fünfzehn Minuten von selbst (P-13). Wer beides gleich nennt, sieht in der
+ * Liste nicht, ob jemand ausgesperrt wurde oder angegriffen wird.
+ */
+export const signInFailures = domain({
+  passwort: 'Falsches Passwort',
+  unbekannt: 'Unbekannter Benutzername',
+  deaktiviert: 'Konto deaktiviert',
+  drossel: 'Zu viele Versuche in kurzer Zeit',
+  kontosperre: 'Konto vorübergehend gesperrt',
+})
+export type SignInFailure = typeof signInFailures.values[number]
+
 /** One row per number sequence. Each is a separate, gapless counter. */
 export const numberKinds = domain({
   invoice: 'Rechnung',

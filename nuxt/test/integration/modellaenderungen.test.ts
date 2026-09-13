@@ -46,7 +46,11 @@ const tableExists = async (table: string) => {
 }
 
 beforeEach(async () => {
+  // In Abhängigkeitsrichtung: der Radsatz sperrt das Fahrzeug (M-05, P-12),
+  // das Fahrzeug sperrt den Kunden (M-05). Wer von hinten aufräumt, räumt gar
+  // nicht auf.
   await sql`DELETE FROM audit_log`
+  await sql`DELETE FROM wheel_sets`
   await sql`DELETE FROM vehicles`
   await sql`DELETE FROM customers`
 })

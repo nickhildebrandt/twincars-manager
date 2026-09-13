@@ -1,5 +1,5 @@
 {
-  "id": "15361d73-7d94-4b86-b52e-4b4182e1aace",
+  "id": "99cf9c8f-0a93-4704-b82d-a7a60940a1e0",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -243,7 +243,12 @@
       "compositePrimaryKeys": {},
       "uniqueConstraints": {},
       "policies": {},
-      "checkConstraints": {},
+      "checkConstraints": {
+        "sign_in_attempts_reason_check": {
+          "name": "sign_in_attempts_reason_check",
+          "value": "\"sign_in_attempts\".\"reason\" IS NULL OR \"sign_in_attempts\".\"reason\" IN ('passwort', 'unbekannt', 'deaktiviert', 'drossel', 'kontosperre')"
+        }
+      },
       "isRLSEnabled": false
     },
     "public.accounts": {
@@ -729,6 +734,12 @@
           "primaryKey": false,
           "notNull": true,
           "default": true
+        },
+        "unlocked_at": {
+          "name": "unlocked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -6790,7 +6801,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "wheel_sets_tire_id_fk": {

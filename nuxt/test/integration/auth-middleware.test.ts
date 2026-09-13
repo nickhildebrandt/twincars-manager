@@ -491,3 +491,188 @@ describe('M-36: die Drossel zählt auch je Konto', () => {
     )).resolves.toBeUndefined()
   })
 })
+
+/* ── P-13: die gestaffelte Kontosperre ──────────────────────────────────────
+   Die Minutengrenze ist eine Bremse: wer wartet, kommt durch. Zwanzig
+   Fehlversuche binnen einer Stunde lassen das Konto fünfzehn Minuten ruhen. */
+
+const {
+  accountLock,
+  unlockAccount,
+  lockMessage,
+  FAILURES_BEFORE_LOCK,
+  LOCK_DURATION_MS,
+  LOCK_WINDOW_MS,
+} = await import('../../server/utils/account-lock.ts')
+
+/** Schreibt Fehlversuche mit vorgegebenem Alter ins Protokoll. */
+async function failAttempts(username: string, count: number, minutesAgo = 0): Promise<void> {
+  const at = new Date(Date.now() - minutesAgo * 60_000)
+  await db.insert(signInAttempts).values(
+    Array.from({ length: count }, (_, index) => ({
+      username,
+      clientAddress: '203.0.113.1',
+      succeeded: false,
+      reason: 'passwort' as const,
+      // Ein paar Sekunden auseinander, damit „der letzte Fehlversuch"
+      // eindeutig ist.
+      at: new Date(at.getTime() - index * 1000).toISOString(),
+    })),
+  )
+}
+
+describe('P-13: die gestaffelte Kontosperre', () => {
+  it('P-13: zwanzig Fehlversuche binnen einer Stunde sperren das Konto fünfzehn Minuten', async () => {
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+
+    const lock = await accountLock('mmustermann', new Date(), db)
+    expect(lock.locked).toBe(true)
+    expect(lock.failures).toBe(FAILURES_BEFORE_LOCK)
+    expect(lock.retryAfter).toBeGreaterThan(0)
+    expect(lock.retryAfter).toBeLessThanOrEqual(LOCK_DURATION_MS / 1000)
+  })
+
+  it('P-13: einer weniger sperrt noch nicht', async () => {
+    // Genau an der Grenze, damit niemand versehentlich einen zu strengen
+    // Zähler einbaut.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK - 1)
+
+    expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-13: was länger als eine Stunde her ist, zählt nicht mehr mit', async () => {
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK, 61)
+
+    expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-13: die Sperre endet von selbst', async () => {
+    // Kein gespeicherter Zustand, den jemand aufräumen müsste: sie wird
+    // gerechnet und läuft ab.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK, 20)
+
+    const later = new Date(Date.now() + 1000)
+    expect((await accountLock('mmustermann', later, db)).locked).toBe(false)
+  })
+
+  it('P-13: die Ruhezeit läuft ab dem letzten Versuch, nicht ab dem ersten', async () => {
+    // Sonst wartete ein Angreifer die Stunde ab und klopfte weiter, als wäre
+    // nichts gewesen.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK, 50)
+    await failAttempts('mmustermann', 1)
+
+    expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(true)
+  })
+
+  it('P-13: eine gelungene Anmeldung setzt die Zählung zurück', async () => {
+    // Wer sich anmelden konnte, war offensichtlich der Richtige. Was davor
+    // schiefging, zählt danach nicht mehr.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK, 30)
+    await db.insert(signInAttempts).values({
+      username: 'mmustermann',
+      clientAddress: '203.0.113.1',
+      succeeded: true,
+      at: new Date(Date.now() - 60_000).toISOString(),
+    })
+    await failAttempts('mmustermann', 3)
+
+    const lock = await accountLock('mmustermann', new Date(), db)
+    expect(lock.locked).toBe(false)
+    expect(lock.failures).toBe(3)
+  })
+
+  it('P-13: das Entsperren wirkt sofort', async () => {
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+    expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(true)
+
+    expect(await unlockAccount('mmustermann', new Date(), db)).toBe(true)
+    expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-13: das Entsperren löscht das Protokoll nicht', async () => {
+    // Es ist eine Spur, keine Warteschlange. Wer angegriffen wurde, soll das
+    // später noch sehen können.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+    await unlockAccount('mmustermann', new Date(), db)
+
+    const rows = await db.select().from(signInAttempts)
+    expect(rows.length).toBe(FAILURES_BEFORE_LOCK)
+  })
+
+  it('P-13: ein erfundener Benutzername lässt sich nicht entsperren', async () => {
+    expect(await unlockAccount('gibtsnicht', new Date(), db)).toBe(false)
+    expect(await unlockAccount('   ', new Date(), db)).toBe(false)
+  })
+
+  it('P-13: groß oder klein geschrieben ist dasselbe Konto', async () => {
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+
+    expect((await accountLock('MMustermann', new Date(), db)).locked).toBe(true)
+    expect(await unlockAccount('  MMUSTERMANN ', new Date(), db)).toBe(true)
+  })
+
+  it('P-13: ein leerer Benutzername sperrt nichts', async () => {
+    const lock = await accountLock('', new Date(), db)
+    expect(lock.locked).toBe(false)
+    expect(lock.failures).toBe(0)
+  })
+
+  it('P-13: die Anmeldung selbst antwortet mit 429 und einem deutschen Satz', async () => {
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+
+    const response = await signIn('mmustermann', PASSWORD)
+    expect(response.status).toBe(429)
+    expect(response.headers.get('Retry-After')).toBeTruthy()
+
+    const body = await response.json() as { statusMessage?: string, message?: string }
+    const message = body.statusMessage ?? body.message ?? ''
+    expect(message).toContain('vorübergehend gesperrt')
+    expect(message).toContain('Verwaltung')
+  })
+
+  it('P-13: auch das richtige Passwort kommt während der Sperre nicht durch', async () => {
+    // Das ist der Punkt: sonst wäre die Sperre nur eine Anzeige.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+
+    expect((await signIn('mmustermann', PASSWORD)).status).toBe(429)
+
+    await unlockAccount('mmustermann', new Date(), db)
+    expect((await signIn('mmustermann', PASSWORD)).status).toBe(200)
+  })
+
+  it('P-13: die Sperre steht als eigener Grund im Protokoll', async () => {
+    // Nicht als `drossel` und nicht als `deaktiviert` — sonst sieht niemand in
+    // der Liste, ob jemand ausgesperrt wurde oder angegriffen wird.
+    await createAccount('mmustermann')
+    await failAttempts('mmustermann', FAILURES_BEFORE_LOCK)
+    await signIn('mmustermann', PASSWORD)
+
+    const rows = await db.select().from(signInAttempts)
+    expect(rows.map(row => row.reason)).toContain('kontosperre')
+  })
+
+  it('P-13: der Satz nennt, wie lange es noch dauert', () => {
+    expect(lockMessage({ locked: true, retryAfter: 900, failures: 20 }))
+      .toContain('15 Minuten')
+    // Aufgerundet, damit nie „in 0 Minuten" dasteht.
+    expect(lockMessage({ locked: true, retryAfter: 5, failures: 20 }))
+      .toContain('1 Minuten')
+  })
+
+  it('P-13: die Grenzen sind so bemessen, wie M-36 es sagt', () => {
+    expect(FAILURES_BEFORE_LOCK).toBe(20)
+    expect(LOCK_DURATION_MS).toBe(15 * 60 * 1000)
+    expect(LOCK_WINDOW_MS).toBe(60 * 60 * 1000)
+  })
+})

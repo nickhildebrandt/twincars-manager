@@ -10,11 +10,17 @@
  */
 import { and, count, eq, gte } from 'drizzle-orm'
 import { signInAttempts } from '../database/schema/index.ts'
+import type { SignInFailure } from '#shared/domain'
 import type { Executor } from './db.ts'
 import { useDatabase } from './db.ts'
 
-/** Warum ein Versuch scheiterte. Ein Wort, keine Erzählung. */
-export type SignInFailure = 'passwort' | 'unbekannt' | 'gesperrt' | 'drossel'
+/**
+ * Warum ein Versuch scheiterte. Ein Wort, keine Erzählung.
+ *
+ * Die Liste steht in `shared/domain.ts` und ist zugleich die Prüfregel der
+ * Spalte und die deutsche Beschriftung in der Benutzerverwaltung (T-034).
+ */
+export type { SignInFailure } from '#shared/domain'
 
 export type SignInAttempt = {
   username: string

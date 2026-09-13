@@ -278,6 +278,63 @@ Stelle (`shared/calendar-date.ts`) und geht nie durch `Date`.
 zurück. Alles, was eine **Uhrzeit** braucht — Termine, Protokolle,
 Zeitstempel — bleibt bei `Date` und der einen Betriebszeitzone (B-028).
 
+### E-22 — Löschregeln in einer Transaktion, nicht im Fremdschlüssel · `entschieden`
+
+**Entscheidung.** Die Löschregeln für ein Fahrzeug (M-05, P-11, P-12) hängen von
+einem **Feldwert** ab: eine Rechnung sperrt, ein Kostenvoranschlag nicht; ein
+eingelagerter Radsatz sperrt, ein montierter geht mit. Ein Fremdschlüssel kann
+das nicht ausdrücken. Umgesetzt wird es als **ausdrückliche Schritte in einer
+Transaktion**, und der Fremdschlüssel bleibt auf **„sperrt"**.
+
+```
+UPDATE documents        SET vehicle_id = NULL WHERE vehicle_id = … AND type = 'cost_estimate'
+UPDATE calendar_entries SET vehicle_id = NULL WHERE vehicle_id = …
+UPDATE work_orders      SET vehicle_id = NULL WHERE vehicle_id = …
+DELETE FROM wheel_sets  WHERE vehicle_id = … AND state = 'montiert'
+DELETE FROM vehicles    WHERE id = …
+```
+
+**Warum kein `ON DELETE SET NULL`.** Dann würde ein vergessener Programmschritt
+den Fahrzeugverweis einer **Rechnung** still auf NULL setzen — genau die
+Fehlerklasse, wegen der neun solche Regeln bereits gestrichen wurden (B-190). So
+herum ist die Datenbank die Absicherung: bleibt eine Rechnung oder ein
+eingelagerter Radsatz stehen, scheitert der letzte Schritt, die Transaktion wird
+zurückgerollt, und der Dienst macht daraus einen 409 mit einem deutschen Satz.
+
+**Warum kein Auslöser (Trigger).** Er wäre die andere richtige Lösung. Dagegen
+spricht: die Anwendung hat bisher **keine** Datenbankfunktionen, und ein
+Löschverbot, das im Code nicht steht, sucht beim nächsten Mal jemand lange. Die
+Schritte oben stehen dort, wo man sie sucht, und sind lesbar.
+
+**Was nicht funktioniert — geprüft, nicht vermutet.** Der naheliegende
+Kunstgriff, eine erzeugte Spalte (`CASE WHEN type = 'invoice' THEN vehicle_id
+END`) mit einem eigenen Fremdschlüssel auf „sperrt" zu legen, geht **nicht**:
+PostgreSQL erlaubt den Fremdschlüssel zwar, aber die Aktion der anderen
+Beziehung (`SET NULL` oder „geht mit") läuft zuerst und rechnet die erzeugte
+Spalte auf NULL — die Sperre greift nie. Mit `RESTRICT` ebenso wenig.
+
+### E-23 — Passwortgüte wird offline geprüft · `entschieden`
+
+**Entscheidung.** Beim Setzen eines Passworts (P-14) gilt eine
+Mindestanforderung, und das Passwort wird gegen eine **mitgelieferte Liste
+bekannter Passwörter** geprüft. Kein Aufruf an einen fremden Dienst.
+
+**Warum nicht online.** Der übliche Weg ist eine Anfrage an einen
+Leak-Abgleichdienst. Er setzt voraus, dass der Server ins Internet kommt — und
+die Anwendung läuft im Haus im WLAN. Eine Prüfung, die ohne Internet
+stillschweigend durchwinkt, ist schlimmer als keine: sie erzeugt Vertrauen, das
+sie nicht deckt.
+
+**Wie stattdessen.** Eine Liste der verbreitetsten Passwörter liegt bei und wird
+beim Prüfen gelesen. Sie fängt genau die Fälle, um die es geht — `passwort1`,
+`sommer2024`, der Firmenname mit Jahreszahl. Ein Online-Abgleich kann später
+**zusätzlich** dazukommen, wenn der Server im Internet steht; er ersetzt die
+Liste nicht.
+
+**Konsequenzen.** Die Prüfung gehört in `shared/schemas/` und gilt an jeder
+Stelle, an der ein Passwort gesetzt wird: im Einrichtungsassistenten (T-010),
+in der Benutzerverwaltung (T-034) und beim eigenen Passwortwechsel.
+
 ---
 
 ## Was danach noch entschieden wurde

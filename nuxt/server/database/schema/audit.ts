@@ -17,8 +17,8 @@
  * Antwort auf die falsche Frage.
  */
 import { pgTable, uuid, varchar, boolean, timestamp, index, jsonb, text, check } from 'drizzle-orm/pg-core'
-import { oneOf } from './_checks.ts'
-import { auditActions } from '../../../shared/domain.ts'
+import { oneOf, oneOfOrNull } from './_checks.ts'
+import { auditActions, signInFailures } from '../../../shared/domain.ts'
 
 export const auditLog = pgTable('audit_log', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -78,9 +78,10 @@ export const signInAttempts = pgTable('sign_in_attempts', {
   /** Die Adresse, die gezählt wurde. Hinter einem Proxy die weitergereichte. */
   clientAddress: varchar('client_address', { length: 64 }),
   succeeded: boolean().notNull(),
-  /** Warum es scheiterte, in einem Wort: `passwort`, `unbekannt`, `gesperrt`, `drossel`. */
+  /** Warum es scheiterte, in einem Wort — die Liste steht in `shared/domain.ts`. */
   reason: varchar({ length: 20 }),
 }, table => [
+  check('sign_in_attempts_reason_check', oneOfOrNull(table.reason, signInFailures.values)),
   index('sign_in_attempts_at_idx').using('btree', table.at.desc().nullsLast()),
   index('sign_in_attempts_username_idx').using('btree', table.username.asc().nullsLast(), table.at.desc().nullsLast()),
   index('sign_in_attempts_address_idx').using('btree', table.clientAddress.asc().nullsLast(), table.at.desc().nullsLast()),
