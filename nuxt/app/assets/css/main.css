@@ -1,0 +1,61 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* Design tokens. This is the only place where visual values are defined;
+   everything else is configured through app.config.ts (03-architektur.md §8.1). */
+@theme {
+  --radius-box: 0.5rem;
+
+  /* Motion, matching 04-ux.md §3.2. */
+  --tc-duration-page-out: 120ms;
+  --tc-duration-page-in: 180ms;
+  --tc-ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --tc-ease-in: cubic-bezier(0.4, 0, 1, 1);
+}
+
+/* Page and layout transitions. Nuxt applies these class names. */
+.page-enter-active,
+.layout-enter-active {
+  transition:
+    opacity var(--tc-duration-page-in) var(--tc-ease-out),
+    transform var(--tc-duration-page-in) var(--tc-ease-out);
+}
+
+.page-leave-active,
+.layout-leave-active {
+  transition:
+    opacity var(--tc-duration-page-out) var(--tc-ease-in),
+    transform var(--tc-duration-page-out) var(--tc-ease-in);
+}
+
+.page-enter-from,
+.layout-enter-from {
+  opacity: 0;
+  transform: translateY(6px);
+}
+
+.page-leave-to,
+.layout-leave-to {
+  opacity: 0;
+  transform: translateY(-4px);
+}
+
+/* Anyone who asks for less motion gets none: no movement, no scaling.
+   Opacity changes stay because they do not trigger motion sickness. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
+  .page-enter-from,
+  .page-leave-to,
+  .layout-enter-from,
+  .layout-leave-to {
+    transform: none;
+  }
+}
