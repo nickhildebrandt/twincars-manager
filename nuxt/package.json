@@ -24,7 +24,7 @@
     "test:browser": "vitest run --project browser",
     "test:e2e": "playwright test",
     "test:cov": "vitest run --coverage",
-    "test:cov:update": "vitest run --coverage --update",
+    "test:cov:update": "COV_UPDATE=1 vitest run --coverage",
     "test:befunde": "node scripts/check-befunde.mjs",
     "test:db:reset": "node scripts/test-db.mjs reset",
     "docs:check": "node scripts/docs-check.mjs",
@@ -66,9 +66,12 @@
   "dependencies": {
     "@iconify-json/lucide": "^1.2.131",
     "@nuxt/ui": "^4.11.1",
+    "@valibot/i18n": "^1.2.0",
+    "h3": "1.15.11",
     "nuxt": "^4.5.2",
     "postgres": "^3.4.9",
     "tailwindcss": "^4.3.3",
+    "valibot": "^1.5.0",
     "vue": "^3.5.42",
     "vue-router": "^4.5.0"
   }

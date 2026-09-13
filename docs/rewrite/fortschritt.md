@@ -162,3 +162,79 @@ Vollständigkeitsprüfung ist scharf.
 - Anleitungen für Umgebung, Freigabe, Deployment und Fehlersuche folgen mit
   T-041 und T-042; bis dahin verweist der Bereichsindex auf die
   Betriebsunterlagen des Vorgängersystems.
+
+---
+
+## T-004 — Valibot-Fundament und Fehler-Trichter · fertig 2026-09-13
+
+**Ergebnis:** Jede Eingabe der Anwendung hat ab jetzt einen Ort, an dem sie
+geprüft wird, und jeder Fehler einen Ort, an dem er entsteht. 191 Tests grün.
+
+| Akzeptanzkriterium | Ergebnis |
+| --- | --- |
+| Jedes Primitive mit gültig, Grenzwert, ungültig samt deutscher Meldung | 74 Tests über 20 Primitive |
+| Ungültiger Rumpf → 422 mit deutschem Feldfehler | Integrationstest über eine echte HTTP-Anwendung |
+| `page=0` → 422 statt 500 | geprüft, ebenso negative Seiten |
+| Serverfehler gibt keine Interna preis | geprüft: weder SQL noch Geheimnis im Antworttext |
+| Fehlende Pflichtvariable verhindert den Start | 16 Tests über das Umgebungsschema |
+| Jeder Feldschlüssel hat ein deutsches Label | Querschnittstest über die Labelkarte |
+| Keine englische Standardmeldung erreicht den Nutzer | Querschnittstest über alle Schemata |
+
+**Was entstanden ist**
+
+- `shared/schemas/` — `messages` (deutsche Vorgaben), `primitives` (20
+  Bausteine von Name bis Fahrgestellnummer, jeweils mit an die Spaltenbreite
+  angelehnten Grenzen), `pagination` (feste Seitengröße 25), `env`, `upload`,
+  `field-labels` (rund 140 Bezeichnungen).
+- `server/utils/errors.ts` — acht Helfer, ein Format, deutsche Sätze.
+- `server/utils/validate.ts` — `useValidatedBody/Query/Params/Header` als
+  **einziger** Weg, Eingaben zu lesen.
+- `server/plugins/00.env.ts` — prüft die Konfiguration beim Start und bricht
+  mit Nennung der Variablen ab.
+- `server/plugins/10.error.ts` — letzte Instanz vor der Antwort.
+- `app/composables/useApi.ts`, `useNotify.ts`, `app/error.vue`.
+
+**Behobene Befunde (mit Regressionstest)**
+
+- **B-042** — eine deutsche Meldung ohne Umlaut wird nicht mehr als englisch
+  verworfen. Die Sprache wird gesetzt, nicht geraten.
+- **B-044** — die zweite, abweichende Heuristik im Client entfällt ersatzlos.
+- **B-149** — die Seitengröße ist nicht mehr vom Aufrufer wählbar.
+- **B-012** — eine englische Framework-Meldung erreicht die Fehlerseite nicht.
+- **B-014** — eine abgelaufene Sitzung führt zur Anmeldung statt zu einem Toast.
+- **B-022** — die Regel „Speichern ist nie wegen Eingaben gesperrt" steht in
+  der Fehlerbehandlung, nicht mehr im Widerspruch zum Kommentar.
+
+**Entscheidungen unterwegs**
+
+- **Deutsche Meldungen kommen zentral**, nicht an jedem Pipe-Schritt: über
+  `@valibot/i18n` und `setGlobalConfig({ lang: 'de' })`. Ausgeschrieben wird
+  nur, wo der Standardtext dem Bediener nicht weiterhilft. Das löst die alte
+  Regel „jeder Schritt braucht einen Text" ab und macht die beiden Heuristiken
+  überflüssig.
+- **Eigene Validierungshelfer statt `readValidatedBody`.** Am Quelltext
+  bestätigt: die h3-Fassung in Nuxt 4.5 erwartet eine einfache Funktion und
+  erkennt kein Standard-Schema. Ein Valibot-Schema direkt zu übergeben
+  funktioniert nicht.
+- **Fehlende Pflichtvariablen werden eigens geprüft.** Ein fehlender
+  Objektschlüssel erzeugt in Valibot die Meldung des Objekts, nicht die des
+  Feldes; mit einer weitergeleiteten Prüfung bleibt die Formulierung unter
+  Kontrolle („DATABASE_URL fehlt.").
+- **`h3` ist jetzt eine ausdrückliche Abhängigkeit** (1.15.11, die Fassung, die
+  Nitro ohnehin mitbringt). Ohne sie lassen sich die Serverhelfer außerhalb des
+  Nuxt-Bundles nicht testen.
+- **Coverage-Schwellen bleiben vorerst auf den Startwerten** aus
+  [05-teststrategie.md](05-teststrategie.md) §7 (80/75/80/80), obwohl aktuell
+  96/88/94/97 erreicht werden. Der Mechanismus zum Hochschreiben ist gebaut und
+  geprüft (`pnpm test:cov:update` schreibt die erreichten Werte in die
+  Konfiguration). Angewandt wird er ab dem ersten fachlichen Paket (T-011),
+  wenn der Code-Mix repräsentativ ist — ein aus reinem Schema-Code abgeleiteter
+  Wert von 96 % wäre für die Oberfläche kein sinnvoller Maßstab.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 191 (15 Dateien) |
+| Coverage | 96,5 % Anweisungen · 88,2 % Zweige · 94,2 % Funktionen |
+| Schemata | 6 Dateien, 20 Primitive, rund 140 Feldbezeichnungen |

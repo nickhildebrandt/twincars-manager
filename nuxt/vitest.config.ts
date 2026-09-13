@@ -28,17 +28,31 @@ export default defineConfig({
         // Root component: mounted by the framework, not by tests. Its
         // behaviour is covered end-to-end (test/e2e/ssr.test.ts).
         'app/app.vue',
+        // Nitro plugins run inside the server runtime; they are exercised by
+        // the production build in the end-to-end project, where V8 coverage
+        // does not reach. Their logic is unit-tested through the helpers they
+        // call (server/utils/errors.ts, shared/schemas/env.ts).
+        'server/plugins/**',
+        // Pure re-export barrel.
+        'shared/schemas/index.ts',
       ],
       // Thresholds may only ever RISE. `pnpm test:cov:update` writes the
-      // reached values back; the change is committed with the work package.
+      // reached values back into this file; the change is committed with the
+      // work package. In CI the flag is off, so the committed values decide.
       thresholds: {
+        'autoUpdate': process.env.COV_UPDATE === '1',
+        // Starting floors from 05-teststrategie.md §7. They are deliberately
+        // NOT ratcheted to the values Phase 0 reaches: the code base is still
+        // only schemas and helpers, which cover far more easily than the user
+        // interface that follows. Ratcheting begins with the first functional
+        // slice (T-011), when the mix is representative.
         'statements': 80,
         'branches': 75,
         'functions': 80,
         'lines': 80,
         'shared/schemas/**': {
           statements: 100,
-          branches: 95,
+          branches: 95.74,
           functions: 100,
           lines: 100,
         },
@@ -55,10 +69,10 @@ export default defineConfig({
           lines: 90,
         },
         'app/composables/**': {
-          statements: 85,
-          branches: 80,
-          functions: 85,
-          lines: 85,
+          statements: 95.45,
+          branches: 85,
+          functions: 88.23,
+          lines: 95.23,
         },
       },
     },
