@@ -1208,3 +1208,106 @@ greift, ist ein eigener Test.
 | Tests | 1582 (70 Dateien) |
 | Modelländerungen | 54 Kennungen, 21 fällig, 21 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+
+---
+
+## T-044 — Protokoll, Sicherheitsereignisse und Absicherung · fertig
+
+**Datum:** 2026-09-17 · **Vorbedingungen:** T-006, T-007 (erfüllt)
+
+Vorgezogen vor die Fachpakete, weil jedes davon ins Protokoll schreibt. Später
+gebaut, müsste die Grundlage in jedes Paket nachgetragen werden — und in einem
+davon würde sie vergessen.
+
+### Was der Anlass war
+
+Der Inhaber wollte „eine vernünftige Protokollierung für Sicherheitsverstöße
+und generell für alle anderen Aktionen, die sich auch automatisch rotiert" —
+und dass gefundene Lücken geschlossen werden.
+
+Die Bestandsaufnahme ergab drei Dinge:
+
+1. **Das Protokoll existierte nur als Tabelle.** M-01 hatte `audit_log`
+   eingeführt, aber **nichts schrieb hinein**. Kein Dienst, kein Endpoint, kein
+   Wächter. Die Historie-Anzeige, auf die M-02 baut, hätte leere Zeitstrahlen
+   gezeigt.
+2. **Es gab keine Rotation** — und keine Stelle, an der jemand hätte sagen
+   können, wie lange etwas aufbewahrt wird.
+3. **Die Anwendung lieferte keine einzige Sicherheits-Kopfzeile aus.** Kein
+   CSP, kein `nosniff`, kein `X-Frame-Options`, kein `Referrer-Policy`. Ein
+   Browser, dem niemand etwas sagt, erlaubt alles.
+
+### Was entstanden ist
+
+| Baustein | Zweck |
+| --- | --- |
+| `server/utils/audit.ts` | `recordChange`, `recordSecurity`, `changesBetween` |
+| `server/utils/audit-rotation.ts` | drei Fristen, wiederholbar |
+| `server/tasks/protokoll-rotieren.ts` | nächtlich um 03:10, protokolliert sich selbst |
+| `server/utils/security-headers.ts` | die Richtlinie als prüfbare Rechnung |
+| `server/middleware/00.security-headers.ts` | setzt sie auf **jede** Antwort |
+| `shared/schemas/auth.ts` | der Benutzername an der Anmeldegrenze, geprüft |
+
+**Ein Protokoll, nicht zwei** (M-39). Die gewöhnliche Änderung und das
+Sicherheitsereignis stehen in derselben Tabelle, unterschieden durch ein
+**Gewicht** (`info`, `warnung`, `sicherheit`). Wer wissen will, was am
+Dienstagnachmittag geschah, soll an einer Stelle nachsehen.
+
+**Was nie hineingerät.** Felder, deren Name auf ein Geheimnis hindeutet, werden
+ausgelassen — auch dann, wenn ein Aufrufer sie ausdrücklich hineinreicht.
+Geprüft wird auf Teilzeichenketten, damit auch `smtpPassword` und
+`ebayAccessToken` erwischt werden. Ein Protokoll, das Passwörter mitschreibt,
+ist selbst das Leck.
+
+**Der abgewiesene Zugriff** wird zentral im Fehler-Haken protokolliert — dort
+kommt jeder 403 vorbei, egal aus welchem Wächter. Ein **401** bewusst nicht:
+das ist im Alltag eine abgelaufene Sitzung, und jede offene Registerkarte
+erzeugte dann mehrere Einträge.
+
+### Welche Lücken dabei geschlossen wurden
+
+| Lücke | Was jetzt gilt |
+| --- | --- |
+| Keine Sicherheits-Kopfzeilen | acht Zeilen auf jeder Antwort, HSTS nur über https |
+| Zwischenstück stand hinter dem Wächter | es steht jetzt **an erster Stelle** — sonst käme eine 401-Antwort ohne jede Richtlinie heraus |
+| Sitzungsplätzchen nur implizit abgesichert | `httpOnly`, `sameSite: lax`, `path`, `secure` ausdrücklich gesetzt |
+| Anmeldeversuche wuchsen unbegrenzt | 90 Tage — das ist ein Zähler, kein Archiv |
+| Benutzername an der Anmeldegrenze ohne eigenes Schema | `signInAttemptSchema` in `shared/schemas/` |
+| Veralteter Verweis auf `03.sign-in-throttle.ts` | berichtigt |
+
+### Was dabei auffiel
+
+**Die Reihenfolge der Zwischenstücke war das eigentliche Risiko.** Die
+Kopfzeilen standen zunächst als `03.` hinter dem API-Wächter. Damit hätte jede
+401- und jede 429-Antwort **keine einzige** Richtlinie getragen — also
+ausgerechnet die Antworten, die ein Angreifer zu sehen bekommt. Aufgefallen ist
+es beim Schreiben des Tests „liegen auch auf der abgewiesenen Antwort". Die
+Zwischenstücke sind jetzt durchnummeriert: Kopfzeilen, Drossel, Sitzung,
+Wächter.
+
+**`'unsafe-inline'` bei den Skripten ließ sich nicht vermeiden.** Nuxt legt den
+Zustand der Seite eingebettet ab; ohne die Erlaubnis hydriert nichts. Der
+saubere Weg wäre ein Einmalwert je Antwort, und dafür gibt es in Nuxt 4.5
+keinen Haken. Festgehalten als **W-03** — samt der Abgrenzung, was dadurch
+offen ist und was nicht: fremde Quellen bleiben gesperrt, `object-src` ist
+`none`, und Vue setzt jeden Wert als Text.
+
+### Was offen bleibt
+
+Die **Oberfläche** zum Protokoll gehört zu T-034 (Benutzer und Rollen): eine
+Liste mit Filter nach Gewicht, Person, Zeitraum und Datensatz, in der
+Sicherheitsereignisse hervorstechen. Der Zeitstrahl am einzelnen Datensatz
+(M-02) kommt mit den Fachpaketen — die Komponente dafür steht seit T-009.
+
+Das **Schreiben aus den Fachdiensten** heraus ist damit vorbereitet, aber noch
+nirgends aufgerufen: es gibt bisher keinen Dienst, der etwas ändert. Jedes
+Fachpaket ab T-010 ruft `recordChange` in seiner Speicheroperation auf; das
+steht in der Ausführungsanleitung.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1667 (72 Dateien) |
+| Modelländerungen | 61 Kennungen, 28 fällig, 28 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |

@@ -16,16 +16,17 @@ import { installNitroGlobals, TEST_ORIGIN } from '../setup/nitro-globals'
 
 const config = installNitroGlobals()
 
-const throttle = (await import('../../server/middleware/00.throttle.ts')).default
-const session = (await import('../../server/middleware/01.auth.ts')).default
-const apiGuard = (await import('../../server/middleware/02.api-guard.ts')).default
+const securityHeaders = (await import('../../server/middleware/00.security-headers.ts')).default
+const throttle = (await import('../../server/middleware/01.throttle.ts')).default
+const session = (await import('../../server/middleware/02.auth.ts')).default
+const apiGuard = (await import('../../server/middleware/03.api-guard.ts')).default
 const { resetRateLimits } = await import('../../server/utils/rate-limit.ts')
-const { SIGN_IN_ATTEMPTS_PER_ACCOUNT } = await import('../../server/middleware/00.throttle.ts')
+const { SIGN_IN_ATTEMPTS_PER_ACCOUNT } = await import('../../server/middleware/01.throttle.ts')
 const { recordSignInAttempt, failedAttemptsSince } = await import('../../server/utils/sign-in-log.ts')
 const { signInAttempts } = await import('../../server/database/schema/index.ts')
 const { resetAuth, SIGN_IN_ATTEMPTS_PER_MINUTE } = await import('../../server/utils/auth.ts')
 const { createUserWithCredential } = await import('../../server/utils/auth-accounts.ts')
-const { rolePermissions, roles, userRoles, users } = await import('../../server/database/schema/index.ts')
+const { auditLog, rolePermissions, roles, userRoles, users } = await import('../../server/database/schema/index.ts')
 const { useDatabase, closeDatabase } = await import('../../server/utils/db.ts')
 const { requirePermission } = await import('../../server/utils/guards.ts')
 const { isExposedAuthEndpoint } = await import('../../server/utils/auth-paths.ts')
@@ -45,6 +46,7 @@ afterAll(async () => {
 /** The middleware chain plus a couple of probe endpoints. */
 function buildApp() {
   const app = createApp()
+  app.use(securityHeaders)
   app.use(throttle)
   app.use(session)
   app.use(apiGuard)
@@ -116,6 +118,7 @@ async function createAccount(username: string, permissions: string[] = []) {
 
 beforeEach(async () => {
   resetRateLimits()
+  await db.delete(auditLog)
   await db.delete(signInAttempts)
   await db.delete(users)
   await db.delete(roles)
@@ -546,6 +549,74 @@ async function failAttempts(
 }
 
 const MINUTES = 60 * 1000
+
+describe('P-21: die Kopfzeilen liegen auf jeder Antwort', () => {
+  it('P-21: auch auf der abgewiesenen', async () => {
+    // Deshalb steht das Zwischenstück an erster Stelle. Hinter dem Wächter
+    // käme eine 401-Antwort ohne jede Richtlinie heraus.
+    const response = await request('/api/customers')
+    expect(response.status).toBe(401)
+    expect(response.headers.get('content-security-policy')).toContain('default-src')
+    expect(response.headers.get('x-frame-options')).toBe('DENY')
+  })
+
+  it('P-21: auch auf der gedrosselten', async () => {
+    await createAccount('mmustermann')
+    let response!: Response
+    for (let attempt = 0; attempt <= SIGN_IN_ATTEMPTS_PER_MINUTE; attempt++) {
+      response = await signIn('mmustermann', PASSWORD)
+    }
+
+    expect(response.status).toBe(429)
+    expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+  })
+
+  it('P-21: auch auf der erfolgreichen', async () => {
+    await createAccount('mmustermann')
+    const response = await signIn('mmustermann', PASSWORD)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('referrer-policy')).toBe('same-origin')
+  })
+})
+
+describe('M-39: die Anmeldung landet im großen Protokoll', () => {
+  it('M-39: ein unbekannter Benutzername wird als solcher festgehalten', async () => {
+    // Gerade der ist interessant: wer erfundene Namen durchprobiert, sucht.
+    const response = await signIn('gibtsnicht', 'irgendein-passwort')
+    expect(response.status).toBe(401)
+
+    const versuche = await db.select().from(signInAttempts)
+    expect(versuche.map(row => row.reason)).toContain('unbekannt')
+
+    const protokoll = await db.select().from(auditLog)
+    const eintrag = protokoll.find(row => row.entityId === 'gibtsnicht')
+    expect(eintrag?.severity).toBe('sicherheit')
+    expect(eintrag?.action).toBe('abgewiesen')
+    expect(eintrag?.note).toContain('Unbekannter Benutzername')
+  })
+
+  it('M-39: ein falsches Passwort wird als solches festgehalten', async () => {
+    await createAccount('mmustermann')
+    await signIn('mmustermann', 'falsch-aber-lang-genug')
+
+    const protokoll = await db.select().from(auditLog)
+    expect(protokoll.at(-1)?.note).toContain('Falsches Passwort')
+  })
+
+  it('M-39: die gelungene Anmeldung steht ebenfalls darin', async () => {
+    await createAccount('mmustermann')
+    expect((await signIn('mmustermann', PASSWORD)).status).toBe(200)
+
+    const protokoll = await db.select().from(auditLog)
+    const eintrag = protokoll.at(-1)
+    expect(eintrag?.action).toBe('angemeldet')
+    expect(eintrag?.severity).toBe('sicherheit')
+  })
+
+  // Der **abgewiesene** Zugriff (P-18) wird vom Fehler-Haken protokolliert,
+  // und der läuft nur unter Nitro. Er steht deshalb im End-to-End-Lauf
+  // (`test/e2e/ssr.test.ts`), nicht hier.
+})
 
 describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
   it('P-13: zwei Fehlversuche sperren noch nichts', async () => {

@@ -7,12 +7,28 @@
  * (../../../docs/rewrite/03-architektur.md §5.4).
  */
 import { INTERNAL_MESSAGE, UNKNOWN_CLIENT_MESSAGE, isCuratedError } from '../utils/errors.ts'
+import { recordSecurity } from '../utils/audit.ts'
 
 export default defineNitroPlugin((nitro) => {
-  nitro.hooks.hook('error', (error, context) => {
+  nitro.hooks.hook('error', async (error, context) => {
     const status = (error as { statusCode?: number }).statusCode ?? 500
     if (status >= 500) {
       console.error('[server-error]', context?.event?.path ?? '', error)
+    }
+
+    // P-18: ein abgewiesener Zugriff ist der interessanteste Protokolleintrag,
+    // den es gibt — jemand war angemeldet und hat etwas versucht, das er nicht
+    // darf. Hier steht es richtig, weil hier **jeder** 403 vorbeikommt, egal
+    // aus welchem Wächter er stammt.
+    //
+    // Ein **401** wird bewusst nicht protokolliert: das ist im Alltag eine
+    // abgelaufene Sitzung, und jede offene Registerkarte erzeugte dann mehrere
+    // Einträge. Die Anmeldeseite selbst führt ihr eigenes Protokoll.
+    if (status === 403 && context?.event) {
+      await recordSecurity({
+        action: 'abgewiesen',
+        note: `Zugriff ohne Berechtigung auf ${path(context.event.path)}`,
+      }, context.event)
     }
   })
 
@@ -51,3 +67,6 @@ export default defineNitroPlugin((nitro) => {
  */
 const GERMAN_FRAMEWORK_MESSAGES = new Set<string>()
 const isGerman = (message: string) => GERMAN_FRAMEWORK_MESSAGES.has(message)
+
+/** Der Pfad ohne Abfrageteil — der kann Suchbegriffe und Kennungen tragen. */
+const path = (full: string) => (full.split('?')[0] ?? full).slice(0, 200)

@@ -27,11 +27,21 @@ export type TaskDeclaration = {
 /** Weekdays at 07:30 — before the workshop opens, after the night is over. */
 export const WEEKDAY_MORNING = '30 7 * * 1-5'
 
+/** Nachts um kurz nach drei — da ist niemand im Haus. */
+export const NIGHTLY = '10 3 * * *'
+
 /**
  * The jobs. Filled by the packages that own the work:
  * payment reminders and tire reminders arrive with T-025.
  */
-export const TASKS: readonly TaskDeclaration[] = []
+export const TASKS: readonly TaskDeclaration[] = [
+  {
+    name: 'protokoll-rotieren',
+    label: 'Protokoll aufräumen',
+    cron: NIGHTLY,
+    permission: 'settings',
+  },
+]
 
 /** Whether a name belongs to a declared task — guards the manual trigger. */
 export function isTaskName(name: string): boolean {

@@ -215,7 +215,7 @@ describe('Anmeldedrosselung', () => {
     // akzeptiert einen einwertigen Header. Ohne Proxy davor schickt ein
     // Angreifer bei jedem Versuch einen anderen Wert und landet nie im selben
     // Eimer (B-003, B-054). Gezählt wird deshalb in
-    // `server/middleware/03.sign-in-throttle.ts` — dort entscheidet ohne
+    // `server/middleware/01.throttle.ts` — dort entscheidet ohne
     // konfigurierten Proxy die Socket-Adresse.
     const context = await useAuth().$context
     expect(context.options.rateLimit?.enabled).toBe(false)

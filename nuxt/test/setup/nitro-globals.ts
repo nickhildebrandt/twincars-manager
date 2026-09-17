@@ -33,11 +33,19 @@ export type StubConfig = {
 }
 
 /**
+ * Nitro's own `defineTask`. It does nothing but hand the declaration back —
+ * at runtime Nitro registers it, in a test the declaration *is* what the test
+ * wants: `task.run()` called directly, without a scheduler.
+ */
+const defineTask = <T>(task: T): T => task
+
+/**
  * The h3 helpers Nitro auto-imports. Server code calls them unqualified, so
  * they have to exist as globals before such a module is imported.
  */
 const H3_GLOBALS = {
   createError,
+  defineTask,
   defineEventHandler,
   getQuery,
   getRequestHeader,

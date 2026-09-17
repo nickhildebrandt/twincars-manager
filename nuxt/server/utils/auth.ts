@@ -104,7 +104,7 @@ function build() {
       cookieCache: { enabled: false },
     },
 
-    // Throttling is done by `server/middleware/03.sign-in-throttle.ts`, not
+    // Throttling is done by `server/middleware/01.throttle.ts`, not
     // here. The library's own limiter reads `x-forwarded-for` by default and
     // trusts a single-valued header, so without a proxy in front an attacker
     // sends a different value with every request and never fills a bucket —
@@ -114,6 +114,26 @@ function build() {
 
     advanced: {
       cookiePrefix: 'tcm',
+
+      /**
+       * Das Sitzungsplätzchen, ausdrücklich abgesichert (M-40).
+       *
+       * Die Bibliothek leitet `useSecureCookies` sonst aus der Basisadresse
+       * ab. Das stimmt meistens — und schweigt genau dann, wenn es falsch
+       * konfiguriert ist. Hier steht es geschrieben und wird geprüft.
+       *
+       * `sameSite: 'lax'` statt `'strict'`: mit `'strict'` schickt der Browser
+       * das Plätzchen nach einem Klick auf einen Link von außen **nicht** mit,
+       * und der Nutzer landet auf der Anmeldeseite, obwohl er angemeldet ist.
+       * `lax` schickt es bei einer normalen Navigation mit, aber nie bei einer
+       * fremden Formularabsendung — und genau darum geht es.
+       */
+      useSecureCookies: origin.startsWith('https://'),
+      defaultCookieAttributes: {
+        httpOnly: true,
+        sameSite: 'lax',
+        path: '/',
+      },
       // Two queries instead of one join. The adapter's join path looks for an
       // inline `.references()` on the column, while this schema declares every
       // foreign key as a named `foreignKey()` block so the constraint names

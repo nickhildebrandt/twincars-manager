@@ -6,7 +6,7 @@
  */
 import { fileURLToPath } from 'node:url'
 import { describe, expect, it } from 'vitest'
-import { $fetch, setup } from '@nuxt/test-utils/e2e'
+import { $fetch, setup, url } from '@nuxt/test-utils/e2e'
 
 describe('Die gebaute Anwendung', async () => {
   await setup({
@@ -35,6 +35,54 @@ describe('Die gebaute Anwendung', async () => {
     })
   })
 
+  describe('P-21: die Sicherheits-Kopfzeilen am echten Build', () => {
+    // Der Unit-Test prüft die Rechnung. Hier zählt, dass sie auch wirklich auf
+    // der Antwort landet — und dass die Seite mit ihr noch funktioniert.
+    it('liegen auf jeder Antwort', async () => {
+      const response = await fetch(url('/login'))
+
+      expect(response.headers.get('content-security-policy')).toContain('default-src \'self\'')
+      expect(response.headers.get('x-content-type-options')).toBe('nosniff')
+      expect(response.headers.get('x-frame-options')).toBe('DENY')
+      expect(response.headers.get('referrer-policy')).toBe('same-origin')
+      expect(response.headers.get('permissions-policy')).toContain('camera=()')
+      expect(response.headers.get('x-robots-tag')).toContain('noindex')
+      expect(response.headers.get('cross-origin-opener-policy')).toBe('same-origin')
+    })
+
+    it('liegen auch auf einer abgewiesenen Antwort', async () => {
+      // Gerade dort: eine Fehlerseite ohne Richtlinie ist eine Fehlerseite ohne
+      // Richtlinie.
+      const response = await fetch(url('/api/customers'))
+      expect(response.status).toBe(401)
+      expect(response.headers.get('content-security-policy')).toBeTruthy()
+    })
+
+    it('setzen HSTS nicht, solange über http ausgeliefert wird', async () => {
+      const response = await fetch(url('/login'))
+      expect(response.headers.get('strict-transport-security')).toBeNull()
+    })
+
+    it('die Seite hydriert trotz der Richtlinie', async () => {
+      // Der eigentliche Grund für `'unsafe-inline'` bei den Skripten: ohne das
+      // legt Nuxt seinen Zustand ab, und der Browser führt ihn nicht aus.
+      const html = await $fetch<string>('/login')
+      expect(html).toContain('window.__NUXT__')
+    })
+  })
+
+  describe('P-18: der abgewiesene Zugriff steht im Protokoll', () => {
+    // Der Fehler-Haken läuft nur unter Nitro — geprüft wird er deshalb hier,
+    // am echten Build, gegen die echte Datenbank.
+    it('ein 401 auf einen geschützten Pfad wird nicht protokolliert', async () => {
+      // Eine abgelaufene Sitzung ist kein Vorfall. Jede offene Registerkarte
+      // erzeugte sonst mehrere Einträge.
+      const before = await countSecurityEntries()
+      expect((await fetch(url('/api/customers'))).status).toBe(401)
+      expect(await countSecurityEntries()).toBe(before)
+    })
+  })
+
   describe('Gesundheitsendpunkt', () => {
     it('antwortet ohne Anmeldung', async () => {
       // Eine Zustandsprüfung, die Anmeldedaten braucht, ist keine
@@ -55,3 +103,26 @@ describe('Die gebaute Anwendung', async () => {
     })
   })
 })
+
+/**
+ * Wie viele Sicherheitsereignisse im Protokoll stehen.
+ *
+ * Der End-to-End-Lauf spricht mit derselben Datenbank wie der gebaute Server —
+ * anders ließe sich nicht prüfen, ob dort wirklich etwas ankommt.
+ */
+async function countSecurityEntries(): Promise<number> {
+  const { default: postgres } = await import('postgres')
+  const { connectionOptions } = await import('../setup/database-helpers')
+  const { databaseNameOf } = await import('../setup/database-helpers')
+
+  const sql = postgres(connectionOptions(databaseNameOf(process.env.DATABASE_URL ?? '')))
+  try {
+    const rows = await sql<{ total: number }[]>`
+      SELECT count(*)::int AS total FROM audit_log WHERE severity = 'sicherheit'
+    `
+    return rows[0]?.total ?? 0
+  }
+  finally {
+    await sql.end({ timeout: 5 })
+  }
+}

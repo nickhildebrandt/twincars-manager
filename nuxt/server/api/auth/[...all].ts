@@ -21,13 +21,15 @@ import { clientIp, trustsProxy } from '../../utils/client-ip.ts'
 import { peekValidatedBody } from '../../utils/validate.ts'
 import { recordSignInAttempt } from '../../utils/sign-in-log.ts'
 import { accountExists, noteSignInOutcome } from '../../utils/account-lock.ts'
+import { recordSecurity } from '../../utils/audit.ts'
 import { signInAttemptSchema } from '#shared/schemas/auth'
+import { labelOf, signInFailures } from '#shared/domain'
+import type { SignInFailure } from '#shared/domain'
 
 export default defineEventHandler(async (event) => {
   if (!isExposedAuthEndpoint(event.path)) throw notFound('Die Seite')
 
-  const path = event.path.split('?')[0] ?? event.path
-  const isSignIn = path.startsWith('/api/auth/sign-in')
+  const isSignIn = event.path.startsWith('/api/auth/sign-in')
 
   // Der Benutzername muss **vor** dem Weiterreichen gelesen werden: danach ist
   // der Rumpf verbraucht und die Antwort nennt ihn nicht.
@@ -61,8 +63,24 @@ async function noteAttempt(
   // Warum es scheiterte, in einem Wort. Ob es den Namen gibt, entscheidet
   // zugleich darüber, was gesperrt wird (P-15).
   const known = await accountExists(username)
-  const reason = succeeded ? undefined : known ? 'passwort' : 'unbekannt'
+  const reason: SignInFailure | undefined = succeeded
+    ? undefined
+    : known ? 'passwort' : 'unbekannt'
 
   await recordSignInAttempt({ username, clientAddress: address, succeeded, reason })
   await noteSignInOutcome({ username, succeeded, known })
+
+  // Dasselbe Ereignis noch einmal im großen Protokoll (M-39). `sign_in_attempts`
+  // ist der Zähler für die Sperre und wird oft und schmal gelesen; das
+  // Protokoll ist die eine Stelle, an der jemand nachsieht, was geschehen ist.
+  await recordSecurity({
+    action: succeeded ? 'angemeldet' : 'abgewiesen',
+    entity: 'users',
+    entityId: username,
+    userName: username,
+    clientAddress: address,
+    note: reason
+      ? `Anmeldung von „${username}" gescheitert: ${labelOf(signInFailures, reason)}`
+      : `Anmeldung von „${username}"`,
+  }, event)
 }

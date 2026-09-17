@@ -3,12 +3,15 @@ CREATE TABLE IF NOT EXISTS "audit_log" (
 	"at" timestamp with time zone DEFAULT now() NOT NULL,
 	"user_id" text,
 	"user_name" varchar(200),
-	"entity" varchar(60) NOT NULL,
-	"entity_id" varchar(64) NOT NULL,
+	"client_address" varchar(64),
+	"entity" varchar(60),
+	"entity_id" varchar(64),
 	"action" varchar(20) NOT NULL,
+	"severity" varchar(20) DEFAULT 'info' NOT NULL,
 	"changes" jsonb DEFAULT '[]'::jsonb NOT NULL,
 	"note" varchar(300),
-	CONSTRAINT "audit_log_action_check" CHECK ("audit_log"."action" IN ('angelegt', 'geaendert', 'geloescht'))
+	CONSTRAINT "audit_log_action_check" CHECK ("audit_log"."action" IN ('angelegt', 'geaendert', 'geloescht', 'archiviert', 'reaktiviert', 'angemeldet', 'abgemeldet', 'abgewiesen', 'gesperrt', 'entsperrt', 'exportiert', 'ausgefuehrt')),
+	CONSTRAINT "audit_log_severity_check" CHECK ("audit_log"."severity" IN ('info', 'warnung', 'sicherheit'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "sign_in_attempts" (
@@ -1095,6 +1098,7 @@ END $$;--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_entity_idx" ON "audit_log" USING btree ("entity","entity_id","at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_at_idx" ON "audit_log" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_user_id_idx" ON "audit_log" USING btree ("user_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "audit_log_severity_idx" ON "audit_log" USING btree ("severity","at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_at_idx" ON "sign_in_attempts" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_username_idx" ON "sign_in_attempts" USING btree ("username","at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_address_idx" ON "sign_in_attempts" USING btree ("client_address","at" DESC NULLS LAST);--> statement-breakpoint

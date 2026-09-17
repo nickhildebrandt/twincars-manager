@@ -373,8 +373,31 @@ export const auditActions = domain({
   angelegt: 'Angelegt',
   geaendert: 'Geändert',
   geloescht: 'Gelöscht',
+  archiviert: 'Archiviert',
+  reaktiviert: 'Reaktiviert',
+  angemeldet: 'Angemeldet',
+  abgemeldet: 'Abgemeldet',
+  abgewiesen: 'Zugriff abgewiesen',
+  gesperrt: 'Gesperrt',
+  entsperrt: 'Entsperrt',
+  exportiert: 'Exportiert',
+  ausgefuehrt: 'Ausgeführt',
 })
 export type AuditAction = typeof auditActions.values[number]
+
+/**
+ * Wie schwer ein Protokolleintrag wiegt (M-39).
+ *
+ * Ein Protokoll, in dem alles gleich aussieht, ist eine Wand aus Zeilen. Das
+ * Gewicht entscheidet, was in der Oberfläche hervorsticht — und wie lange der
+ * Eintrag aufbewahrt wird (P-20).
+ */
+export const auditSeverities = domain({
+  info: 'Normal',
+  warnung: 'Auffällig',
+  sicherheit: 'Sicherheit',
+})
+export type AuditSeverity = typeof auditSeverities.values[number]
 
 /**
  * Warum ein Anmeldeversuch scheiterte (M-36).

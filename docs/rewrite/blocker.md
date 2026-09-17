@@ -115,3 +115,47 @@ deutschen `aria-label`-Werte erweitern und diesen Eintrag streichen.
 
 **Betroffene Fassungen:** Nuxt UI 4.11.1, Reka UI in der davon gezogenen
 Fassung.
+
+---
+
+## W-03 — Die Inhaltsrichtlinie braucht `'unsafe-inline'` für Skripte
+
+**Stand:** 17.09.2026 · **Betrifft:** T-044 (M-40, P-21) · **Schwere:** mittel,
+nicht umgangen
+
+**Was passiert.** Nuxt legt beim serverseitigen Rendern den Zustand der Seite
+als **eingebettetes Skript** ab (`window.__NUXT__`). Eine Inhaltsrichtlinie mit
+`script-src 'self'` allein verbietet das: der Browser führt das Skript nicht
+aus, die Seite hydriert nicht, und die Anwendung ist unbedienbar. Deshalb steht
+dort `'self' 'unsafe-inline'`.
+
+**Was das bedeutet — und was nicht.** Erlaubt sind eingebettete Skripte **aus
+der eigenen Auslieferung**. Eine fremde Quelle bleibt gesperrt (`'self'`, kein
+Platzhalter, kein `http:`), `object-src` ist `'none'`, `base-uri` und
+`form-action` sind `'self'`. Ein eingebettetes Skript kann also nur dorthin
+kommen, wo jemand HTML einschleust — und Vue setzt jeden Wert als Text, nicht
+als HTML. Die Lücke ist real, aber schmal, und sie verlangt vorher eine andere.
+
+**Warum es nicht umgangen wird.** Der saubere Weg ist ein Einmalwert je Antwort
+(`nonce`), den der Server erzeugt und Nuxt an sein eigenes Skript schreibt.
+Nuxt 4.5 bietet dafür **keinen Haken**; das Skript entsteht tief im Renderer.
+Die beiden Auswege wären:
+
+- `@nuxtjs/security` als Fremdpaket — es macht genau das. Regel 4 sagt aber:
+  Eigenbau vor Fremdpaket, und das Paket bringt zwei Dutzend weitere
+  Einstellungen mit, die niemand hier gelesen hat.
+- Die Antwort nachträglich umschreiben und das Skript mit einem `nonce`
+  versehen — ein Eingriff in fremdes HTML bei jeder Antwort. Das ist genau die
+  Art Trick, die beim nächsten Versionssprung still zerbricht.
+
+**Was stattdessen abgesichert ist.** `test/unit/security-headers.test.ts` nagelt
+fest, dass **keine fremde Quelle** und kein Platzhalter in `script-src` steht
+und dass `'unsafe-eval'` im Betrieb fehlt. `test/e2e/ssr.test.ts` prüft am
+echten Build, dass die Kopfzeilen ankommen und die Seite trotzdem hydriert.
+
+**Wann es weg kann.** Sobald Nuxt einen `nonce` für seine eigenen eingebetteten
+Skripte unterstützt. Dann in `contentSecurityPolicy()` `'unsafe-inline'` durch
+`'nonce-…'` ersetzen, den Wert je Anfrage erzeugen und diesen Eintrag
+streichen.
+
+**Betroffene Fassungen:** Nuxt 4.5.2, Nitro in der davon gezogenen Fassung.

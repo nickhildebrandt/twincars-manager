@@ -9,6 +9,16 @@
  * geändert" — nicht zwei Einträge, die zufällig dieselbe Sekunde tragen. Die
  * geänderten Felder reisen im Eintrag mit.
  *
+ * **Es ist zugleich das Sicherheitsprotokoll** (M-39). Anmeldung, Sperre,
+ * abgewiesener Zugriff, Rechteänderung und Export stehen in derselben Tabelle,
+ * unterschieden durch ihr `severity`. Wer wissen will, was am
+ * Dienstagnachmittag geschah, soll an **einer** Stelle nachsehen.
+ *
+ * **Nachträglich unveränderlich** (P-19): geschrieben und gelesen, nie
+ * geändert. Ein Protokoll, das sich bearbeiten lässt, ist kein Beweis. Die
+ * einzige Ausnahme ist die Rotation, und die löscht nur ganze Einträge nach
+ * Alter.
+ *
  * Dieses Protokoll ersetzt weitere feldbezogene Versionstabellen. Es bleiben
  * genau drei: Reifenpreis, Artikelpreis, Gehaltsstand — Werte, die **ab einem
  * Datum gelten** und in der Zukunft liegen dürfen. Das Protokoll beantwortet
@@ -18,7 +28,7 @@
  */
 import { pgTable, uuid, varchar, boolean, timestamp, index, jsonb, text, check } from 'drizzle-orm/pg-core'
 import { oneOf, oneOfOrNull } from './_checks.ts'
-import { auditActions, signInFailures } from '../../../shared/domain.ts'
+import { auditActions, auditSeverities, signInFailures } from '../../../shared/domain.ts'
 
 export const auditLog = pgTable('audit_log', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -35,12 +45,30 @@ export const auditLog = pgTable('audit_log', {
   /** Der Name zum Zeitpunkt der Änderung — eingefroren wie bei einem Beleg. */
   userName: varchar('user_name', { length: 200 }),
 
-  /** Woran: Tabellenname und Schlüssel des betroffenen Datensatzes. */
-  entity: varchar({ length: 60 }).notNull(),
-  entityId: varchar('entity_id', { length: 64 }).notNull(),
+  /**
+   * Von wo. Hinter einem Proxy die weitergereichte Adresse, sonst die des
+   * Anschlusses — dieselbe Regel wie bei der Drossel (B-003, B-054).
+   */
+  clientAddress: varchar('client_address', { length: 64 }),
 
-  /** Was: angelegt, geändert oder gelöscht. */
+  /**
+   * Woran: Tabellenname und Schlüssel des betroffenen Datensatzes.
+   *
+   * Beides darf leer sein. Ein Sicherheitsereignis betrifft nicht immer einen
+   * Datensatz — ein abgewiesener Zugriff etwa betrifft einen **Pfad**, und der
+   * steht dann in `note`.
+   */
+  entity: varchar({ length: 60 }),
+  entityId: varchar('entity_id', { length: 64 }),
+
+  /** Was: angelegt, geändert, gelöscht, angemeldet, abgewiesen, … */
   action: varchar({ length: 20 }).notNull(),
+
+  /**
+   * Wie schwer es wiegt (M-39). Entscheidet über die Hervorhebung in der
+   * Oberfläche **und** über die Aufbewahrung (P-20).
+   */
+  severity: varchar({ length: 20 }).default('info').notNull(),
 
   /**
    * Die geänderten Felder, je Eintrag:
@@ -55,10 +83,13 @@ export const auditLog = pgTable('audit_log', {
   note: varchar({ length: 300 }),
 }, table => [
   check('audit_log_action_check', oneOf(table.action, auditActions.values)),
+  check('audit_log_severity_check', oneOf(table.severity, auditSeverities.values)),
   // Der Zeitstrahl eines Datensatzes ist die häufigste Abfrage.
   index('audit_log_entity_idx').using('btree', table.entity.asc().nullsLast(), table.entityId.asc().nullsLast(), table.at.desc().nullsLast()),
   index('audit_log_at_idx').using('btree', table.at.desc().nullsLast()),
   index('audit_log_user_id_idx').using('btree', table.userId.asc().nullsLast()),
+  // Die zweite häufige Abfrage: „zeig mir nur die Sicherheitsereignisse".
+  index('audit_log_severity_idx').using('btree', table.severity.asc().nullsLast(), table.at.desc().nullsLast()),
 ])
 
 /**

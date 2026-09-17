@@ -731,6 +731,94 @@ Siehe **P-11**.
 
 ---
 
+## 12a. Protokoll und Absicherung
+
+### M-39 — Ein Protokoll für alles, mit Sicherheitsgewicht
+
+**Festgelegt am 17.09.2026.** M-01 hat das Ereignisprotokoll eingeführt und
+beantwortet „wer hat welchen Datensatz wann wie geändert". Das bleibt — und
+wird erweitert, damit es auch die zweite Frage beantwortet: **„was ist
+sicherheitsrelevant passiert, und wer war das".**
+
+**Ein Protokoll, nicht zwei.** Wer wissen will, was am Dienstagnachmittag
+geschah, soll an einer Stelle nachsehen. Jeder Eintrag trägt dafür ein
+**Gewicht**:
+
+| Gewicht | Wofür | In der Oberfläche |
+| --- | --- | --- |
+| `info` | die gewöhnliche Änderung an einem Datensatz | normal |
+| `warnung` | etwas, das auffallen soll: Storno, Löschung, Import, Rückspielung | hervorgehoben |
+| `sicherheit` | Anmeldung, Sperre, verweigerter Zugriff, Rechteänderung, Export | **deutlich hervorgehoben, eigener Filter** |
+
+**Was mindestens protokolliert wird.** Die Liste ist eine Untergrenze, keine
+Obergrenze:
+
+| Vorgang | Gewicht |
+| --- | --- |
+| Datensatz angelegt, geändert, gelöscht | `info` |
+| Beleg storniert, Datensatz archiviert oder gelöscht | `warnung` |
+| Import, Datensicherung, Rückspielung | `warnung` |
+| Anmeldung gelungen | `sicherheit` |
+| Anmeldung gescheitert, Konto oder Anschluss gesperrt | `sicherheit` |
+| Sperre aufgehoben, Passwort gesetzt, Konto deaktiviert | `sicherheit` |
+| **Zugriff ohne Recht abgewiesen** | `sicherheit` |
+| Rolle oder Recht geändert | `sicherheit` |
+| Daten exportiert (DATEV, Sicherung, Liste) | `sicherheit` |
+
+**Jeder Eintrag beantwortet fünf Fragen:** wann, wer (Kennung **und**
+eingefrorener Name), von welcher Adresse, woran, was. Bei einer Änderung dazu
+die geänderten Felder mit altem und neuem Wert.
+
+**Das Protokoll ist nachträglich unveränderlich.** Es wird geschrieben und
+gelesen, nie geändert. Ein Protokoll, das sich bearbeiten lässt, ist kein
+Beweis. Einzige Ausnahme ist die Rotation, und die löscht nur ganze Einträge
+nach Alter — sie ändert keinen.
+
+**Rotation nach Gewicht und Gegenstand.** Ein Protokoll, das nie aufräumt,
+wächst bis zur Unbrauchbarkeit; eines, das zu früh aufräumt, ist im Ernstfall
+leer:
+
+| Was | Aufbewahrung |
+| --- | --- |
+| Buchhaltungsnahes (Beleg, Zahlung, Buchung, Kasse) | **10 Jahre** — Aufbewahrungspflicht |
+| Gewicht `sicherheit` | **2 Jahre** |
+| Alles andere | **1 Jahr** |
+
+Die Rotation läuft als nächtliche Aufgabe, protokolliert selbst, was sie
+gelöscht hat, und ist wiederholbar.
+
+**Protokollieren darf nichts aufhalten.** Scheitert das Schreiben, scheitert
+**nicht** der Vorgang — der Fehler landet im Serverlog. Ein volles Protokoll
+darf niemanden an der Arbeit hindern.
+
+Siehe **P-17** bis **P-20**.
+
+### M-40 — Die Anwendung sagt dem Browser, was er darf
+
+Die Anwendung liefert bisher **keine einzige Sicherheits-Kopfzeile** aus. Sie
+läuft im Haus, aber ein Cloud-Hosting bleibt offen (M-36) — und ein Browser,
+dem niemand etwas sagt, erlaubt alles.
+
+Jede Antwort trägt künftig:
+
+| Kopfzeile | Wofür |
+| --- | --- |
+| `Content-Security-Policy` | woher Skripte, Stile, Bilder und Verbindungen kommen dürfen |
+| `Strict-Transport-Security` | nur über HTTPS, sobald einmal über HTTPS geliefert |
+| `X-Content-Type-Options: nosniff` | kein Raten des Inhaltstyps |
+| `X-Frame-Options: DENY` · `frame-ancestors 'none'` | kein Einbetten in eine fremde Seite |
+| `Referrer-Policy` | keine internen Adressen an fremde Server |
+| `Permissions-Policy` | Kamera, Mikrofon, Standort und Zahlungen aus |
+| `Cross-Origin-Opener-Policy` · `-Resource-Policy` | keine fremde Seite greift auf das Fenster zu |
+| `X-Robots-Tag: noindex` | eine interne Anwendung gehört in keinen Suchindex |
+
+`Strict-Transport-Security` nur, wenn die Anwendung wirklich über HTTPS läuft —
+sonst sperrt sie sich in einer Entwicklungsumgebung selbst aus.
+
+Siehe **P-21**.
+
+---
+
 ## 13. Prüfregeln
 
 Diese Regeln folgen **nicht** aus dem Datenmodell. Sie müssen als Fachlogik
@@ -755,6 +843,11 @@ Kennung beginnt.
 | **P-14** | Ein neu gesetztes Passwort erfüllt die **Mindestanforderung** und wird gegen bekannte Passwörter geprüft, **ohne es preiszugeben** | M-36 |
 | **P-15** | Ein Fehlversuch auf einen **unbekannten** Benutzernamen sperrt die **Adresse**; auf ein bekanntes Konto sperrt er **Konto und Adresse** | M-36 |
 | **P-16** | Eine dauerhafte Sperre und eine Adresssperre **melden sich per E-Mail** an die im Setup hinterlegte Adresse | M-36 |
+| **P-17** | Jede Änderung an einem Datensatz erzeugt **genau einen** Protokolleintrag mit altem und neuem Wert | M-01, M-39 |
+| **P-18** | Sicherheitsrelevante Vorgänge tragen das Gewicht `sicherheit` — auch der **abgewiesene** Zugriff | M-39 |
+| **P-19** | Das Protokoll wird **nie geändert**; nur die Rotation löscht, und zwar nach Alter | M-39 |
+| **P-20** | Die Rotation hält Buchhaltungsnahes 10 Jahre, Sicherheit 2 Jahre, alles andere 1 Jahr | M-39 |
+| **P-21** | Jede Antwort trägt die Sicherheits-Kopfzeilen; `Strict-Transport-Security` nur über HTTPS | M-40 |
 
 ---
 
@@ -804,6 +897,7 @@ Zum Nachhalten, damit es beim Umsetzen nicht versehentlich wieder auftaucht.
 | **T-028** | Kassenbuch: Saldo gerechnet, Herkunft, Kategorien, Anhänge (M-23…M-27) |
 | **T-033** | Import: alles, Nummernkreise getrennt, unveränderlich, Nachdruck, Prüfliste (M-28…M-32) |
 | **T-034** | Entsperren, letzte Fehlversuche, Passwort neu setzen — alles auf der Benutzerseite (P-13, P-14) |
+| **T-044** | Protokoll, Sicherheitsereignisse, Rotation, Kopfzeilen (M-39, M-40) — **vor** den Fachpaketen |
 | **neu** | Datensicherung über die Oberfläche (M-37) |
 
 Die genaue Umarbeitung der Pakete steht in
@@ -873,3 +967,10 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-14 | T-010 | Mindestanforderung und Abgleich beim Passwort |
 | P-15 | T-007 | Adresssperre bei unbekanntem Benutzernamen |
 | P-16 | T-026 | E-Mail bei dauerhafter Sperre und Adresssperre |
+| M-39 | T-044 | ein Protokoll für alles, mit Sicherheitsgewicht |
+| M-40 | T-044 | Sicherheits-Kopfzeilen auf jeder Antwort |
+| P-17 | T-044 | ein Eintrag je Speichervorgang |
+| P-18 | T-044 | Sicherheitsvorgänge tragen ihr Gewicht |
+| P-19 | T-044 | das Protokoll wird nie geändert |
+| P-20 | T-044 | Rotation nach Gewicht und Gegenstand |
+| P-21 | T-044 | Sicherheits-Kopfzeilen auf jeder Antwort |

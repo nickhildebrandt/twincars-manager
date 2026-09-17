@@ -52,3 +52,5 @@ schreibt · kein eigenes CSS · ESLint formatiert.
 | Löschen, Archivieren und was mitgeht              | [Löschen und Archivieren](loeschen-und-archivieren.md) |
 | Wächter, Listen, Nummern, Krypto, Zeitplan        | [Serverschichten](server-schichten.md)                 |
 | Werte der Diskriminatoren und ihre Beschriftungen | [Wertelisten](wertelisten.md)                          |
+| Anmeldung, Sitzungen, Sperren                     | [Anmeldung und Berechtigungen](auth.md)                |
+| Wer hat was gemacht, und was der Browser darf     | [Protokoll und Absicherung](protokoll.md)              |

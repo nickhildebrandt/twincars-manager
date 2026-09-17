@@ -170,6 +170,19 @@ ausgesperrt wurde oder angegriffen wird.
 Scheitert das Schreiben des Protokolls, scheitert **nicht** die Anmeldung. Ein
 volles Protokoll darf niemanden aussperren.
 
+## Das Sitzungsplätzchen
+
+`httpOnly` (kein Zugriff aus JavaScript), `sameSite: 'lax'`, `path: '/'`, und
+`secure`, sobald die Anwendung über HTTPS läuft. Alles vier steht ausdrücklich
+in `server/utils/auth.ts`, statt es der Bibliothek zu überlassen — sie leitet
+`secure` sonst aus der Basisadresse ab, und das stimmt meistens.
+
+`lax` und nicht `strict`: mit `strict` schickt der Browser das Plätzchen nach
+einem Klick auf einen Link von außen **nicht** mit, und der Nutzer landet auf
+der Anmeldeseite, obwohl er angemeldet ist. `lax` schickt es bei einer normalen
+Navigation mit, aber nie bei einer fremden Formularabsendung — und genau darum
+geht es.
+
 ## Nur vier Endpunkte der Bibliothek
 
 | Endpunkt                          | Zweck                   |

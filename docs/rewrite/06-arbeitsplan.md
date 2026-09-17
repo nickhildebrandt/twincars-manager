@@ -1112,6 +1112,57 @@ nuxt/app/pages/settings/backup.vue
 | 5   | Der Zustand meldet eine seit über 48 Stunden ausgebliebene Sicherung als Warnung | Komponententest  |
 | 6   | Beim Aufsetzen ist die Rückspielung **einmal erprobt** und protokolliert        | Ausführungsschritt |
 
+## T-044 — Protokoll, Sicherheitsereignisse und Absicherung
+
+**Features:** neu · **Befunde:** — · **Modelländerungen:** M-39, M-40, P-17–P-21 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Vorbedingungen:** T-006, T-007.
+**Reihenfolge:** **vor** den Fachpaketen. Jedes Paket danach schreibt ins
+Protokoll; wird die Grundlage später gebaut, muss sie in jedes Paket
+nachgetragen werden.
+
+**Zu erstellen**
+
+```
+nuxt/server/utils/audit.ts
+nuxt/server/middleware/03.security-headers.ts
+nuxt/server/tasks/protokoll-rotieren.ts
+nuxt/shared/schemas/audit.ts
+```
+
+**Inhalt**
+
+- **Ein Protokoll für alles** (M-39): dieselbe Tabelle für die gewöhnliche
+  Änderung und für das Sicherheitsereignis, unterschieden durch ein
+  **Gewicht** (`info`, `warnung`, `sicherheit`).
+- `recordChange(...)` vergleicht zwei Zustände und schreibt **einen** Eintrag
+  mit den geänderten Feldern — nicht einen je Feld (P-17).
+- `recordSecurity(...)` für alles ohne Datensatz: Anmeldung, Sperre,
+  abgewiesener Zugriff, Export.
+- **Der abgewiesene Zugriff wird protokolliert** (P-18). Ein 403 ist der
+  interessanteste Eintrag, den es gibt: jemand hat etwas versucht, das er
+  nicht darf.
+- **Nie ändern** (P-19): kein Dienst schreibt ein `UPDATE` oder `DELETE` auf
+  das Protokoll. Nur die Rotation löscht, nach Alter.
+- **Rotation** als nächtliche Aufgabe (P-20), wiederholbar, mit eigenem
+  Protokolleintrag über das, was sie gelöscht hat.
+- **Sicherheits-Kopfzeilen** auf jeder Antwort (M-40, P-21).
+- Protokollieren darf nie einen Vorgang aufhalten.
+
+**Akzeptanzkriterien**
+
+| #   | Kriterium | Prüfung |
+| --- | --- | --- |
+| 1   | **P-17** — eine Änderung an zwei Feldern erzeugt **einen** Eintrag mit beiden | Integrationstest |
+| 2   | Unveränderte Felder stehen **nicht** im Eintrag | Integrationstest |
+| 3   | **P-18** — ein 403 erzeugt einen Eintrag mit Gewicht `sicherheit`, Pfad und Adresse | Integrationstest |
+| 4   | **P-19** — kein Dienst ändert oder löscht Protokolleinträge | Querschnittstest |
+| 5   | **P-20** — die Rotation hält die drei Fristen ein und ist wiederholbar | Integrationstest |
+| 6   | Ein Fehler beim Protokollieren hält den Vorgang nicht auf | Integrationstest |
+| 7   | **P-21** — jede Antwort trägt die Kopfzeilen, HSTS nur über HTTPS | Integrationstest, E2E gegen den Build |
+| 8   | Der eingefrorene Name überlebt den gelöschten Benutzer | Integrationstest |
+
+**Doku:** `docs/architecture/protokoll.md`, Ergänzung in `auth.md`.
+
 **Doku:** `docs/operations/datensicherung.md`, `docs/api/settings-backup-*`.
 
 ---
@@ -1142,3 +1193,6 @@ Begründung der weniger offensichtlichen Kanten:
 - **T-035 zuletzt**: Dashboard und Suche greifen auf alle Module zu.
 - **T-043 vor T-042**: eine Auslieferung ohne erprobte Rückspielung wäre eine
   Vermutung, keine Sicherung.
+- **T-044 vor allen Fachpaketen**: jedes davon schreibt ins Protokoll. Später
+  gebaut, müsste die Grundlage in jedes Paket nachgetragen werden — und in
+  einem davon würde sie vergessen.
