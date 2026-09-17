@@ -38,11 +38,12 @@ export const workOrders = pgTable('work_orders', {
   uniqueIndex('work_orders_appointment_id_idx').using('btree', table.appointmentId.asc().nullsLast()).where(sql`(appointment_id IS NOT NULL)`),
   index('work_orders_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   index('work_orders_status_idx').using('btree', table.status.asc().nullsLast()),
+  // M-38: Ein Auftrag trägt eine eigene Nummer und ist ein eigener Vorgang.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'work_orders_customer_id_customers_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],

@@ -35,11 +35,13 @@ export const calendarEntries = pgTable('calendar_entries', {
   index('calendar_entries_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast()),
   index('calendar_entries_kind_idx').using('btree', table.kind.asc().nullsLast()),
   index('calendar_entries_starts_at_idx').using('btree', table.startsAt.asc().nullsLast()),
+  // M-38: Ein Termin ist ein eigener Vorgang. Ein Kunde mit Terminen wird
+  // archiviert, nicht gelöscht.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'calendar_entries_customer_id_customers_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],

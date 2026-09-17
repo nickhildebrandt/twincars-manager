@@ -41,6 +41,19 @@ export const users = pgTable('users', {
    * Ereignisprotokoll (M-01).
    */
   unlockedAt: timestamp('unlocked_at', { withTimezone: true, mode: 'date' }),
+
+  /**
+   * Wann das Konto dauerhaft gesperrt wurde (P-13, letzte Stufe).
+   *
+   * Die ersten beiden Stufen laufen ab und werden deshalb **gerechnet**. Die
+   * dritte soll gerade **nicht** ablaufen — sie wird festgehalten, sonst wäre
+   * sie nach vierundzwanzig Stunden von selbst weg, weil die Fehlversuche aus
+   * dem Zählfenster fallen. Genau das wäre keine dauerhafte Sperre.
+   *
+   * Aufgehoben wird sie, indem der Administrator `unlocked_at` setzt; ist das
+   * jünger als dieser Zeitpunkt, gilt die Sperre als erledigt.
+   */
+  lockedAt: timestamp('locked_at', { withTimezone: true, mode: 'date' }),
 }, table => [
   uniqueIndex('users_email_idx').using('btree', table.email.asc().nullsLast()),
   uniqueIndex('users_username_idx').using('btree', table.username.asc().nullsLast()),

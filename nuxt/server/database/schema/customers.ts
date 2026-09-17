@@ -119,9 +119,11 @@ export const customerInquiries = pgTable('customer_inquiries', {
   check('customer_inquiries_status_check', oneOf(table.status, inquiryStatuses.values)),
   index('customer_inquiries_status_idx').using('btree', table.status.asc().nullsLast()),
   index('customer_inquiries_notification_status_idx').using('btree', table.notificationStatus.asc().nullsLast()),
+  // M-38: Eine Anfrage wird bearbeitet und hat einen Stand (M-33) — ein
+  // eigener Vorgang, der den Kunden überlebt.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'customer_inquiries_customer_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])

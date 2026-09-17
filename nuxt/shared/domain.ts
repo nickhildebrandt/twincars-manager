@@ -382,17 +382,24 @@ export type AuditAction = typeof auditActions.values[number]
  * In einem Wort, damit sich das Protokoll zählen lässt: „zwölfmal `passwort`
  * von einer Adresse" ist eine Auskunft, ein Fließtext nicht.
  *
- * `deaktiviert` und `kontosperre` sind zweierlei und werden auseinandergehalten:
- * das eine hat der Administrator dauerhaft abgeschaltet, das andere ruht
- * fünfzehn Minuten von selbst (P-13). Wer beides gleich nennt, sieht in der
- * Liste nicht, ob jemand ausgesperrt wurde oder angegriffen wird.
+ * Drei Wörter sehen sich ähnlich und meinen Verschiedenes:
+ *
+ *   - `deaktiviert` — der Administrator hat das Konto abgeschaltet, etwa weil
+ *     jemand länger weg ist. Eine Verwaltungshandlung ohne Anlass.
+ *   - `kontosperre` — zu viele Fehlversuche auf dieses Konto (P-13). Endet von
+ *     selbst, außer auf der letzten Stufe.
+ *   - `adresssperre` — zu viele Fehlversuche von diesem Anschluss (P-15).
+ *
+ * Wer sie gleich nennt, sieht in der Liste nicht mehr, ob jemand ausgesperrt
+ * wurde oder angegriffen wird.
  */
 export const signInFailures = domain({
   passwort: 'Falsches Passwort',
   unbekannt: 'Unbekannter Benutzername',
   deaktiviert: 'Konto deaktiviert',
   drossel: 'Zu viele Versuche in kurzer Zeit',
-  kontosperre: 'Konto vorübergehend gesperrt',
+  kontosperre: 'Konto gesperrt',
+  adresssperre: 'Anschluss gesperrt',
 })
 export type SignInFailure = typeof signInFailures.values[number]
 

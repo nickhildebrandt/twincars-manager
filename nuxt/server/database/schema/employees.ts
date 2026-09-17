@@ -70,6 +70,8 @@ export const employeeAbsences = pgTable('employee_absences', {
   check('employee_absences_status_check', oneOf(table.status, absenceStatuses.values)),
   index('employee_absences_date_from_idx').using('btree', table.dateFrom.asc().nullsLast()),
   index('employee_absences_employee_id_idx').using('btree', table.employeeId.asc().nullsLast()),
+  // M-38: Gehaltsstände sind Personalunterlagen. Ein Mitarbeiter mit
+  // Gehaltshistorie wird deaktiviert (M-12), nie gelöscht.
   foreignKey({
     columns: [table.employeeId],
     foreignColumns: [employees.id],
@@ -91,7 +93,7 @@ export const employeeSalaryVersions = pgTable('employee_salary_versions', {
     columns: [table.employeeId],
     foreignColumns: [employees.id],
     name: 'employee_salary_versions_employee_id_employees_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const workshopHours = pgTable('workshop_hours', {

@@ -278,7 +278,17 @@ Stelle (`shared/calendar-date.ts`) und geht nie durch `Date`.
 zurück. Alles, was eine **Uhrzeit** braucht — Termine, Protokolle,
 Zeitstempel — bleibt bei `Date` und der einen Betriebszeitzone (B-028).
 
-### E-22 — Löschregeln in einer Transaktion, nicht im Fremdschlüssel · `entschieden`
+### E-22 — Löschregeln in einer Transaktion · `hinfällig seit 17.09.2026`
+
+> **Hinfällig.** **M-38** macht die Löschregel unabhängig von jedem Feldwert:
+> ein eigener Vorgang sperrt, Beiwerk geht mit, und das steht je Beziehung
+> fest. Damit reicht der Fremdschlüssel allein, und die ausdrücklichen
+> `UPDATE`-Schritte entfallen. **Der geprüfte Befund am Ende bleibt lesenswert
+> und gilt weiter** — er ist der Grund, warum eine feldwertabhängige Löschregel
+> nicht deklarativ geht, und bewahrt den Nächsten davor, es zu versuchen.
+
+<details>
+<summary>Die ursprüngliche Entscheidung</summary>
 
 **Entscheidung.** Die Löschregeln für ein Fahrzeug (M-05, P-11, P-12) hängen von
 einem **Feldwert** ab: eine Rechnung sperrt, ein Kostenvoranschlag nicht; ein
@@ -313,27 +323,42 @@ PostgreSQL erlaubt den Fremdschlüssel zwar, aber die Aktion der anderen
 Beziehung (`SET NULL` oder „geht mit") läuft zuerst und rechnet die erzeugte
 Spalte auf NULL — die Sperre greift nie. Mit `RESTRICT` ebenso wenig.
 
-### E-23 — Passwortgüte wird offline geprüft · `entschieden`
+</details>
+
+### E-23 — Passwortgüte: online geprüft, ohne das Passwort preiszugeben · `entschieden`
 
 **Entscheidung.** Beim Setzen eines Passworts (P-14) gilt eine
-Mindestanforderung, und das Passwort wird gegen eine **mitgelieferte Liste
-bekannter Passwörter** geprüft. Kein Aufruf an einen fremden Dienst.
+Mindestanforderung, und das Passwort wird **online** gegen die Sammlung
+bekannter Passwörter aus Datenlecks geprüft — mit dem
+**k-Anonymitäts-Verfahren**, das das Passwort dabei nicht preisgibt.
 
-**Warum nicht online.** Der übliche Weg ist eine Anfrage an einen
-Leak-Abgleichdienst. Er setzt voraus, dass der Server ins Internet kommt — und
-die Anwendung läuft im Haus im WLAN. Eine Prüfung, die ohne Internet
-stillschweigend durchwinkt, ist schlimmer als keine: sie erzeugt Vertrauen, das
-sie nicht deckt.
+**Wie das geht.** Vom SHA-1 des Passworts gehen nur die **ersten fünf Zeichen**
+an den Dienst. Der antwortet mit allen Hashes, die so beginnen — einige
+hundert. Verglichen wird **lokal**. Der Dienst erfährt weder das Passwort noch
+seinen vollständigen Hash, und aus fünf Zeichen lässt sich nichts
+zurückrechnen.
 
-**Wie stattdessen.** Eine Liste der verbreitetsten Passwörter liegt bei und wird
-beim Prüfen gelesen. Sie fängt genau die Fälle, um die es geht — `passwort1`,
-`sommer2024`, der Firmenname mit Jahreszahl. Ein Online-Abgleich kann später
-**zusätzlich** dazukommen, wenn der Server im Internet steht; er ersetzt die
-Liste nicht.
+**Warum überhaupt.** Ohne zweiten Faktor ist das Passwort die einzige Hürde.
+Eine Bremse hilft gegen Geduld, nicht gegen `sommer2024` — das findet man mit
+drei Versuchen. Ein Abgleich gegen echte Lecks fängt genau die Passwörter, die
+in der Praxis fallen, und er fängt sie **bevor** sie in Gebrauch sind.
 
-**Konsequenzen.** Die Prüfung gehört in `shared/schemas/` und gilt an jeder
-Stelle, an der ein Passwort gesetzt wird: im Einrichtungsassistenten (T-010),
-in der Benutzerverwaltung (T-034) und beim eigenen Passwortwechsel.
+**Was bei fehlendem Internet passiert.** Die Anwendung läuft im Haus; der
+Server kommt möglicherweise nicht hinaus. Dann gilt:
+
+- Die Mindestanforderung greift weiterhin — sie ist reine Rechnung.
+- Der Abgleich wird **übersprungen**, mit einem **sichtbaren Hinweis** am
+  Formular: „Der Abgleich gegen bekannte Passwörter war nicht möglich (kein
+  Internet). Die Mindestanforderung ist erfüllt."
+
+Das Wichtige daran ist der Hinweis. Eine Prüfung, die still durchwinkt, erzeugt
+Vertrauen, das sie nicht deckt — und genau das wäre schlimmer als gar keine.
+
+**Konsequenzen.** Die Prüfung liegt in `shared/schemas/`, der Abruf in
+`server/utils/`. Sie gilt an jeder Stelle, an der ein Passwort gesetzt wird: im
+Einrichtungsassistenten (T-010), in der Benutzerverwaltung (T-034) und beim
+eigenen Passwortwechsel. Der Abruf hat eine **kurze Zeitgrenze** — ein
+langsamer Dienst darf das Anlegen eines Benutzers nicht aufhalten.
 
 ---
 

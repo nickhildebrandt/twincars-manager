@@ -230,14 +230,17 @@ const ruleOf = async (table: string, column: string) => {
   ]
 }
 
-describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
+describe('M-38: gelöscht wird nur, woran noch nichts hängt', () => {
   it.each([
     ['work_orders', 'customer_id'],
     ['calendar_entries', 'customer_id'],
     ['customer_inquiries', 'customer_id'],
     ['vehicle_sales', 'customer_id'],
-  ])('%s.%s gehört zum Kunden und geht mit ihm', async (table, column) => {
-    expect(await ruleOf(table, column)).toBe('cascade')
+  ])('M-38: %s.%s ist ein eigener Vorgang und sperrt', async (table, column) => {
+    // Bis zum 17.09.2026 gingen diese vier mit dem Kunden mit (E-11). Sie tun
+    // es nicht mehr: ein Termin, ein Auftrag, eine Anfrage und ein Verkauf
+    // sind eigene Vorgänge. Ein Kunde, an dem so etwas hängt, wird archiviert.
+    expect(await ruleOf(table, column)).toBe('no action')
   })
 
   it('M-05: das Fahrzeug geht nicht mehr mit dem Kunden', async () => {
@@ -279,27 +282,43 @@ describe('E-11: Löschen mit Kaskade, Sperre für alles Belegnahe', () => {
     expect(left).toHaveLength(1)
   })
 
-  it('ein Kunde nimmt seinen Auftrag und seinen Termin mit', async () => {
+  it('M-38: ein Auftrag und ein Termin sperren den Kunden, statt mitzugehen', async () => {
+    // Der Kern der neuen Regel, an echten Zeilen. Nachvollziehbarkeit ist das
+    // Ziel: ein Auftrag von damals soll auch dann noch dastehen, wenn der
+    // Kunde längst nicht mehr kommt.
     const [customer] = await sql<{ id: string }[]>`
       INSERT INTO customers (customer_number, last_name)
-      VALUES ('E11-KASKADE', 'Testfall') RETURNING id
+      VALUES ('M38-VORGANG', 'Testfall') RETURNING id
     `
     await sql`
       INSERT INTO work_orders (order_number, customer_id, title)
-      VALUES ('E11-AU-1', ${customer!.id}, 'Inspektion')
+      VALUES ('M38-AU-1', ${customer!.id}, 'Inspektion')
     `
     await sql`
       INSERT INTO calendar_entries (kind, customer_id, title, starts_at, ends_at)
-      VALUES ('appointment', ${customer!.id}, 'Termin', now(), now())
+      VALUES ('appointment', ${customer!.id}, 'M38-Termin', now(), now())
     `
 
-    await sql`DELETE FROM customers WHERE id = ${customer!.id}`
+    await expect(sql`DELETE FROM customers WHERE id = ${customer!.id}`).rejects.toThrow()
 
     const left = await sql<{ count: string }[]>`
-      SELECT (SELECT count(*) FROM work_orders WHERE order_number = 'E11-AU-1')
-           + (SELECT count(*) FROM calendar_entries WHERE title = 'Termin') AS count
+      SELECT (SELECT count(*) FROM work_orders WHERE order_number = 'M38-AU-1')
+           + (SELECT count(*) FROM calendar_entries WHERE title = 'M38-Termin') AS count
     `
-    expect(Number(left[0]!.count)).toBe(0)
+    expect(Number(left[0]!.count)).toBe(2)
+  })
+
+  it('M-38: ein Kunde, an dem nichts hängt, lässt sich löschen', async () => {
+    // Der eine Fall, für den es das Löschen gibt: gerade angelegt, sofort als
+    // Unsinn erkannt.
+    const [customer] = await sql<{ id: string }[]>`
+      INSERT INTO customers (customer_number, last_name)
+      VALUES ('M38-LEER', 'Versehen') RETURNING id
+    `
+    await sql`DELETE FROM customers WHERE id = ${customer!.id}`
+
+    const left = await sql`SELECT 1 FROM customers WHERE id = ${customer!.id}`
+    expect(left).toHaveLength(0)
   })
 
   it('eine Rechnung sperrt das Löschen des Kunden', async () => {
@@ -753,6 +772,83 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
       expect(reason, rule).toMatch(/^[A-ZÄÖÜ].*\.$/)
       expect(reason.length, rule).toBeGreaterThan(30)
     }
+  })
+
+  it('M-38: was ein eigener Vorgang ist, sperrt das Löschen', async () => {
+    // Die Regel gilt für jeden Datensatz gleich: hängt ein eigener Vorgang
+    // daran, wird archiviert statt gelöscht. Keine dieser Beziehungen darf auf
+    // „geht mit" oder „Verweis entfällt" stehen — sonst verschwände ein
+    // Vorgang, den später jemand sucht.
+    const vorgaenge = [
+      // am Kunden
+      ['calendar_entries', 'customer_id'],
+      ['customer_inquiries', 'customer_id'],
+      ['documents', 'customer_id'],
+      ['ledger_entries', 'customer_id'],
+      ['vehicles', 'customer_id'],
+      ['vehicle_sales', 'customer_id'],
+      ['work_orders', 'customer_id'],
+      // am Fahrzeug
+      ['calendar_entries', 'vehicle_id'],
+      ['documents', 'vehicle_id'],
+      ['vehicle_purchases', 'vehicle_id'],
+      ['vehicle_sales', 'vehicle_id'],
+      ['wheel_sets', 'vehicle_id'],
+      ['work_orders', 'vehicle_id'],
+      // am Beleg
+      ['document_payments', 'document_id'],
+      ['ledger_entries', 'document_id'],
+      ['reminders', 'invoice_id'],
+      // am Mitarbeiter
+      ['calendar_entries', 'employee_id'],
+      ['employee_salary_versions', 'employee_id'],
+      ['work_order_item_assignees', 'employee_id'],
+    ] as const
+
+    for (const [table, column] of vorgaenge) {
+      expect(await ruleOf(table, column), `${table}.${column}`).toBe('no action')
+    }
+  })
+
+  it('M-38: was reines Beiwerk ist, geht mit', async () => {
+    // Die Gegenprobe. Beiwerk existiert nur als Teil seines Datensatzes und
+    // wird ohne ihn sinnlos — es sperrt nicht, sonst ließe sich nie etwas
+    // löschen.
+    const beiwerk = [
+      ['vehicle_license_plate_versions', 'vehicle_id'],
+      ['vehicle_owner_history', 'vehicle_id'],
+      ['vehicle_photos', 'vehicle_id'],
+      ['vehicle_documents', 'vehicle_id'],
+      ['vehicle_listings', 'vehicle_id'],
+      ['document_items', 'document_id'],
+      ['document_pdfs', 'document_id'],
+      ['work_order_items', 'work_order_id'],
+      ['work_order_item_assignees', 'work_order_item_id'],
+      ['item_price_versions', 'item_id'],
+      ['tire_price_versions', 'tire_id'],
+      ['tire_photos', 'tire_id'],
+      ['employee_absences', 'employee_id'],
+      ['ledger_attachments', 'entry_id'],
+      ['reminder_pdfs', 'reminder_id'],
+    ] as const
+
+    for (const [table, column] of beiwerk) {
+      expect(await ruleOf(table, column), `${table}.${column}`).toBe('cascade')
+    }
+  })
+
+  it('M-38: es gibt keine Löschregel mehr, die von einem Feldwert abhinge', async () => {
+    // E-22 ist damit hinfällig: ein Fremdschlüssel sperrt oder er geht mit,
+    // und das steht je Beziehung fest. Erzeugte Spalten als Umweg gibt es
+    // nicht — sie funktionieren ohnehin nicht (siehe E-22).
+    const rows = await sql<{ name: string }[]>`
+      SELECT a.attname AS name
+      FROM pg_attribute a
+      JOIN pg_class c ON c.oid = a.attrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE n.nspname = 'public' AND c.relkind = 'r' AND a.attgenerated <> ''
+    `
+    expect(rows).toEqual([])
   })
 
   it('M-05: was ein Fahrzeug überleben soll, sperrt sein Löschen', async () => {

@@ -118,29 +118,9 @@ In allen drei Fällen bleiben die Fahrzeugdaten vollständig erhalten.
 **Folge für E-11:** die dort beschlossene Kaskade vom Kunden auf das Fahrzeug
 entfällt. Der Rest von E-11 gilt weiter.
 
-**Was beim Löschen eines Fahrzeugs geschieht** (festgelegt am 13.09.2026). Der
-Alltagsweg ist **Archivieren** — ein archiviertes Fahrzeug verschwindet aus
-Listen und Auswahlen und bleibt vollständig erhalten. Gelöscht wird nur, was es
-nie hätte geben dürfen: die Dublette, der Tippfehler. Dafür gilt die Grenze
-zwischen **Buchhaltung** und **Arbeitsorganisation**:
-
-| Was daran hängt | Regel | Warum |
-| --- | --- | --- |
-| **Rechnung**, auch stornierte | **sperrt** | Buchungsbeleg mit lückenloser Nummer und Aufbewahrungspflicht. Ohne Fahrzeug stünde auf der Rechnung nicht mehr, wofür sie war. |
-| **Kostenvoranschlag** | Verweis entfällt | Unverbindliche Schätzung, keine lückenlose Nummer, keine Aufbewahrungspflicht (M-15). |
-| **Termin** | Verweis entfällt | Arbeitsorganisation. Der Eintrag bleibt mit seinem Text stehen. |
-| **Auftrag** | Verweis entfällt | Dito. Der Auftrag bleibt lesbar. |
-| **Radsatz, montiert** | geht mit | Die Räder sitzen am Auto. |
-| **Radsatz, eingelagert** | **sperrt** | Vier Räder stehen körperlich im Regal auf einem Lagerplatz. Erst auslagern, dann löschen. Das ist Inventar, keine Datenregel. |
-| Kennzeichen, Halter-Historie, Ankauf, Verkauf, Inserat, Fotos, Unterlagen | geht mit | Gehört zum Fahrzeug und sonst nirgendwohin. |
-
-**Der Bediener entscheidet nichts davon.** Der Bestätigungsdialog zeigt nur an,
-was geschieht — „Dieses Fahrzeug hängt an 2 Aufträgen und 1 Termin. Die Verweise
-entfallen, die Einträge bleiben." Hängt eine Rechnung daran, steht dort, dass
-nur Archivieren möglich ist. Eine Auswahl je Verweisart wäre eine
-Modellentscheidung, die niemand treffen soll, der morgens Reifen wechselt.
-
-Siehe **P-11** und **P-12**.
+**Was beim Löschen eines Fahrzeugs geschieht**, steht seit dem 17.09.2026 nicht
+mehr hier, sondern in **M-38** — es gilt für jeden Datensatz gleich und nicht
+nur für Fahrzeuge.
 
 ### M-06 — Halter-Historie
 
@@ -591,23 +571,51 @@ wer geduldig ist und die Adresse wechselt, kommt auf 20 Versuche je Minute. Im
 Haus ist das theoretisch — sobald die Anwendung auf einem eigenen Server im
 Internet steht, ist es das nicht mehr. Deshalb zusätzlich:
 
-- **Gestaffelte Sperre.** Nach **20 Fehlversuchen auf dasselbe Konto binnen
-  einer Stunde** ist das Konto **15 Minuten gesperrt**, mit deutschem Satz und
-  der Angabe, wann es weitergeht. Die Minutengrenzen bleiben, wie sie sind: 10
-  je Adresse, 20 je Konto. Sie sind für einen geteilten Arbeitsplatz bemessen,
-  an dem sich mehrere Leute vertippen dürfen; sie zu senken kostet täglich
-  Reibung und kauft gegen einen Angreifer nur den Faktor zwei.
-- **Der Administrator hebt die Sperre sofort auf.** Auf der Benutzerseite ein
+- **Gestaffelte Sperre** (verschärft am 17.09.2026). Gezählt werden die
+  Fehlversuche der letzten **24 Stunden**:
+
+  | Fehlversuche | Folge |
+  | --- | --- |
+  | 1–2 | nichts |
+  | **3** | 10 Minuten Ruhe |
+  | **10** | 24 Stunden Ruhe |
+  | **20** | **dauerhaft gesperrt** — nur der Administrator hebt das auf |
+
+  Die Anmeldeseite zeigt die verbleibende Zeit als ablaufenden Zähler, damit
+  niemand raten muss. Die Minutengrenzen bleiben zusätzlich bestehen; sie
+  fangen die Flut ab, bevor überhaupt gerechnet wird.
+
+- **Konto und Adresse werden getrennt gezählt** (P-15). Wer einen
+  **unbekannten** Benutzernamen durchprobiert, sperrt seine **Adresse** — es
+  gibt kein Konto, das man sperren könnte, und genau dieses Muster verrät den
+  Angriff. Wer ein **bekanntes** Konto mit falschem Passwort beklopft, sperrt
+  **beides**: das Konto und die Adresse.
+
+  **Eine Adresssperre betrifft nur neue Anmeldungen.** Wer bereits angemeldet
+  ist, arbeitet weiter. Sonst legte ein Tippfehler den halben Betrieb still,
+  weil im Haus alle hinter derselben Adresse sitzen.
+
+- **Der Administrator hebt jede Sperre sofort auf.** Auf der Benutzerseite ein
   Knopf dafür, daneben die letzten Fehlversuche und „Passwort neu setzen".
   Damit ist der einzige echte Einwand gegen eine Sperre — jemand sperrt einen
-  Kollegen absichtlich aus — im Betrieb in einer Minute erledigt. Siehe
-  **P-13**.
+  Kollegen aus — im Betrieb in einer Minute erledigt. Siehe **P-13**.
+
+- **Eine dauerhafte Sperre und eine Adresssperre melden sich per E-Mail** an
+  die im Setup hinterlegte Adresse (P-16). Eine Sperre, die niemand bemerkt,
+  ist eine Sperre, die erst am nächsten Morgen auffällt — und dann weiß
+  niemand, ob jemand angegriffen wurde oder sich nur vertippt hat.
+
+- **Deaktivieren ist etwas anderes als Sperren.** Ein Konto wird *deaktiviert*,
+  wenn jemand länger weg ist — das ist eine Verwaltungshandlung ohne Anlass.
+  *Gesperrt* wird es durch Fehlversuche. Beides steht getrennt im Protokoll und
+  wird in der Oberfläche getrennt benannt.
+
 - **Das Passwort ist die einzige Hürde**, weil es keinen zweiten Faktor gibt.
   Gegen ein schwaches Passwort hilft keine Drossel: `sommer2024` findet man
   nicht mit 29.000 Versuchen am Tag, sondern mit dreien. Beim **Setzen** eines
-  Passworts gilt deshalb eine Mindestanforderung, und es wird gegen eine Liste
-  bekannter Passwörter geprüft. Das wirkt mehr als jede Verschärfung der
-  Zähler. Siehe **P-14** und **E-23**.
+  Passworts gilt deshalb eine Mindestanforderung, und es wird gegen bekannte
+  Passwörter geprüft — **online, aber ohne das Passwort preiszugeben**. Siehe
+  **P-14** und **E-23**.
 - **Kein Zurücksetzen als Selbstbedienung.** Ein Weg über die E-Mail macht das
   Postfach zum Schlüssel für die Anwendung — neue Angriffsfläche, und ohne
   zweiten Faktor dahinter. Bei acht Leuten mit erreichbarem Chef ist der Nutzen
@@ -644,6 +652,85 @@ Ein Backup, das nie zurückgespielt wurde, ist eine Vermutung.
 
 ---
 
+## 11a. Löschen und Archivieren
+
+### M-38 — Gelöscht wird nur, woran noch nichts hängt
+
+**Festgelegt am 17.09.2026.** Die Regel gilt für **jeden** Datensatz der
+Anwendung gleich — Kunde, Fahrzeug, Reifen, Artikel, Mitarbeiter, Lieferant,
+Beleg, Auftrag.
+
+> **Hängt an einem Datensatz ein eigener Vorgang, wird er nicht gelöscht,
+> sondern archiviert.** Gelöscht wird nur, woran noch nichts hängt.
+
+Der Anwendungsfall fürs Löschen ist eng und soll es bleiben: jemand legt etwas
+an, sieht sofort, dass es Unsinn war, und nimmt es zurück. Alles andere wird
+**archiviert** — der Datensatz verschwindet aus Listen und Auswahlen und bleibt
+vollständig erhalten, mit allem, was daran hängt.
+
+**Warum so streng.** Nachvollziehbarkeit ist das Ziel, nicht Aufgeräumtheit.
+Eine Datenbank, in der ein Vorgang verschwinden kann, beantwortet die Frage
+„was ist damals passiert" irgendwann nicht mehr. Und die Grenze „was ist
+buchhalterisch relevant" ist im Einzelfall schwer zu ziehen — die Grenze „hängt
+da etwas dran" ist es nicht.
+
+**Was ein eigener Vorgang ist** (sperrt das Löschen):
+
+| | |
+| --- | --- |
+| Belege | Rechnung **und** Kostenvoranschlag, auch stornierte |
+| Zahlungen | jede erfasste Zahlung |
+| Buchungen | Kassenbuch und Sachkonto, mit Anhang |
+| Geldvorgänge am Fahrzeug | Ankauf, Verkauf |
+| Aufträge | mit ihrer Nummer |
+| Termine | im Kalender |
+| Radsätze | mit Nummer und Lagerplatz — Inventar |
+| Zahlungserinnerungen | wurden versendet |
+| Anfragen | werden bearbeitet und haben einen Stand |
+| Gehaltsstände | Personalunterlagen |
+
+**Was Beiwerk ist** (geht mit):
+
+| | |
+| --- | --- |
+| Am Fahrzeug | Kennzeichen-Historie, Halter-Historie, Fotos, Unterlagen, Inserat |
+| Am Beleg | Positionen, erzeugte PDFs |
+| Am Auftrag | Positionen und deren Zuweisungen |
+| Am Reifen und am Artikel | Preisstände, Fotos |
+| Am Mitarbeiter | Abwesenheiten |
+| An der Buchung | Beleganhänge |
+
+Beiwerk hat keinen eigenen Vorgangscharakter: es existiert nur als Teil seines
+Datensatzes und wird ohne ihn sinnlos.
+
+**Was der Bediener sieht.** Geht es nicht, steht der Grund da:
+
+> **Dieses Fahrzeug lässt sich nicht löschen.** Daran hängen 3 Rechnungen und
+> 1 Auftrag. Aus buchhalterischen Gründen bleibt beides erhalten — archivieren
+> Sie das Fahrzeug stattdessen.
+
+Und daneben die Schaltfläche zum Archivieren. Der Bediener entscheidet nichts
+über Verweise; er entscheidet nur, ob archiviert wird.
+
+**Jede Liste bekommt einen Reiter „Archiviert".** Was archiviert ist,
+verschwindet aus der normalen Liste, aus jeder Auswahl und aus der globalen
+Suche — aber es ist an genau einer Stelle wieder auffindbar, und von dort aus
+reaktivierbar.
+
+**Folge für E-11.** Die dort beschlossene Kaskade beim Löschen eines Kunden
+entfällt. Ein Kunde mit Terminen, Aufträgen oder Belegen wird archiviert. Die
+Vorschau aus E-11 bleibt — aber als **Auskunft**, nicht als Auswahl.
+
+**Was daraus technisch folgt.** Es gibt keine Löschregel mehr, die von einem
+Feldwert abhängt: ein Fremdschlüssel sperrt oder er geht mit, und das steht
+fest. Damit ist auch der Kunstgriff aus **E-22** hinfällig, und der
+Löschvorgang braucht keine ausdrücklichen `UPDATE`-Schritte mehr. Die Datenbank
+allein reicht.
+
+Siehe **P-11**.
+
+---
+
 ## 13. Prüfregeln
 
 Diese Regeln folgen **nicht** aus dem Datenmodell. Sie müssen als Fachlogik
@@ -662,10 +749,12 @@ Kennung beginnt.
 | **P-08** | Importierte Belege sind **unveränderlich** | M-30 |
 | **P-09** | **Saldo und Kennzahlen** werden gerechnet, nie gespeichert | M-23, M-35 |
 | **P-10** | Gehaltsdaten sind **ausschließlich** über das Personalmodul erreichbar | M-04 |
-| **P-11** | Eine **Rechnung sperrt** das Löschen des Fahrzeugs; Kostenvoranschlag, Termin und Auftrag verlieren nur den Verweis | M-05 |
-| **P-12** | Ein **eingelagerter Radsatz sperrt** das Löschen des Fahrzeugs; ein montierter geht mit | M-05, M-17 |
-| **P-13** | Nach **20 Fehlversuchen je Konto binnen einer Stunde** ist das Konto 15 Minuten gesperrt; der Administrator hebt das sofort auf | M-36 |
-| **P-14** | Ein neu gesetztes Passwort erfüllt die **Mindestanforderung** und steht **nicht auf der Liste bekannter Passwörter** | M-36 |
+| **P-11** | Hängt ein **eigener Vorgang** daran, sperrt er das Löschen; die Meldung nennt ihn und bietet das Archivieren an | M-38 |
+| **P-12** | Archiviertes verschwindet aus Listen, Auswahlen und Suche und ist **nur** über den Reiter „Archiviert" erreichbar | M-38 |
+| **P-13** | Anmeldeversuche werden **gestaffelt** gesperrt: 3 → 10 Minuten, 10 → 24 Stunden, 20 → dauerhaft | M-36 |
+| **P-14** | Ein neu gesetztes Passwort erfüllt die **Mindestanforderung** und wird gegen bekannte Passwörter geprüft, **ohne es preiszugeben** | M-36 |
+| **P-15** | Ein Fehlversuch auf einen **unbekannten** Benutzernamen sperrt die **Adresse**; auf ein bekanntes Konto sperrt er **Konto und Adresse** | M-36 |
+| **P-16** | Eine dauerhafte Sperre und eine Adresssperre **melden sich per E-Mail** an die im Setup hinterlegte Adresse | M-36 |
 
 ---
 
@@ -777,7 +866,10 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-08 | T-033 | importierte Belege unveränderlich |
 | P-09 | T-028 | Saldo und Kennzahlen gerechnet |
 | P-10 | T-019 | Gehaltsdaten nur über das Personalmodul |
-| P-11 | T-012 | Rechnung sperrt das Löschen des Fahrzeugs |
-| P-12 | T-012 | eingelagerter Radsatz sperrt das Löschen |
-| P-13 | T-007 | Kontosperre nach 20 Fehlversuchen je Stunde |
+| M-38 | T-011 | gelöscht wird nur, woran noch nichts hängt |
+| P-11 | T-011 | ein eigener Vorgang sperrt das Löschen |
+| P-12 | T-011 | Archiviertes nur über den eigenen Reiter |
+| P-13 | T-007 | gestaffelte Sperre 3 / 10 / 20 |
 | P-14 | T-010 | Mindestanforderung und Abgleich beim Passwort |
+| P-15 | T-007 | Adresssperre bei unbekanntem Benutzernamen |
+| P-16 | T-026 | E-Mail bei dauerhafter Sperre und Adresssperre |

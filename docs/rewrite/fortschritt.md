@@ -1022,6 +1022,11 @@ Datenmodell umgesetzt, aber nicht im übrigen Plan angekommen. Nachgezogen:
 
 ## Nachtrag — zwei offene Fragen beantwortet · 2026-09-13
 
+> **Überholt am 17.09.2026.** Der Inhaber hat beide Antworten nachgeschärft:
+> beim Löschen gilt jetzt **M-38** für jeden Datensatz gleich, bei der
+> Anmeldung eine dreistufige Staffel mit Adresssperre. Der Eintrag bleibt
+> stehen, weil er den Weg dahin erklärt — was gilt, steht im Nachtrag darunter.
+
 Der Inhaber hat die beiden Fragen entschieden, die aus T-007 und T-009 offen
 standen. Beides ist im Plan nachgezogen und, soweit schon fällig, umgesetzt.
 
@@ -1103,4 +1108,103 @@ sperrt, muss er vor ihm weg. Der Modelltest hat es sofort gezeigt.
 | --- | --- |
 | Tests | 1565 (70 Dateien) |
 | Modelländerungen | 51 Kennungen, 20 fällig, 20 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+
+---
+
+## Nachtrag — nachgeschärft · 2026-09-17
+
+Der Inhaber hat beide Antworten von vorgestern korrigiert. Beide Male in
+dieselbe Richtung: **weniger löschen, strenger sperren.**
+
+### M-38 — gelöscht wird nur, woran noch nichts hängt
+
+Die frühere Feinunterscheidung („Rechnung sperrt, Kostenvoranschlag nicht,
+montierter Radsatz geht mit") ist weg. Es gilt **eine** Regel für **jeden**
+Datensatz:
+
+> Hängt ein eigener Vorgang daran, wird archiviert. Gelöscht wird nur, woran
+> noch nichts hängt.
+
+Der Grund ist Nachvollziehbarkeit, nicht Aufgeräumtheit. Und die Grenze „was
+ist buchhalterisch relevant" ist im Einzelfall schwer zu ziehen — die Grenze
+„hängt da etwas dran" ist es nicht.
+
+**Neun Beziehungen gingen bisher mit und sperren jetzt:**
+
+| Beziehung | Warum |
+| --- | --- |
+| `calendar_entries.customer_id` | Ein Termin ist ein Vorgang |
+| `customer_inquiries.customer_id` | Eine Anfrage hat einen Bearbeitungsstand (M-33) |
+| `vehicle_sales.customer_id` · `.vehicle_id` | Verkauf ist ein Geldvorgang |
+| `vehicle_purchases.vehicle_id` | Ankauf ebenso |
+| `work_orders.customer_id` | Ein Auftrag trägt eine eigene Nummer |
+| `document_payments.document_id` | Eine erfasste Zahlung ist ein Geldvorgang |
+| `reminders.invoice_id` | Eine Zahlungserinnerung ging nach draußen |
+| `employee_salary_versions.employee_id` | Personalunterlagen |
+
+Beiwerk geht weiterhin mit: Kennzeichen- und Halter-Historie, Fotos,
+Unterlagen, Inserat, Belegpositionen, PDFs, Preisstände, Abwesenheiten,
+Beleganhänge. `schema-drift.test.ts` nagelt **beide** Listen fest — auch die
+Gegenprobe, sonst ließe sich am Ende gar nichts mehr löschen.
+
+**E-22 ist damit hinfällig.** Es gibt keine Löschregel mehr, die von einem
+Feldwert abhängt; ein Fremdschlüssel sperrt oder er geht mit, und das steht
+fest. Die ausdrücklichen `UPDATE`-Schritte im Löschvorgang entfallen. Der
+geprüfte Befund am Ende von E-22 bleibt trotzdem stehen — er erklärt, warum
+eine feldwertabhängige Löschregel nicht deklarativ geht.
+
+### P-13 und P-15 — dreistufig, und die Adresse zählt mit
+
+| Fehlversuche in 24 h | Folge |
+| --- | --- |
+| 1–2 | nichts |
+| ab 3 | 10 Minuten |
+| ab 10 | 24 Stunden |
+| ab 20 | dauerhaft, nur der Administrator öffnet |
+
+Dazu: ein **unbekannter** Benutzername sperrt die **Adresse**, ein falsches
+Passwort auf ein **bekanntes** Konto sperrt **beides**. Eine Adresssperre gilt
+nur für neue Anmeldungen — wer angemeldet ist, arbeitet weiter.
+
+### Was dabei auffiel
+
+**Ein falsches Passwort wurde überhaupt nicht protokolliert.** Die Drossel
+schrieb nur ihre eigenen Abweisungen ins Protokoll; der Ausgang der Anmeldung
+stand nirgends. Damit hätte die ganze Staffel **nie ausgelöst** — sie zählte
+Ereignisse, die es nicht gab. Aufgefallen ist es erst, als die dauerhafte Sperre
+gebaut wurde: ein Zähler, der auf 20 kommen soll, aber nie über 0 hinauskam.
+Protokolliert wird jetzt im Catch-all, **nach** der Antwort der Bibliothek —
+das ist die einzige Stelle, an der bekannt ist, ob das Passwort stimmte.
+
+**Die „dauerhafte" Sperre verfiel nach 24 Stunden.** Sie wurde aus den
+Fehlversuchen der letzten 24 Stunden gerechnet — und fiel mit ihnen aus dem
+Fenster. Der erste Test dazu hielt das sogar fest, mit einem Kommentar, der das
+Loch als Absicht ausgab. Jetzt steht sie als `users.locked_at` am Benutzer, und
+der Test prüft das Gegenteil: nach einem Jahr immer noch gesperrt.
+
+**Zwei alte Drosseltests prüften plötzlich etwas anderes.** Mit der Staffel bei
+drei Fehlversuchen ist der Minutenzähler über falsche Passwörter gar nicht mehr
+erreichbar. Sie laufen jetzt mit **richtigem** Passwort — dann greift nur der
+Minutenzähler, und genau der soll dort geprüft werden. Dass die Staffel früher
+greift, ist ein eigener Test.
+
+### Was davon schon steht
+
+| Teil | Stand |
+| --- | --- |
+| **M-38** im Schema, neun Regeln umgestellt | **fertig**, beide Listen in `schema-drift.test.ts` |
+| **P-13** dreistufig, dauerhafte Sperre festgehalten | **fertig** |
+| **P-15** Konto und Adresse getrennt | **fertig** |
+| Protokollieren des tatsächlichen Ausgangs | **fertig** |
+| **P-11/P-12** Löschvorgang, Meldung, Reiter „Archiviert" | Plan steht, Umsetzung in **T-011** |
+| **P-14** Passwortgüte, online ohne Preisgabe | Plan steht, Umsetzung in **T-010** |
+| **P-16** E-Mail bei Sperre | Plan steht, Umsetzung in **T-026** |
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1582 (70 Dateien) |
+| Modelländerungen | 54 Kennungen, 21 fällig, 21 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |

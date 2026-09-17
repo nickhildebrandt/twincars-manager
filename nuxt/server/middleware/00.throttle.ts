@@ -17,9 +17,11 @@
  * ein Tippfehler nicht gleich aussperrt, aber eng genug, um Durchprobieren zu
  * beenden.
  *
- * Darüber liegt die **gestaffelte Sperre** aus `account-lock.ts` (P-13): eine
- * Minutengrenze ist eine Bremse, keine Sperre — wer wartet, kommt durch. Nach
- * zwanzig Fehlversuchen binnen einer Stunde ruht das Konto fünfzehn Minuten.
+ * Darüber liegt die **gestaffelte Sperre** aus `account-lock.ts` (P-13, P-15):
+ * eine Minutengrenze ist eine Bremse, keine Sperre — wer wartet, kommt durch.
+ * Gezählt wird dort über einen Tag, und die Folgen steigen mit jeder Stufe.
+ * Gesperrt wird das Konto, die Adresse oder beides, je nachdem, ob es den
+ * Benutzernamen überhaupt gibt.
  *
  * Runs first, before the session lookup: a flood should be turned away without
  * touching the database.
@@ -30,7 +32,7 @@ import { clientIp, trustsProxy } from '../utils/client-ip.ts'
 import { consume } from '../utils/rate-limit.ts'
 import { tooManyRequests } from '../utils/errors.ts'
 import { recordSignInAttempt } from '../utils/sign-in-log.ts'
-import { accountLock, lockMessage } from '../utils/account-lock.ts'
+import { accountExists, accountLock, addressLock, lockMessage } from '../utils/account-lock.ts'
 import { peekValidatedBody } from '../utils/validate.ts'
 
 /** Calls per minute allowed on the rest of the authentication endpoints. */
@@ -94,17 +96,34 @@ export default defineEventHandler(async (event) => {
     return refuse(event, byAccount.retryAfter)
   }
 
-  // P-13: die längere Rechnung. Sie kostet eine Abfrage, aber erst nachdem die
-  // beiden Zähler durch sind — eine Flut erreicht sie also nie.
-  const lock = await accountLock(username)
-  if (lock.locked) {
+  // P-13 und P-15: die längere Rechnung. Sie kostet Abfragen, aber erst nachdem
+  // die beiden Minutenzähler durch sind — eine Flut erreicht sie nie.
+  //
+  // Die Adresse wird **immer** geprüft: wer sie sich verspielt hat, kommt auch
+  // mit einem gültigen Benutzernamen nicht weiter. Das Konto nur, wenn es
+  // eines gibt.
+  const fromAddress = await addressLock(address)
+  if (fromAddress.locked) {
     await recordSignInAttempt({
       username,
       clientAddress: address,
       succeeded: false,
-      reason: 'kontosperre',
+      reason: 'adresssperre',
     })
-    return refuse(event, lock.retryAfter, lockMessage(lock))
+    return refuse(event, fromAddress.retryAfter, lockMessage(fromAddress))
+  }
+
+  if (await accountExists(username)) {
+    const forAccount = await accountLock(username)
+    if (forAccount.locked) {
+      await recordSignInAttempt({
+        username,
+        clientAddress: address,
+        succeeded: false,
+        reason: 'kontosperre',
+      })
+      return refuse(event, forAccount.retryAfter, lockMessage(forAccount))
+    }
   }
 })
 

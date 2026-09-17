@@ -57,6 +57,9 @@ export const vehicles = pgTable('vehicles', {
   index('vehicles_status_idx').using('btree', table.status.asc().nullsLast()),
   // M-05: Das Fahrzeug überlebt den Kunden. Es zu löschen, weil sein Halter
   // geht, wäre Datenverlust — ein Auto ohne Halter ist kein Fehler.
+  // M-38: Ein Verkauf ist ein Geldvorgang. Er verschwindet nie.
+  // M-38: Der Ankauf ist ein Geldvorgang und geht nicht mit dem Fahrzeug.
+  // M-38: Der Verkauf ebenso.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
@@ -100,7 +103,7 @@ export const vehiclePurchases = pgTable('vehicle_purchases', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_purchases_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const vehicleSales = pgTable('vehicle_sales', {
@@ -125,12 +128,12 @@ export const vehicleSales = pgTable('vehicle_sales', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_sales_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
     name: 'vehicle_sales_customer_id_customers_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const vehicleListings = pgTable('vehicle_listings', {

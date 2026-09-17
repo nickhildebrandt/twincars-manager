@@ -108,6 +108,9 @@ export const documents = pgTable('documents', {
   index('documents_issue_date_idx').using('btree', table.issueDate.asc().nullsLast()),
   index('documents_type_status_idx').using('btree', table.type.asc().nullsLast(), table.status.asc().nullsLast()),
   index('documents_work_order_id_idx').using('btree', table.workOrderId.asc().nullsLast()),
+  // M-38: Eine erfasste Zahlung ist ein Geldvorgang. Ein Beleg mit Zahlung
+  // lässt sich nicht mehr löschen — und ein Entwurf hat keine.
+  // M-38: Eine Zahlungserinnerung ging nach draußen. Sie bleibt.
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],
@@ -190,7 +193,7 @@ export const documentPayments = pgTable('document_payments', {
     columns: [table.documentId],
     foreignColumns: [documents.id],
     name: 'document_payments_document_id_documents_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const documentPdfs = pgTable('document_pdfs', {
@@ -232,7 +235,7 @@ export const reminders = pgTable('reminders', {
     columns: [table.invoiceId],
     foreignColumns: [documents.id],
     name: 'reminders_invoice_id_documents_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   unique('reminders_document_number_unique').on(table.documentNumber),
 ])
 

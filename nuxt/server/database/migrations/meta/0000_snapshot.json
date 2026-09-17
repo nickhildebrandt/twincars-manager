@@ -1,5 +1,5 @@
 {
-  "id": "99cf9c8f-0a93-4704-b82d-a7a60940a1e0",
+  "id": "900a1990-3fa5-4605-9384-717e41186a80",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -246,7 +246,7 @@
       "checkConstraints": {
         "sign_in_attempts_reason_check": {
           "name": "sign_in_attempts_reason_check",
-          "value": "\"sign_in_attempts\".\"reason\" IS NULL OR \"sign_in_attempts\".\"reason\" IN ('passwort', 'unbekannt', 'deaktiviert', 'drossel', 'kontosperre')"
+          "value": "\"sign_in_attempts\".\"reason\" IS NULL OR \"sign_in_attempts\".\"reason\" IN ('passwort', 'unbekannt', 'deaktiviert', 'drossel', 'kontosperre', 'adresssperre')"
         }
       },
       "isRLSEnabled": false
@@ -740,6 +740,12 @@
           "type": "timestamp with time zone",
           "primaryKey": false,
           "notNull": false
+        },
+        "locked_at": {
+          "name": "locked_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": false
         }
       },
       "indexes": {
@@ -1016,7 +1022,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "calendar_entries_vehicle_id_vehicles_id_fk": {
@@ -2402,7 +2408,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -3189,7 +3195,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4078,7 +4084,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -4343,7 +4349,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -5994,7 +6000,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "work_orders_vehicle_id_vehicles_id_fk": {
@@ -7450,7 +7456,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },
@@ -7586,7 +7592,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         },
         "vehicle_sales_customer_id_customers_id_fk": {
@@ -7599,7 +7605,7 @@
           "columnsTo": [
             "id"
           ],
-          "onDelete": "cascade",
+          "onDelete": "no action",
           "onUpdate": "no action"
         }
       },

@@ -86,29 +86,60 @@ nie im selben Eimer, und der Schutz tut nichts (B-003, B-054). Die eigene
 Drossel glaubt den Header nur, wenn `TRUST_PROXY=on` gesetzt ist — sonst
 entscheidet die Socket-Adresse, die niemand wählen kann.
 
-## Die Kontosperre (P-13)
+## Die gestaffelte Sperre (P-13, P-15)
 
 Eine Minutengrenze ist eine **Bremse**, keine Sperre: wer wartet, kommt durch.
-Über zwanzig Versuche je Minute und wechselnde Adressen sind das rechnerisch
-knapp 29.000 am Tag auf ein Konto. Im Haus ist das theoretisch; auf einem
-eigenen Server im Internet nicht mehr.
+Darüber liegt deshalb `server/utils/account-lock.ts` mit einem Zählfenster von
+**24 Stunden**:
 
-Deshalb zählt `server/utils/account-lock.ts` zusätzlich über eine **Stunde**:
-**20 Fehlversuche darin, und das Konto ruht 15 Minuten.** Die Ruhezeit läuft ab
-dem **letzten** Versuch — sonst wartete jemand die Stunde ab und klopfte weiter.
+| Fehlversuche in 24 h | Folge                                        |
+| -------------------- | -------------------------------------------- |
+| 1–2                  | nichts                                       |
+| ab **3**             | 10 Minuten Ruhe                              |
+| ab **10**            | 24 Stunden Ruhe                              |
+| ab **20**            | **dauerhaft** — nur der Administrator öffnet |
 
-**Der Zustand wird gerechnet, nicht gespeichert.** Es gibt kein Feld
-„gesperrt", das jemand zurücksetzen müsste; ein vergessener Aufräumer sperrte
-sonst dauerhaft aus. Zwei Dinge beenden die Zählung vorzeitig:
+Die Ruhezeit läuft ab dem **letzten** Versuch. Sonst wartete jemand das Fenster
+ab und klopfte weiter, als wäre nichts gewesen.
 
-- eine **gelungene Anmeldung** — wer durchkam, war offensichtlich der Richtige;
-- das **Entsperren durch den Administrator**, das `users.unlocked_at` setzt.
-  Alles davor zählt nicht mehr mit. Das Protokoll bleibt unangetastet: es ist
-  eine Spur und wird nicht bereinigt. Wer entsperrt hat, steht im
-  Ereignisprotokoll (M-01).
+### Konto oder Anschluss
 
-Die Oberfläche dazu — Entsperren, letzte Fehlversuche, Passwort neu setzen —
-entsteht mit T-034 auf der Benutzerseite.
+| Was passiert                                  | Was gesperrt wird       |
+| --------------------------------------------- | ----------------------- |
+| falsches Passwort auf ein **bekanntes** Konto | **Konto und Anschluss** |
+| **unbekannter** Benutzername                  | **nur der Anschluss**   |
+
+Wer Namen durchprobiert, hat kein Konto, das man sperren könnte — und genau
+dieses Muster verrät den Angriff. Eine Anschlusssperre gilt **nur für neue
+Anmeldungen**; wer schon angemeldet ist, arbeitet weiter. Sonst legte ein
+Tippfehler den halben Betrieb still, weil im Haus alle hinter derselben Adresse
+sitzen.
+
+### Gerechnet oder festgehalten
+
+Die ersten beiden Stufen werden **gerechnet**: es gibt kein Feld „gesperrt",
+das jemand zurücksetzen müsste, und ein vergessener Aufräumer kann niemanden
+aussperren. Zwei Dinge beenden die Zählung vorzeitig — eine **gelungene
+Anmeldung** (wer durchkam, war der Richtige) und das **Entsperren** durch den
+Administrator, das `users.unlocked_at` setzt.
+
+Die **letzte Stufe wird festgehalten** (`users.locked_at`) — und zwar genau
+deshalb: gerechnet wäre sie nach 24 Stunden von selbst weg, weil die
+Fehlversuche aus dem Zählfenster fallen. Das wäre keine dauerhafte Sperre,
+sondern die zweite Stufe unter anderem Namen.
+
+### Wo protokolliert wird
+
+Die Drossel sieht nur, dass jemand klopft; **ob das Passwort stimmte, weiß erst
+die Bibliothek**. Deshalb steht das Protokollieren im Catch-all
+`server/api/auth/[...all].ts`, nach der Antwort — und dort fällt auch die
+letzte Stufe. Stünde es in der Drossel, zählte nur, wer abgewiesen wurde, und
+die Staffel löste nie aus.
+
+Die Oberfläche — Entsperren, letzte Fehlversuche, Passwort neu setzen — entsteht
+mit T-034 auf der Benutzerseite. Eine dauerhafte Sperre und eine
+Anschlusssperre melden sich zusätzlich per E-Mail an die im Setup hinterlegte
+Adresse (P-16, mit T-026).
 
 **Ein Zurücksetzen als Selbstbedienung gibt es nicht und soll es nicht geben.**
 Ein Weg über die E-Mail machte das Postfach zum Schlüssel für die Anwendung,
@@ -121,18 +152,20 @@ Jeder Versuch steht in `sign_in_attempts`, auch der erfolgreiche, auch der mit
 einem Benutzernamen, den es gar nicht gibt — gerade der ist interessant. Der
 Grund steht in **einem Wort** aus `shared/domain.ts`:
 
-| Grund         | Bedeutung                      |
-| ------------- | ------------------------------ |
-| `passwort`    | Falsches Passwort              |
-| `unbekannt`   | Unbekannter Benutzername       |
-| `deaktiviert` | Konto abgeschaltet, dauerhaft  |
-| `drossel`     | Minutengrenze erreicht         |
-| `kontosperre` | die 15 Minuten aus P-13 laufen |
+| Grund          | Bedeutung                               |
+| -------------- | --------------------------------------- |
+| `passwort`     | Falsches Passwort                       |
+| `unbekannt`    | Unbekannter Benutzername                |
+| `deaktiviert`  | Konto abgeschaltet, dauerhaft           |
+| `drossel`      | Minutengrenze erreicht                  |
+| `kontosperre`  | die Staffel greift für dieses Konto     |
+| `adresssperre` | die Staffel greift für diesen Anschluss |
 
-`deaktiviert` und `kontosperre` werden auseinandergehalten: das eine hat der
-Administrator abgeschaltet, das andere endet von selbst. Wer beides gleich
-nennt, sieht in der Liste nicht, ob jemand ausgesperrt wurde oder angegriffen
-wird.
+`deaktiviert`, `kontosperre` und `adresssperre` sehen sich ähnlich und meinen
+Verschiedenes. **Deaktiviert** hat der Administrator, weil jemand länger weg
+ist — eine Verwaltungshandlung ohne Anlass. **Gesperrt** wird durch
+Fehlversuche. Wer beides gleich nennt, sieht in der Liste nicht, ob jemand
+ausgesperrt wurde oder angegriffen wird.
 
 Scheitert das Schreiben des Protokolls, scheitert **nicht** die Anmeldung. Ein
 volles Protokoll darf niemanden aussperren.
