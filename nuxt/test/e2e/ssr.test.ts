@@ -63,9 +63,37 @@ describe('Die gebaute Anwendung', async () => {
       expect(response.headers.get('strict-transport-security')).toBeNull()
     })
 
+    it('M-40: die Richtlinie trägt einen Einmalwert statt `unsafe-inline`', async () => {
+      const policy = (await fetch(url('/login'))).headers.get('content-security-policy') ?? ''
+      expect(policy).toMatch(/script-src 'self' 'nonce-[A-Za-z0-9+/=]{20,}'/)
+      expect(policy).not.toContain('\'unsafe-inline\' ')
+    })
+
+    it('M-40: jede Antwort bekommt einen anderen Einmalwert', async () => {
+      // Wiederverwendet wäre er wertlos.
+      const first = nonceFrom((await fetch(url('/login'))).headers.get('content-security-policy'))
+      const second = nonceFrom((await fetch(url('/login'))).headers.get('content-security-policy'))
+      expect(first).toBeTruthy()
+      expect(first).not.toBe(second)
+    })
+
+    it('M-40: jedes eingebettete Skript trägt genau diesen Wert', async () => {
+      // Der eigentliche Nachweis: ohne den Stempel führt der Browser die
+      // Skripte nicht aus, und die Seite bliebe tot.
+      const response = await fetch(url('/login'))
+      const nonce = nonceFrom(response.headers.get('content-security-policy'))
+      const html = await response.text()
+
+      const inline = [...html.matchAll(/<script(?![^>]*\bsrc=)([^>]*)>/g)]
+      expect(inline.length).toBeGreaterThan(0)
+
+      for (const [, attributes] of inline) {
+        expect(attributes, `Skript ohne Einmalwert: ${attributes}`)
+          .toContain(`nonce="${nonce}"`)
+      }
+    })
+
     it('die Seite hydriert trotz der Richtlinie', async () => {
-      // Der eigentliche Grund für `'unsafe-inline'` bei den Skripten: ohne das
-      // legt Nuxt seinen Zustand ab, und der Browser führt ihn nicht aus.
       const html = await $fetch<string>('/login')
       expect(html).toContain('window.__NUXT__')
     })
@@ -125,4 +153,9 @@ async function countSecurityEntries(): Promise<number> {
   finally {
     await sql.end({ timeout: 5 })
   }
+}
+
+/** Der Einmalwert aus einer Inhaltsrichtlinie. */
+function nonceFrom(policy: string | null): string | undefined {
+  return /'nonce-([^']+)'/.exec(policy ?? '')?.[1]
 }

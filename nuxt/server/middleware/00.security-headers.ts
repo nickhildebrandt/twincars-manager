@@ -12,12 +12,22 @@
  * eine Fehlerseite ohne Richtlinie ist eine Fehlerseite ohne Richtlinie.
  */
 import { securityHeaders } from '../utils/security-headers.ts'
+import { newNonce } from '../utils/csp-nonce.ts'
 
 export default defineEventHandler((event) => {
   const config = useRuntimeConfig()
+
+  // Der Einmalwert entsteht **hier**, weil die Kopfzeile hier gesetzt wird.
+  // Das Rendern kommt später und liest ihn vom Ereignis
+  // (server/plugins/20.csp-nonce.ts). Im Entwicklungsbetrieb keiner: dort
+  // fügt Vite eigene Skripte ein, die nicht durch den Nuxt-Haken laufen.
+  const nonce = import.meta.dev ? undefined : newNonce()
+  if (nonce) event.context.cspNonce = nonce
+
   const headers = securityHeaders({
     origin: config.origin || config.betterAuthUrl,
     development: import.meta.dev,
+    nonce,
   })
 
   for (const [name, value] of Object.entries(headers)) {

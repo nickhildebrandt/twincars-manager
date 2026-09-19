@@ -118,7 +118,39 @@ Fassung.
 
 ---
 
-## W-03 — Die Inhaltsrichtlinie braucht `'unsafe-inline'` für Skripte
+## W-03 — Die Inhaltsrichtlinie braucht `'unsafe-inline'` für Skripte · `behoben am 17.09.2026`
+
+> **Behoben — und der Eintrag war von Anfang an falsch begründet.** Er
+> behauptete, Nuxt biete keinen Haken, um einen Einmalwert an seine
+> eingebetteten Skripte zu schreiben. Den Haken gibt es: `render:html`, und die
+> Nuxt-Dokumentation beschreibt **genau diesen Fall** als seinen Zweck. Die
+> Behauptung stammte aus einer Annahme, nicht aus einer Prüfung.
+>
+> Umgesetzt in `server/utils/csp-nonce.ts` und `server/plugins/20.csp-nonce.ts`:
+> das Kopfzeilen-Zwischenstück würfelt je Antwort 16 zufällige Bytes, die
+> Richtlinie trägt `script-src 'self' 'nonce-…'`, und der Haken schreibt den
+> Wert an jedes eingebettete Skript des Rahmens. `'unsafe-inline'` steht damit
+> gar nicht mehr in der ausgelieferten Richtlinie — es wäre in Anwesenheit
+> eines Einmalwerts ohnehin wirkungslos.
+>
+> **Was beim Umsetzen beinahe schiefgegangen wäre.** Der erste Entwurf
+> stempelte auch `body` — den **gerenderten Seiteninhalt**. Ein `<script>`, das
+> über eine Lücke dort hineingeraten wäre, hätte durch den Stempel genau die
+> Erlaubnis bekommen, die ihm die Richtlinie verweigern soll. Die Maßnahme
+> hätte sich selbst aufgehoben. Gestempelt wird jetzt nur, was der Rahmen
+> selbst erzeugt: `head`, `bodyPrepend`, `bodyAppend`. Die Liste heißt
+> `FRAMEWORK_PARTS` und hat einen eigenen Test, der festhält, dass `body` nicht
+> darin steht.
+>
+> **Nachgewiesen wird es am echten Build** (`test/e2e/ssr.test.ts`): die
+> Richtlinie trägt einen Einmalwert, jede Antwort einen anderen, **jedes**
+> eingebettete Skript trägt genau diesen — und die Seite hydriert.
+>
+> Offen bleibt nur `style-src 'unsafe-inline'`; das steht als eigene Frage in
+> [offene-fragen/](offene-fragen/README.md).
+
+<details>
+<summary>Der ursprüngliche Eintrag</summary>
 
 **Stand:** 17.09.2026 · **Betrifft:** T-044 (M-40, P-21) · **Schwere:** mittel,
 nicht umgangen
@@ -159,3 +191,6 @@ Skripte unterstützt. Dann in `contentSecurityPolicy()` `'unsafe-inline'` durch
 streichen.
 
 **Betroffene Fassungen:** Nuxt 4.5.2, Nitro in der davon gezogenen Fassung.
+
+</details>
+

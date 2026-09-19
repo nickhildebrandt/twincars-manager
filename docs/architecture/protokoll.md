@@ -141,9 +141,31 @@ ohne jede Richtlinie heraus.
 zwei Jahre aus der eigenen Anwendung aus, und zwar so, dass es niemand ohne
 Handarbeit im Browserprofil wieder löst.
 
-Eine bekannte Grenze: `script-src` braucht `'unsafe-inline'`, weil Nuxt seinen
-Zustand eingebettet ablegt. Was das bedeutet und warum es nicht umgangen wird,
-steht als **W-03** in [blocker.md](../rewrite/blocker.md).
+### Der Einmalwert für die Skripte
+
+Eine gerenderte Seite trägt vier eingebettete `<script>`: die Importkarte, das
+Modul des Einstiegspunkts, das Farbschema-Skript von Nuxt UI und den
+Seitenzustand. Drei davon werden ausgeführt; `script-src 'self'` allein
+verbietet sie, und die Seite hydriert nicht.
+
+Statt `'unsafe-inline'` — das **jedes** eingebettete Skript erlaubt, auch ein
+eingeschleustes — bekommt jede Antwort einen **Einmalwert**: 16 zufällige
+Bytes, gewürfelt im Kopfzeilen-Zwischenstück, eingetragen in
+`script-src 'nonce-…'`, und über den Nuxt-Haken `render:html` an jedes Skript
+des Rahmens geschrieben.
+
+**`body` wird dabei ausdrücklich nicht gestempelt.** Dort steht der gerenderte
+Seiteninhalt. Ein `<script>`, das über eine Lücke dort hineingeriete, bekäme
+durch den Stempel genau die Erlaubnis, die ihm die Richtlinie verweigern soll —
+die Maßnahme höbe sich selbst auf. Gestempelt wird nur, was der Rahmen selbst
+erzeugt (`FRAMEWORK_PARTS`), und ein Test hält fest, dass `body` nicht dazu
+gehört.
+
+Im **Entwicklungsbetrieb** bleibt `'unsafe-inline'`: dort fügt Vite eigene
+Skripte ein, die nicht durch den Haken laufen. Der Betrieb ist der Ernstfall.
+
+Bei den **Stilen** bleibt `'unsafe-inline'` — warum, steht in
+[offene-fragen/02](../rewrite/offene-fragen/02-stile-unsafe-inline.md).
 
 ## Geprüft wird das so
 

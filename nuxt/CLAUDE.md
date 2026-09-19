@@ -37,6 +37,10 @@ Reifenhandel, Gebrauchtwagenhandel. **Oberfläche deutsch, Code englisch.**
     Niemals interne Nuxt-UI-Klassen.
 12. **Transaktion**, sobald mehr als eine Anweisung schreibt.
 13. **Tests und Doku gehören zum Paket.** Ohne sie ist nichts fertig.
+14. **Offene Fragen in eigene Dateien.** Alles, was einen Haken hat, über eine
+    Vorgabe hinausgeht oder eine Entscheidung braucht, bekommt eine eigene
+    Markdown-Datei unter `../docs/rewrite/offene-fragen/` und einen Eintrag in
+    deren `README.md`. Nicht im Fließtext vergraben, nicht im Chat verloren.
 
 ## Befehle
 

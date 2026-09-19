@@ -11,6 +11,14 @@ export type HeaderOptions = {
   origin: string
   /** Im Entwicklungsbetrieb braucht Vite mehr Freiheiten. */
   development?: boolean
+  /**
+   * Der Einmalwert dieser Antwort.
+   *
+   * Ist er gesetzt, tritt er an die Stelle von `'unsafe-inline'`: nur die
+   * Skripte, die **diesen** Wert tragen, laufen. Ein eingeschleustes Skript
+   * kennt ihn nicht — er wird je Antwort neu gewürfelt.
+   */
+  nonce?: string
 }
 
 /** Ob die Anwendung wirklich über HTTPS ausgeliefert wird. */
@@ -20,30 +28,42 @@ export const isHttps = (origin: string): boolean =>
 /**
  * Die Inhaltsrichtlinie.
  *
- * `'unsafe-inline'` bei den Skripten ist **kein Versehen** und auch keine
- * Bequemlichkeit: Nuxt legt den Zustand der Seite beim serverseitigen Rendern
- * als eingebettetes Skript ab. Ohne diese Erlaubnis hydriert die Seite nicht,
- * und die Anwendung ist unbedienbar. Der saubere Weg wäre ein Einmalwert je
- * Antwort (`nonce`), den Nuxt an dieses Skript schreibt — dafür gibt es in
- * Nuxt 4.5 keinen Haken. Festgehalten als **W-03** in blocker.md.
+ * **Skripte.** Eine Seite von Nuxt trägt vier eingebettete `<script>`: die
+ * Importkarte, das Farbschema-Skript von Nuxt UI, die Laufzeitkonfiguration
+ * und den Seitenzustand. Nur das letzte ist ein reiner Datenblock
+ * (`type="application/json"`) und wird nie ausgeführt — die anderen drei
+ * schon. Eine Richtlinie mit `script-src 'self'` allein verbietet sie alle
+ * drei, und die Seite hydriert nicht.
  *
- * Was `'unsafe-inline'` hier bedeutet und was nicht: es erlaubt eingebettete
- * Skripte **aus der eigenen Auslieferung**. Fremde Quellen bleiben gesperrt
- * (`script-src 'self'`), und ohne eine Lücke, durch die jemand HTML einschleust,
- * gibt es kein eingebettetes Skript, das nicht von hier stammt. Vue setzt jeden
- * Wert als Text, nicht als HTML.
+ * Deshalb der **Einmalwert**: `server/plugins/20.csp-nonce.ts` würfelt je
+ * Antwort einen Wert, schreibt ihn an jedes eingebettete Skript, und hier
+ * steht er in der Richtlinie. Damit läuft genau das, was der Server selbst
+ * hineingeschrieben hat. Ein eingeschleustes Skript kennt den Wert nicht —
+ * und `'unsafe-inline'` verliert in Anwesenheit eines Einmalwerts ohnehin
+ * seine Wirkung, weshalb es dann gar nicht erst dasteht.
  *
- * `style-src` braucht es ebenfalls: Nuxt UI und die Übergänge setzen Stile am
- * Element.
+ * Im **Entwicklungsbetrieb** bleibt `'unsafe-inline'`: dort fügt Vite eigene
+ * Skripte ein, die nicht durch den Nuxt-Haken laufen. Der Betrieb ist der
+ * Ernstfall, und der bekommt den Einmalwert.
+ *
+ * **Stile.** `style-src` behält `'unsafe-inline'`. Nuxt UI und die Übergänge
+ * setzen Stile als `style`-Attribut am Element, und ein Einmalwert deckt
+ * Attribute nicht ab — dafür gäbe es nur `'unsafe-hashes'`, und das ist keine
+ * Verbesserung. Eingeschleustes CSS ist ein deutlich kleinerer Hebel als
+ * eingeschleustes JavaScript.
  */
 export function contentSecurityPolicy(options: HeaderOptions): string {
+  const inlineScripts = options.nonce
+    ? [`'nonce-${options.nonce}'`]
+    : ['\'unsafe-inline\'']
+
   const directives: Record<string, string[]> = {
     'default-src': ['\'self\''],
     'base-uri': ['\'self\''],
     'form-action': ['\'self\''],
     'frame-ancestors': ['\'none\''],
     'object-src': ['\'none\''],
-    'script-src': ['\'self\'', '\'unsafe-inline\''],
+    'script-src': ['\'self\'', ...inlineScripts],
     'style-src': ['\'self\'', '\'unsafe-inline\''],
     'img-src': ['\'self\'', 'data:', 'blob:'],
     'font-src': ['\'self\'', 'data:'],

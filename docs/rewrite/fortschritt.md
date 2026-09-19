@@ -1285,12 +1285,34 @@ es beim Schreiben des Tests „liegen auch auf der abgewiesenen Antwort". Die
 Zwischenstücke sind jetzt durchnummeriert: Kopfzeilen, Drossel, Sitzung,
 Wächter.
 
-**`'unsafe-inline'` bei den Skripten ließ sich nicht vermeiden.** Nuxt legt den
-Zustand der Seite eingebettet ab; ohne die Erlaubnis hydriert nichts. Der
-saubere Weg wäre ein Einmalwert je Antwort, und dafür gibt es in Nuxt 4.5
-keinen Haken. Festgehalten als **W-03** — samt der Abgrenzung, was dadurch
-offen ist und was nicht: fremde Quellen bleiben gesperrt, `object-src` ist
-`none`, und Vue setzt jeden Wert als Text.
+**`'unsafe-inline'` bei den Skripten habe ich zuerst für unvermeidbar
+gehalten — falsch.** Der erste Stand hielt in W-03 fest, Nuxt biete keinen
+Haken, um einen Einmalwert an seine eingebetteten Skripte zu schreiben. Das war
+eine Annahme, keine Prüfung. Den Haken gibt es: `render:html`, und die
+Nuxt-Dokumentation beschreibt genau diesen Fall als seinen Zweck.
+
+Jetzt würfelt das Kopfzeilen-Zwischenstück je Antwort 16 zufällige Bytes, die
+Richtlinie trägt `script-src 'self' 'nonce-…'`, und der Haken schreibt den Wert
+an jedes Skript des Rahmens. `'unsafe-inline'` steht gar nicht mehr in der
+ausgelieferten Richtlinie.
+
+**Und dabei wäre beinahe das Gegenteil herausgekommen.** Der erste Entwurf
+stempelte auch `body` — den **gerenderten Seiteninhalt**. Ein Skript, das über
+eine Lücke dort hineingeraten wäre, hätte durch den Stempel genau die
+Erlaubnis bekommen, die ihm die Richtlinie verweigern soll. Aufgefallen ist es
+beim Abgleich mit der Nuxt-Dokumentation, die aus gutem Grund nur den Kopf
+stempelt. Gestempelt wird jetzt ausschließlich, was der Rahmen selbst erzeugt;
+die Liste heißt `FRAMEWORK_PARTS` und hat einen Test, der festhält, dass `body`
+nicht darin steht. Nachgewiesen am echten Build: jede Antwort trägt einen
+anderen Wert, **jedes** eingebettete Skript trägt genau diesen, und die Seite
+hydriert.
+
+### Offene Fragen
+
+Ab jetzt bekommt jede offene Frage eine eigene Datei unter
+[offene-fragen/](offene-fragen/README.md), statt im Fließtext zu versacken.
+Sechs stehen dort, von der Löschregel für Termine bis zur Gestalt der
+Protokollansicht.
 
 ### Was offen bleibt
 
@@ -1308,6 +1330,6 @@ steht in der Ausführungsanleitung.
 
 | | |
 | --- | --- |
-| Tests | 1667 (72 Dateien) |
+| Tests | 1682 (73 Dateien) |
 | Modelländerungen | 61 Kennungen, 28 fällig, 28 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
