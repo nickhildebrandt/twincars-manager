@@ -492,7 +492,71 @@ Regel (`no-restricted-globals` auf die Nitro-Auto-Imports) verhindert.
    nicht davon abhängen, wie eine künftige h3-Version Validierungsfehler
    verpackt.
 
-### 6.2.1 Deutsche Meldungen zentral
+### 6.2.1 Drei Prüfschichten — Feld, Formular, Zusammenhang (P-28)
+
+*Festgelegt am 20.09.2026: „Alle Eingaben in der gesamten Applikation werden
+automatisch auf Plausibilität geprüft, ebenso auf Zusammenhang und
+Kompatibilität mit anderen Eingaben und Einstellungen."*
+
+Die Tabelle oben sagt, **wo** validiert wird. Hier steht, **wie tief**. Drei
+Schichten, und jede beantwortet eine Frage, die die vorige nicht beantworten
+**kann**:
+
+| Schicht | Frage | Wo | Kennt die Datenbank |
+| --- | --- | --- | --- |
+| **1 — Feld** | Ist das überhaupt eine Zahl, ein Datum, eine IBAN? | `shared/schemas/primitives.ts` | nein |
+| **2 — Formular** | Passen die Felder **zueinander**? | `v.check` / `v.forward` im Modulschema | nein |
+| **3 — Zusammenhang** | Passt es zum **Bestand** und zu den **Einstellungen**? | `server/utils/plausibility.ts`, aufgerufen im Dienst | ja |
+
+Schicht 1 und 2 laufen auf beiden Seiten — dasselbe Schema im Formular und am
+Endpoint (§6.3). Schicht 3 braucht die Datenbank und läuft deshalb nur am
+Server.
+
+**Ein Beispiel, an dem die Schichten sichtbar werden.** Ein Kilometerstand von
+80 000:
+
+- Schicht 1: eine nichtnegative ganze Zahl. In Ordnung.
+- Schicht 2: kleiner als der Wert im Feld daneben? Es gibt kein solches Feld.
+  In Ordnung.
+- Schicht 3: das Fahrzeug stand letztes Jahr schon bei 120 000. **Nicht** in
+  Ordnung — und das weiß nur die Datenbank.
+
+**Der Ausgang ist überall derselbe**: ein 422 mit Feldfehlern, die das
+Formular direkt am richtigen Feld anzeigt. Der Nutzer soll nicht merken,
+welche Schicht ihn aufgehalten hat.
+
+```ts
+await checkPlausibility([
+  rule<VehicleInput>({
+    field: 'mileageKm',
+    message: input => `Zuletzt standen ${input.lastKnownKm} km im Buch.`,
+    ok: input => notLowerThan(input.mileageKm, input.lastKnownKm),
+  }),
+  rule<VehicleInput>({
+    field: 'nextHu',
+    message: 'Ein HU-Termin so weit in der Zukunft ist vermutlich ein Vertipper.',
+    ok: input => withinYears(input.nextHu, 4),
+    when: input => Boolean(input.nextHu),
+  }),
+], input)
+```
+
+**Alle Fehler auf einmal.** Wer drei Felder falsch ausgefüllt hat, erfährt das
+in einem Durchgang und muss nicht dreimal hintereinander speichern — derselbe
+Grund, aus dem Valibot mit `abortPipeEarly: false` läuft.
+
+**Wiederkehrende Prüfungen stehen gesammelt** in `plausibility.ts`
+(`notLowerThan`, `withinYears`, `endsAfterStart`, `withinRange`, `notBlank`),
+damit nicht jedes Modul seine eigene Fassung davon erfindet — und seine eigene
+Formulierung des Fehlersatzes.
+
+**Wo Schicht 3 Pflicht ist:** überall, wo eine Eingabe gegen einen bestehenden
+Datensatz oder eine Einstellung läuft. Namentlich: Kilometerstände,
+Belegdaten gegen den Nummernkreis, Termine gegen die Öffnungszeiten,
+Zahlungen gegen die Belegsumme, Preise gegen den Steuersatz, Reifenmaße gegen
+den Radsatz, Abwesenheiten gegen den Urlaubsanspruch.
+
+### 6.2.2 Deutsche Meldungen zentral
 
 Valibot erlaubt, die Standardmeldungen global zu setzen:
 
@@ -711,10 +775,11 @@ alle drei zu halten:
 
 | Muster | Frage | Wo |
 | --- | --- | --- |
-| **Version** | „Was gilt ab wann?" — auch in der Zukunft | `*_versions` (Preise, Kennzeichen, Gehälter) |
+| **Fachliche Version** | „Was gilt ab wann?" — auch in der Zukunft | `*_versions` (Preise, Kennzeichen, Gehälter) |
 | **Kette** | „Welche Stände hatte dieser Vorgang?" — gültig ist der letzte | `documents.chain_id` + `version` |
-| **Schnappschuss** | „Wie sah das damals aus?" — Beweis, unveränderlich | `document_snapshots` |
-| **Protokoll** | „Wer hat wann was geändert?" — Spur | `audit_log` (M-01) |
+| **Schnappschuss** | „Wie sahen die Verweise beim Ausstellen aus?" — Beweis | `document_snapshots` |
+| **Datensatzstand** | „Wie sah dieser Datensatz nach jedem Speichern aus?" | `record_versions` (M-45) |
+| **Protokoll** | „Wer hat wann was geändert?" — Spur, rotiert | `audit_log` (M-01) |
 
 **Die Kette.** Alle Stände eines Vorgangs tragen dieselbe `chain_id`, gezählt
 in `version`. Genau einer hat `superseded_at IS NULL` — das ist der gültige.
@@ -777,6 +842,29 @@ Kennzeichenwechsel, Belege, Termine und Einlagerungen bleiben in ihren eigenen
 Tabellen — sie tragen Geld und gehören zur Buchhaltung. Zusammengeführt werden
 sie beim Lesen. Eine allgemeine Ereignistabelle wäre bequemer zu schreiben und
 in jeder buchhalterischen Abfrage schlechter.
+
+**Der Datensatzstand** (`record_versions`, M-45) ist die vierte Zeitleiste und
+das einzige **wiederverwendbare** Werkzeug darunter:
+`server/services/record-version-service.ts` kennt nur `entity`, `entityId` und
+einen Zustand. Einen weiteren Datensatz zu versionieren heißt eine Zeile in
+`versionedEntities` und ein Aufruf im Speicherpfad — kein zweites Formular,
+kein zweiter Zeitstrahl, keine zweite Rücksprunglogik.
+
+Zwei Dinge daran sind nicht verhandelbar:
+
+- **Der Zähler wird unter einer Zeilensperre gezogen** (`.for('update')`).
+  Ohne sie bekämen zwei gleichzeitige Speichervorgänge dieselbe Nummer, und
+  der eindeutige Index wiese den zweiten ab — ein Speichern, das aus heiterem
+  Himmel scheitert. Derselbe Grund wie bei der Belegnummer (P-02).
+- **Der Rücksprung läuft in der Transaktion des Aufrufers.** `restoreVersion`
+  nimmt eine vorhandene Transaktion entgegen, statt eine eigene zu öffnen;
+  Datensatz und Zeitstrahl gehen gemeinsam durch oder gemeinsam zurück.
+
+Was in eine Abschrift gehört und was nicht, steht **einmal** in
+`server/utils/record-state.ts` — Schnappschuss und Datensatzstand benutzen
+dieselbe Funktion. Getrennt gehalten wäre es eine Lücke: vergäße eine der
+beiden Stellen ein Geheimnis, stünde das Passwort dort, wo niemand danach
+sucht.
 
 ### 7.5 Transaktionen
 

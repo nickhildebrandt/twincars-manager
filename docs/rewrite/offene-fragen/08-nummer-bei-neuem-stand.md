@@ -1,6 +1,7 @@
 # 08 — Bekommt ein neuer Stand eine neue Nummer?
 
-**Betrifft:** M-41, M-14, T-021, T-022 · **Stand:** offen, vorläufig umgesetzt
+**Betrifft:** M-41, M-14, M-44, T-021, T-022 · **Stand:** **entschieden am
+20.09.2026** — Weg B beim Kostenvoranschlag, Weg A bei der Rechnung
 
 ## Worum es geht
 
@@ -50,3 +51,35 @@ Kopf „ersetzt KV-2026-0042 vom 3. März".
 
 Dann ist jede Nummer eindeutig, und trotzdem sieht jeder — auch der Kunde —,
 dass es derselbe Vorgang ist.
+
+
+---
+
+## Entschieden am 20.09.2026 — je Belegart anders
+
+> „Kostenvoranschlag: fortlaufend als Zusatz an der bestehenden Nummer, also
+> KV-0042-2. Keine neue eigene Nummer je Iteration. Rechnung: bleibt beim
+> Schema der Buchhaltung — eine korrigierte Rechnung bekommt eine ganz andere,
+> neue Rechnungsnummer, lückenlos fortlaufend und nie doppelt.“
+
+Also **Weg B für den Kostenvoranschlag** und **Weg A für die Rechnung**.
+Meine Empfehlung war einheitlich Weg A; die Entscheidung bildet ab, was
+tatsächlich verschieden ist, und das ist die bessere Antwort.
+
+Dazu die Altnummern:
+
+> „Die alten Nummern müssen weiter auffindbar und gültig bleiben und dürfen
+> nicht umnummeriert werden. Die neuen Nummern dürfen einem anderen Schema
+> folgen; das ist rechtlich in Ordnung, solange im neuen Kreis lückenlos und
+> eindeutig weitergezählt wird.“
+
+**Was daraufhin geschah.** Die Regel steht als **M-44**, einmal im Code
+(`shared/document-number.ts`) und mit dreizehn Unit-Tests belegt. Der
+Beispiel-Export wurde gelesen statt vermutet; die Zahlen stehen in M-44 und in
+T-033.
+
+**Ein Entwurf ist dabei gescheitert und wurde ersetzt.** Er zerlegte
+`KV-2026-0042-3` in Grundnummer und Zähler. Das ist zweideutig, und die Tests
+haben es sofort gezeigt: die Grundnummer endet selbst auf `-0042`. Jetzt wird
+**nachgeschlagen** statt zerlegt — die Grundnummer ist die Nummer von Stand 1
+derselben Kette, und die steht in der Datenbank.

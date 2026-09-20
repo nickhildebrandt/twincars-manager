@@ -9,11 +9,7 @@ geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 
 ## Offen
 
-| Nr. | Frage | Betrifft |
-| --- | --- | --- |
-| [08](08-nummer-bei-neuem-stand.md) | Bekommt ein neuer Stand eine neue Nummer? | M-41, M-14, T-021 |
-| [09](09-zurueckgehen-im-zeitstrahl.md) | „Zurückgehen": nur lesen oder wiederherstellen? | M-41, M-02, T-021 |
-| [10](10-schnappschuss-umfang.md) | Wer bekommt einen Schnappschuss, und wovon? | M-42, T-020, T-021 |
+Zurzeit keine. Was aus der Umsetzung neu entsteht, kommt hier hinein.
 
 ## Am 20.09.2026 entschieden oder beantwortet
 
@@ -26,3 +22,6 @@ geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 | [05](05-adresssperre-gemeinsamer-anschluss.md) | Die Adresssperre trifft alle hinter derselben Adresse | Zwei Staffeln, sicherer Adressbereich, Knopf zum Aufheben |
 | [06](06-protokoll-oberflaeche.md) | Wie soll die Protokollansicht aussehen? | Eigener Menüpunkt mit Zähler, Liste, Dashboard-Kachel, E-Mail |
 | [07](07-eigene-teile-beim-loeschen.md) | Was „null Verweise" für die eigenen Teile heißt | Über die Versionierung beantwortet (M-41 bis M-43) |
+| [08](08-nummer-bei-neuem-stand.md) | Bekommt ein neuer Stand eine neue Nummer? | Kostenvoranschlag hängt an (`-2`), Rechnung zieht neu (M-44) |
+| [09](09-zurueckgehen-im-zeitstrahl.md) | „Zurückgehen“: nur lesen oder wiederherstellen? | Rechnung nur lesen, alles andere mit Rücksprung — als Werkzeug (M-45) |
+| [10](10-schnappschuss-umfang.md) | Wer bekommt einen Schnappschuss, und wovon? | Bestätigt wie umgesetzt |

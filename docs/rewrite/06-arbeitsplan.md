@@ -226,7 +226,7 @@ Vorlage wann.
 
 ```
 nuxt/shared/schemas/primitives.ts  pagination.ts  env.ts  upload.ts  field-labels.ts
-nuxt/server/utils/validate.ts      nuxt/server/utils/errors.ts
+nuxt/server/utils/validate.ts      nuxt/server/utils/errors.ts  plausibility.ts
 nuxt/server/plugins/00.env.ts      nuxt/server/plugins/10.error.ts
 nuxt/app/composables/useApi.ts     nuxt/app/composables/useNotify.ts
 nuxt/app/error.vue
@@ -251,6 +251,12 @@ nuxt/app/error.vue
 - `useApi()` im Client: 401 → Anmeldung, 422 → Feldfehler ans Formular,
   sonst Fehler-Toast; Original nur in die Konsole.
 - `useNotify()` mit den Farben und Dauern aus [04-ux.md](04-ux.md) §3.1.
+- **Die dritte Prüfschicht** (P-28, festgelegt am 20.09.2026):
+  `server/utils/plausibility.ts`. Feld und Formular prüft Valibot; was gegen
+  den **Bestand** und die **Einstellungen** läuft, braucht die Datenbank und
+  gehört deshalb in den Dienst. Ausgang ist derselbe 422 mit Feldfehlern —
+  der Nutzer soll nicht merken, welche Schicht ihn aufgehalten hat.
+  Einzelheiten in [03-architektur.md](03-architektur.md) §6.2.1.
 
 **Akzeptanzkriterien**
 
@@ -263,6 +269,8 @@ nuxt/app/error.vue
 | 5   | Fehlende Pflicht-Umgebungsvariable verhindert den Start mit klarer Meldung       | Test startet Nitro mit leerer Umgebung |
 | 6   | Jeder Feldschlüssel hat ein deutsches Label                                      | Querschnittstest                       |
 | 7   | Keine englische Standardmeldung erreicht den Nutzer                              | Querschnittstest über alle Schemata    |
+| 8   | **P-28** — eine Plausibilitätsprüfung liefert denselben 422 mit Feldfehlern wie Valibot | Unit-Test |
+| 9   | Drei falsche Felder ergeben **einen** Fehler mit drei Einträgen, nicht drei Fehler | Unit-Test |
 
 **Doku:** `docs/architecture/validierung.md`,
 `docs/architecture/fehlerbehandlung.md`, `docs/guides/schemata.md`.
@@ -481,8 +489,11 @@ nuxt/app/components/data/ListPage.vue  DataTable.vue  FilterBar.vue
 nuxt/app/components/form/FormPage.vue  DateField.vue  MoneyField.vue
 nuxt/app/components/picker/EntityPicker.vue  MultiEntityPicker.vue
 nuxt/app/components/ui/ConfirmDialog.vue  FileDropzone.vue  StatTile.vue
+nuxt/app/components/history/RecordTimeline.vue  VersionDiff.vue
 nuxt/app/composables/useListQuery.ts  useCreationFlow.ts  useConfirm.ts
+nuxt/app/composables/useRecordHistory.ts
 nuxt/server/api/pickers/*.get.ts
+nuxt/server/api/history/[entity]/[id].get.ts  restore.post.ts
 nuxt/shared/utils/date.ts  picker-labels.ts
 ```
 
@@ -527,6 +538,24 @@ nuxt/shared/utils/date.ts  picker-labels.ts
   Mitarbeiter, Lieferanten, Belege — jeweils mit Rechteprüfung, Serversuche,
   fester Seitengröße, ohne archivierte Datensätze.
 
+**Der Zeitstrahl mit Rücksprung** (M-45, P-29, festgelegt am 20.09.2026) —
+**ein** Werkzeug für alle versionierten Datensätze, keine Einzellösung je
+Modul:
+
+- `RecordTimeline.vue` zeigt die Stände eines Datensatzes, neuester zuerst,
+  je Zeile Zeitpunkt, Person, geänderte Felder und — falls es einer war — den
+  Vermerk „Stand N wieder aufgenommen".
+- `VersionDiff.vue` stellt zwei Stände nebeneinander, mit deutscher
+  Feldbeschriftung aus `FIELD_LABELS`.
+- `useRecordHistory(entity, id)` holt den Zeitstrahl und löst den Rücksprung
+  aus — mit Bestätigungsdialog, der nennt, **was** sich dabei ändert.
+- Der Dienst dahinter steht seit dem 20.09.2026:
+  `server/services/record-version-service.ts`. Er kennt nur `entity`,
+  `entityId` und einen Zustand. Ein weiterer Datensatz heißt eine Zeile in
+  `versionedEntities` und ein Aufruf im Speicherpfad.
+- **Rücksprung nur, wo er erlaubt ist.** Die Rechnung hat einen Zeitstrahl,
+  aber keinen Knopf (P-30): dort ist Storno und Neuausstellung der Weg.
+
 **Akzeptanzkriterien**
 
 | #   | Kriterium                                                                     | Prüfung                                              |
@@ -542,6 +571,10 @@ nuxt/shared/utils/date.ts  picker-labels.ts
 | 7   | Der Mehrfach-Picker verwirft bei „Abbrechen"                                  | Komponententest                                      |
 | 8   | Jeder Picker-Endpoint verweigert ohne Recht                                   | Integrationstest                                     |
 | 9   | `DateField` rundet nicht und verschiebt keine Tage                            | Unit-Test über Zeitzonengrenzen                      |
+| 10  | **P-29** — nach einem Rücksprung ist der Zeitstrahl **länger**, nicht kürzer, und der zurückgenommene Stand steht noch darin | Integrationstest |
+| 11  | Derselbe Zeitstrahl trägt Kunde und Fahrzeug ohne eine Zeile Sonderfall       | Integrationstest über zwei Arten                     |
+| 12  | **P-30** — die Rechnung zeigt den Zeitstrahl, bietet aber keinen Rücksprung   | Komponententest                                      |
+| 13  | Der Bestätigungsdialog nennt die Felder, die der Rücksprung ändern wird       | Komponententest                                      |
 
 **Testumfang (festgelegt am 20.09.2026).** Für dieses Paket gilt die volle
 Breite aus [05-teststrategie.md](05-teststrategie.md), ohne Ausnahme:
@@ -791,7 +824,7 @@ eine Tastaturalternative; Golden Flow G-05.
 
 **Features:** F-367–F-381 (15) · **Befunde:** B-303–B-304, B-306, B-312–B-317, B-325, B-327–B-328, B-333, B-338, B-340, B-342, B-346, B-348
 **Vorbedingungen:** T-011, T-014, T-006.
-**Modelländerungen:** M-15, M-21, M-41, M-42, P-05, P-24, P-25 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-15, M-21, M-41, M-42, M-44, P-05, P-24, P-25, P-31 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Gemeinsames Belegmodell, Positionen-Editor mit Live-Summen und gemischten
 Steuersätzen, Kostenvoranschläge, Umwandlung in eine Rechnung.
@@ -808,7 +841,29 @@ letzte Stand, und alle früheren bleiben aus Dokumentationsgründen stehen.
   geändert wurde, steht als deutscher Halbsatz in `version_note`.
 - **Die Oberfläche zeigt einen Vorgang, nicht drei Belege.** Die Liste führt
   je Kette nur den gültigen Stand; die Detailseite trägt einen Zeitstrahl, über
-  den jeder frühere Stand lesbar (nicht bearbeitbar) zu öffnen ist.
+  den jeder frühere Stand lesbar zu öffnen ist.
+- **Der Kostenvoranschlag lässt sich zurücksetzen** (M-45): „Diesen Stand
+  wieder aufnehmen" erzeugt einen **neuen** Stand mit dem alten Inhalt. Nichts
+  wird gelöscht, der Zeitstrahl wird länger. Bei der Rechnung gibt es diesen
+  Knopf nicht (P-30).
+
+**Die Nummer eines Standes** folgt M-44, und die Regel steht genau einmal, in
+`shared/document-number.ts`:
+
+| Belegart | Stand 2 heißt | Zieht aus dem Kreis |
+| --- | --- | --- |
+| Kostenvoranschlag | `KV-2026-0042-2` | **nein** — sonst entstünden dort Lücken |
+| Rechnung | eine ganz andere Nummer | **ja**, lückenlos und eindeutig |
+
+**Aus einer Nummer wird nichts herausgelesen.** Die Grundnummer ist die Nummer
+von Stand 1 derselben Kette und steht in der Datenbank; der Stand steht in
+`documents.version`. Der erste Entwurf zerlegte die Zeichenkette und war
+zweideutig — die Grundnummer endet selbst auf `-0042`.
+
+**Übernommene Nummern bleiben unangetastet** (M-29, M-44): sie stehen in
+`legacy_document_number`, laufen nie in den neuen Kreis und werden nie
+umnummeriert. Der Altbestand hat **Lücken** (30 allein im Jahr 2008) — sie
+werden nicht geschlossen, und kein Test behauptet Lückenlosigkeit über ihn.
 
 **Und hier entsteht der Schnappschuss** (M-42). Beim Ausstellen wird der Stand
 von Kunde, Fahrzeug und Firma abgeschrieben — in derselben Transaktion, denn
@@ -837,7 +892,9 @@ als gültig da, die beiden früheren unverändert, und der Zeitstrahl öffnet si
 **P-25** — ein zweiter Aufruf des Schnappschusses ändert nichts, und ein Umzug
 des Kunden nach dem Ausstellen erscheint als Hinweis mit altem und neuem Wert;
 **M-42** — ein Kennzeichenwechsel wird erkannt, obwohl das Kennzeichen nicht am
-Fahrzeug steht.
+Fahrzeug steht; **P-31** — der zweite Stand eines Kostenvoranschlags heißt
+`…-2` und der Nummernkreis steht danach unverändert, während der zweite Stand
+einer Rechnung eine frische Nummer trägt und **nie** einen Zusatz.
 
 ## T-022 — Rechnungen, Zahlungen, Storno
 
@@ -1046,6 +1103,27 @@ Deshalb dieselbe Prüftiefe wie bei T-043: gegen die echte Beispieldatei, mit
 Zählung je Tabelle, und mit einem Lauf, der **mittendrin abbricht** und
 nachweist, dass nichts halb eingespielt zurückbleibt.
 
+**Was im Beispiel-Export wirklich steht** (`Daten/kfz-kaufmann-test.mdb`,
+gelesen am 20.09.2026 — nicht vermutet):
+
+| Befund | Zahl | Folge für den Import |
+| --- | --- | --- |
+| Rechnungen | 10 416, `20080001` … `20090446` | achtstellig, Jahrespräfix + vierstelliger Zähler |
+| **Lücken in der Altfolge** | 30 allein in 2008 | werden **nicht** geschlossen; kein Test behauptet Lückenlosigkeit |
+| Zählerwechsel | 2008 beginnt bei `0001` und läuft bis `9999`, 2009 beginnt bei `0000` | das Präfix ist ein Block, kein Kalenderjahr |
+| Kostenvoranschläge | 97, `1000` … `1096`, lückenlos | eigener Kreis, vierstellig |
+| Altarten | Kostenvoranschlag 81, Angebot 12, Auftragsbestätigung 2, Auftrag 1 | alle vier werden zu **Kostenvoranschlag** (M-15, M-29) |
+| Zahlarten | Überweisung 5 049, Bar 3 367, PayPal 1 994 | vier Zahlarten (M-46); nur Bar geht ins Kassenbuch (P-07) |
+| Steuersätze | 19 % (9 626), 0 % (583), **16 %** (207) | der Satz steht am Beleg, nicht in einer Einstellung |
+| Mahnungen | 8, Schlüssel (Rechnungsnummer, Stufe) | |
+
+**Eine Falle mit Namen.** Die Zahlart steht im Altsystem in einer Spalte
+namens `Sachbearbeiter`. Sie hat nie einen Sachbearbeiter enthalten — sie ist
+der Schlüssel in eine Tabelle `rgvariablen`, die Zahlart, Werbetext, Endtext
+und einen Bildpfad zusammenfasst. Wer sie als Namen übernimmt, legt 10 000
+Mitarbeiter namens „Überweisung" an. Ebenso `Teilzahlung`: als `REAL`
+deklariert, trägt aber nur `0` und `-1` — ein Wahrheitswert, kein Betrag.
+
 **Importierte Belege bekommen eine Kette** (M-41): jeder übernommene Beleg ist
 Version 1 seiner eigenen Kette und gültig. Die Ketten des Altsystems gibt es
 nicht — Kfz-Kaufmann kannte keine Versionen —, also wird auch keine erfunden.
@@ -1060,7 +1138,9 @@ hier neu angelegter Datensatz wird nie angefasst; der Import löscht unter
 keinen Umständen; Dateinamen werden nie in eine Shell gereicht; ein Abbruch
 mitten im Lauf hinterlässt **keine** halb eingespielten Daten; jeder
 importierte Beleg ist gültige Version 1 und trägt **keinen** erfundenen
-Schnappschuss.
+Schnappschuss; die **30 Lücken** der Altfolge bleiben Lücken; aus der Spalte
+`Sachbearbeiter` entsteht eine **Zahlart** und kein Mitarbeiter; ein Beleg mit
+16 % Steuer behält 16 %.
 
 ## T-034 — Benutzer, Rollen, eigenes Konto
 

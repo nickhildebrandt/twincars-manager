@@ -1548,3 +1548,118 @@ Schnappschuss, und wovon?
 | Tests | 1811 (75 Dateien) |
 | Modelländerungen | 70 Kennungen, 29 fällig, 29 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+
+---
+
+## 20.09.2026 (3) — Nummern, Rücksprung, Plausibilität
+
+Die Fragen 08 bis 10 sind beantwortet. Daraus drei Modelländerungen, ein
+wiederverwendbares Werkzeug und eine Prüfschicht.
+
+### M-44 — Belegnummern: zwei Regeln, drei Herkünfte
+
+| Belegart | Stand 2 heißt | Zieht aus dem Kreis |
+| --- | --- | --- |
+| Kostenvoranschlag | `KV-2026-0042-2` | nein |
+| Rechnung | eine ganz andere Nummer | ja, lückenlos |
+
+**Ein Entwurf ist dabei gescheitert, und die Tests haben ihn erledigt.** Er
+zerlegte `KV-2026-0042-3` in Grundnummer und Zähler. Das ist zweideutig: die
+Grundnummer endet selbst auf `-0042`, also erkennt jedes Muster, das den
+Standzusatz findet, auch den letzten Block der Grundnummer als solchen. Aus
+`KV-2026-0042` wurde `KV-2026`.
+
+Zurechtbiegen ließe es sich über Ziffernzahl oder führende Nullen — beides
+hinge davon ab, wie der Nummernkreis gerade eingestellt ist, und fiele um,
+sobald jemand das Format ändert. Jetzt wird **nachgeschlagen statt zerlegt**:
+die Grundnummer ist die Nummer von Stand 1 derselben Kette und steht in der
+Datenbank, der Stand steht in `documents.version`. Keine Zeichenkette muss je
+wieder auseinandergenommen werden.
+
+### M-45 — Zeitstrahl mit Rücksprung, als Werkzeug
+
+Aus „nur lesen oder wiederherstellen?" wurde: **Rechnung nur lesen, alles
+andere mit Rücksprung — und der Rücksprung als wiederverwendbares Werkzeug.**
+
+`record_versions` plus `server/services/record-version-service.ts`. Der Dienst
+kennt nur `entity`, `entityId` und einen Zustand; einen weiteren Datensatz zu
+versionieren heißt **eine Zeile** in `versionedEntities` und ein Aufruf im
+Speicherpfad. Auf der Liste: Kunden, Fahrzeuge, Artikel, Reifen,
+Firmeneinstellungen, E-Mail-Vorlagen. Die letzten beiden sind der
+unterschätzte Fall — wer eine Vorlage zerschießt, will sie zurückhaben, und
+niemand sichert sie vorher.
+
+Zwei Dinge stehen im Code, nicht nur in der Absicht:
+
+- **Ein Rücksprung löscht nichts** (P-29). Der alte Stand wird obendraufgesetzt,
+  der Zeitstrahl wird länger, der zurückgenommene Stand bleibt darin.
+- **Er läuft in der Transaktion des Aufrufers.** Datensatz und Zeitstrahl gehen
+  gemeinsam durch oder gemeinsam zurück.
+
+Der Zähler wird unter einer Zeilensperre gezogen — ohne sie bekämen zwei
+gleichzeitige Speichervorgänge dieselbe Nummer, und der eindeutige Index wiese
+den zweiten ab: ein Speichern, das aus heiterem Himmel scheitert.
+
+**Vier Zeitleisten, vier Fragen.** Sie stehen jetzt nebeneinander in
+[03-architektur.md](03-architektur.md) §7.4 — fachliche Version („was gilt ab
+wann"), Belegkette („welche Stände hatte der Vorgang"), Schnappschuss („wie
+sahen die Verweise beim Ausstellen aus") und Datensatzstand („wie sah der
+Datensatz nach jedem Speichern aus"). Der häufigste Entwurfsfehler wäre, eines
+davon für alle vier zu halten.
+
+### P-28 — drei Prüfschichten
+
+„Alle Eingaben … auf Plausibilität, ebenso auf Zusammenhang und Kompatibilität
+mit anderen Eingaben und Einstellungen." Daraus wurde eine benannte Schicht:
+
+| Schicht | Frage | Kennt die Datenbank |
+| --- | --- | --- |
+| Feld | Ist das eine Zahl, ein Datum, eine IBAN? | nein |
+| Formular | Passen die Felder zueinander? | nein |
+| **Zusammenhang** | Passt es zum Bestand und zu den Einstellungen? | **ja** |
+
+`server/utils/plausibility.ts`, mit demselben Ausgang wie Valibot: ein 422 mit
+Feldfehlern am richtigen Feld. Alle Fehler auf einmal, nicht einer nach dem
+anderen. Wiederkehrende Prüfungen stehen gesammelt, damit nicht jedes Modul
+seine eigene Fassung erfindet — und seine eigene Formulierung des Fehlersatzes.
+
+### Der Altdatenbestand wurde gelesen, nicht vermutet
+
+`Daten/kfz-kaufmann-test.mdb`, 10 416 Rechnungen. Was dabei herauskam:
+
+| Befund | Folge |
+| --- | --- |
+| Nummern `20080001`…`20090446`, **30 Lücken** allein in 2008 | die Altfolge ist nicht lückenlos; sie wird nicht repariert |
+| 2008 läuft bis `9999` durch, 2009 beginnt bei `0000` | das Präfix ist ein Block, kein Kalenderjahr |
+| Zahlarten: Überweisung 5 049, Bar 3 367, **PayPal 1 994** | **M-46** — vier statt zwei Zahlarten |
+| Steuersätze 19 %, 0 % und **16 %** | der Satz steht am Beleg, nicht in einer Einstellung |
+| Vier Belegarten im Altsystem | werden zu Kostenvoranschlag (M-15, M-29) |
+
+**Zwei Fallen mit Namen.** Die Zahlart steht im Altsystem in einer Spalte
+namens `Sachbearbeiter` — sie hat nie einen Sachbearbeiter enthalten. Wer sie
+als Namen übernimmt, legt zehntausend Mitarbeiter namens „Überweisung" an. Und
+`Teilzahlung` ist als `REAL` deklariert, trägt aber nur `0` und `-1`: ein
+Wahrheitswert, kein Betrag.
+
+M-16 legte zwei Zahlarten fest, „weil das die zwei sind, die die Werkstatt
+hat". Zwei Drittel der Altrechnungen widersprechen. **P-07 bleibt unberührt
+und ist der eigentliche Punkt:** nur Bargeld berührt die Kasse, also geht nur
+Bargeld ins Kassenbuch.
+
+### Nebenbei behoben
+
+Fünf Testdateien des `nuxt`-Projekts fielen unter `pnpm verify` reihenweise
+mit „Hook timed out in 10000ms" aus — nicht flockig, sondern eine zu enge
+Grenze: Nuxt baut sich für dieses Projekt einmal selbst, und unter Last dauert
+das länger als zehn Sekunden. Einzeln aufgerufen fiel es nie auf, weil der Bau
+dann warm war. Die Grenze steht jetzt auf einer Minute, mit Begründung in
+`vitest.config.ts`.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1881 (78 Dateien) |
+| Modelländerungen | 77 Kennungen, 33 fällig, 33 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+| Offene Fragen | keine |

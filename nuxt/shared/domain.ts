@@ -95,15 +95,24 @@ export type DocumentStatus = typeof documentStatuses.values[number]
 export const ISSUED_DOCUMENT_STATUSES = ['sent', 'paid', 'cancelled', 'storno'] as const
 
 /**
- * How the customer pays (M-16).
+ * How the customer pays (M-16, extended by M-44).
  *
- * Two ways, because those are the two the workshop has. **Only cash reaches
- * the cash book** — a card payment never touches the till, so booking it there
- * would make the counted cash disagree with the book (P-07).
+ * **Only cash reaches the cash book** — nothing else touches the till, so
+ * booking it there would make the counted cash disagree with the book (P-07).
+ *
+ * M-16 listed two, cash and card, because those are the two the counter has.
+ * The legacy export says otherwise: of 10 416 invoices, 5 049 are
+ * `Überweisung` and 1 994 `PayPal Zahlung`. An import that cannot express two
+ * thirds of the invoices it reads is not an import, so both are here.
+ *
+ * (In the legacy database those values sit in a column called
+ * `Sachbearbeiter` — clerk. It never held a clerk; see M-44.)
  */
 export const paymentMethods = domain({
   cash: 'Bar',
   card: 'Karte',
+  transfer: 'Überweisung',
+  paypal: 'PayPal',
 })
 
 /** Payment methods that belong in the cash book. */
@@ -285,6 +294,28 @@ export const snapshotEntities = domain({
   company_settings: 'Firma',
 })
 export type SnapshotEntity = typeof snapshotEntities.values[number]
+
+/**
+ * Datensätze, deren Stände sich aufheben lassen (M-45).
+ *
+ * The timeline behind this is a reusable feature, not one screen: every entity
+ * listed here keeps its full state on each save, shows it as a timeline, and
+ * can be restored from any earlier state. Adding an entity is adding a line
+ * here plus one call in its save path.
+ *
+ * Deliberately **not** listed: documents. Their states are a chain with
+ * numbers and an accounting meaning (M-41) — a different mechanism for a
+ * different question.
+ */
+export const versionedEntities = domain({
+  customers: 'Kunde',
+  vehicles: 'Fahrzeug',
+  items: 'Artikel',
+  tires: 'Reifen',
+  company_settings: 'Firmeneinstellungen',
+  mail_templates: 'E-Mail-Vorlage',
+})
+export type VersionedEntity = typeof versionedEntities.values[number]
 
 /* ── vehicles and tires ───────────────────────────────────────────────── */
 

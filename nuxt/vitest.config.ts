@@ -133,6 +133,24 @@ export default defineConfig({
             },
           },
           setupFiles: ['test/setup/env.ts'],
+
+          /**
+           * Nuxt baut sich für dieses Projekt einmal selbst — und das dauert
+           * länger als die zehn Sekunden, die Vitest einem `beforeAll` von
+           * Haus aus zugesteht.
+           *
+           * Einzeln aufgerufen fällt das nie auf: dann ist der Bau meist warm
+           * und in fünf Sekunden durch. Unter `pnpm verify` laufen alle
+           * Projekte nebeneinander, die Maschine ist voll, und derselbe Bau
+           * braucht ein Vielfaches. Dann scheitert **jede** Datei dieses
+           * Projekts am Haken, bevor ein einziger Test läuft.
+           *
+           * Das ist keine Flockigkeit, sondern eine Grenze, die schlicht zu
+           * eng steht. Sie wird hier auf eine Minute gesetzt — großzügig
+           * genug für einen kalten Bau unter Last, eng genug, dass ein
+           * wirklicher Hänger nicht den ganzen Lauf blockiert.
+           */
+          hookTimeout: 60_000,
         },
       }),
 

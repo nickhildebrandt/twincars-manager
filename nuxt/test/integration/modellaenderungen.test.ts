@@ -77,9 +77,14 @@ describe('Übergreifend', () => {
       WHERE table_schema = 'public' AND table_name LIKE '%\\_versions'
       ORDER BY table_name
     `
+    // Vier fachliche Versionstabellen — jede beantwortet „was gilt ab wann",
+    // auch für die Zukunft. Dazu seit dem 20.09.2026 `record_versions`: die
+    // beantwortet eine **andere** Frage („wie sah der Datensatz nach jedem
+    // Speichern aus", M-45) und ist kein fünfter Preis-Zeitstrahl.
     expect(versionTables.map(row => row.table_name)).toEqual([
       'employee_salary_versions',
       'item_price_versions',
+      'record_versions',
       'tire_price_versions',
       'vehicle_license_plate_versions',
     ])

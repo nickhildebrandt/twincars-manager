@@ -981,6 +981,9 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
       // „Ketten", auf die zu zeigen wäre — die Kette *ist* die Menge der
       // Belege, die diese Kennung tragen.
       'documents.chain_id',
+      // M-45: dasselbe in Grün — der Stand eines Datensatzes muss den
+      // Datensatz überleben, sonst ist er keiner.
+      'record_versions.entity_id',
     ])
   })
 

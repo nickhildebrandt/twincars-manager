@@ -1046,6 +1046,133 @@ machte jede buchhalterische Abfrage schlechter.
 
 Siehe **P-26**.
 
+### M-44 — Belegnummern: zwei Regeln, drei Herkünfte
+
+*Festgelegt am 20.09.2026.*
+
+Mit der Belegkette (M-41) stellte sich die Frage, **wie die Stände heißen**.
+Die Antwort ist je Belegart eine andere, und der Grund liegt nicht in der
+Anwendung, sondern in der Buchhaltung.
+
+| Belegart | Stand 2 heißt | Warum |
+| --- | --- | --- |
+| **Kostenvoranschlag** | `KV-2026-0042-2` | Ein Vorgang, eine Nummer. Der Kunde sieht denselben Beleg in zweiter Fassung, nicht zwei Belege, die er vergleichen muss. Es gibt keine Lückenlosigkeitspflicht (M-15), also darf die Nummer aussehen, wie es dem Betrieb hilft. |
+| **Rechnung** | eine ganz andere Nummer aus dem Kreis | Eine korrigierte Rechnung ist ein eigener Beleg. Die Folge bleibt lückenlos und eindeutig; ein Zusatz `-2` ist hier **nicht** zulässig. |
+
+**Drei Herkünfte von Nummern**, die nie durcheinandergeraten dürfen:
+
+1. **Neu vergeben** aus dem eigenen Kreis — lückenlos, mit Zeilensperre (P-02).
+2. **Angehängt** an einen bestehenden Kostenvoranschlag — zieht **nicht** aus
+   dem Kreis, sonst entstünden dort Lücken.
+3. **Übernommen** aus dem Altsystem — bleibt unverändert (M-29). Die alten
+   Nummern bleiben auffindbar und gültig und werden **nie** umnummeriert. Der
+   neue Kreis darf einem anderen Schema folgen; rechtlich zählt, dass **in
+   ihm** lückenlos und eindeutig weitergezählt wird.
+
+**Nichts wird aus einer Nummer herausgelesen.** Der erste Entwurf zerlegte
+`KV-2026-0042-3` in Grundnummer und Zähler. Das war zweideutig, und die Tests
+haben es sofort gezeigt: die Grundnummer endet selbst auf `-0042`. Jedes
+Muster, das den Standzusatz erkennt, erkennt auch den letzten Block der
+Grundnummer als solchen. Zurechtbiegen ließe es sich über Ziffernzahl oder
+führende Nullen — beides hinge davon ab, wie der Nummernkreis gerade steht,
+und fiele um, sobald jemand das Format ändert. Also wird **nachgeschlagen**:
+die Grundnummer ist die Nummer von Stand 1 derselben Kette, der Stand steht in
+`documents.version`.
+
+**Was der Altdatenbestand dazu sagt.** Der Beispiel-Export (`Daten/kfz-kaufmann-test.mdb`)
+wurde gelesen, nicht vermutet:
+
+| Befund | Zahl |
+| --- | --- |
+| Rechnungen | 10 416, Nummern `20080001` … `20090446` |
+| Aufbau | achtstellig, Jahrespräfix plus vierstelliger Zähler |
+| **Lücken** | 30 allein im Jahr 2008 — die Altfolge ist **nicht** lückenlos |
+| Sprung | 2008 beginnt bei `0001`, 2009 bei `0000`; 2008 lief bis `9999` durch |
+| Kostenvoranschläge | 97, Nummern 1000 … 1096, lückenlos, vierstellig |
+| Arten im Altsystem | Kostenvoranschlag (81), Angebot (12), Auftragsbestätigung (2), Auftrag (1) |
+
+Daraus folgt für den Import (T-033): die Altnummern kommen **unverändert** in
+`legacy_document_number`, die Lücken werden **nicht** geschlossen, und kein
+Test darf Lückenlosigkeit über den Altbestand behaupten. Die vier Altarten
+werden zu **Kostenvoranschlag** zusammengeführt (M-15, M-29).
+
+### M-45 — Zeitstrahl mit Rücksprung, als wiederverwendbares Werkzeug
+
+*Festgelegt am 20.09.2026.*
+
+> „Aus dem Zeitstrahl heraus muss ein früherer Stand wiederhergestellt werden
+> können … Ziel ist ein wiederverwendbares Feature für Versionierung mit
+> Zeitstrahl und gegebenenfalls Rücksprung, keine Einzellösung."
+
+**Was wohin gehört.** Die Anwendung führt jetzt vier Zeitleisten, und jede
+beantwortet eine Frage, die die anderen nicht beantworten können:
+
+| | Frage | Tabelle |
+| --- | --- | --- |
+| **Fachliche Version** | „Was gilt ab wann?" — auch in der Zukunft | `*_versions` (Preise, Kennzeichen, Gehälter) |
+| **Belegkette** | „Welche Stände hatte dieser Vorgang?" | `documents.chain_id` (M-41) |
+| **Schnappschuss** | „Wie sahen die Verweise beim Ausstellen aus?" | `document_snapshots` (M-42) |
+| **Datensatzstand** | „Wie sah dieser Datensatz nach jedem Speichern aus?" | `record_versions` (hier) |
+
+**Warum nicht aus dem Protokoll ableiten?** Das Protokoll (M-01) speichert nur
+die **Unterschiede** und wird nach Frist gelöscht (P-20). Einen Stand daraus
+rückwärts zusammenzusetzen ginge genau so lange gut, bis die erste Rotation
+gelaufen ist — und dann still nicht mehr.
+
+**Wer einen Zeitstrahl bekommt** (`versionedEntities`): Kunden, Fahrzeuge,
+Artikel, Reifen, Firmeneinstellungen, E-Mail-Vorlagen. Die letzten beiden sind
+der unterschätzte Fall: wer eine Vorlage zerschießt, will sie zurückhaben, und
+niemand denkt vorher daran, sie zu sichern.
+
+**Belege stehen absichtlich nicht auf der Liste.** Ihre Stände sind eine Kette
+mit Nummern und buchhalterischer Bedeutung — ein anderes Werkzeug für eine
+andere Frage.
+
+**Rücksprung, je nach Art:**
+
+| Datensatz | Zurückgehen |
+| --- | --- |
+| **Rechnung** | **nur lesen.** Sobald eine neue Version entsteht, ist die alte hinfällig |
+| **Kostenvoranschlag, Kunde, Fahrzeug** | lesen **und** wiederherstellen |
+
+**Ein Rücksprung löscht nichts.** Der alte Stand wird als neuer, aktueller
+Stand obendraufgesetzt; der Zeitstrahl wird länger, nicht kürzer, und der
+zurückgenommene Stand bleibt darin stehen. `restored_from_version` macht
+daraus einen benannten Vorgang („Stand 2 wieder aufgenommen") statt einer
+Änderung, die aussieht wie jede andere.
+
+**Einen weiteren Datensatz zu versionieren** heißt: eine Zeile in
+`versionedEntities` und ein Aufruf im Speicherpfad. Kein zweites Formular,
+kein zweiter Zeitstrahl, keine zweite Rücksprunglogik.
+
+Siehe **P-29** und **P-30**.
+
+### M-46 — Vier Zahlarten, weil der Altbestand vier kennt
+
+*Festgelegt am 20.09.2026, aus den Daten.*
+
+M-16 legte **zwei** Zahlarten fest, Bar und Karte, „weil das die zwei sind, die
+die Werkstatt hat". Der Beispiel-Export widerspricht:
+
+| Zahlart im Altsystem | Rechnungen |
+| --- | --- |
+| Überweisung | 5 049 |
+| Bar bezahlt | 3 367 |
+| PayPal Zahlung | 1 994 |
+
+Ein Import, der zwei Drittel der Rechnungen nicht abbilden kann, ist keiner.
+Die Liste hat deshalb vier Werte: `cash`, `card`, `transfer`, `paypal`.
+
+**P-07 bleibt unberührt und ist der eigentliche Punkt:** nur Bargeld berührt
+die Kasse, also geht **nur** Bargeld ins Kassenbuch. Drei von vier Zahlarten
+erzeugen dort keinen Vorschlag.
+
+**Nebenbefund für den Import.** Im Altsystem stehen diese Werte in einer Spalte
+namens `Sachbearbeiter`. Sie hat nie einen Sachbearbeiter enthalten; sie ist
+der Schlüssel in eine Tabelle `rgvariablen`, die Zahlart, Werbetext, Endtext
+und einen Bildpfad zusammenfasst. Wer sie beim Import als Namen übernimmt,
+bekommt 10 000 Mitarbeiter namens „Überweisung".
+
 ## 13. Prüfregeln
 
 Diese Regeln folgen **nicht** aus dem Datenmodell. Sie müssen als Fachlogik
@@ -1081,6 +1208,10 @@ Kennung beginnt.
 | **P-25** | Ein Schnappschuss wird **einmal** geschrieben und nie geändert; er überlebt den Datensatz, den er abschreibt | M-42 |
 | **P-26** | Jeder Abgang eines Fahrzeugs nennt **wohin**; ein Verkauf an einen Kunden nennt den Kunden | M-43 |
 | **P-27** | Export und Rückspielung erhalten **Ketten, Versionen und Schnappschüsse** unverändert | M-37, M-41, M-42 |
+| **P-28** | Jede Eingabe wird in **drei Schichten** geprüft: Feld, Formular, Zusammenhang mit Bestand und Einstellungen | übergreifend |
+| **P-29** | Ein Rücksprung **löscht nichts**: der alte Stand wird als neuer obendraufgesetzt, der Zeitstrahl bleibt lückenlos | M-45 |
+| **P-30** | Eine **Rechnung** lässt sich nicht zurücksetzen — nur lesen. Storno und Neuausstellung sind der Weg | M-45, M-41 |
+| **P-31** | Eine **Rechnungsnummer** trägt nie einen Standzusatz; ein **Kostenvoranschlag** ab Stand 2 zieht nie aus dem Kreis | M-44 |
 
 ---
 
@@ -1216,3 +1347,10 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-25 | T-021 | Schnappschuss wird nie geändert |
 | P-26 | T-013 | jeder Abgang nennt wohin |
 | P-27 | T-043 | Export erhält Ketten und Schnappschüsse |
+| M-44 | T-021 | Belegnummern: Zusatz beim KV, neue Nummer bei der Rechnung |
+| M-45 | T-009 | Zeitstrahl mit Rücksprung, wiederverwendbar |
+| M-46 | T-005 | vier Zahlarten, nur Bargeld ins Kassenbuch |
+| P-28 | T-004 | drei Prüfschichten an jeder Eingabe |
+| P-29 | T-009 | ein Rücksprung löscht nichts |
+| P-30 | T-022 | eine Rechnung lässt sich nicht zurücksetzen |
+| P-31 | T-021 | Nummernregel je Belegart |

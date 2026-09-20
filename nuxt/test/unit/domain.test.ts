@@ -146,8 +146,16 @@ describe('die Vokabeln sind vereinheitlicht', () => {
     expect(domain.numberKinds.values).not.toContain('order_confirmation')
   })
 
-  it('M-16: es gibt genau zwei Zahlarten, und nur eine geht ins Kassenbuch', () => {
-    expect(paymentMethods.values).toEqual(['cash', 'card'])
+  it('M-46: vier Zahlarten, und nur die Barzahlung geht ins Kassenbuch', () => {
+    // Die Liste war bis zum 20.09.2026 zwei Werte lang — Bar und Karte, „weil
+    // das die zwei sind, die die Werkstatt hat". Der Export des Altsystems
+    // sagt etwas anderes: von 10 416 Rechnungen sind 5 049 Überweisung und
+    // 1 994 PayPal. Ein Import, der zwei Drittel nicht abbilden kann, ist
+    // keiner (M-44).
+    expect(paymentMethods.values).toEqual(['cash', 'card', 'transfer', 'paypal'])
+
+    // Unverändert und der eigentliche Punkt der Regel: nichts außer Bargeld
+    // berührt die Kasse, also gehört nichts anderes ins Kassenbuch (P-07).
     expect(domain.CASH_BOOK_METHODS).toEqual(['cash'])
   })
 

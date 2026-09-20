@@ -1,6 +1,6 @@
 # 10 — Wer bekommt einen Schnappschuss, und wovon?
 
-**Betrifft:** M-42, T-020, T-021 · **Stand:** offen, vorläufig weit ausgelegt
+**Betrifft:** M-42, T-020, T-021 · **Stand:** **bestätigt am 20.09.2026**
 
 ## Worum es geht
 
@@ -57,3 +57,17 @@ soweit sind:
    Annahme ist genau die Angabe, um die später gestritten wird.
 
 Beides ist eine Zeile Aufruf, keine neue Mechanik.
+
+
+---
+
+## Bestätigt am 20.09.2026
+
+> „Ja, der Kostenvoranschlag bekommt ebenfalls einen Snapshot — so wie bereits
+> umgesetzt.“
+
+Der Umfang bleibt damit wie beschrieben: Kunde, Fahrzeug und Firma, für
+Rechnung, Storno und Kostenvoranschlag. Die beiden Erweiterungen aus meiner
+Empfehlung — Zahlungserinnerung und unterschriebener Werkstattauftrag —
+stehen unverändert als Vorschlag in T-025 und T-020; sie sind je eine Zeile
+Aufruf, keine neue Mechanik.

@@ -23,6 +23,22 @@ CREATE TABLE IF NOT EXISTS "audit_log" (
 	CONSTRAINT "audit_log_severity_check" CHECK ("audit_log"."severity" IN ('info', 'warnung', 'sicherheit'))
 );
 --> statement-breakpoint
+CREATE TABLE IF NOT EXISTS "record_versions" (
+	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
+	"entity" varchar(50) NOT NULL,
+	"entity_id" uuid NOT NULL,
+	"version" integer NOT NULL,
+	"data" jsonb NOT NULL,
+	"restored_from_version" integer,
+	"note" varchar(300),
+	"changed_by" text,
+	"changed_by_name" varchar(200),
+	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
+	CONSTRAINT "record_versions_entity_check" CHECK ("record_versions"."entity" IN ('customers', 'vehicles', 'items', 'tires', 'company_settings', 'mail_templates')),
+	CONSTRAINT "record_versions_version_check" CHECK ("record_versions"."version" >= 1),
+	CONSTRAINT "record_versions_restored_check" CHECK ("record_versions"."restored_from_version" IS NULL OR "record_versions"."restored_from_version" < "record_versions"."version")
+);
+--> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "sign_in_attempts" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"at" timestamp with time zone DEFAULT now() NOT NULL,
@@ -363,7 +379,7 @@ CREATE TABLE IF NOT EXISTS "document_payments" (
 	"method" varchar(30),
 	"notes" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
-	CONSTRAINT "document_payments_method_check" CHECK ("document_payments"."method" IS NULL OR "document_payments"."method" IN ('cash', 'card'))
+	CONSTRAINT "document_payments_method_check" CHECK ("document_payments"."method" IS NULL OR "document_payments"."method" IN ('cash', 'card', 'transfer', 'paypal'))
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "document_pdfs" (
@@ -442,7 +458,7 @@ CREATE TABLE IF NOT EXISTS "documents" (
 	"work_order_id" uuid,
 	CONSTRAINT "documents_type_check" CHECK ("documents"."type" IN ('cost_estimate', 'invoice')),
 	CONSTRAINT "documents_status_check" CHECK ("documents"."status" IN ('draft', 'created', 'sent', 'paid', 'cancelled', 'storno', 'converted')),
-	CONSTRAINT "documents_payment_method_check" CHECK ("documents"."payment_method" IS NULL OR "documents"."payment_method" IN ('cash', 'card')),
+	CONSTRAINT "documents_payment_method_check" CHECK ("documents"."payment_method" IS NULL OR "documents"."payment_method" IN ('cash', 'card', 'transfer', 'paypal')),
 	CONSTRAINT "documents_reminder_level_check" CHECK ("documents"."reminder_level" >= 0),
 	CONSTRAINT "documents_version_check" CHECK ("documents"."version" >= 1),
 	CONSTRAINT "documents_replaces_check" CHECK (("documents"."version" = 1) = ("documents"."replaces_document_id" IS NULL))
@@ -656,7 +672,7 @@ CREATE TABLE IF NOT EXISTS "ledger_entries" (
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	CONSTRAINT "ledger_entries_direction_check" CHECK ("ledger_entries"."direction" IN ('income', 'expense')),
 	CONSTRAINT "ledger_entries_payment_status_check" CHECK ("ledger_entries"."payment_status" IN ('paid', 'open', 'partial')),
-	CONSTRAINT "ledger_entries_payment_method_check" CHECK ("ledger_entries"."payment_method" IS NULL OR "ledger_entries"."payment_method" IN ('cash', 'card')),
+	CONSTRAINT "ledger_entries_payment_method_check" CHECK ("ledger_entries"."payment_method" IS NULL OR "ledger_entries"."payment_method" IN ('cash', 'card', 'transfer', 'paypal')),
 	CONSTRAINT "ledger_entries_source_check" CHECK ("ledger_entries"."source" IN ('anwendung', 'manuell'))
 );
 --> statement-breakpoint
@@ -1157,6 +1173,8 @@ CREATE INDEX IF NOT EXISTS "audit_log_entity_idx" ON "audit_log" USING btree ("e
 CREATE INDEX IF NOT EXISTS "audit_log_at_idx" ON "audit_log" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_user_id_idx" ON "audit_log" USING btree ("user_id");--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "audit_log_severity_idx" ON "audit_log" USING btree ("severity","at" DESC NULLS LAST);--> statement-breakpoint
+CREATE UNIQUE INDEX IF NOT EXISTS "record_versions_entity_version_idx" ON "record_versions" USING btree ("entity","entity_id","version");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "record_versions_timeline_idx" ON "record_versions" USING btree ("entity","entity_id","version" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_at_idx" ON "sign_in_attempts" USING btree ("at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_username_idx" ON "sign_in_attempts" USING btree ("username","at" DESC NULLS LAST);--> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "sign_in_attempts_address_idx" ON "sign_in_attempts" USING btree ("client_address","at" DESC NULLS LAST);--> statement-breakpoint

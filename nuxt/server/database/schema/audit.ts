@@ -26,9 +26,10 @@
  * einem Änderungsprotokoll rückwärts zu rekonstruieren wäre die falsche
  * Antwort auf die falsche Frage.
  */
-import { pgTable, uuid, varchar, boolean, timestamp, index, uniqueIndex, jsonb, text, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, boolean, timestamp, integer, index, uniqueIndex, jsonb, text, check } from 'drizzle-orm/pg-core'
 import { oneOf, oneOfOrNull } from './_checks.ts'
-import { auditActions, auditSeverities, signInFailures } from '../../../shared/domain.ts'
+import { sql } from 'drizzle-orm'
+import { auditActions, auditSeverities, signInFailures, versionedEntities } from '../../../shared/domain.ts'
 
 export const auditLog = pgTable('audit_log', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -101,6 +102,59 @@ export const auditLog = pgTable('audit_log', {
  * Der Benutzername wird festgehalten, **auch wenn es ihn nicht gibt** — gerade
  * dann ist der Versuch interessant. Deshalb kein Fremdschlüssel.
  */
+/**
+ * Der vollständige Stand eines Datensatzes bei jedem Speichern (M-45).
+ *
+ * Die dritte Zeitleiste der Anwendung, und sie beantwortet eine andere Frage
+ * als die beiden anderen:
+ *
+ *   - `audit_log` (M-01): **wer** hat wann **was geändert** — Spur, rotiert.
+ *   - `document_snapshots` (M-42): wie sahen die **Verweise eines Belegs**
+ *     beim Ausstellen aus — Beweis, unveränderlich.
+ *   - Hier: wie sah **dieser Datensatz** nach jedem Speichern aus — damit man
+ *     einen früheren Stand **wieder aufnehmen** kann.
+ *
+ * Warum nicht aus dem Protokoll ableiten? Weil das Protokoll nur die
+ * **Unterschiede** speichert und nach Frist gelöscht wird (P-20). Einen Stand
+ * daraus rückwärts zusammenzusetzen ginge genau so lange gut, bis die erste
+ * Rotation gelaufen ist — und dann still nicht mehr.
+ *
+ * `entity_id` trägt **keinen** Fremdschlüssel: die Spalte zeigt je nach
+ * `entity` auf verschiedene Tabellen. Sie muss den Datensatz ohnehin
+ * überleben — ein Stand, der mit seinem Datensatz verschwindet, ist keiner.
+ */
+export const recordVersions = pgTable('record_versions', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  /** Woraus der Stand stammt — `customers`, `vehicles`, … */
+  entity: varchar({ length: 50 }).notNull(),
+  entityId: uuid('entity_id').notNull(),
+  /** 1, 2, 3 … je Datensatz. */
+  version: integer().notNull(),
+  /** Der vollständige Stand. Ohne Kennung, Zeitstempel und Geheimnisse. */
+  data: jsonb().$type<Record<string, unknown>>().notNull(),
+  /**
+   * Der Stand, aus dem dieser wiederhergestellt wurde.
+   *
+   * Gesetzt macht er aus einem Rücksprung einen sichtbaren Vorgang: „Stand 2
+   * wieder aufgenommen" statt einer stillen Änderung, die aussieht wie jede
+   * andere.
+   */
+  restoredFromVersion: integer('restored_from_version'),
+  /** Ein deutscher Halbsatz für den Zeitstrahl. */
+  note: varchar({ length: 300 }),
+  /** Wer. Kein Fremdschlüssel — der Stand überlebt den Benutzer. */
+  changedBy: text('changed_by'),
+  changedByName: varchar('changed_by_name', { length: 200 }),
+  createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+}, table => [
+  check('record_versions_entity_check', oneOf(table.entity, versionedEntities.values)),
+  check('record_versions_version_check', sql`${table.version} >= 1`),
+  // Ein Stand kann nicht aus sich selbst oder aus einem späteren stammen.
+  check('record_versions_restored_check', sql`${table.restoredFromVersion} IS NULL OR ${table.restoredFromVersion} < ${table.version}`),
+  uniqueIndex('record_versions_entity_version_idx').using('btree', table.entity.asc().nullsLast(), table.entityId.asc().nullsLast(), table.version.asc().nullsLast()),
+  index('record_versions_timeline_idx').using('btree', table.entity.asc().nullsLast(), table.entityId.asc().nullsLast(), table.version.desc().nullsLast()),
+])
+
 /**
  * Was zu einer Adresse festgehalten werden muss (P-15, P-22).
  *

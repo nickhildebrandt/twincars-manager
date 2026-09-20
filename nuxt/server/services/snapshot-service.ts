@@ -29,33 +29,22 @@ import {
 } from '../database/schema/index.ts'
 import type { Executor } from '../utils/db.ts'
 import { useDatabase } from '../utils/db.ts'
-import { changesBetween, isLoggableField } from '../utils/audit.ts'
+import { changesBetween } from '../utils/audit.ts'
 import type { FieldChange } from '../utils/audit.ts'
+import { UNSTORED_FIELDS, stateOf } from '../utils/record-state.ts'
 import { labelOf, snapshotEntities } from '#shared/domain'
 import type { SnapshotEntity } from '#shared/domain'
 import { FIELD_LABELS } from '#shared/schemas/field-labels'
 
-/** Felder, die in keinen Schnappschuss gehören — sie sagen nichts über den Stand. */
-const SKIPPED = ['id', 'createdAt', 'updatedAt', 'logoData', 'logoMime']
-
 /**
  * Macht aus einem Datensatz die Abschrift, die aufbewahrt wird.
  *
- * Herausgenommen wird zweierlei: was ohnehin in jeder Zeile steht (Kennung,
- * Zeitstempel) und alles, was ein Geheimnis sein könnte. Für das Zweite gilt
- * dieselbe Liste wie im Protokoll — ein Schnappschuss, der Zugangsdaten
- * mitschreibt, wäre dieselbe Lücke an einer zweiten Stelle.
+ * Dieselbe Regel wie beim Zeitstrahl versionierter Datensätze (M-45), und
+ * deshalb dieselbe Funktion: `server/utils/record-state.ts`. Getrennt
+ * gehalten wäre es eine Lücke — vergäße eine der beiden Stellen ein
+ * Geheimnis, stünde das Passwort dort, wo niemand danach sucht.
  */
-export function snapshotOf(record: Record<string, unknown>): Record<string, unknown> {
-  const copy: Record<string, unknown> = {}
-  for (const [field, value] of Object.entries(record)) {
-    if (SKIPPED.includes(field)) continue
-    if (!isLoggableField(field)) continue
-    if (value === undefined) continue
-    copy[field] = value instanceof Date ? value.toISOString() : value
-  }
-  return copy
-}
+export const snapshotOf = stateOf
 
 /** Eine Abweichung zwischen damals und heute, fertig zum Anzeigen. */
 export type SnapshotDrift = {
@@ -93,7 +82,7 @@ export async function driftOf(
     if (!current) continue
 
     const changes = changesBetween(snapshot.data, current)
-      .filter(change => !SKIPPED.includes(change.field))
+      .filter(change => !UNSTORED_FIELDS.includes(change.field as typeof UNSTORED_FIELDS[number]))
     if (changes.length === 0) continue
 
     drift.push({

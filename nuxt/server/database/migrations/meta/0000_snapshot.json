@@ -1,5 +1,5 @@
 {
-  "id": "48fc0c12-6cec-47e1-b56b-e1430ee811a9",
+  "id": "6ee5cde5-706e-4c0d-aae0-17e36f825b63",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -237,6 +237,149 @@
         "audit_log_severity_check": {
           "name": "audit_log_severity_check",
           "value": "\"audit_log\".\"severity\" IN ('info', 'warnung', 'sicherheit')"
+        }
+      },
+      "isRLSEnabled": false
+    },
+    "public.record_versions": {
+      "name": "record_versions",
+      "schema": "",
+      "columns": {
+        "id": {
+          "name": "id",
+          "type": "uuid",
+          "primaryKey": true,
+          "notNull": true,
+          "default": "gen_random_uuid()"
+        },
+        "entity": {
+          "name": "entity",
+          "type": "varchar(50)",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "entity_id": {
+          "name": "entity_id",
+          "type": "uuid",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "version": {
+          "name": "version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "data": {
+          "name": "data",
+          "type": "jsonb",
+          "primaryKey": false,
+          "notNull": true
+        },
+        "restored_from_version": {
+          "name": "restored_from_version",
+          "type": "integer",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "note": {
+          "name": "note",
+          "type": "varchar(300)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "changed_by": {
+          "name": "changed_by",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "changed_by_name": {
+          "name": "changed_by_name",
+          "type": "varchar(200)",
+          "primaryKey": false,
+          "notNull": false
+        },
+        "created_at": {
+          "name": "created_at",
+          "type": "timestamp with time zone",
+          "primaryKey": false,
+          "notNull": true,
+          "default": "now()"
+        }
+      },
+      "indexes": {
+        "record_versions_entity_version_idx": {
+          "name": "record_versions_entity_version_idx",
+          "columns": [
+            {
+              "expression": "entity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": true,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "record_versions_timeline_idx": {
+          "name": "record_versions_timeline_idx",
+          "columns": [
+            {
+              "expression": "entity",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "entity_id",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            },
+            {
+              "expression": "version",
+              "isExpression": false,
+              "asc": false,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        }
+      },
+      "foreignKeys": {},
+      "compositePrimaryKeys": {},
+      "uniqueConstraints": {},
+      "policies": {},
+      "checkConstraints": {
+        "record_versions_entity_check": {
+          "name": "record_versions_entity_check",
+          "value": "\"record_versions\".\"entity\" IN ('customers', 'vehicles', 'items', 'tires', 'company_settings', 'mail_templates')"
+        },
+        "record_versions_version_check": {
+          "name": "record_versions_version_check",
+          "value": "\"record_versions\".\"version\" >= 1"
+        },
+        "record_versions_restored_check": {
+          "name": "record_versions_restored_check",
+          "value": "\"record_versions\".\"restored_from_version\" IS NULL OR \"record_versions\".\"restored_from_version\" < \"record_versions\".\"version\""
         }
       },
       "isRLSEnabled": false
@@ -3309,7 +3452,7 @@
       "checkConstraints": {
         "document_payments_method_check": {
           "name": "document_payments_method_check",
-          "value": "\"document_payments\".\"method\" IS NULL OR \"document_payments\".\"method\" IN ('cash', 'card')"
+          "value": "\"document_payments\".\"method\" IS NULL OR \"document_payments\".\"method\" IN ('cash', 'card', 'transfer', 'paypal')"
         }
       },
       "isRLSEnabled": false
@@ -4198,7 +4341,7 @@
         },
         "documents_payment_method_check": {
           "name": "documents_payment_method_check",
-          "value": "\"documents\".\"payment_method\" IS NULL OR \"documents\".\"payment_method\" IN ('cash', 'card')"
+          "value": "\"documents\".\"payment_method\" IS NULL OR \"documents\".\"payment_method\" IN ('cash', 'card', 'transfer', 'paypal')"
         },
         "documents_reminder_level_check": {
           "name": "documents_reminder_level_check",
@@ -5938,7 +6081,7 @@
         },
         "ledger_entries_payment_method_check": {
           "name": "ledger_entries_payment_method_check",
-          "value": "\"ledger_entries\".\"payment_method\" IS NULL OR \"ledger_entries\".\"payment_method\" IN ('cash', 'card')"
+          "value": "\"ledger_entries\".\"payment_method\" IS NULL OR \"ledger_entries\".\"payment_method\" IN ('cash', 'card', 'transfer', 'paypal')"
         },
         "ledger_entries_source_check": {
           "name": "ledger_entries_source_check",
