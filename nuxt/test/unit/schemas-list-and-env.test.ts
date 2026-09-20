@@ -108,6 +108,51 @@ describe('Umgebungsvariablen', () => {
     )
   })
 
+  /* ── Zahlen aus der Umgebung ────────────────────────────────────────────
+     Der Fall, der diese Prüfung gekostet hat: `IDLE_TIMEOUT_MINUTES` war als
+     `v.number()` deklariert. Umgebungsvariablen sind aber **immer**
+     Zeichenketten — das Feld ging deshalb nur durch, solange es **nicht
+     gesetzt** war. Wer der mitgelieferten `.env.example` folgte und es
+     setzte, bekam „muss eine Zahl sein" und einen Server, der nicht startet.
+     Der alte Testsatz setzte das Feld nie, also fiel es nicht auf. */
+
+  it('nimmt eine Zahl als Zeichenkette an — so kommt sie aus der Umgebung', () => {
+    expect(v.parse(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '30' }).IDLE_TIMEOUT_MINUTES)
+      .toBe(30)
+  })
+
+  it('nimmt genau den Wert aus .env.example an', () => {
+    // Die Vorlage darf den Start nicht verhindern. Genau das tat sie.
+    expect(v.parse(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '60' }).IDLE_TIMEOUT_MINUTES)
+      .toBe(60)
+  })
+
+  it('setzt ohne Angabe die Vorgabe', () => {
+    expect(v.parse(envSchema, valid).IDLE_TIMEOUT_MINUTES).toBe(60)
+  })
+
+  it('wandelt nicht halb um', () => {
+    // `Number.parseInt('60x')` wäre 60. Hier nicht: eine krumme Angabe ist
+    // ein Fehler und kein Vorschlag.
+    expect(reject(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '60x' }))
+      .toBe('IDLE_TIMEOUT_MINUTES muss eine ganze Zahl sein.')
+    expect(reject(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '' }))
+      .toBe('IDLE_TIMEOUT_MINUTES muss eine ganze Zahl sein.')
+    expect(reject(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '5.5' }))
+      .toBe('IDLE_TIMEOUT_MINUTES muss eine ganze Zahl sein.')
+  })
+
+  it('hält die Grenzen ein', () => {
+    expect(reject(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '4' }))
+      .toBe('IDLE_TIMEOUT_MINUTES muss mindestens 5 betragen.')
+    expect(reject(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '1441' }))
+      .toBe('IDLE_TIMEOUT_MINUTES darf höchstens 1440 betragen.')
+    expect(v.parse(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '5' }).IDLE_TIMEOUT_MINUTES)
+      .toBe(5)
+    expect(v.parse(envSchema, { ...valid, IDLE_TIMEOUT_MINUTES: '1440' }).IDLE_TIMEOUT_MINUTES)
+      .toBe(1440)
+  })
+
   it('verlangt in der Produktion eine öffentliche Adresse', () => {
     expect(reject(envSchema, {
       ...valid,

@@ -12,12 +12,14 @@ import { drizzle } from 'drizzle-orm/postgres-js'
 import { connectionOptionsFrom } from '../server/utils/connection.ts'
 import * as schema from '../server/database/schema/index.ts'
 import { seedDefaults } from '../server/database/seed/index.ts'
+import { loadEnv } from './load-env.mjs'
 
-const url = process.env.DATABASE_URL
-if (!url) {
-  console.error('DATABASE_URL fehlt.')
+if (loadEnv(['DATABASE_URL']).length > 0) {
+  console.error('DATABASE_URL fehlt. Weder in der Umgebung noch in nuxt/.env.')
   process.exit(1)
 }
+
+const url = process.env.DATABASE_URL
 
 const sql = postgres(connectionOptionsFrom(url, { max: 1 }))
 try {

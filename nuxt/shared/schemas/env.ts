@@ -23,6 +23,41 @@ const secret = (name: string, min = 32) =>
     ),
   )
 
+/**
+ * Eine Zahl aus der Umgebung.
+ *
+ * **Umgebungsvariablen sind immer Zeichenketten.** `IDLE_TIMEOUT_MINUTES=60`
+ * kommt als `'60'` an, nie als `60`. Ein `v.number()` darauf kann deshalb
+ * nicht gelingen — und genau das war der Fall: das Feld ging nur durch,
+ * solange es **nicht gesetzt** war. Wer der mitgelieferten `.env.example`
+ * folgte und es setzte, bekam „muss eine Zahl sein" und einen Server, der
+ * nicht startet.
+ *
+ * Also wird hier umgewandelt, bevor geprüft wird — und die Umwandlung ist
+ * streng: `'60x'` wird nicht zu `60`, wie `Number.parseInt` es täte, sondern
+ * bleibt ein Fehler.
+ */
+const numeric = (name: string, options: { min: number, max: number, fallback: number }) =>
+  v.optional(
+    v.pipe(
+      v.union(
+        [
+          v.number(),
+          v.pipe(
+            v.string(),
+            v.regex(/^-?\d+$/, `${name} muss eine ganze Zahl sein.`),
+            v.transform(Number),
+          ),
+        ],
+        `${name} muss eine ganze Zahl sein.`,
+      ),
+      v.integer(`${name} muss eine ganze Zahl sein.`),
+      v.minValue(options.min, `${name} muss mindestens ${options.min} betragen.`),
+      v.maxValue(options.max, `${name} darf höchstens ${options.max} betragen.`),
+    ),
+    options.fallback,
+  )
+
 export const envSchema = v.pipe(
   v.object({
     NODE_ENV: v.optional(
@@ -75,15 +110,7 @@ export const envSchema = v.pipe(
     ),
 
     /** Minutes of inactivity before the session ends. */
-    IDLE_TIMEOUT_MINUTES: v.optional(
-      v.pipe(
-        v.number('IDLE_TIMEOUT_MINUTES muss eine Zahl sein.'),
-        v.integer('IDLE_TIMEOUT_MINUTES muss eine ganze Zahl sein.'),
-        v.minValue(5, 'IDLE_TIMEOUT_MINUTES muss mindestens 5 betragen.'),
-        v.maxValue(1440, 'IDLE_TIMEOUT_MINUTES darf höchstens 1440 betragen.'),
-      ),
-      60,
-    ),
+    IDLE_TIMEOUT_MINUTES: numeric('IDLE_TIMEOUT_MINUTES', { min: 5, max: 1440, fallback: 60 }),
 
     /** `off` silences the schedule; the buttons keep working (E-12). */
     TASKS_SCHEDULE: v.optional(

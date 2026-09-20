@@ -14,12 +14,14 @@ import postgres from 'postgres'
 import { drizzle } from 'drizzle-orm/postgres-js'
 import { migrate } from 'drizzle-orm/postgres-js/migrator'
 import { connectionOptionsFrom } from '../server/utils/connection.ts'
+import { loadEnv } from './load-env.mjs'
 
-const url = process.env.DATABASE_URL
-if (!url) {
-  console.error('DATABASE_URL fehlt. Ohne Verbindung kann nicht migriert werden.')
+if (loadEnv(['DATABASE_URL']).length > 0) {
+  console.error('DATABASE_URL fehlt. Weder in der Umgebung noch in nuxt/.env.')
   process.exit(1)
 }
+
+const url = process.env.DATABASE_URL
 
 const folder = fileURLToPath(new URL('../server/database/migrations', import.meta.url))
 

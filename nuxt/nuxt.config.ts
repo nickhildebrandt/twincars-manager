@@ -69,6 +69,14 @@ export default defineNuxtConfig({
 
   nitro: {
     preset: 'node-server',
+
+    // Aufgaben sind in Nitro noch als experimentell geführt und werden ohne
+    // diesen Schalter **gar nicht erst eingelesen**. Ohne ihn meldet der
+    // Server beim Start „Scheduled task protokoll-rotieren is not defined!",
+    // startet aber — und die Rotation lief nie. Eine Warnung im Anlauflog
+    // liest nach der dritten Woche niemand mehr.
+    experimental: { tasks: true },
+
     // Built from server/tasks/_registry.ts so schedule and implementation
     // cannot drift apart. Whether the schedule actually fires is decided at
     // runtime by runtimeConfig.tasks.scheduleEnabled.
