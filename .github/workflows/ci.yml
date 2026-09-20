@@ -9,10 +9,6 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
-defaults:
-  run:
-    working-directory: nuxt
-
 env:
   PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: '1'
   TZ: Europe/Berlin
@@ -28,7 +24,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: nuxt/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
       - run: pnpm typecheck
@@ -57,7 +53,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: nuxt/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm test:nuxt
       - run: pnpm test:integration
@@ -74,7 +70,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: nuxt/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
         env:
@@ -104,7 +100,7 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: nuxt/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec playwright install --with-deps chromium
         env:
@@ -122,6 +118,6 @@ jobs:
         with:
           node-version: 24
           cache: pnpm
-          cache-dependency-path: nuxt/pnpm-lock.yaml
+          cache-dependency-path: pnpm-lock.yaml
       - run: pnpm install --frozen-lockfile
       - run: pnpm docs:check

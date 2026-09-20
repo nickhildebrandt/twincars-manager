@@ -1,6 +1,12 @@
-# pnpm 11 reads build-script approval from this file (the package.json
-# "pnpm" field is no longer honoured). esbuild ships a platform binary via
-# its install script; vite/vitest need it, so it must be allowed to run on
-# a fresh `pnpm install` (Docker / CI included).
+# Kein Arbeitsbereich mit Unterpaketen: das Repository ist genau eine
+# Anwendung. Die Zeile muss trotzdem dastehen, sonst sucht pnpm nach
+# Unterpaketen und zieht alles ein, was zufällig eine package.json hat.
+packages: []
+
+# Packages whose install scripts are allowed to run. esbuild ships a platform
+# binary that vite/vitest need; unrs-resolver backs the ESLint import plugin;
+# vue-demi is pulled in by Nuxt UI's VueUse dependency.
 allowBuilds:
   esbuild: true
+  unrs-resolver: true
+  vue-demi: true

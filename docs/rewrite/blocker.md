@@ -74,8 +74,8 @@ läuft danach und muss bestehen. Die Umgehung kostet beim ersten Lauf einer
 frischen Arbeitskopie etwa vier Sekunden.
 
 **Wann es weg kann.** Sobald Vitest oder `@nuxt/test-utils` den Neuladevorgang
-behebt. Dann alle `pretest…`-Schritte aus `nuxt/package.json` und
-`nuxt/scripts/warm-vite-cache.mjs` entfernen und die Reproduktion oben noch
+behebt. Dann alle `pretest…`-Schritte aus `package.json` und
+`scripts/warm-vite-cache.mjs` entfernen und die Reproduktion oben noch
 einmal durchspielen.
 
 **Betroffene Fassungen:** Vitest 5.0.0, `@vitest/browser-playwright` 5.0.0,

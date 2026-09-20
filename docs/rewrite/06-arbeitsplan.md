@@ -53,11 +53,11 @@ Fachlichkeit, aber jede spätere Zeile hängt an ihnen.
 **Zu erstellen**
 
 ```
-nuxt/package.json            nuxt/pnpm-workspace.yaml   nuxt/nuxt.config.ts
-nuxt/tsconfig.json           nuxt/eslint.config.mjs     nuxt/app/app.vue
-nuxt/app/app.config.ts       nuxt/app/assets/css/main.css
-nuxt/app/layouts/default.vue nuxt/app/pages/index.vue   nuxt/.env.example
-nuxt/CLAUDE.md               nuxt/README.md             nuxt/.gitignore
+package.json            pnpm-workspace.yaml   nuxt.config.ts
+tsconfig.json           eslint.config.mjs     app/app.vue
+app/app.config.ts       app/assets/css/main.css
+app/layouts/default.vue app/pages/index.vue   .env.example
+CLAUDE.md               README.md             nuxt/.gitignore
 .husky/commit-msg            commitlint.config.mjs      .releaserc.json
 .github/workflows/ci.yml     .github/workflows/release.yml
 ```
@@ -81,7 +81,7 @@ nuxt/CLAUDE.md               nuxt/README.md             nuxt/.gitignore
 - semantic-release mit Preset `conventionalcommits`, Zweig `main`, ohne
   npm-Veröffentlichung.
 - GitHub Actions: ein Workflow für Prüfungen, einer für die Freigabe.
-- `nuxt/CLAUDE.md` nach dem Entwurf in [07-ausfuehrung.md](07-ausfuehrung.md) §9.
+- `CLAUDE.md` nach dem Entwurf in [07-ausfuehrung.md](07-ausfuehrung.md) §9.
 
 **Akzeptanzkriterien**
 
@@ -92,7 +92,7 @@ nuxt/CLAUDE.md               nuxt/README.md             nuxt/.gitignore
 | 3   | Produktionsbau gelingt                                                  | `pnpm build`                                                                                           |
 | 4   | Lint läuft und formatiert                                               | `pnpm lint` ohne Befund; eine absichtlich falsch formatierte Datei wird von `pnpm lint:fix` korrigiert |
 | 5   | Typprüfung läuft                                                        | `pnpm typecheck`                                                                                       |
-| 6   | Kein Prettier im Baum                                                   | `grep -ri prettier nuxt/package.json nuxt/*.mjs` findet nichts                                         |
+| 6   | Kein Prettier im Baum                                                   | `grep -ri prettier package.json nuxt/*.mjs` findet nichts                                         |
 | 7   | Genau eine CSS-Datei                                                    | `find nuxt -name '*.css' -not -path '*/node_modules/*'` liefert eine Datei                             |
 | 8   | Ein Commit mit falscher Nachricht wird abgewiesen                       | `git commit -m "kaputt"` schlägt fehl                                                                  |
 | 9   | CI-Workflow ist syntaktisch gültig                                      | Actions-Lauf auf dem Zweig                                                                             |
@@ -114,13 +114,13 @@ Test, der die Existenz genau einer CSS-Datei und das Fehlen von
 **Zu erstellen**
 
 ```
-nuxt/vitest.config.ts            nuxt/playwright.config.ts
-nuxt/test/setup/nuxt.ts          nuxt/test/setup/database.ts
-nuxt/test/setup/db-per-worker.ts nuxt/test/factories/index.ts
-nuxt/scripts/test-db.mjs         nuxt/.env.test
-nuxt/test/unit/smoke.test.ts     nuxt/test/nuxt/smoke.test.ts
-nuxt/test/integration/smoke.test.ts nuxt/test/browser/smoke.test.ts
-nuxt/test/e2e/smoke.test.ts      nuxt/scripts/check-befunde.mjs
+vitest.config.ts            playwright.config.ts
+test/setup/nuxt.ts          test/setup/database.ts
+test/setup/db-per-worker.ts test/factories/index.ts
+scripts/test-db.mjs         .env.test
+test/unit/smoke.test.ts     test/nuxt/smoke.test.ts
+test/integration/smoke.test.ts test/browser/smoke.test.ts
+test/e2e/smoke.test.ts      scripts/check-befunde.mjs
 ```
 
 **Inhalt**
@@ -165,7 +165,7 @@ docs/index.md
 docs/_templates/feature.md  api.md  component.md  decision.md  guide.md
 docs/features/README.md  docs/api/README.md  docs/data/README.md
 docs/ui/README.md        docs/architecture/README.md  docs/guides/README.md
-nuxt/scripts/docs-check.mjs  nuxt/scripts/docs-api.mjs  nuxt/scripts/docs-data.mjs
+scripts/docs-check.mjs  scripts/docs-api.mjs  scripts/docs-data.mjs
 ```
 
 **Inhalt**
@@ -225,11 +225,11 @@ Vorlage wann.
 **Zu erstellen**
 
 ```
-nuxt/shared/schemas/primitives.ts  pagination.ts  env.ts  upload.ts  field-labels.ts
-nuxt/server/utils/validate.ts      nuxt/server/utils/errors.ts  plausibility.ts
-nuxt/server/plugins/00.env.ts      nuxt/server/plugins/10.error.ts
-nuxt/app/composables/useApi.ts     nuxt/app/composables/useNotify.ts
-nuxt/app/error.vue
+shared/schemas/primitives.ts  pagination.ts  env.ts  upload.ts  field-labels.ts
+server/utils/validate.ts      server/utils/errors.ts  plausibility.ts
+server/plugins/00.env.ts      server/plugins/10.error.ts
+app/composables/useApi.ts     app/composables/useNotify.ts
+app/error.vue
 ```
 
 **Inhalt**
@@ -286,12 +286,12 @@ nuxt/app/error.vue
 **Zu erstellen**
 
 ```
-nuxt/server/database/schema/*.ts        (je Domäne eine Datei)
-nuxt/server/database/migrations/0000_baseline.sql
-nuxt/server/database/migrations/0001_cleanup_*.sql
-nuxt/server/database/seed/index.ts
-nuxt/drizzle.config.ts  nuxt/scripts/migrate.mjs  nuxt/scripts/seed.mjs
-nuxt/test/unit/schema-drift.test.ts
+server/database/schema/*.ts        (je Domäne eine Datei)
+server/database/migrations/0000_baseline.sql
+server/database/migrations/0001_cleanup_*.sql
+server/database/seed/index.ts
+drizzle.config.ts  scripts/migrate.mjs  scripts/seed.mjs
+test/unit/schema-drift.test.ts
 ```
 
 **Inhalt**
@@ -333,12 +333,12 @@ Relationsdiagramm, Migrationsstrategie), `docs/decisions/` für die Baseline.
 **Zu erstellen**
 
 ```
-nuxt/server/utils/db.ts        (Verbindung, withTransaction)
-nuxt/server/utils/guards.ts    nuxt/server/utils/pagination.ts
-nuxt/server/utils/crypto.ts    nuxt/server/utils/money.ts
-nuxt/server/utils/numbering.ts nuxt/server/utils/rate-limit.ts
-nuxt/server/utils/status-labels.ts  nuxt/server/utils/payment-methods.ts
-nuxt/server/tasks/_registry.ts nuxt/server/api/health.get.ts
+server/utils/db.ts        (Verbindung, withTransaction)
+server/utils/guards.ts    server/utils/pagination.ts
+server/utils/crypto.ts    server/utils/money.ts
+server/utils/numbering.ts server/utils/rate-limit.ts
+server/utils/status-labels.ts  server/utils/payment-methods.ts
+server/tasks/_registry.ts server/api/health.get.ts
 ```
 
 **Inhalt**
@@ -380,14 +380,14 @@ nuxt/server/tasks/_registry.ts nuxt/server/api/health.get.ts
 **Zu erstellen**
 
 ```
-nuxt/server/utils/auth.ts  auth-permissions.ts  auth-users.ts
-nuxt/server/middleware/01.auth.ts  02.api-guard.ts
-nuxt/server/api/auth/[...all].ts   nuxt/server/api/me.get.ts
-nuxt/shared/permissions.ts
-nuxt/app/composables/useAuth.ts  usePermissions.ts
-nuxt/app/middleware/auth.global.ts  permission.ts
-nuxt/app/pages/login.vue  nuxt/app/plugins/idle-logout.client.ts
-nuxt/app/pages/403.vue
+server/utils/auth.ts  auth-permissions.ts  auth-users.ts
+server/middleware/01.auth.ts  02.api-guard.ts
+server/api/auth/[...all].ts   server/api/me.get.ts
+shared/permissions.ts
+app/composables/useAuth.ts  usePermissions.ts
+app/middleware/auth.global.ts  permission.ts
+app/pages/login.vue  app/plugins/idle-logout.client.ts
+app/pages/403.vue
 ```
 
 **Inhalt**
@@ -437,12 +437,12 @@ zu better-auth.
 **Zu erstellen**
 
 ```
-nuxt/app/layouts/default.vue  blank.vue
-nuxt/app/components/app/AppSidebar.vue  AppHeader.vue  AppUserMenu.vue
-nuxt/app/components/app/NavigationTree.vue
-nuxt/app/composables/useBusy.ts  useFormDirty.ts  useNavigation.ts
-nuxt/app/error.vue  (ausbauen)
-nuxt/shared/navigation.ts
+app/layouts/default.vue  blank.vue
+app/components/app/AppSidebar.vue  AppHeader.vue  AppUserMenu.vue
+app/components/app/NavigationTree.vue
+app/composables/useBusy.ts  useFormDirty.ts  useNavigation.ts
+app/error.vue  (ausbauen)
+shared/navigation.ts
 ```
 
 **Inhalt**
@@ -484,17 +484,17 @@ nuxt/shared/navigation.ts
 **Zu erstellen**
 
 ```
-nuxt/app/components/data/ListPage.vue  DataTable.vue  FilterBar.vue
+app/components/data/ListPage.vue  DataTable.vue  FilterBar.vue
                           EmptyState.vue  ErrorState.vue  StatusBadge.vue
-nuxt/app/components/form/FormPage.vue  DateField.vue  MoneyField.vue
-nuxt/app/components/picker/EntityPicker.vue  MultiEntityPicker.vue
-nuxt/app/components/ui/ConfirmDialog.vue  FileDropzone.vue  StatTile.vue
-nuxt/app/components/history/RecordTimeline.vue  VersionDiff.vue
-nuxt/app/composables/useListQuery.ts  useCreationFlow.ts  useConfirm.ts
-nuxt/app/composables/useRecordHistory.ts
-nuxt/server/api/pickers/*.get.ts
-nuxt/server/api/history/[entity]/[id].get.ts  restore.post.ts
-nuxt/shared/utils/date.ts  picker-labels.ts
+app/components/form/FormPage.vue  DateField.vue  MoneyField.vue
+app/components/picker/EntityPicker.vue  MultiEntityPicker.vue
+app/components/ui/ConfirmDialog.vue  FileDropzone.vue  StatTile.vue
+app/components/history/RecordTimeline.vue  VersionDiff.vue
+app/composables/useListQuery.ts  useCreationFlow.ts  useConfirm.ts
+app/composables/useRecordHistory.ts
+server/api/pickers/*.get.ts
+server/api/history/[entity]/[id].get.ts  restore.post.ts
+shared/utils/date.ts  picker-labels.ts
 ```
 
 **Inhalt**
@@ -1342,8 +1342,12 @@ Migrationstabelle und keinen Rückrollpfad für Bestandsdaten.
 
 Bleibt: neue Datenbank anlegen, Baseline anwenden, Vorgaben einspielen, ersten
 Administrator über den Assistenten anlegen, Bestand über den Import ziehen,
-Container umschalten. Dazu die Verschiebung von `nuxt/` ins Repo-Root und das
-Entfernen des Altbestands samt überholter Dokumentationsseiten.
+Container umschalten.
+
+**Zwei Punkte sind am 20.09.2026 vorgezogen worden** (A-01) und entfallen
+hier: die Verschiebung ins Repo-Root und das Entfernen des Altbestands. Beides
+ist geschehen; der SvelteKit-Bestand liegt als Archiv außerhalb des
+Repositorys. Was bleibt, sind die überholten Dokumentationsseiten.
 
 **Besondere Akzeptanzkriterien:** eine leere Datenbank ist in einem Durchlauf
 betriebsbereit (Migration, Vorgaben, Assistent, Import); der Weg ist einmal
@@ -1359,10 +1363,10 @@ vollständig geprobt; ein Rückweg auf die alte Installation ist beschrieben.
 **Zu erstellen**
 
 ```
-nuxt/server/services/backup-service.ts   restore-service.ts
-nuxt/server/tasks/backup.ts
-nuxt/server/api/settings/backup/*.ts
-nuxt/app/pages/settings/backup.vue
+server/services/backup-service.ts   restore-service.ts
+server/tasks/backup.ts
+server/api/settings/backup/*.ts
+app/pages/settings/backup.vue
 ```
 
 **Inhalt**
@@ -1429,10 +1433,10 @@ nachgetragen werden.
 **Zu erstellen**
 
 ```
-nuxt/server/utils/audit.ts
-nuxt/server/middleware/03.security-headers.ts
-nuxt/server/tasks/protokoll-rotieren.ts
-nuxt/shared/schemas/audit.ts
+server/utils/audit.ts
+server/middleware/03.security-headers.ts
+server/tasks/protokoll-rotieren.ts
+shared/schemas/audit.ts
 ```
 
 **Inhalt**

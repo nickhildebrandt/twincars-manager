@@ -5,8 +5,9 @@ Dieser Ordner enthält den vollständigen Plan für den Umbau der Anwendung von
 Vorwissen ihn allein abarbeiten kann.
 
 > **Der Plan ist verbindlich.** Wo er mit vorgefundenem Code kollidiert,
-> gewinnt der Plan. Die neue Anwendung entsteht in `nuxt/`; der alte Bestand
-> unter `src/` ist read-only.
+> gewinnt der Plan. Seit dem 20.09.2026 **ist das Repository die Anwendung**:
+> der SvelteKit-Bestand war ein Proof of Concept und liegt als Archiv
+> außerhalb (siehe [03-architektur.md](03-architektur.md) §3).
 
 ## Wo anfangen
 
@@ -33,7 +34,7 @@ Vorwissen ihn allein abarbeiten kann.
 | [05-teststrategie.md](05-teststrategie.md) | Sechs Prüfebenen, Vitest-Projekte, echte Testdatenbank, Coverage-Schwellen, Regressionstests je Befund, Selektor-Konvention. |
 | [06-arbeitsplan.md](06-arbeitsplan.md) | **42 Arbeitspakete** (`T-001`…) mit Vorbedingungen, Dateien, Akzeptanzkriterien, Tests. |
 | [06-abdeckung.md](06-abdeckung.md) | **Abdeckungstabelle**: jede Feature-ID einem Arbeitspaket zugeordnet, jeder zu behebende Befund ebenso. |
-| [07-ausfuehrung.md](07-ausfuehrung.md) | Anleitung für die umsetzende Sitzung, inklusive Entwurf für `nuxt/CLAUDE.md`. |
+| [07-ausfuehrung.md](07-ausfuehrung.md) | Anleitung für die umsetzende Sitzung, inklusive Entwurf für `CLAUDE.md`. |
 | [08-entscheidungen.md](08-entscheidungen.md) | Getroffene Entscheidungen, Annahmen und die offenen Punkte samt Vorgehen ohne Antwort. |
 | [09-modellaenderungen.md](09-modellaenderungen.md) | **Verbindlich.** Was der Inhaber nach der Modelldurchsicht geändert haben will — Kennungen `M-nn` und Prüfregeln `P-nn`. Gewinnt gegen jede frühere Festlegung. |
 | [fortschritt.md](fortschritt.md) | Ein Eintrag je abgeschlossenem Paket. |

@@ -10,20 +10,25 @@
 
 Im Verzeichnis `/home/nick/tc/twincars-manager` liegt **TwinCarsManager**, die
 Verwaltungsanwendung eines kleinen deutschen Kfz-Betriebs mit Werkstatt,
-Reifenhandel und Gebrauchtwagenhandel. Sie ist heute in SvelteKit geschrieben
-(`src/`) und wird auf **Nuxt** umgeschrieben. Die neue Anwendung entsteht in
-**`nuxt/`**.
+Reifenhandel und Gebrauchtwagenhandel. Sie war in SvelteKit geschrieben und
+wird auf **Nuxt** umgeschrieben.
 
-**Der Altbestand ist read-only.** Du liest darin nach, wie sich etwas verhält.
-Du änderst dort nichts — keine Datei unter `src/`, `drizzle/`, `e2e/`,
-`scripts/`, `deploy/`, und auch nicht die Dateien im Repo-Root.
+**Der Altbestand ist seit dem 20.09.2026 nicht mehr im Repository.** Er war
+ein Proof of Concept und liegt als Archiv daneben
+(`../twincars-manager-sveltekit-poc-<Datum>.tar.gz`). Wie sich etwas verhalten
+hat, liest du **nicht** im alten Code nach, sondern im Inventar
+([01-inventar.md](01-inventar.md)) und in den Befunden
+([02-befunde.md](02-befunde.md)) — beide wurden genau dafür geschrieben, und
+sie sind vollständiger als ein Blick in eine einzelne Datei.
 
-Schreiben darfst du in:
+Das Repository **ist** die Anwendung: `app/`, `server/`, `shared/`, `test/`,
+`scripts/`, dazu `docs/`. Schreiben darfst du überall, mit einer Ausnahme:
 
-- `nuxt/**` — die neue Anwendung
-- `docs/**` — die Produktdokumentation (aber **nicht** die alten Seiten
-  überschreiben, siehe §8)
-- `docs/rewrite/fortschritt.md` und `docs/rewrite/blocker.md`
+- `docs/inventar/**`, `01-inventar.md` und `02-befunde.md` beschreiben den
+  **Vorgänger**. Sie sind Bestandsaufnahme, kein Plan, und werden nicht
+  fortgeschrieben.
+- `docs/rewrite/fortschritt.md` und `docs/rewrite/blocker.md` sind dagegen
+  ausdrücklich zum Weiterschreiben da.
 
 ---
 
@@ -83,14 +88,14 @@ Vorbedingungen erfüllt sind.
 Für jedes fachliche Paket gilt dieselbe Reihenfolge, weil sie Nacharbeit
 vermeidet:
 
-1. **Valibot-Schemata** in `nuxt/shared/schemas/<domäne>.ts` —
+1. **Valibot-Schemata** in `shared/schemas/<domäne>.ts` —
    Anlegen, Ändern, Listenabfrage, Filter. Typen mit `v.InferOutput` ableiten,
    **nie** parallel deklarieren.
-2. **Datenbankzugriff** in `nuxt/server/services/<domäne>-service.ts` — reine
+2. **Datenbankzugriff** in `server/services/<domäne>-service.ts` — reine
    Funktionen mit einfachen Argumenten, kein `event`.
-3. **Endpoints** in `nuxt/server/api/<domäne>/…` — Guard, Validierung,
+3. **Endpoints** in `server/api/<domäne>/…` — Guard, Validierung,
    Service-Aufruf, mehr nicht.
-4. **Seiten und Komponenten** in `nuxt/app/…`.
+4. **Seiten und Komponenten** in `app/…`.
 5. **Tests** auf allen zutreffenden Ebenen.
 6. **Dokumentation** unter `docs/`.
 
@@ -258,7 +263,7 @@ Browser herunterladen will, ist die Konfiguration falsch — nicht die Umgebung.
 - **Beobachtung:** `sorting`-State wird nur clientseitig angewendet; die
   dokumentierte Manual-Mode-Option greift in Version 4.11.1 nicht wie
   beschrieben.
-- **Belege:** `nuxt/app/components/data/DataTable.vue:88`, Testlauf
+- **Belege:** `app/components/data/DataTable.vue:88`, Testlauf
   `test/nuxt/data-table.test.ts` schlägt fehl mit „…"
 - **Versucht:** kontrollierter State, `pagination-options`, `tableApi`
 - **Auswirkung:** F-184 (Sortierung) bleibt offen; der Rest von T-011 ist fertig
@@ -315,7 +320,7 @@ Unter `docs/` liegt bereits eine gepflegte Wissensbasis der alten Anwendung
 
 ---
 
-## 9. Entwurf für `nuxt/CLAUDE.md`
+## 9. Entwurf für `CLAUDE.md`
 
 Diese Datei legt Paket T-001 an. Sie ist die Kurzfassung, die jede spätere
 Sitzung ohne Umweg liest.

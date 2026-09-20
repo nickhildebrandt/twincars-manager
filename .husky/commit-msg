@@ -1,3 +1,2 @@
 # Conventional Commits for the Nuxt rewrite (docs/rewrite/03-architektur.md §14.2).
-# commitlint lives in nuxt/, so it is invoked from there.
-pnpm --dir nuxt exec commitlint --edit "$1"
+pnpm exec commitlint --edit "$1"

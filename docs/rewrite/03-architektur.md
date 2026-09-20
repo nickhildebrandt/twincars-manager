@@ -57,7 +57,7 @@ Alle Versionen am **2026-09-12** gegen die npm-Registry geprüft
 | E2E           | **@playwright/test**                                 | `1.63.0`                                    | Golden Flows                                                                                                                                                                                                                        |
 | Coverage      | **@vitest/coverage-v8**                              | `5.0.0`                                     | Bordmittel, keine Fremdwerkzeuge                                                                                                                                                                                                    |
 | Lint + Format | **ESLint** + **@nuxt/eslint**                        | `eslint 10.10.0`, `@nuxt/eslint 1.17.0`     | Stylistic formatiert; **Prettier kommt nicht vor**                                                                                                                                                                                  |
-| Release       | **semantic-release**                                 | `25.0.9`                                    | mit `@commitlint/cli 21.2.2`, `husky 9.1.7`                                                                                                                                                                                         |
+| Release       | **semantic-release**                                 | `25.0.9`                                    | mit `@commitlint/cli 21.2.2`, `husky 9.1.7`, `lint-staged 17.5.1` — seit dem 20.09.2026 in **dieser** `package.json`, vorher in der des Altbestands                                                                                                                                                                                         |
 | Mail          | **nodemailer**                                       | `10.0.9`                                    | unverändert, SMTP-only                                                                                                                                                                                                              |
 | PDF           | **pdf-lib**                                          | `1.17.1`                                    | bleibt (§12)                                                                                                                                                                                                                        |
 | QR            | **qrcode**                                           | `1.5.4`                                     | bleibt                                                                                                                                                                                                                              |
@@ -144,28 +144,42 @@ erst dann ein Fremdpaket.** Jedes neue Fremdpaket braucht einen Eintrag in
 
 ## 3. Repository-Layout
 
-Der Altbestand bleibt unangetastet. Die neue Anwendung entsteht in
-**`nuxt/`** im selben Repository.
+**Das Repository ist die Anwendung.** Seit dem 20.09.2026 liegt sie im
+Repo-Root; eine Verschachtelung unter `nuxt/` gibt es nicht mehr.
 
 ```
 twincars-manager/
-├─ src/ …                    ← Altbestand (SvelteKit), READ-ONLY bis zum Cutover
-├─ drizzle/ …                ← alte Migrationen, Quelle für die Baseline
-├─ docs/                     ← Dokumentation (Vorgabe B) — gemeinsam genutzt
-│  ├─ index.md               ← neuer Einstieg
+├─ app/  server/  shared/  test/   ← die Anwendung
+├─ scripts/                        ← Werkzeuge (Migration, Seed, Prüfungen)
+├─ docs/                           ← Dokumentation
+│  ├─ index.md                     ← Einstieg
 │  ├─ features/  api/  data/  ui/  architecture/  decisions/  guides/
-│  └─ rewrite/               ← DIESER Plan (nicht Teil der Produktdoku)
-└─ nuxt/                     ← die neue Anwendung
+│  └─ rewrite/                     ← DIESER Plan (nicht Teil der Produktdoku)
+└─ nuxt.config.ts  package.json  vitest.config.ts  …
 ```
 
-**Annahme A-01:** Die neue Anwendung liegt in `nuxt/`, weil der Altbestand
-laut Auftrag nicht verändert werden darf und `package.json`, `tsconfig.json`
-usw. im Repo-Root bereits belegt sind. Beim Cutover (T-042) wandert der Inhalt
-von `nuxt/` ins Repo-Root und `src/` wird entfernt. Bis dahin trägt `nuxt/`
-ein eigenes `pnpm-workspace.yaml`, damit pnpm dort einen eigenen
-Workspace-Root sieht und nicht in den Altbestand greift.
+**A-01 ist damit erledigt.** Die Annahme lautete: die neue Anwendung liegt in
+`nuxt/`, weil der Altbestand nicht verändert werden darf und `package.json`,
+`tsconfig.json` usw. im Root bereits belegt sind; beim Cutover wandert sie ins
+Root. Genau das ist am 20.09.2026 geschehen — früher als in T-042 geplant, auf
+Anweisung des Inhabers: *„Das alte SvelteKit-Projekt war nur ein Proof of
+Concept und ist nicht mehr Teil unseres Projektes."*
 
-### 3.1 Innerer Aufbau von `nuxt/`
+**Was dabei entfernt wurde:** `src/`, `e2e/`, `drizzle/`, `static/`, die alten
+`scripts/`, `deploy/`, `ssh/`, `Dockerfile`, die Prettier-Konfiguration und
+die SvelteKit-Bauwerkzeuge. Alles zusammen liegt als Archiv **außerhalb** des
+Repositorys (`../twincars-manager-sveltekit-poc-<Datum>.tar.gz`) — nicht
+gelöscht, aber auch nicht mehr im Weg.
+
+**Was ausdrücklich geblieben ist:** `docs/`. Der Plan ist verbindlich
+(`nuxt/CLAUDE.md` sagt das selbst), `pnpm docs:check` liest ihn, und ohne ihn
+wäre das Repository eine Anwendung ohne Gedächtnis.
+
+**Was neu geschrieben werden muss:** Auslieferung und Container. `Dockerfile`,
+`deploy/` und die Betriebsskripte des Vorgängers sind mitgegangen; T-041
+schreibt sie für diese Anwendung neu, statt die alten anzupassen.
+
+### 3.1 Innerer Aufbau
 
 ```
 nuxt/

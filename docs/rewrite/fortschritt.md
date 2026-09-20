@@ -3,7 +3,12 @@
 Ein Eintrag je abgeschlossenem Arbeitspaket. Reihenfolge und Inhalt der Pakete:
 [06-arbeitsplan.md](06-arbeitsplan.md). Vorgehen: [07-ausfuehrung.md](07-ausfuehrung.md).
 
-Zweig: `rewrite/nuxt` · Anwendung: `nuxt/` · Doku: `docs/`
+Zweig: `rewrite/nuxt` · Anwendung: **Repo-Wurzel** · Doku: `docs/`
+
+> Ältere Einträge nennen Pfade mit dem Präfix `nuxt/`. Das war richtig, als
+> sie geschrieben wurden: bis zum 20.09.2026 lag die Anwendung in einem
+> Unterordner. Sie werden **nicht** nachträglich umgeschrieben — ein
+> Fortschrittsbericht hält fest, wie es war.
 
 ---
 
@@ -1663,3 +1668,65 @@ dann warm war. Die Grenze steht jetzt auf einer Minute, mit Begründung in
 | Modelländerungen | 77 Kennungen, 33 fällig, 33 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
 | Offene Fragen | keine |
+
+---
+
+## 20.09.2026 (4) — Das Repository ist jetzt die Anwendung
+
+Auf Anweisung des Inhabers: *„Das alte SvelteKit-Projekt war nur ein Proof of
+Concept und ist nicht mehr Teil unseres Projektes."* Damit ist **A-01
+eingetreten**, deutlich früher als in T-042 geplant.
+
+### Was aus dem Repository verschwunden ist
+
+`src/`, `e2e/`, `drizzle/`, `static/`, die alten `scripts/`, `deploy/`,
+`ssh/`, `Dockerfile`, die Prettier-Konfiguration und die
+SvelteKit-Bauwerkzeuge. Nichts davon ist gelöscht: alles liegt als Archiv
+**außerhalb** des Repositorys
+(`../twincars-manager-sveltekit-poc-2026-09-20.tar.gz`, 694 Einträge).
+
+`docs/` ist ausdrücklich **geblieben**. Der Plan ist verbindlich, `pnpm
+docs:check` liest ihn, und ohne ihn wäre das Repository eine Anwendung ohne
+Gedächtnis. Eine wörtliche Lesart von „nur der Nuxt-Ordner" hätte ihn
+mitgenommen — das wäre das Gegenteil dessen gewesen, was gemeint war.
+
+### Was neu geschrieben werden muss
+
+**Auslieferung und Container.** `Dockerfile`, `deploy/` und die
+Betriebsskripte des Vorgängers sind mitgegangen. T-041 schreibt sie für diese
+Anwendung neu, statt die alten anzupassen — sie beschreiben einen
+adapter-node-Bau mit `mdbtools` im Bild, und davon stimmt nichts mehr.
+
+### Was angepasst wurde
+
+- **Drei Skripte** lasen `docs/` über `join(root, '..')`. Jetzt über die
+  Wurzel selbst.
+- **54 Dateien** trugen Pfade mit einer Ebene zu viel. Dabei ist mir ein
+  Fehler unterlaufen und sofort aufgefallen: mein Ersetzungslauf hat auch
+  Dateien **innerhalb** von `docs/` angefasst — die hat der Umbau gar nicht
+  bewegt. Zurückgenommen, bevor etwas davon in einen Commit geriet.
+- **CI**: `working-directory: nuxt` ist weg, der Lockfile-Pfad zeigt auf die
+  Wurzel.
+- **Husky**: `pnpm --dir nuxt exec commitlint` → `pnpm exec commitlint`.
+- **Plandokumente**: 103 Stellen mit dem Präfix `nuxt/`. Die
+  Fortschrittsberichte wurden **nicht** umgeschrieben — ein Bericht hält fest,
+  wie es war; oben steht jetzt eine Zeile, die das erklärt.
+
+### Davor: der Entwicklungsserver lief nicht
+
+Drei Ursachen, alle behoben und im Commit `dc1dbfb` beschrieben. Die
+lehrreichste: `IDLE_TIMEOUT_MINUTES` war als `v.number()` deklariert.
+Umgebungsvariablen sind aber **immer** Zeichenketten — das Feld ging nur
+durch, solange es **nicht gesetzt** war. Wer der mitgelieferten `.env.example`
+folgte und es setzte, bekam einen Server, der nicht startet. Der alte
+Testsatz setzte das Feld nie, deshalb fiel es in 1900 Tests nicht auf.
+
+### Nachweis
+
+| | |
+| --- | --- |
+| `pnpm verify` | grün, 1934 Tests in 80 Dateien |
+| `pnpm build` | durch, ohne Fehler |
+| `pnpm dev` | startet ohne Fehler und ohne Warnung aus eigenem Code |
+| `/` und `/login` | HTTP 200 |
+| `pnpm db:migrate`, `db:seed` | laufen gegen `twincars_dev` |

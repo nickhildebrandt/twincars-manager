@@ -1,23 +1,14 @@
 import { defineConfig } from 'drizzle-kit'
-import { readFileSync, existsSync } from 'node:fs'
 
-if (existsSync('.env')) {
-  const lines = readFileSync('.env', 'utf-8').split('\n')
-  for (const line of lines) {
-    const m = line.match(/^([A-Z_][A-Z0-9_]*)=(.*)$/)
-    if (m && !process.env[m[1]]) process.env[m[1]] = m[2]
-  }
-}
-
+// Schema and migrations: ./docs/rewrite/03-architektur.md §7.
 export default defineConfig({
-  schema: './src/lib/server/db/schema.ts',
-  out: './drizzle',
   dialect: 'postgresql',
+  schema: './server/database/schema/*.ts',
+  out: './server/database/migrations',
   dbCredentials: {
-    url:
-      process.env.DATABASE_URL ??
-      'postgres://admin:TwinCars2026!@localhost:5432/twincars-manager'
+    url: process.env.DATABASE_URL ?? '',
   },
+  casing: 'snake_case',
+  verbose: true,
   strict: true,
-  verbose: false
 })
