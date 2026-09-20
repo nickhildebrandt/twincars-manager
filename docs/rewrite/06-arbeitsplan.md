@@ -617,12 +617,28 @@ zählt alle Fremdschlüssel nach); Golden Flow G-03.
 
 **Features:** F-118, F-221–F-240, F-255–F-256 (23) · **Befunde:** B-105, B-197, B-202–B-204, B-206, B-209–B-210, B-214–B-215, B-217–B-218, B-226, B-228
 **Vorbedingungen:** T-011.
-**Modelländerungen:** M-05, M-06, P-11, P-12 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-05, M-06, M-43, P-11, P-12 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Fahrzeugliste mit Suche über alle Kennzeichen-Versionen, FIN, Marke, Modell,
 Halter. Kennzeichen-Versionierung, Detailseite mit allen Registerkarten,
 Dokumente (Upload als Multipart, Typprüfung über Magic Bytes), Fotos mit
 serverseitiger Verkleinerung, Halter-Historie im Zeitstrahl (M-02, M-06).
+
+**Die Geschichte des Fahrzeugs ist der Kern dieses Pakets** (M-43, festgelegt
+am 20.09.2026). Ein Fahrzeug wird über Jahre weitergereicht, und was mit ihm
+geschah, muss lückenlos dastehen:
+
+- **Jeder Halterwechsel nennt seinen Grund** (Ankauf, Verkauf, Halterwechsel,
+  Übernahme, Korrektur), die **Anschrift von damals** und den **Beleg**, aus
+  dem er hervorging.
+- **Der Zeitstrahl ist ein Lesemodell**: er führt Halterwechsel,
+  Kennzeichenwechsel, Ankauf, Verkauf, Belege, Termine, Aufträge und
+  Einlagerungen beim **Lesen** zusammen. Keine allgemeine Ereignistabelle —
+  die verlöre die typisierten Geldspalten und machte jede buchhalterische
+  Abfrage schlechter.
+- **Beim Kunden gilt das nicht.** Dort zählt der Schnappschuss je Beleg
+  (M-42), keine eigene Historie. Ein Kunde zieht um; für die Vergangenheit
+  reicht, was auf den Belegen steht.
 
 **Archivieren und Löschen.** Archivieren ist der Alltagsweg; gelöscht wird nur,
 was es nie hätte geben dürfen. Das Löschen läuft in **einer Transaktion** nach
@@ -637,22 +653,34 @@ lässt nicht je Verweisart wählen.
 Rechnung lässt sich nicht löschen, auch nicht mit stornierter, und der Versuch
 lässt die Rechnung unangetastet; **P-12** — ein eingelagerter Radsatz sperrt,
 ein montierter geht mit; die Vorschau nennt die Zahlen, die danach wirklich
-eintreten; Golden Flow G-04.
+eintreten; **M-43** — der Zeitstrahl eines dreimal weitergereichten Fahrzeugs
+zeigt alle drei Halter mit Grund, Zeitraum und Anschrift von damals, und die
+Anschrift bleibt stehen, wenn der Halter danach umzieht; Golden Flow G-04.
 
 ## T-013 — Bestand, Ankauf und Verkauf, Verkaufsschild
 
 **Features:** F-241–F-246, F-252–F-254 (9) · **Befunde:** B-197, B-203, B-207, B-210, B-213, B-216, B-225
 **Vorbedingungen:** T-012, T-022 (Verkauf über Rechnung), T-023 (Schild).
+**Modelländerungen:** M-43, P-26 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Ankauf eines Kundenfahrzeugs in den Bestand mit Vorbesitzer-Schnappschuss,
 Differenzbesteuerung, **vollständige Inserat-Oberfläche** mit Preis,
 §25a-Kennzeichen, Standort, Ausstattung, Highlights, internen Notizen und
 Status (E-13), Verkaufsschild als A4-PDF, Verkauf über die bezahlte Rechnung.
 
+**Jeder Abgang nennt, wohin das Fahrzeug ging** (M-43, P-26). Fünf Fälle:
+Kunde, Händler, Export, Verwertung, Rücknahme durch den Vorbesitzer. Nur der
+erste setzt ein Kundenkonto voraus; bei allen anderen stehen Name, Anschrift
+und ein Satz zum Verbleib als Abschrift daneben — sie überlebt ein gelöschtes
+Kundenkonto und deckt den Fall ab, dass es nie eines gab. Die Datenbank weist
+einen Verkauf „an Kunden" ohne Kunden ab.
+
 **Besondere Akzeptanzkriterien:** Ankauf und Verkauf laufen je in einer
 Transaktion; Fotos gibt es nur für Bestandsfahrzeuge (serverseitig
 abgewiesen); der QR-Code des Schildes zeigt auf eine **erreichbare,
-öffentliche** Adresse; Golden Flow G-12.
+öffentliche** Adresse; **P-26** — ein Export ohne Kundenkonto lässt sich
+vollständig erfassen und erscheint im Zeitstrahl mit Ziel und Käufer; Golden
+Flow G-12.
 
 ## T-014 — Artikel und Leistungen
 
@@ -763,10 +791,36 @@ eine Tastaturalternative; Golden Flow G-05.
 
 **Features:** F-367–F-381 (15) · **Befunde:** B-303–B-304, B-306, B-312–B-317, B-325, B-327–B-328, B-333, B-338, B-340, B-342, B-346, B-348
 **Vorbedingungen:** T-011, T-014, T-006.
-**Modelländerungen:** M-15, M-21, P-05 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-15, M-21, M-41, M-42, P-05, P-24, P-25 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Gemeinsames Belegmodell, Positionen-Editor mit Live-Summen und gemischten
 Steuersätzen, Kostenvoranschläge, Umwandlung in eine Rechnung.
+
+**Hier entsteht die Belegkette** (M-41, festgelegt am 20.09.2026). Ein
+Kostenvoranschlag wird selten beim ersten Mal angenommen; gültig ist immer der
+letzte Stand, und alle früheren bleiben aus Dokumentationsgründen stehen.
+
+- `newVersion(documentId, note)` legt den nächsten Stand an — **in einer
+  Transaktion und in dieser Reihenfolge**: erst den alten Stand ablösen, dann
+  den neuen anlegen. Umgekehrt gäbe es einen Augenblick mit zwei gültigen
+  Ständen, und die Datenbank weist ihn ab (P-24).
+- Der neue Stand übernimmt Positionen, Texte und Verweise des alten. Was
+  geändert wurde, steht als deutscher Halbsatz in `version_note`.
+- **Die Oberfläche zeigt einen Vorgang, nicht drei Belege.** Die Liste führt
+  je Kette nur den gültigen Stand; die Detailseite trägt einen Zeitstrahl, über
+  den jeder frühere Stand lesbar (nicht bearbeitbar) zu öffnen ist.
+
+**Und hier entsteht der Schnappschuss** (M-42). Beim Ausstellen wird der Stand
+von Kunde, Fahrzeug und Firma abgeschrieben — in derselben Transaktion, denn
+ein ausgestellter Beleg ohne seinen Beweis wäre schlimmer als gar keiner: ihn
+vermisst niemand. Die Grundlage steht seit dem 20.09.2026 als
+`server/services/snapshot-service.ts`; dieses Paket ruft sie auf und baut die
+Anzeige.
+
+**Der Hinweis „hat sich geändert"** steht auf der Belegseite, sobald sich ein
+abgeschriebener Verweis seither unterscheidet: betroffene Felder in deutscher
+Beschriftung, alter und neuer Wert. Umgekehrt zeigt die Kunden- und die
+Fahrzeugseite, auf welchen ausgestellten Belegen der alte Stand steht.
 
 Es gibt **genau zwei Belegarten**: Kostenvoranschlag und Rechnung (M-15).
 Angebot und Auftragsbestätigung entfallen samt ihrer Felder; wo der Bestand
@@ -778,29 +832,53 @@ umsatzsteuerfrei und werden gesondert ausgewiesen (M-21).
 Sätzen, Rabatten und Rundung auf den Cent (Unit-Tabelle); ein Steuersatz von
 0 % bleibt 0 % (Regressionstest); die Umwandlung überträgt jede Position
 unverändert; ein Kostenvoranschlag lässt sich nicht mit Mahnstufe oder
-Zahlungsziel speichern (P-05).
+Zahlungsziel speichern (P-05); **P-24** — nach drei Ständen steht genau einer
+als gültig da, die beiden früheren unverändert, und der Zeitstrahl öffnet sie;
+**P-25** — ein zweiter Aufruf des Schnappschusses ändert nichts, und ein Umzug
+des Kunden nach dem Ausstellen erscheint als Hinweis mit altem und neuem Wert;
+**M-42** — ein Kennzeichenwechsel wird erkannt, obwohl das Kennzeichen nicht am
+Fahrzeug steht.
 
 ## T-022 — Rechnungen, Zahlungen, Storno
 
 **Features:** F-383–F-393, F-407–F-409 (14) · **Befunde:** B-301, B-303–B-305, B-313–B-314, B-316–B-317, B-323, B-325, B-338–B-339, B-342–B-343
 **Vorbedingungen:** T-021, T-023.
-**Modelländerungen:** M-16, P-07 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-16, M-41, P-07, P-24 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Rechnungen mit Statusautomat, **echte Zahlungserfassung inklusive
 Teilzahlungen** (E-14): Datum, Betrag und Zahlungsart je Zahlung, „bezahlt"
 ergibt sich aus der Summe statt aus einem Schalter. Storno mit Gegenbeleg und
 automatischem Wiederöffnen des Auftrags, GoBD-Löschschutz.
 
+**Storno und Neuausstellung sind ein Stand der Kette** (M-41). Buchhalterisch
+bleibt alles wie vorgeschrieben: der Storno ist ein eigener Beleg mit eigener
+Nummer, die stornierte Rechnung bleibt unverändert, beide stehen in der
+Buchhaltung. Fachlich ist es derselbe Vorgang, zweiter Anlauf — und genau so
+zeigt es die Oberfläche: **ein** Eintrag in der Liste, ein Zeitstrahl mit drei
+Stationen.
+
+Der Storno-Beleg bekommt dabei eine **eigene** Kette: er ist ein Gegenbeleg,
+kein neuer Stand der Rechnung. Der Bezug läuft wie bisher über
+`cancels_document_id`.
+
 **Besondere Akzeptanzkriterien:** jeder unerlaubte Statuswechsel wird
 serverseitig mit 409 abgewiesen; Storno erzeugt Beleg **und** PDF in einer
-Transaktion; eine ausgestellte Rechnung lässt sich nicht löschen; Golden
-Flows G-06 und G-07.
+Transaktion; eine ausgestellte Rechnung lässt sich nicht löschen; **M-41** —
+nach Storno und Neuausstellung führt die Liste **einen** Vorgang, die
+Buchhaltung aber alle drei Belege, und die Summen stimmen; Golden Flows G-06
+und G-07.
 
 ## T-023 — PDF-Pipeline
 
 **Features:** F-047, F-121, F-395–F-404 (12) · **Befunde:** B-031, B-103, B-304, B-308, B-313, B-326, B-330, B-333
 **Vorbedingungen:** T-010 (Firmendaten), T-021.
-**Modelländerungen:** M-15, M-31 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-15, M-31, M-42 ([09-modellaenderungen.md](09-modellaenderungen.md))
+
+**Das PDF liest ausschließlich die eingefrorenen Spalten des Belegs** (M-42) —
+nie den heutigen Stand von Kunde, Fahrzeug oder Firma. Genau dadurch bleibt es
+über die Jahre byte-gleich, und genau dadurch ist es der Beweis, der es sein
+soll. Trägt ein Beleg einen Stand, der vom heutigen abweicht, ist das kein
+Fehler, sondern der Zweck.
 
 Portierung der verbleibenden Vorlagen: Rechnung, Storno, Kostenvoranschlag,
 Zahlungserinnerung, Verkaufsschild, Reifenetikett. Angebot und
@@ -812,7 +890,8 @@ Bytes, Vorschau im Browser.
 **Besondere Akzeptanzkriterien:** die Ausgabe ist byte-gleich bei zwei Läufen;
 die Pixel-Vergleichssuite gegen die übernommenen Vergleichsbilder ist grün;
 Umlaute, lange Texte und mehrseitige Belege stimmen; Listenabfragen laden
-niemals Bytes.
+niemals Bytes; **M-42** — ein Umzug des Kunden und ein Kennzeichenwechsel
+ändern das erzeugte PDF eines ausgestellten Belegs um **kein Byte**.
 
 ## T-024 — XRechnung
 
@@ -960,11 +1039,28 @@ Vorschau ohne Speichern, Fortschritt und Bericht bleiben.
 rückt das Paket in der Reihenfolge nach vorn** — sobald Kunden, Fahrzeuge,
 Artikel und Belege stehen.
 
+**Der Import muss so stabil sein wie die Rückspielung** (festgelegt am
+20.09.2026). Er ist der einzige Weg, auf dem der Bestand ins System kommt
+(E-20) — läuft er schief, gibt es keinen zweiten Versuch mit denselben Daten.
+Deshalb dieselbe Prüftiefe wie bei T-043: gegen die echte Beispieldatei, mit
+Zählung je Tabelle, und mit einem Lauf, der **mittendrin abbricht** und
+nachweist, dass nichts halb eingespielt zurückbleibt.
+
+**Importierte Belege bekommen eine Kette** (M-41): jeder übernommene Beleg ist
+Version 1 seiner eigenen Kette und gültig. Die Ketten des Altsystems gibt es
+nicht — Kfz-Kaufmann kannte keine Versionen —, also wird auch keine erfunden.
+Schnappschüsse (M-42) werden **nicht nachträglich erzeugt**: was zum Zeitpunkt
+der damaligen Ausstellung galt, weiß heute niemand mehr, und ein erfundener
+Beweis ist schlechter als keiner. Die Belegseite sagt das in einem Satz.
+
 **Besondere Akzeptanzkriterien:** die Vorschau schreibt nachweislich nichts;
 zwei Läufe mit derselben Datei ergeben denselben Stand; ein hier bearbeiteter
 Datensatz überlebt den nächsten Import unverändert und steht im Bericht; ein
 hier neu angelegter Datensatz wird nie angefasst; der Import löscht unter
-keinen Umständen; Dateinamen werden nie in eine Shell gereicht.
+keinen Umständen; Dateinamen werden nie in eine Shell gereicht; ein Abbruch
+mitten im Lauf hinterlässt **keine** halb eingespielten Daten; jeder
+importierte Beleg ist gültige Version 1 und trägt **keinen** erfundenen
+Schnappschuss.
 
 ## T-034 — Benutzer, Rollen, eigenes Konto
 
@@ -1138,7 +1234,7 @@ vollständig geprobt; ein Rückweg auf die alte Installation ist beschrieben.
 
 ## T-043 — Datensicherung über die Oberfläche
 
-**Features:** neu · **Befunde:** — · **Modelländerungen:** M-37 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Features:** neu · **Befunde:** — · **Modelländerungen:** M-37, P-27 ([09-modellaenderungen.md](09-modellaenderungen.md))
 **Vorbedingungen:** T-005, T-026 (Verschlüsselung), T-030 (Dateiablage).
 
 **Zu erstellen**
@@ -1167,6 +1263,26 @@ nuxt/app/pages/settings/backup.vue
   ist eine Vermutung.
 - Kein Schritt verlangt die Kommandozeile.
 
+**Die Rückspielung ist der eigentliche Gegenstand dieses Pakets** (festgelegt
+am 20.09.2026: „Der Export muss ohne Probleme funktionieren und richtig stabil
+getestet sein. Dasselbe gilt für den Import eines Backups."). Ein Export, der
+nie zurückgespielt wurde, ist kein Backup, sondern ein Download — deshalb wird
+hier nicht der Export geprüft, sondern der **Rundlauf**.
+
+**Was der Rundlauf erhalten muss** (P-27), über die bloßen Zeilenzahlen hinaus:
+
+- **Belegketten und Versionen** (M-41): nach dem Zurückspielen trägt jede Kette
+  genau einen gültigen Stand, die Versionsnummern sind lückenlos, und der
+  Zeitstrahl geht dieselben Stationen zurück wie vorher.
+- **Schnappschüsse** (M-42): Feld für Feld identisch. Ein Beweis, der beim
+  Zurückspielen verrutscht, ist keiner.
+- **Reihenfolge der Verweise**: ein Rundlauf muss die Tabellen in
+  Abhängigkeitsrichtung einspielen. Seit M-38 sperrt **jeder** Fremdschlüssel;
+  eine falsche Reihenfolge scheitert jetzt laut, statt still Zeilen zu
+  verlieren.
+- **Binärdaten**: PDFs, Fahrzeugfotos und Anhänge byte-gleich, geprüft über
+  eine Prüfsumme je Datei, nicht über die Länge.
+
 **Akzeptanzkriterien**
 
 | #   | Kriterium                                                                      | Prüfung          |
@@ -1177,6 +1293,11 @@ nuxt/app/pages/settings/backup.vue
 | 4   | Eine fehlende oder falsche Schlüsseldatei bricht mit deutschem Satz ab          | Integrationstest |
 | 5   | Der Zustand meldet eine seit über 48 Stunden ausgebliebene Sicherung als Warnung | Komponententest  |
 | 6   | Beim Aufsetzen ist die Rückspielung **einmal erprobt** und protokolliert        | Ausführungsschritt |
+| 7   | **P-27** — Belegketten, Versionen und Schnappschüsse überstehen den Rundlauf unverändert | Integrationstest gegen einen Bestand mit mehrstufigen Ketten |
+| 8   | Zweimal exportieren ergibt dasselbe Archiv (bis auf den Zeitstempel)           | Integrationstest |
+| 9   | Ein Rundlauf über den **vollen** Testbestand stimmt Tabelle für Tabelle, Zeile für Zeile, über eine Prüfsumme je Tabelle | Integrationstest |
+| 10  | Ein beschädigtes Archiv wird erkannt und **bricht ab, statt teilweise einzuspielen** | Integrationstest |
+| 11  | Ein Archiv einer älteren Fassung wird erkannt und mit deutschem Satz abgewiesen | Integrationstest |
 
 ## T-044 — Protokoll, Sicherheitsereignisse und Absicherung
 

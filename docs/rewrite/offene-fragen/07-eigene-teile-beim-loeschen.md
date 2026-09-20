@@ -1,6 +1,7 @@
 # 07 — Was „null Verweise" für die eigenen Teile eines Datensatzes heißt
 
-**Betrifft:** M-38, T-011, T-012, T-022 · **Stand:** offen, so umgesetzt
+**Betrifft:** M-38, T-011, T-012, T-022 · **Stand:** **beantwortet am
+20.09.2026** — über die Versionierung, nicht über die Löschregel
 
 ## Worum es geht
 
@@ -67,3 +68,42 @@ Meine Empfehlung: **Positionen und Fotos sind eigene Teile** und gehen mit.
 Ein **Inserat** ist ein Vorgang — es war draußen, jemand hat es gesehen — und
 sperrt. So ist es zurzeit **nicht** umgesetzt; heute zählt `vehicle_listings`
 als eigener Teil. Sagen Sie ein Wort, und es wandert in die andere Spalte.
+
+---
+
+## Beantwortet am 20.09.2026 — der Rahmen verschiebt die Frage
+
+Die Antwort kam nicht als Ja/Nein zu den beiden Grenzfällen, sondern als
+größerer Rahmen: **vertragswirksame Belege werden versioniert, und ihre
+Abhängigkeiten werden beim Ausstellen abgeschrieben** (M-41, M-42, M-43).
+
+Damit beantworten sich beide Grenzfälle von selbst, und zwar anders, als ich
+gefragt hatte:
+
+**1. Rechnungspositionen.** Die Frage war „löschbar oder nur archivierbar".
+Beides ist jetzt die falsche Alternative. Ein Beleg, der noch nicht
+ausgestellt ist, ist ein **Entwurf** — den bearbeitet man, und löschen heißt
+ihn samt seiner Positionen wegräumen, in einer Transaktion (M-14: er hat noch
+keine Nummer, hinterlässt also keine Lücke). Ein **ausgestellter** Beleg wird
+nie gelöscht und auch nicht bearbeitet: er bekommt einen **neuen Stand**, und
+der alte bleibt stehen. Die Positionen sind in beiden Fällen eigene Teile
+ihres Standes.
+
+**2. Fahrzeugfotos und Inserate.** Hier ist die Antwort ausdrücklich: „wenn es
+verkauft wird und wo es hingeht — das muss wirklich solide dokumentiert sein."
+Ein Inserat ist danach ein **Vorgang**: es war draußen, jemand hat es gesehen,
+es gehört zur Geschichte des Fahrzeugs. Es sperrt. **Fotos** bleiben eigene
+Teile — sie zeigen das Fahrzeug, sie dokumentieren nichts, was geschehen ist.
+
+Auf Ebene der Datenbank ändert das nichts: seit M-38 sperrt ohnehin **jeder**
+Fremdschlüssel. Der Unterschied liegt im Löschdienst, und er steht jetzt so in
+T-012 und T-013.
+
+### Was daraus wurde
+
+| Was | Wo |
+| --- | --- |
+| Belegkette: Stände, gültig ist der letzte | M-41, `documents.chain_id` |
+| Schnappschuss der Verweise beim Ausstellen | M-42, `document_snapshots` |
+| Verbleib und Halterwechsel lückenlos | M-43, `vehicle_sales.exit_kind` |
+| Muster und ihre Abgrenzung | [03-architektur.md](../03-architektur.md) §7.4 |

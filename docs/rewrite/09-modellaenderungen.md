@@ -82,6 +82,11 @@ müssen; die Kopie im Beleg ist der Beweis und reicht.
 Die **Kundenanschrift** ist der bisher fehlende Fall: zieht ein Kunde um, darf
 sich seine Rechnung von 2019 nicht rückwirkend ändern.
 
+**Erweitert am 20.09.2026 durch M-42.** Das Fahrzeug gehört ebenfalls dazu —
+und neben den gedruckten Feldern wird der **vollständige** Stand jedes
+Verweises abgeschrieben, damit die Anwendung sagen kann, was sich seither
+geändert hat.
+
 ### M-04 — Berechtigungen bleiben auf Modulebene
 
 Keine feingranularen Rechte. Die Rollen bleiben grob (Administrator,
@@ -126,6 +131,10 @@ nur für Fahrzeuge.
 
 Neue Historie neben der Kennzeichen-Historie: **welcher Kunde war wann Halter**.
 Darstellung im Zeitstrahl des Fahrzeugs (M-02).
+
+**Erweitert am 20.09.2026 durch M-43.** Der Eintrag nennt zusätzlich den
+**Grund** des Wechsels, die **Anschrift von damals** und den **Beleg**, aus dem
+er hervorging.
 
 ### M-07 — eBay-Käufer bleiben Kunden
 
@@ -911,6 +920,132 @@ Siehe **P-21**.
 
 ---
 
+## 12b. Versionierung und Nachweisbarkeit
+
+*Festgelegt am 20.09.2026.*
+
+### M-41 — Ein vertragswirksamer Beleg entwickelt sich in Ständen
+
+> „Rechnungen können eigene Versionen haben; gültig ist immer die letzte. Aus
+> buchhalterischer Sicht ist es wichtig, eine Rechnung versionsmäßig entwickeln
+> zu können. Für Kostenvoranschläge gilt genau dasselbe."
+
+**Heute** kennt der Beleg nur zwei Zustände: Entwurf oder ausgestellt. Ein
+Kostenvoranschlag, den der Kunde dreimal zurückschickt, wird dreimal
+überschrieben — was beim zweiten Mal darin stand, ist danach weg. Und eine
+Rechnung, die storniert und neu ausgestellt wird, zerfällt in drei Belege, die
+in keiner Liste als derselbe Vorgang erscheinen.
+
+**Neu: die Belegkette.** Alle Stände eines Vorgangs tragen dieselbe
+`chain_id`, gezählt in `version`. Genau **einer** ist der gültige; alle
+früheren bleiben stehen und sind über den Zeitstrahl erreichbar (M-02).
+
+| Spalte | Bedeutung |
+| --- | --- |
+| `chain_id` | benennt den Vorgang. Version 1 würfelt sie, jede weitere erbt sie |
+| `version` | 1, 2, 3 … |
+| `superseded_at` | gesetzt, sobald ein neuerer Stand diesen abgelöst hat. **Leer = gültig** |
+| `replaces_document_id` | der Stand, den dieser ersetzt. Leer bei Version 1 |
+| `version_note` | warum es einen neuen Stand gibt — ein deutscher Halbsatz für den Zeitstrahl |
+
+**Die Kette zeigt nur rückwärts.** Ein zweiter Zeiger „wer hat mich abgelöst"
+wäre dieselbe Auskunft ein zweites Mal — und er ginge technisch nicht: er
+müsste auf eine Zeile zeigen, die es im Augenblick des Ablösens noch nicht
+gibt, während die Eindeutigkeitsbedingung die umgekehrte Reihenfolge
+verbietet. Vorwärts wird nach `replaces_document_id` gesucht.
+
+**Zwei Wege, ein Begriff.** Was ein neuer Stand *bedeutet*, hängt von der
+Belegart ab — der Vorgang sieht für den Anwender trotzdem gleich aus:
+
+| Belegart | Was beim neuen Stand geschieht |
+| --- | --- |
+| **Kostenvoranschlag** | Der alte Stand wird abgelöst, der neue bekommt eine neue Nummer. Kein buchhalterischer Vorgang; die Nummernfolge darf Lücken haben (M-15) |
+| **Rechnung, noch nicht ausgestellt** | Es ist ein Entwurf. Bearbeiten ist Bearbeiten, kein neuer Stand |
+| **Rechnung, ausgestellt** | Storno des alten Standes **plus** neue Rechnung. Beide Belege bleiben, beide haben ihre Nummer, beide stehen in der Buchhaltung — und beide gehören zur selben Kette |
+
+Der dritte Fall ist der Grund, warum es überhaupt eine Kette braucht: die
+buchhalterisch vorgeschriebene Form (Storno + Neuausstellung) und die
+fachliche Wahrheit („das ist dieselbe Rechnung, zweiter Anlauf") fallen sonst
+auseinander, und die Oberfläche zeigt drei Belege, wo der Anwender einen sieht.
+
+Siehe **P-24**.
+
+### M-42 — Beim Ausstellen wird der Stand aller Verweise abgeschrieben
+
+> „In dem Moment, in dem ein vertragswirksames Dokument erstellt wird, wird ein
+> Snapshot der Abhängigkeiten gemacht … Ändern sich diese Daten später —
+> Adresse, Name des Kunden, Kennzeichen des Autos —, muss nachvollziehbar
+> bleiben, wie der Stand zum Zeitpunkt der Ausstellung war."
+
+M-03 fror bereits die **Kundenanschrift** und die **Firmendaten** ein. Zwei
+Lücken blieben:
+
+- **Das Fahrzeug war nicht dabei.** Ein Kennzeichenwechsel änderte rückwirkend,
+  was auf einer Rechnung von 2019 zu stehen schien.
+- **Es gab keinen Vergleich.** Dass sich seither etwas geändert hat, sah
+  niemand — auch dann nicht, wenn genau das die Frage war.
+
+**Zwei Orte, zwei Zwecke.** Der Unterschied ist der Kern dieser Festlegung:
+
+| | Eingefrorene Spalten am Beleg | `document_snapshots` |
+| --- | --- | --- |
+| Was es ist | **Inhalt** — was gedruckt wurde | **Beweis** — wie der Datensatz aussah |
+| Umfang | die Felder, die auf dem Beleg stehen | der vollständige Stand |
+| Form | je Feld eine Spalte (`billed_street`, `vehicle_license_plate`, …) | `jsonb`, eine Zeile je Art |
+| Wofür | PDF, Liste, Detailseite | die Frage „hat sich etwas geändert?" |
+
+Abgeschrieben werden **Kunde**, **Fahrzeug** und **Firma**. Beim Fahrzeug auch
+das **Kennzeichen**, obwohl es nicht am Fahrzeug steht, sondern in seiner
+Historie — gerade der Kennzeichenwechsel ist der Fall, für den es diesen
+Vergleich gibt.
+
+**Was der Anwender sieht.** Auf der Belegseite steht der Stand von damals. Hat
+sich seither etwas geändert, erscheint ein Hinweis mit den betroffenen Feldern
+in deutscher Beschriftung, altem und neuem Wert. Umgekehrt ist beim Kunden und
+beim Fahrzeug zu sehen, auf welchen ausgestellten Belegen der alte Stand steht
+— das ist die Antwort auf „warum steht auf dieser Rechnung die alte Anschrift".
+
+Passwörter und Zugangsschlüssel werden nie abgeschrieben; es gilt dieselbe
+Liste wie im Protokoll (M-39). Siehe **P-25**.
+
+### M-43 — Der Verbleib eines Fahrzeugs ist lückenlos
+
+> „Für Kfz-Daten gilt dasselbe. Sichtbar sein muss zum Beispiel, wenn ein Auto
+> den Inhaber wechselt, wenn es verkauft wird und wo es hingeht. Das muss
+> wirklich solide dokumentiert sein. Beim Kunden selbst ist die Historie nicht
+> so wichtig; dort zählt der Snapshot zum Zeitpunkt der Dokumenterstellung."
+
+Damit ist die Richtung klar: **das Fahrzeug bekommt eine echte Geschichte, der
+Kunde nur einen Schnappschuss je Beleg.** Ein Fahrzeug wird über Jahre
+weitergereicht; ein Kunde zieht um, und für die Vergangenheit reicht, was auf
+den Belegen steht.
+
+**Drei Lücken werden geschlossen:**
+
+1. **Der Halterwechsel nannte keinen Grund.** Jede Zeile las sich gleich, egal
+   ob der Betrieb das Fahrzeug angekauft, verkauft oder nur einen Tippfehler
+   geradegezogen hat. Neu: `reason` mit fünf Werten (Ankauf, Verkauf,
+   Halterwechsel, Übernahme aus dem Altsystem, Korrektur) und `document_id` —
+   der Beleg, aus dem der Wechsel hervorging.
+2. **Die Anschrift von damals fehlte.** Der Name allein sagt nicht, wo das
+   Fahrzeug in diesem Zeitraum stand. Neu: `customer_address`, abgeschrieben
+   zum Zeitpunkt des Wechsels.
+3. **„Wo es hingeht" gab es nicht.** Ein Abgang setzte zwingend einen Kunden
+   voraus. Ein Fahrzeug, das an einen Händler ging, exportiert oder verwertet
+   wurde, hörte damit einfach auf, eine Geschichte zu haben. Neu: `exit_kind`
+   mit fünf Werten, dazu `buyer_name`, `buyer_address` und `destination`
+   („Export nach Polen") — alles als Abschrift, die ein gelöschtes Kundenkonto
+   überlebt und den Fall abdeckt, dass es nie eines gab.
+
+**Der Zeitstrahl bleibt ein Lesemodell.** Ankauf, Verkauf, Halterwechsel,
+Kennzeichenwechsel, Belege und Einlagerungen stehen weiter in ihren eigenen
+Tabellen — sie tragen Geld und gehören zur Buchhaltung. Zusammengeführt werden
+sie **beim Lesen**, nicht beim Schreiben. Eine allgemeine „Ereignistabelle"
+wäre das Gegenteil von solide: sie verlöre die typisierten Geldspalten und
+machte jede buchhalterische Abfrage schlechter.
+
+Siehe **P-26**.
+
 ## 13. Prüfregeln
 
 Diese Regeln folgen **nicht** aus dem Datenmodell. Sie müssen als Fachlogik
@@ -942,6 +1077,10 @@ Kennung beginnt.
 | **P-21** | Jede Antwort trägt die Sicherheits-Kopfzeilen; `Strict-Transport-Security` nur über HTTPS | M-40 |
 | **P-22** | Ein **sicherer Adressbereich** wird nie gesperrt; alles andere schon, auch intern | M-36 |
 | **P-23** | Gravierende Vorfälle **melden sich per E-Mail**, zusammengefasst statt einzeln | M-39 |
+| **P-24** | Je Belegkette gibt es **genau einen** gültigen Stand; frühere bleiben unverändert stehen | M-41 |
+| **P-25** | Ein Schnappschuss wird **einmal** geschrieben und nie geändert; er überlebt den Datensatz, den er abschreibt | M-42 |
+| **P-26** | Jeder Abgang eines Fahrzeugs nennt **wohin**; ein Verkauf an einen Kunden nennt den Kunden | M-43 |
+| **P-27** | Export und Rückspielung erhalten **Ketten, Versionen und Schnappschüsse** unverändert | M-37, M-41, M-42 |
 
 ---
 
@@ -1070,3 +1209,10 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-21 | T-044 | Sicherheits-Kopfzeilen auf jeder Antwort |
 | P-22 | T-007 | sicherer Adressbereich wird nie gesperrt |
 | P-23 | T-026 | gravierende Vorfälle melden sich per E-Mail |
+| M-41 | T-021 | Belegkette: Stände, gültig ist der letzte |
+| M-42 | T-021 | Schnappschuss der Verweise beim Ausstellen |
+| M-43 | T-012 | Verbleib und Halterwechsel lückenlos |
+| P-24 | T-021 | genau ein gültiger Stand je Kette |
+| P-25 | T-021 | Schnappschuss wird nie geändert |
+| P-26 | T-013 | jeder Abgang nennt wohin |
+| P-27 | T-043 | Export erhält Ketten und Schnappschüsse |

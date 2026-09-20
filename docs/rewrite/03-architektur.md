@@ -700,11 +700,91 @@ ersten Request**. Es läuft als Nitro-Startaufgabe nach der Migration. Der
 Bestand blockiert nach einem einmaligen Seed-Fehler dauerhaft alle Requests
 (B-015).
 
-### 7.4 Transaktionen
+### 7.4 Versionierung und Nachweisbarkeit
+
+*Festgelegt am 20.09.2026. Fachlich in
+[09-modellaenderungen.md](09-modellaenderungen.md) M-41 bis M-43.*
+
+Drei Muster, die sich nicht vermischen dürfen — sie beantworten drei
+verschiedene Fragen, und der häufigste Entwurfsfehler ist, eines davon für
+alle drei zu halten:
+
+| Muster | Frage | Wo |
+| --- | --- | --- |
+| **Version** | „Was gilt ab wann?" — auch in der Zukunft | `*_versions` (Preise, Kennzeichen, Gehälter) |
+| **Kette** | „Welche Stände hatte dieser Vorgang?" — gültig ist der letzte | `documents.chain_id` + `version` |
+| **Schnappschuss** | „Wie sah das damals aus?" — Beweis, unveränderlich | `document_snapshots` |
+| **Protokoll** | „Wer hat wann was geändert?" — Spur | `audit_log` (M-01) |
+
+**Die Kette.** Alle Stände eines Vorgangs tragen dieselbe `chain_id`, gezählt
+in `version`. Genau einer hat `superseded_at IS NULL` — das ist der gültige.
+Drei Zusagen stehen in der **Datenbank**, nicht im Dienst:
+
+```sql
+CREATE UNIQUE INDEX documents_chain_version_idx ON documents (chain_id, version);
+CREATE UNIQUE INDEX documents_chain_current_idx ON documents (chain_id)
+  WHERE superseded_at IS NULL;                     -- genau ein gültiger Stand
+CREATE UNIQUE INDEX documents_replaces_idx ON documents (replaces_document_id);
+```
+
+Daraus folgt eine **vorgeschriebene Reihenfolge** beim Anlegen des nächsten
+Standes, und sie gilt für jeden Dienst, der Ketten fortschreibt:
+
+```ts
+await withTransaction(async (tx) => {
+  await tx.update(documents).set({ supersededAt: now }).where(eq(documents.id, previous.id))
+  await tx.insert(documents).values({ chainId: previous.chainId, version: previous.version + 1,
+                                      replacesDocumentId: previous.id, … })
+})
+```
+
+Erst ablösen, dann anlegen. Andersherum gäbe es einen Augenblick mit zwei
+gültigen Ständen, und der bedingte Index weist ihn ab — auch **innerhalb**
+einer Transaktion, denn ein eindeutiger Index lässt sich in PostgreSQL nicht
+aufschieben. Das ist kein Hindernis, sondern der Beweis, dass die Zusage hält.
+
+Die Kette zeigt deshalb **nur rückwärts** (`replaces_document_id`). Ein Zeiger
+„wer hat mich abgelöst" müsste auf eine Zeile zeigen, die es im Augenblick des
+Ablösens noch nicht gibt.
+
+**Der Schnappschuss.** Beim Ausstellen wird der Stand jedes Verweises
+abgeschrieben — in derselben Transaktion wie das Ausstellen selbst. Er liegt
+als `jsonb` und **nicht** als Spaltensatz, und das ist eine Entscheidung mit
+Grund:
+
+- Er wird nie gefiltert und nie sortiert, sondern genau einmal gegen den
+  heutigen Stand gehalten.
+- Eine Spalte je Feld hieße, das Schema mitzuziehen, sobald ein Kunde ein Feld
+  dazubekommt — und alte Zeilen wären dann still unvollständig.
+
+Davon zu unterscheiden sind die **eingefrorenen Spalten am Beleg**
+(`billed_*`, `vehicle_*`, `company_*`). Die sind kein Schnappschuss, sondern
+**Inhalt**: was gedruckt wurde. Sie werden gefiltert, sortiert und angezeigt,
+und das PDF liest ausschließlich sie.
+
+`server/services/snapshot-service.ts` hält beides zusammen: `takeSnapshots`
+schreibt einmal, `driftOf` vergleicht gegen heute und liefert die Abweichungen
+mit deutscher Feldbeschriftung. Die Datei enthält **kein** `update` und kein
+`delete` — dieselbe Regel wie beim Protokoll.
+
+**Was in keinen Schnappschuss gehört**: Passwörter, Zugangsschlüssel, Token.
+Geprüft wird über dieselbe Liste wie im Protokoll (`isLoggableField` in
+`server/utils/audit.ts`), damit die Lücke nicht an zwei Stellen getrennt
+geschlossen werden muss.
+
+**Der Zeitstrahl ist ein Lesemodell.** Ankauf, Verkauf, Halterwechsel,
+Kennzeichenwechsel, Belege, Termine und Einlagerungen bleiben in ihren eigenen
+Tabellen — sie tragen Geld und gehören zur Buchhaltung. Zusammengeführt werden
+sie beim Lesen. Eine allgemeine Ereignistabelle wäre bequemer zu schreiben und
+in jeder buchhalterischen Abfrage schlechter.
+
+### 7.5 Transaktionen
 
 `withTransaction(async (tx) => …)` in `server/utils/db.ts`. Pflicht für:
 Nummernvergabe + Insert, Beleg + Positionen + PDF, Storno, Auftragsabschluss,
-Ankauf/Verkauf, Import, Rollenänderungen, jede Löschung mit Guard-Zählung.
+Ankauf/Verkauf, Import, Rollenänderungen, jede Löschung mit Guard-Zählung,
+**Ausstellen samt Schnappschuss** und **jeder neue Stand einer Belegkette**
+(§7.4).
 
 ---
 

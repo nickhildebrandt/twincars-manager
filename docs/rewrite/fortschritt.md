@@ -1420,3 +1420,131 @@ Abnahmekriterien.
 | Tests | 1759 (74 Dateien) |
 | Modelländerungen | 63 Kennungen, 29 fällig, 29 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+
+---
+
+## 20.09.2026 (2) — Versionierung, Schnappschüsse, Fahrzeugverbleib
+
+Der Inhaber hat die offene Frage 07 beantwortet — nicht mit einem Ja oder Nein
+zu meinen zwei Grenzfällen, sondern mit einem größeren Rahmen. Drei neue
+Modelländerungen, ein neues Schema, ein neuer Dienst.
+
+### M-41 — Ein Beleg entwickelt sich in Ständen
+
+> „Rechnungen können eigene Versionen haben; gültig ist immer die letzte …
+> Für Kostenvoranschläge gilt genau dasselbe."
+
+Alle Stände eines Vorgangs tragen dieselbe `chain_id`, gezählt in `version`.
+Genau einer ist gültig, alle früheren bleiben stehen, der Zeitstrahl geht sie
+zurück.
+
+Die drei entscheidenden Zusagen stehen in der **Datenbank**, nicht im Dienst:
+ein Stand je (Kette, Version), **genau einer** gültig je Kette (bedingter
+Index), und jeder Stand wird höchstens einmal ersetzt. Ein Dienst lässt sich
+umgehen; ein Index nicht.
+
+**Das hatte eine Folge, die ich erst beim Schreiben der Tests gesehen habe.**
+Die Reihenfolge beim Anlegen des nächsten Standes ist vorgeschrieben: erst
+ablösen, dann anlegen. Andersherum gäbe es einen Augenblick mit zwei gültigen
+Ständen — und der bedingte Index weist ihn ab, auch **innerhalb** einer
+Transaktion, denn ein eindeutiger Index lässt sich in PostgreSQL nicht
+aufschieben.
+
+**Deshalb zeigt die Kette nur rückwärts.** Mein erster Entwurf hatte beide
+Zeiger, vorwärts und rückwärts. Der Vorwärtszeiger ging nicht: er müsste auf
+eine Zeile zeigen, die es im Augenblick des Ablösens noch nicht gibt. Er war
+ohnehin dieselbe Auskunft ein zweites Mal — jetzt ist er weg, und die Kette
+ist um eine Spalte, eine Prüfbedingung und einen Fremdschlüssel einfacher.
+
+### M-42 — Beim Ausstellen wird der Stand aller Verweise abgeschrieben
+
+> „Ändern sich diese Daten später — Adresse, Name des Kunden, Kennzeichen des
+> Autos —, muss nachvollziehbar bleiben, wie der Stand zum Zeitpunkt der
+> Ausstellung war."
+
+M-03 fror schon die Kundenanschrift und die Firmendaten ein. Zwei Lücken
+blieben: **das Fahrzeug war nicht dabei** — ein Kennzeichenwechsel änderte
+rückwirkend, was auf einer Rechnung von 2019 zu stehen schien — und **es gab
+keinen Vergleich**, also sah niemand, dass sich etwas geändert hatte.
+
+Neu sind zwei Dinge, und ihre Trennung ist der Kern:
+
+| | Eingefrorene Spalten am Beleg | `document_snapshots` |
+| --- | --- | --- |
+| Was es ist | **Inhalt** — was gedruckt wurde | **Beweis** — wie es aussah |
+| Umfang | die Felder auf dem Beleg | der vollständige Stand |
+| Form | je Feld eine Spalte | `jsonb`, eine Zeile je Art |
+
+`server/services/snapshot-service.ts` schreibt einmal (`takeSnapshots`) und
+vergleicht gegen heute (`driftOf`) — mit deutscher Feldbeschriftung, altem und
+neuem Wert. Kein `update`, kein `delete`, dieselbe Regel wie beim Protokoll.
+Passwörter und Schlüssel werden über **dieselbe Liste** ausgeschlossen wie
+dort, damit die Lücke nicht an zwei Stellen getrennt geschlossen werden muss.
+
+**Das Kennzeichen musste eigens hinein.** Es steht nicht am Fahrzeug, sondern
+in seiner Historie — und gerade der Kennzeichenwechsel ist der Fall, für den
+es diesen Vergleich gibt. Ohne diese Zeile wäre er als einziger nicht
+aufgefallen.
+
+### M-43 — Der Verbleib eines Fahrzeugs ist lückenlos
+
+> „Sichtbar sein muss zum Beispiel, wenn ein Auto den Inhaber wechselt, wenn
+> es verkauft wird und wo es hingeht … Beim Kunden selbst ist die Historie
+> nicht so wichtig."
+
+Damit ist die Richtung klar: **das Fahrzeug bekommt eine echte Geschichte, der
+Kunde nur einen Schnappschuss je Beleg.** Drei Lücken geschlossen:
+
+1. Der Halterwechsel nannte **keinen Grund** — jede Zeile las sich gleich, ob
+   Ankauf, Verkauf oder Tippfehlerkorrektur. Jetzt fünf Werte plus der Beleg,
+   aus dem der Wechsel hervorging.
+2. Die **Anschrift von damals** fehlte. Der Name allein sagt nicht, wo das
+   Fahrzeug in diesem Zeitraum stand.
+3. **„Wo es hingeht" gab es nicht.** Ein Abgang setzte zwingend einen Kunden
+   voraus — ein Fahrzeug, das an einen Händler ging, exportiert oder verwertet
+   wurde, hörte damit einfach auf, eine Geschichte zu haben. Jetzt fünf
+   Abgangsarten, dazu Käufername, Anschrift und Ziel als Abschrift.
+
+**Keine allgemeine Ereignistabelle.** Sie wäre bequemer zu schreiben und in
+jeder buchhalterischen Abfrage schlechter — die typisierten Geldspalten wären
+weg. Der Zeitstrahl führt die Tabellen stattdessen **beim Lesen** zusammen.
+
+### Export, Rückspielung, Import
+
+Die Vorgabe „muss ohne Probleme funktionieren und richtig stabil getestet
+sein" steht jetzt als Abnahmekriterien in T-043 und T-033 — fünf neue bei der
+Sicherung (Rundlauf über den vollen Bestand mit Prüfsumme je Tabelle,
+zweimaliger Export ergibt dasselbe Archiv, beschädigtes Archiv bricht ab statt
+teilweise einzuspielen, ältere Fassung wird erkannt, **Ketten und
+Schnappschüsse überstehen den Rundlauf unverändert** — P-27) und zwei beim
+Altsystem-Import (ein Abbruch mitten im Lauf hinterlässt nichts Halbes; jeder
+importierte Beleg ist gültige Version 1 und trägt **keinen erfundenen**
+Schnappschuss).
+
+### Datenbank
+
+Die Baseline wurde neu erzeugt — 252 Anweisungen. Zwei neue Diskriminatoren
+(Abgangsart, Wechselgrund), eine neue Tabelle, sieben neue Spalten an
+`documents`, sechs an `vehicle_sales` und `vehicle_owner_history`.
+
+Zwei Spalten haben bewusst **keinen** Fremdschlüssel, und beide stehen jetzt
+namentlich im Schema-Test, damit eine dritte auffällt:
+`document_snapshots.entity_id` zeigt je nach Art auf drei verschiedene
+Tabellen, und `documents.chain_id` benennt einen Vorgang, keine Zeile.
+
+### Was offen bleibt
+
+Drei neue Fragen, alle aus der Umsetzung entstanden:
+[08](offene-fragen/08-nummer-bei-neuem-stand.md) — bekommt ein neuer Stand
+eine neue Nummer? [09](offene-fragen/09-zurueckgehen-im-zeitstrahl.md) —
+heißt „zurückgehen" nur lesen oder auch wiederherstellen?
+[10](offene-fragen/10-schnappschuss-umfang.md) — wer bekommt einen
+Schnappschuss, und wovon?
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1811 (75 Dateien) |
+| Modelländerungen | 70 Kennungen, 29 fällig, 29 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |

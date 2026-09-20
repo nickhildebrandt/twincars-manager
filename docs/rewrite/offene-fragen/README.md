@@ -11,9 +11,11 @@ geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 
 | Nr. | Frage | Betrifft |
 | --- | --- | --- |
-| [07](07-eigene-teile-beim-loeschen.md) | Was „null Verweise" für die eigenen Teile eines Datensatzes heißt | M-38, T-011, T-012, T-022 |
+| [08](08-nummer-bei-neuem-stand.md) | Bekommt ein neuer Stand eine neue Nummer? | M-41, M-14, T-021 |
+| [09](09-zurueckgehen-im-zeitstrahl.md) | „Zurückgehen": nur lesen oder wiederherstellen? | M-41, M-02, T-021 |
+| [10](10-schnappschuss-umfang.md) | Wer bekommt einen Schnappschuss, und wovon? | M-42, T-020, T-021 |
 
-## Am 20.09.2026 entschieden
+## Am 20.09.2026 entschieden oder beantwortet
 
 | Nr. | Frage | Entscheidung |
 | --- | --- | --- |
@@ -23,3 +25,4 @@ geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 | [04](04-abnahmekriterien-t-009.md) | Zwei Abnahmekriterien reiten auf späteren Paketen mit | Angenommen; Anlegen über drei Ebenen, voller Testumfang |
 | [05](05-adresssperre-gemeinsamer-anschluss.md) | Die Adresssperre trifft alle hinter derselben Adresse | Zwei Staffeln, sicherer Adressbereich, Knopf zum Aufheben |
 | [06](06-protokoll-oberflaeche.md) | Wie soll die Protokollansicht aussehen? | Eigener Menüpunkt mit Zähler, Liste, Dashboard-Kachel, E-Mail |
+| [07](07-eigene-teile-beim-loeschen.md) | Was „null Verweise" für die eigenen Teile heißt | Über die Versionierung beantwortet (M-41 bis M-43) |

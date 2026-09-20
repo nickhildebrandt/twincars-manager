@@ -945,6 +945,10 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
       'documents_cancelled_by_fk',
       'documents_cancels_fk',
       'documents_converted_to_invoice_id_fk',
+      // M-41: der Rückwärtszeiger der Belegkette. Ein Stand, auf den ein
+      // späterer zeigt, lässt sich nicht löschen — sonst risse die Kette
+      // in der Mitte.
+      'documents_replaces_fk',
     ])
     for (const row of rows) expect(row.rule, row.conname).toBe('a')
   })
@@ -964,7 +968,20 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
             AND a.attname = c.column_name)
       ORDER BY c.table_name, c.column_name
     `
-    expect(rows.map(row => `${row.table_name}.${row.column_name}`)).toEqual([])
+    // Zwei Ausnahmen, beide begründet — und beide hier namentlich, damit eine
+    // dritte auffällt.
+    expect(rows.map(row => `${row.table_name}.${row.column_name}`)).toEqual([
+      // M-42: zeigt je nach `entity` auf `customers`, `vehicles` oder
+      // `company_settings`. Ein Fremdschlüssel kann nur auf **eine** Tabelle
+      // zeigen. Der Schnappschuss muss den Datensatz ohnehin überleben: er
+      // ist der Beweis, wie es damals aussah, auch wenn es das Original nicht
+      // mehr gibt.
+      'document_snapshots.entity_id',
+      // M-41: benennt einen Vorgang, keine Zeile. Es gibt keine Tabelle
+      // „Ketten", auf die zu zeigen wäre — die Kette *ist* die Menge der
+      // Belege, die diese Kennung tragen.
+      'documents.chain_id',
+    ])
   })
 
   it('M-10: die Zeiterfassung gibt es nicht mehr', async () => {

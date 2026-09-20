@@ -12,10 +12,11 @@
  */
 import { pgTable, uuid, varchar, date, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, jsonb, check } from 'drizzle-orm/pg-core'
 import { oneOf } from './_checks.ts'
-import { listingStatuses, vehicleStatuses } from '../../../shared/domain.ts'
+import { listingStatuses, ownerChangeReasons, vehicleExitKinds, vehicleStatuses } from '../../../shared/domain.ts'
 import { documents } from './documents.ts'
 import { bytea } from './_types.ts'
 import { customers } from './customers.ts'
+import { sql } from 'drizzle-orm'
 
 export const vehicles = pgTable('vehicles', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -106,16 +107,43 @@ export const vehiclePurchases = pgTable('vehicle_purchases', {
   }).onDelete('no action'),
 ])
 
+/**
+ * Der Abgang eines Fahrzeugs — und wohin es ging (M-43).
+ *
+ * Bisher stand hier ein Kunde, und zwar zwingend. Ein Fahrzeug, das an einen
+ * Händler geht, exportiert oder verwertet wird, hatte damit keinen Abgang,
+ * den man hätte aufschreiben können — es hörte einfach auf, eine Geschichte zu
+ * haben.
+ *
+ * Jetzt sagt `exit_kind`, **wohin** es ging, und der Kunde ist nur noch einer
+ * von fünf Fällen. Name und Anschrift des Käufers stehen zusätzlich als
+ * Abschrift daneben: sie überleben ein gelöschtes Kundenkonto und den Fall,
+ * dass es nie eines gab.
+ */
 export const vehicleSales = pgTable('vehicle_sales', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   vehicleId: uuid('vehicle_id').notNull(),
-  customerId: uuid('customer_id').notNull(),
+  /** Nur beim Verkauf an einen Kunden gesetzt. */
+  customerId: uuid('customer_id'),
+  /** Wohin das Fahrzeug ging. */
+  exitKind: varchar('exit_kind', { length: 20 }).default('kunde').notNull(),
+  /** Name des Käufers zum Zeitpunkt des Verkaufs — auch ohne Kundenkonto. */
+  buyerName: varchar('buyer_name', { length: 200 }),
+  /** Anschrift des Käufers, einzeilig abgeschrieben. */
+  buyerAddress: varchar('buyer_address', { length: 400 }),
+  /** Wo das Fahrzeug geblieben ist, in Worten — „Export nach Polen". */
+  destination: varchar({ length: 200 }),
   invoiceId: uuid('invoice_id'),
   saleDate: date('sale_date').notNull(),
   salesPriceGross: integer('sales_price_gross').notNull(),
   notes: text(),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('vehicle_sales_exit_kind_check', oneOf(table.exitKind, vehicleExitKinds.values)),
+  // Ein Verkauf an einen Kunden ohne Kunden wäre keiner. Jeder andere Abgang
+  // hat keinen — deshalb die Bedingung und kein `notNull`.
+  check('vehicle_sales_customer_check', sql`${table.exitKind} <> 'kunde' OR ${table.customerId} IS NOT NULL`),
+  index('vehicle_sales_exit_kind_idx').using('btree', table.exitKind.asc().nullsLast()),
   index('vehicle_sales_invoice_id_idx').using('btree', table.invoiceId.asc().nullsLast()),
   foreignKey({
     columns: [table.invoiceId],
@@ -208,11 +236,32 @@ export const vehicleOwnerHistory = pgTable('vehicle_owner_history', {
   customerId: uuid('customer_id'),
   /** Name zum Zeitpunkt des Halterwechsels — überlebt ein gelöschtes Konto. */
   customerName: varchar('customer_name', { length: 200 }),
+  /**
+   * Anschrift zum Zeitpunkt des Halterwechsels (M-43).
+   *
+   * Der Name allein beantwortet nicht, **wo** das Fahrzeug damals stand. Zieht
+   * der Halter später um, sagt der Kundendatensatz die neue Anschrift — und
+   * die stimmte für diesen Zeitraum nie.
+   */
+  customerAddress: varchar('customer_address', { length: 400 }),
+  /**
+   * Warum gewechselt wurde (M-43).
+   *
+   * Ohne den Grund liest sich jede Zeile gleich, egal ob der Betrieb das
+   * Fahrzeug angekauft, verkauft oder nur einen Tippfehler geradegezogen hat.
+   */
+  reason: varchar({ length: 20 }).default('halterwechsel').notNull(),
+  /** Der Beleg, aus dem der Wechsel hervorging — eine Kaufrechnung etwa. */
+  documentId: uuid('document_id'),
   ownerFrom: date('owner_from').notNull(),
   ownerUntil: date('owner_until'),
   note: varchar({ length: 200 }),
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
 }, table => [
+  check('vehicle_owner_history_reason_check', oneOf(table.reason, ownerChangeReasons.values)),
+  // Ein Zeitraum, der vor seinem Beginn endet, ist keiner.
+  check('vehicle_owner_history_period_check', sql`${table.ownerUntil} IS NULL OR ${table.ownerUntil} >= ${table.ownerFrom}`),
+  index('vehicle_owner_history_document_id_idx').using('btree', table.documentId.asc().nullsLast()),
   index('vehicle_owner_history_vehicle_id_idx').using('btree', table.vehicleId.asc().nullsLast(), table.ownerFrom.desc().nullsLast()),
   index('vehicle_owner_history_customer_id_idx').using('btree', table.customerId.asc().nullsLast()),
   foreignKey({
@@ -225,4 +274,9 @@ export const vehicleOwnerHistory = pgTable('vehicle_owner_history', {
     foreignColumns: [customers.id],
     name: 'vehicle_owner_history_customer_id_fk',
   }).onDelete('set null'),
+  foreignKey({
+    columns: [table.documentId],
+    foreignColumns: [documents.id],
+    name: 'vehicle_owner_history_document_id_fk',
+  }).onDelete('no action'),
 ])

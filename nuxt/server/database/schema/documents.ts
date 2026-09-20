@@ -7,14 +7,15 @@
  * Domänen aufgeteilt. Änderungen laufen über eine neue Migration, nie durch
  * Bearbeiten einer angewendeten (../../../../docs/rewrite/03-architektur.md §7).
  */
-import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, unique, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, date, numeric, integer, boolean, timestamp, index, uniqueIndex, foreignKey, text, unique, jsonb, type AnyPgColumn, check } from 'drizzle-orm/pg-core'
 import { notNegative, oneOf, oneOfOrNull } from './_checks.ts'
-import { documentStatuses, documentTypes, itemLineKinds, paymentMethods, reminderStatuses } from '../../../shared/domain.ts'
+import { documentStatuses, documentTypes, itemLineKinds, paymentMethods, reminderStatuses, snapshotEntities } from '../../../shared/domain.ts'
 import { bytea } from './_types.ts'
 import { items, tires } from './catalog.ts'
 import { customers } from './customers.ts'
 import { workOrders } from './orders.ts'
 import { vehicles } from './vehicles.ts'
+import { sql } from 'drizzle-orm'
 
 export const documents = pgTable('documents', {
   id: uuid().defaultRandom().primaryKey().notNull(),
@@ -39,6 +40,42 @@ export const documents = pgTable('documents', {
 
   /** Aus dem Altsystem übernommen und damit unveränderlich (M-30, P-08). */
   imported: boolean().default(false).notNull(),
+
+  /* ── Belegkette (M-41) ─────────────────────────────────────────────────
+     Ein Kostenvoranschlag wird selten beim ersten Mal angenommen, und auch
+     eine Rechnung entwickelt sich — buchhalterisch über Storno und
+     Neuausstellung, fachlich über mehrere Stände desselben Vorgangs.
+
+     Beides läuft über **eine** Kette: alle Stände tragen dieselbe
+     `chain_id`, gezählt in `version`, und genau einer ist der gültige.
+     Frühere Stände bleiben stehen; der Zeitstrahl (M-02) geht sie zurück.
+
+     Die Kennung ist bewusst **kein Fremdschlüssel**: sie benennt einen
+     Vorgang, keine Zeile. Der erste Stand würfelt sie, jeder folgende erbt
+     sie. Zwei Indizes halten das zusammen — einer je (Kette, Version), und
+     ein bedingter, der **genau einen** gültigen Stand je Kette zulässt. */
+
+  chainId: uuid('chain_id').defaultRandom().notNull(),
+
+  /** 1, 2, 3 … innerhalb der Kette. */
+  version: integer().default(1).notNull(),
+
+  /** Gesetzt, sobald ein neuerer Stand diesen abgelöst hat. Leer = gültig. */
+  supersededAt: timestamp('superseded_at', { withTimezone: true, mode: 'string' }),
+
+  /**
+   * Der Stand, den dieser ersetzt. Leer bei Version 1.
+   *
+   * Die Kette zeigt **nur rückwärts**. Ein zweiter Zeiger „wer hat mich
+   * abgelöst" wäre dieselbe Auskunft ein zweites Mal — und er ginge gar nicht:
+   * er müsste auf eine Zeile zeigen, die es im Augenblick des Ablösens noch
+   * nicht gibt, während der bedingte Index die umgekehrte Reihenfolge
+   * verbietet. Vorwärts fragt man stattdessen nach `replaces_document_id`.
+   */
+  replacesDocumentId: uuid('replaces_document_id'),
+
+  /** Warum es einen neuen Stand gibt — ein deutscher Halbsatz für den Zeitstrahl. */
+  versionNote: varchar('version_note', { length: 300 }),
 
   type: varchar({ length: 30 }).notNull(),
   status: varchar({ length: 30 }).default('draft').notNull(),
@@ -77,6 +114,22 @@ export const documents = pgTable('documents', {
   companyTaxNumber: varchar('company_tax_number', { length: 40 }),
   companyVatId: varchar('company_vat_id', { length: 30 }),
   companyFooter: text('company_footer'),
+
+  /* ── Das Fahrzeug, wie es auf dem Beleg steht (M-42) ───────────────────
+     Bisher trug der Beleg nur die Kundenanschrift eingefroren. Das Fahrzeug
+     holte er sich über den Verweis — und damit änderte ein Kennzeichenwechsel
+     rückwirkend, was auf einer Rechnung von 2019 zu stehen scheint.
+
+     Hier stehen genau die Felder, die **gedruckt** werden. Der vollständige
+     Stand aller Verweise liegt daneben in `document_snapshots`. */
+
+  vehicleMake: varchar('vehicle_make', { length: 100 }),
+  vehicleModel: varchar('vehicle_model', { length: 150 }),
+  vehicleVin: varchar('vehicle_vin', { length: 25 }),
+  vehicleLicensePlate: varchar('vehicle_license_plate', { length: 20 }),
+  vehicleFirstRegistration: date('vehicle_first_registration'),
+  vehicleMileageKm: integer('vehicle_mileage_km'),
+
   createdAt: timestamp('created_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
   updatedAt: timestamp('updated_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull().$onUpdate(() => new Date().toISOString()),
   convertedToInvoiceId: uuid('converted_to_invoice_id'),
@@ -108,6 +161,18 @@ export const documents = pgTable('documents', {
   index('documents_issue_date_idx').using('btree', table.issueDate.asc().nullsLast()),
   index('documents_type_status_idx').using('btree', table.type.asc().nullsLast(), table.status.asc().nullsLast()),
   index('documents_work_order_id_idx').using('btree', table.workOrderId.asc().nullsLast()),
+  // M-41: die Kette. Ein Stand je (Kette, Version) …
+  uniqueIndex('documents_chain_version_idx').using('btree', table.chainId.asc().nullsLast(), table.version.asc().nullsLast()),
+  // … und **genau einer** gültig. Ohne diese Bedingung entstünde die Lage, in
+  // der zwei Stände gleichzeitig gelten und niemand sagen kann, welcher zählt.
+  uniqueIndex('documents_chain_current_idx')
+    .using('btree', table.chainId.asc().nullsLast())
+    .where(sql`superseded_at IS NULL`),
+  check('documents_version_check', sql`${table.version} >= 1`),
+  // Version 1 ersetzt nichts, jede weitere ersetzt genau einen Stand. Ohne
+  // diese Bedingung entstünde eine Kette mit einem Loch in der Mitte.
+  check('documents_replaces_check', sql`(${table.version} = 1) = (${table.replacesDocumentId} IS NULL)`),
+  uniqueIndex('documents_replaces_idx').using('btree', table.replacesDocumentId.asc().nullsLast()),
   // M-38: Eine erfasste Zahlung ist ein Geldvorgang. Ein Beleg mit Zahlung
   // lässt sich nicht mehr löschen — und ein Entwurf hat keine.
   // M-38: Eine Zahlungserinnerung ging nach draußen. Sie bleibt.
@@ -135,6 +200,57 @@ export const documents = pgTable('documents', {
     columns: [table.cancelsDocumentId],
     foreignColumns: [table.id],
     name: 'documents_cancels_fk',
+  }).onDelete('no action'),
+  foreignKey({
+    columns: [table.replacesDocumentId],
+    foreignColumns: [table.id],
+    name: 'documents_replaces_fk',
+  }).onDelete('no action'),
+])
+
+/**
+ * Der Stand jedes Verweises zum Zeitpunkt des Ausstellens (M-42).
+ *
+ * Die eingefrorenen Felder am Beleg sind das, was **gedruckt** wurde — sie
+ * sind der Beleg. Hier steht daneben, wie der verwiesene Datensatz zu diesem
+ * Zeitpunkt **insgesamt** aussah.
+ *
+ * Zwei verschiedene Zwecke, deshalb zwei Orte:
+ *
+ *   - Die Spalte `billed_street` ist Inhalt des Belegs. Sie wird gedruckt,
+ *     sie ist unveränderlich, und sie steht im PDF.
+ *   - Diese Zeile ist **Beweis**. Aus ihr beantwortet die Anwendung die Frage
+ *     „hat sich seit dem Ausstellen etwas geändert?" — und zwar für jedes
+ *     Feld, nicht nur für die gedruckten.
+ *
+ * Deshalb `jsonb` und keine dreißig Spalten: was hier liegt, wird nie
+ * gefiltert und nie sortiert, sondern genau einmal gegen den heutigen Stand
+ * gehalten. Eine Spalte je Feld hieße, das Schema jedes Mal mitzuziehen, wenn
+ * ein Kunde ein Feld dazubekommt — und alte Zeilen wären dann still
+ * unvollständig.
+ *
+ * Geändert wird hier nie (P-25).
+ */
+export const documentSnapshots = pgTable('document_snapshots', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  documentId: uuid('document_id').notNull(),
+  /** Woraus der Stand stammt — `customers`, `vehicles`, `company_settings`. */
+  entity: varchar({ length: 50 }).notNull(),
+  /** Die Kennung des Datensatzes. Leer bei der Firma, die es nur einmal gibt. */
+  entityId: uuid('entity_id'),
+  takenAt: timestamp('taken_at', { withTimezone: true, mode: 'string' }).defaultNow().notNull(),
+  /** Der vollständige Stand. Ohne Passwörter und Schlüssel — siehe `audit.ts`. */
+  data: jsonb().$type<Record<string, unknown>>().notNull(),
+}, table => [
+  check('document_snapshots_entity_check', oneOf(table.entity, snapshotEntities.values)),
+  // Je Beleg ein Schnappschuss je Art. Zwei Stände desselben Kunden zu
+  // demselben Beleg wären nicht zwei Beweise, sondern ein Widerspruch.
+  uniqueIndex('document_snapshots_document_entity_idx').using('btree', table.documentId.asc().nullsLast(), table.entity.asc().nullsLast()),
+  index('document_snapshots_entity_idx').using('btree', table.entity.asc().nullsLast(), table.entityId.asc().nullsLast()),
+  foreignKey({
+    columns: [table.documentId],
+    foreignColumns: [documents.id],
+    name: 'document_snapshots_document_id_documents_id_fk',
   }).onDelete('no action'),
 ])
 

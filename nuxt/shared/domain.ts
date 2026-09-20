@@ -271,6 +271,21 @@ export const reminderStatuses = domain({
 })
 export type ReminderStatus = typeof reminderStatuses.values[number]
 
+/**
+ * Woraus ein Schnappschuss genommen wurde (M-42).
+ *
+ * When a contract-effective document is issued, the state of everything it
+ * refers to is frozen alongside it. The list is deliberately short: only
+ * records that can change *after* the document went out and would then make
+ * the document look wrong.
+ */
+export const snapshotEntities = domain({
+  customers: 'Kunde',
+  vehicles: 'Fahrzeug',
+  company_settings: 'Firma',
+})
+export type SnapshotEntity = typeof snapshotEntities.values[number]
+
 /* ── vehicles and tires ───────────────────────────────────────────────── */
 
 /**
@@ -286,6 +301,39 @@ export const vehicleStatuses = domain({
   verkauft: 'Verkauft',
 })
 export type VehicleStatus = typeof vehicleStatuses.values[number]
+
+/**
+ * Warum ein Fahrzeug den Halter wechselte (M-43).
+ *
+ * The keeper history answered *who* and *when*, never *why*. Without the
+ * reason a row reads the same whether the business bought the car, sold it, or
+ * merely corrected a typo — and exactly that difference is what somebody looks
+ * for two years later.
+ */
+export const ownerChangeReasons = domain({
+  ankauf: 'Ankauf',
+  verkauf: 'Verkauf',
+  halterwechsel: 'Halterwechsel',
+  uebernahme: 'Übernahme aus dem Altsystem',
+  korrektur: 'Korrektur',
+})
+export type OwnerChangeReason = typeof ownerChangeReasons.values[number]
+
+/**
+ * Wohin ein Fahrzeug ging (M-43).
+ *
+ * „Wo es hingeht" is the part the predecessor never recorded. A sale row had a
+ * customer or nothing at all, so a car sold to a dealer, exported, or scrapped
+ * simply stopped having a history.
+ */
+export const vehicleExitKinds = domain({
+  kunde: 'An Kunden verkauft',
+  haendler: 'An Händler verkauft',
+  export: 'Export',
+  verwertung: 'Verwertung',
+  ruecknahme: 'Rücknahme durch Vorbesitzer',
+})
+export type VehicleExitKind = typeof vehicleExitKinds.values[number]
 
 /** Whether a stock vehicle is still on offer. */
 export const listingStatuses = domain({
