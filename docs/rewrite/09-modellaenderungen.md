@@ -556,9 +556,9 @@ wirklich brauchen. Nicht überladen.
 zwischengespeichert**. Sonst zeigt das Diagramm etwas anderes als die Liste
 darunter. Siehe **P-09**.
 
-**Womit gezeichnet wird** (E-25, 20.09.2026): mit **`nuxt-charts`**, einem
-echten Nuxt-Modul. Kein eigenes SVG, kein Chart.js. Was das kostet, steht
-gemessen in E-25; dass es im Testlauf eine eigene Ebene braucht, in **W-04**.
+**Womit gezeichnet wird** (E-25, 20.09.2026): mit **Chart.js**, direkt und
+ohne Vue-Hülle. Kein eigenes SVG. Warum nicht `nuxt-charts` und warum nicht
+`vue-chartjs`, steht in E-25 — beide hängen an einem einzelnen Betreuer.
 
 **Jedes Diagramm trägt seine Zahlen daneben** — als Tabelle nur für
 Screenreader. Ein Diagramm ist ein Bild: `role="img"` sagt, worum es geht,

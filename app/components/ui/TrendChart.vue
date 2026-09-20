@@ -1,21 +1,57 @@
 <script setup lang="ts">
 /**
- * Ein Verlauf über die Zeit (M-35) — auf `nuxt-charts`.
+ * Ein Verlauf über die Zeit (M-35) — auf **Chart.js**.
  *
  * Alle Werte kommen **gerechnet** herein und werden nirgends
  * zwischengespeichert (P-09). Diese Komponente stellt nur dar.
  *
- * Bis zum 20.09.2026 stand hier ein eigenes SVG mit Pfaden, Rastern und
- * Achsenbeschriftung. Entschieden am 20.09.2026: Diagramme kommen aus
- * `nuxt-charts` (E-25) — ein Nuxt-Modul, dessen Komponenten auto-importiert
- * werden und dessen Beispiele Nuxt UI daneben benutzen.
+ * **Chart.js ohne Vue-Hülle.** `vue-chartjs` wäre der bequeme Weg und hat
+ * genau einen Betreuer — dieselbe Abhängigkeit von einem einzelnen Menschen,
+ * wegen der `nuxt-charts` ausgeschieden ist. Chart.js selbst hat fünf
+ * Betreuer und **eine** Abhängigkeit. Es direkt anzusprechen kostet die
+ * dreißig Zeilen unten und spart die Hülle; mehr als ein `<canvas>`, ein
+ * `onMounted` und ein `watch` ist es nicht.
  *
- * Eigen bleibt hier nur, was **Fachlichkeit** ist: die deutsche Beschriftung,
- * das Format der Werte (meist Euro aus Cent) und der Leerzustand. Ein
- * Diagramm ohne Daten zeigt keine leere Achse, sondern einen Satz.
+ * **Nur im Browser.** Ein `<canvas>` lässt sich auf dem Server nicht
+ * zeichnen. Die Komponente wird deshalb clientseitig aufgebaut; bis dahin
+ * steht die Fläche mit ihrer endgültigen Höhe da, damit die Seite nicht
+ * springt.
+ *
+ * Eigen bleibt sonst nur, was **Fachlichkeit** ist: die deutsche
+ * Beschriftung, das Format der Werte (meist Euro aus Cent) und der
+ * Leerzustand. Ein Diagramm ohne Daten zeigt keine leere Achse, sondern einen
+ * Satz.
  */
+import {
+  CategoryScale,
+  Chart,
+  Filler,
+  LineController,
+  LineElement,
+  LinearScale,
+  PointElement,
+  Tooltip,
+} from 'chart.js'
+import type { ChartConfiguration } from 'chart.js'
 import { formatDate } from '#shared/datetime'
 import type { Point } from '#shared/chart'
+
+/**
+ * Nur die Teile, die gebraucht werden.
+ *
+ * Chart.js bringt Balken, Torten, Radar und Blasen mit. Wer `Chart.register(
+ * ...registerables)` schreibt, nimmt alles ins Bündel — hier stehen genau die
+ * sieben Bausteine einer Linie mit Fläche.
+ */
+Chart.register(
+  LineController,
+  LineElement,
+  PointElement,
+  LinearScale,
+  CategoryScale,
+  Filler,
+  Tooltip,
+)
 
 const props = withDefaults(defineProps<{
   points: Point[]
@@ -31,12 +67,8 @@ const props = withDefaults(defineProps<{
   emptyText: 'Für diesen Zeitraum gibt es nichts zu zeigen.',
 })
 
-/** `nuxt-charts` erwartet eine Zeile je Punkt mit benannten Feldern. */
-const data = computed(() => props.points.map(point => ({ value: point.value })))
-
-const categories = computed(() => ({
-  value: { name: props.label, color: 'var(--ui-primary)' },
-}))
+const canvas = useTemplateRef<HTMLCanvasElement>('canvas')
+let chart: Chart | undefined
 
 /** Wovon das Diagramm handelt — als Satz, für Beschriftung und Tabelle. */
 const description = computed(() => props.points.length === 0
@@ -44,11 +76,93 @@ const description = computed(() => props.points.length === 0
   : `${props.label}: ${props.points.length} Werte von `
     + `${formatDate(props.points[0]!.at)} bis ${formatDate(props.points.at(-1)!.at)}`)
 
-/** Die Achse zeigt das Datum, nicht den Index. */
-const xFormatter = (index: number): string => {
-  const point = props.points[index]
-  return point ? formatDate(point.at) : ''
+/**
+ * Die Farbe der Linie.
+ *
+ * Aus dem Designsystem gelesen, nicht danebengeschrieben: so folgt das
+ * Diagramm dem Farbschema und dem hellen wie dem dunklen Modus, ohne dass
+ * hier ein zweiter Farbwert gepflegt werden muss.
+ */
+function accent(): string {
+  if (!import.meta.client) return '#3b82f6'
+  const value = getComputedStyle(document.documentElement)
+    .getPropertyValue('--ui-primary').trim()
+  return value || '#3b82f6'
 }
+
+function configuration(): ChartConfiguration<'line'> {
+  const colour = accent()
+
+  return {
+    type: 'line',
+    data: {
+      labels: props.points.map(point => formatDate(point.at)),
+      datasets: [{
+        label: props.label,
+        data: props.points.map(point => point.value),
+        borderColor: colour,
+        backgroundColor: `color-mix(in oklab, ${colour} 18%, transparent)`,
+        fill: true,
+        tension: 0.25,
+        pointRadius: props.points.length > 24 ? 0 : 3,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      // Das Diagramm ist ein Bild; die Auskunft steht in der Tabelle daneben.
+      // Eine Legende mit einem einzigen Eintrag sagt nichts.
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            // `parsed.y` ist bei einer Lücke in der Reihe `null`. Dann steht
+            // dort ein Gedankenstrich und nicht „0,00 €" — eine erfundene
+            // Null ist schlimmer als ein sichtbares Loch.
+            label: item => item.parsed.y === null ? '—' : props.format(item.parsed.y),
+          },
+        },
+      },
+      scales: {
+        x: { grid: { display: false } },
+        y: {
+          // Nicht bei null anfangen zu müssen: ein Kassenbestand kann ins
+          // Minus gehen, und ein Umsatzverlauf um 100 000 herum wäre sonst
+          // eine flache Linie am oberen Rand.
+          beginAtZero: false,
+          ticks: { callback: value => props.format(Number(value)) },
+        },
+      },
+      animation: prefersReducedMotion() ? false : undefined,
+    },
+  }
+}
+
+/** Wer weniger Bewegung möchte, bekommt keine. */
+function prefersReducedMotion(): boolean {
+  return import.meta.client
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+}
+
+function draw(): void {
+  if (!canvas.value || props.points.length === 0) return
+  chart?.destroy()
+  chart = new Chart(canvas.value, configuration())
+}
+
+onMounted(draw)
+
+// Neue Zahlen, neues Bild. Chart.js kann auch einzelne Werte nachziehen, aber
+// die Punkte kommen hier immer als vollständige Reihe — ein Neuzeichnen ist
+// ehrlicher als ein halb gepflegter Zustand.
+watch(() => props.points, draw, { deep: true })
+
+// Ohne das bleibt der Zeichenkontext am Leben, und bei jedem Seitenwechsel
+// kommt einer dazu.
+onBeforeUnmount(() => {
+  chart?.destroy()
+  chart = undefined
+})
 </script>
 
 <template>
@@ -77,28 +191,21 @@ const xFormatter = (index: number): string => {
 
     <template v-else>
       <div
+        :style="{ height: `${props.height}px` }"
         role="img"
         :aria-label="description"
         data-testid="trend-plot"
       >
-        <AreaChart
-          :data="data"
-          :categories="categories"
-          :height="props.height"
-          :x-formatter="xFormatter"
-          :y-formatter="props.format"
-          :hide-legend="true"
-        />
+        <canvas ref="canvas" />
       </div>
 
       <!--
         Dieselben Zahlen als Tabelle, nur für Screenreader.
 
-        Ein Diagramm ist ein Bild; `role="img"` mit einer Beschriftung sagt,
-        **worum** es geht, aber nicht, **was darin steht**. Wer nicht sehen
-        kann, bekommt hier die Werte — dieselben, aus derselben Quelle, nicht
-        eine zweite Rechnung. Das ist kein Eingriff in `nuxt-charts`, sondern
-        eine Ergänzung daneben (Regel 4, Ausnahme für Zugänglichkeit).
+        Bei einem `<canvas>` ist das keine Höflichkeit, sondern die einzige
+        Auskunft: die Zeichenfläche hat keinen Inhalt, den ein Screenreader
+        vorlesen könnte. `role="img"` sagt, **worum** es geht; was darin
+        steht, sagt allein diese Tabelle.
       -->
       <table
         class="sr-only"

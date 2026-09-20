@@ -197,39 +197,26 @@ streichen.
 
 ---
 
-## W-04 — Unovis zeichnet nicht in happy-dom
+## W-04 — ~~Unovis zeichnet nicht in happy-dom~~ · **entfallen am 20.09.2026**
 
-**Festgestellt:** 20.09.2026 · **Stand:** umgangen, nicht behoben ·
-**Betrifft:** M-35, T-009
+**Was es war.** `nuxt-charts` zeichnete über Unovis, und Unovis fasste das DOM
+unmittelbar an. In happy-dom brach das in beide Richtungen: ließ man die
+Komponente stehen, warf ein Zeitgeber nach dem Ende des Laufs
+`document is not defined`; baute man sie ab, starb happy-doms
+`MutationObserver.disconnect`.
 
-**Was passiert.** `nuxt-charts` (E-25) zeichnet über **Unovis**, und Unovis
-fasst das DOM unmittelbar an: es hängt einen `MutationObserver` an den Tooltip
-und lässt einen gedrosselten Zeitgeber laufen. In happy-dom — der Umgebung des
-`nuxt`-Testprojekts — bricht beides, und zwar in **beide** Richtungen:
+Der erste Fall war der gefährlichere — er zählte als „unhandled error" und
+**nicht** als fehlgeschlagener Test. Alle 1931 Tests grün, der Lauf trotzdem
+rot. Wer nur auf die Zahl sieht, hält so etwas für in Ordnung.
 
-| Was man tut | Was kommt |
-| --- | --- |
-| die Komponente stehen lassen | `ReferenceError: document is not defined` in `_Tooltip._setContainerPosition`, **nach** dem Ende des Laufs — alle Tests grün, der Lauf trotzdem rot |
-| die Komponente abbauen | `TypeError: Cannot read private member #listeners` in happy-doms `MutationObserver.disconnect` |
+**Warum es weg ist.** Der Inhaber hat sich für Chart.js entschieden (E-25);
+Unovis ist aus dem Baum. Chart.js zeichnet auf ein `<canvas>`, das in
+happy-dom ebenfalls nicht zu haben ist — aber das ist kein Konflikt, sondern
+eine schlichte Eigenschaft: eine Zeichenfläche gehört in einen Browser. Die
+Verlaufskurve wird in `test/browser/trend-chart.test.ts` geprüft, und dort
+gehört sie hin.
 
-Der erste Fall ist der unangenehmere: er zählt als „unhandled error", nicht
-als fehlgeschlagener Test. Wer nur auf die Zahl der grünen Tests sieht, hält
-den Lauf für in Ordnung.
+**Was bleibt:** die Erkenntnis, dass eine „unhandled error" den Lauf rot
+färbt, ohne einen einzelnen Test rot zu färben. `pnpm verify` deckt das ab,
+weil es den Rückgabewert von `vitest` auswertet und nicht die Zählung.
 
-**Was stattdessen gilt.** Die Verlaufskurve wird im **Browser-Projekt**
-geprüft (`test/browser/trend-chart.test.ts`, echtes Chromium), nicht im
-`nuxt`-Projekt. Das ist keine Abschwächung, sondern die richtige Ebene: ein
-Diagramm ist eine Sache des Browsers, und genau dafür gibt es das Projekt.
-
-**Was ausdrücklich nicht getan wurde.** Kein Stopfen von `document` in
-happy-dom, kein Abschalten des Tooltips, kein `vi.mock` auf Unovis. Jede
-dieser Krücken hätte die Anwendung für die Testumgebung verbogen — und die
-Prüfung wäre danach eine über die Krücke gewesen.
-
-**Wann es weg kann.** Sobald Unovis seinen Zeitgeber beim Abbau abräumt und
-happy-dom `MutationObserver.disconnect` über einen Proxy verträgt. Dann kann
-`test/browser/trend-chart.test.ts` zurück zu den übrigen Anzeigekomponenten
-wandern. Bis dahin kostet es nichts außer einer Datei an anderer Stelle.
-
-**Betroffene Fassungen:** `@unovis/ts` 1.7.0, `@unovis/vue` 1.7.0,
-happy-dom 20.14.5.

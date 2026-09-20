@@ -397,52 +397,60 @@ Segmentbeschriftungen des Datumsfelds
 
 ---
 
-## E-25 — Diagramme kommen aus `nuxt-charts`
+## E-25 — Diagramme kommen aus Chart.js, ohne Vue-Hülle
 
 **Datum:** 20.09.2026 · **Status:** festgelegt
 
-**Entscheidung.** Alle Diagramme (M-35) werden mit **`nuxt-charts`**
-gezeichnet. Ein eigenes SVG gibt es nicht mehr, und ein anderes Diagrammpaket
-— namentlich Chart.js — kommt nicht in Frage.
+**Entscheidung.** Alle Diagramme (M-35) werden mit **Chart.js** gezeichnet,
+und zwar **direkt** — ohne `vue-chartjs` und ohne Nuxt-Modul.
 
-**Warum dieses und kein anderes.** `nuxt-charts` ist ein echtes Nuxt-Modul:
-`modules: ['nuxt-charts']`, die Komponenten werden auto-importiert, und die
-Beispiele der Doku benutzen Nuxt UI daneben. Damit erfüllt es Regel 4 und
-E-24: kein zufälliges Paket aus einer anderen Welt, sondern eines, das für
-dieses Rahmenwerk gebaut ist.
+**Der Weg dorthin, weil er lehrreich ist.** Zuerst fiel die Wahl auf
+`nuxt-charts`: ein echtes Nuxt-Modul, Komponenten werden auto-importiert, die
+Doku benutzt Nuxt UI daneben. Ökosystemisch war das die sauberste Antwort.
+Gemessen war es das auch — der Diagramm-Brocken lag bei 928 KB (307 KB gzip)
+und wurde **nachgeladen**, das Einstiegsbündel blieb bei 2,03 MB.
 
-**Was es ersetzt.** Bis zum 20.09.2026 stand in `TrendChart.vue` ein eigenes
-SVG mit Pfaden, Rastern und Achsenbeschriftung — rund 180 Zeilen. Es war
-lesbar und es funktionierte, aber es war ein Nachbau, und das Kassenbuch
-(M-35) braucht darüber hinaus gestapelte Balken und Kreisdiagramme. Die hätte
-der Eigenbau auch noch bekommen müssen.
+Was dagegen sprach, war nicht die Größe, sondern die **Trägerschaft**:
+`nuxt-charts` hat genau **einen** Betreuer, und sein Unterbau Unovis zog
+`proj4`, `d3-geo`, Turf, MapLibre und Emotion mit — 155 Pakete für ein
+Liniendiagramm. Der Inhaber hat daraufhin Chart.js gewählt.
 
-**Was es kostet, gemessen statt geschätzt.** Die Abhängigkeitskette ist
-schwer: `nuxt-charts` → `vue-chrts` → `@unovis/ts` + `@unovis/vue`, und daran
-hängen `proj4`, `d3-geo`, `@turf/boolean-point-in-polygon`, MapLibre und
-Emotion. 155 Pakete kamen dazu. Der gebaute Stand sagt aber etwas anderes als
-der Paketbaum:
+**Warum ohne Vue-Hülle.** `vue-chartjs` wäre der bequeme Weg und hat
+**ebenfalls genau einen Betreuer**. Damit wäre das Problem nicht gelöst,
+sondern nur verschoben. Chart.js selbst hat **fünf** Betreuer und **eine**
+Abhängigkeit (`@kurkle/color`). Es direkt anzusprechen kostet ein `<canvas>`,
+ein `onMounted` und ein `watch` — rund dreißig Zeilen in `TrendChart.vue`.
 
-| | vorher | nachher |
+| | `nuxt-charts` | **Chart.js direkt** |
 | --- | --- | --- |
-| Bau gesamt | 8,92 MB | 9,01 MB |
-| **gzip gesamt** | **2,03 MB** | **2,03 MB** |
-| Diagramm-Brocken | — | 928 KB / **307 KB gzip**, **nachgeladen** |
+| Pakete im Baum | 155 | **2** |
+| Betreuer des Kernpakets | 1 | **5** |
+| Nuxt-Modul | ja | nein |
+| Diagramm-Brocken | 928 KB / 307 KB gzip | erst messbar, wenn eine Seite eines zeigt |
+| SSR | ja (SVG) | nein — `<canvas>` ist Sache des Browsers |
 
-MapLibre, `d3-geo` und Turf sind vollständig herausgeschüttelt; `proj4` und
-Emotion stecken im Diagramm-Brocken. Entscheidend ist, dass dieser Brocken
-**nicht im Einstieg** liegt: die Anmeldeseite und jede Liste ohne Diagramm
-laden ihn nicht. Wer eine Seite mit Diagramm öffnet, zahlt 307 KB — einmal,
-danach aus dem Zwischenspeicher.
+**Was das kostet.** Ein `<canvas>` wird auf dem Server nicht gezeichnet. Die
+Fläche steht mit ihrer endgültigen Höhe da und füllt sich im Browser; die
+Seite springt dadurch nicht. Für eine sitzungsgebundene Verwaltungsanwendung
+ist das kein Verlust — niemand liest ein Umsatzdiagramm aus einer
+Suchmaschine.
 
-**Was dabei auffiel.** Unovis verträgt sich nicht mit happy-dom (**W-04**).
-Die Verlaufskurve wird deshalb im Browser-Projekt geprüft, in echtem
-Chromium. Das ist die richtige Ebene, keine Abschwächung.
+**Nur die gebrauchten Teile werden registriert.** Chart.js bringt Balken,
+Torten, Radar und Blasen mit. `Chart.register(...registerables)` nähme alles
+ins Bündel; registriert werden genau die sieben Bausteine einer Linie mit
+Fläche. Kommen später gestapelte Balken für das Kassenbuch dazu, wird die
+Liste erweitert — bewusst, nicht nebenbei.
 
-**Was daneben stehen bleibt.** Die Zahlen des Diagramms als `sr-only`-Tabelle.
-Ein Diagramm ist ein Bild; `role="img"` sagt, **worum** es geht, nicht **was
-darin steht**. Die Tabelle ist eine Ergänzung daneben, kein Eingriff in das
-Paket — Regel 4 lässt das für Zugänglichkeit ausdrücklich zu.
+**Was daneben stehen bleibt — und hier wichtiger ist als je.** Die Zahlen des
+Diagramms als `sr-only`-Tabelle. Bei einem SVG könnte ein Screenreader noch
+etwas finden; ein `<canvas>` ist eine **leere Fläche**, in der nichts steht.
+`role="img"` sagt, worum es geht; was darin steht, sagt allein diese Tabelle.
+Ohne sie wäre jede Kennzahl für einen blinden Nutzer schlicht nicht vorhanden.
+
+**Geprüft wird im Browser** (`test/browser/trend-chart.test.ts`): ein
+Zeichenkontext ist in happy-dom nicht zu haben. Das ist die richtige Ebene,
+keine Abschwächung — und der Grund, aus dem **W-04 entfallen ist**: der
+Unovis-Konflikt mit happy-dom betrifft uns nicht mehr.
 
 **Nicht genommen:** **Vue Flow**. Es ist ein Editor für Knotengraphen —
 Kästen mit Verbindungslinien, die man zieht. Der Zeitstrahl ist das Gegenteil

@@ -1,16 +1,15 @@
 /**
  * Die Verlaufskurve im echten Browser (M-35).
  *
- * Sie steht hier und nicht bei den übrigen Anzeigekomponenten, weil
- * `nuxt-charts` über Unovis das DOM unmittelbar anfasst: ein
- * `MutationObserver` am Tooltip, ein gedrosselter Zeitgeber daneben. In
- * happy-dom bricht beides — siehe W-04 in `../../docs/rewrite/blocker.md`.
+ * Sie steht hier und nicht bei den übrigen Anzeigekomponenten, weil Chart.js
+ * auf ein `<canvas>` zeichnet — und ein Zeichenkontext ist in happy-dom nicht
+ * zu haben. Das ist keine Ausnahme, die etwas schwächer prüft, sondern die
+ * richtige Ebene: ein Diagramm ist eine Sache des Browsers.
  *
- * Das ist keine Ausnahme, die etwas schwächer prüft, sondern die richtige
- * Ebene: ein Diagramm ist eine Sache des Browsers.
- *
- * Geprüft wird, **was ankommt** — nicht, wie Unovis zeichnet. Pfaddaten eines
+ * Geprüft wird, **was ankommt** — nicht, wie Chart.js zeichnet. Pixel eines
  * Fremdpakets zu prüfen hieße, jedes Update zu einem Testlauf zu machen.
+ * Prüfbar und zugleich das, was ein blinder Nutzer bekommt, ist die Tabelle
+ * daneben.
  */
 import { describe, expect, it } from 'vitest'
 import { render } from '@nuxt/test-utils/browser'
@@ -34,11 +33,13 @@ const rootOf = () => document.querySelector('[data-testid="trend-chart"]')!
 describe('M-35: die Verlaufskurve', () => {
   it('zeichnet etwas, statt nur eine Fläche zu reservieren', async () => {
     await chart()
-    const plot = rootOf().querySelector('[data-testid="trend-plot"]')!
+    const canvas = rootOf().querySelector<HTMLCanvasElement>('[data-testid="trend-plot"] canvas')!
 
-    // Unovis zeichnet in ein SVG. Ob die Kurve schön ist, entscheidet das
-    // Paket; dass überhaupt gezeichnet wurde, entscheidet dieser Test.
-    expect(plot.querySelector('svg')).not.toBeNull()
+    expect(canvas).not.toBeNull()
+    // Chart.js setzt die Zeichenfläche auf die Größe des Behälters. Bleibt
+    // sie bei den 300×150 des Browsers, hat nichts gezeichnet.
+    expect(canvas.width).toBeGreaterThan(0)
+    expect(canvas.height).toBeGreaterThan(0)
   })
 
   it('nennt den letzten Wert im Klartext', async () => {
@@ -61,7 +62,7 @@ describe('M-35: die Verlaufskurve', () => {
   it('M-35: zeigt den Verlauf als Kurve und dieselben Zahlen als Tabelle', async () => {
     // Ein Diagramm allein ist keine Auskunft: wer es nicht sehen kann, muss
     // die Zahlen trotzdem bekommen. Die Tabelle steht daneben, nicht darin —
-    // ein Eingriff in `nuxt-charts` wäre sie nicht wert.
+    // bei einem Canvas ist sie die einzige Auskunft, die ein Screenreader hat.
     await chart()
     const table = rootOf().querySelector('[data-testid="trend-table"]')!
 
@@ -108,7 +109,7 @@ describe('M-35: die Verlaufskurve', () => {
     })
     const root = rootOf()
 
-    expect(root.querySelector('[data-testid="trend-plot"] svg')).not.toBeNull()
+    expect(root.querySelector('[data-testid="trend-plot"] canvas')).not.toBeNull()
     expect(root.textContent).not.toContain('NaN')
   })
 

@@ -99,15 +99,10 @@ describe('M-02: die Historie als Zeitstrahl', () => {
 /* Die Verlaufskurve steht **nicht** hier, sondern in
    `test/browser/trend-chart.test.ts`.
 
-   Seit dem 20.09.2026 zeichnet `nuxt-charts` sie, und dessen Unterbau Unovis
-   fasst das DOM unmittelbar an: er hängt einen `MutationObserver` an den
-   Tooltip und lässt einen gedrosselten Zeitgeber laufen. In happy-dom bricht
-   beides — beim Stehenlassen („document is not defined" nach dem Testende)
-   wie beim Abbauen („Cannot read private member #listeners"). Siehe W-04 in
-   ../../docs/rewrite/blocker.md.
-
-   Das ist kein Grund für eine Krücke: ein Diagramm ist eine Sache des
-   Browsers, und für Sachen des Browsers gibt es das Browser-Projekt. */
+   Seit dem 20.09.2026 zeichnet Chart.js sie (E-25), und zwar auf ein
+   `<canvas>`. Einen Zeichenkontext gibt es in happy-dom nicht. Das ist kein
+   Grund für eine Krücke: ein Diagramm ist eine Sache des Browsers, und für
+   Sachen des Browsers gibt es das Browser-Projekt. */
 
 describe('Die Kennzahl', () => {
   it('zeigt Bezeichnung und Wert', async () => {

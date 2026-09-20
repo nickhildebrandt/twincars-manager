@@ -1824,10 +1824,11 @@ Nuxt-UI-Mittel an welchem Ort gehört.
 
 ---
 
-## 20.09.2026 (6) — Diagramme aus `nuxt-charts`, und die Abhängigkeitsliste
+## 20.09.2026 (6) — Die Abhängigkeitsliste, und Diagramme aus Chart.js
 
 Der Inhaber wollte die Liste der Zusatzabhängigkeiten mit Einschätzung, dazu
-**`nuxt-charts` statt Chart.js** und Vue Flow nur, falls wirklich gebraucht.
+ein Diagrammpaket statt des eigenen SVG und Vue Flow nur, falls wirklich
+gebraucht.
 
 ### Die Liste — was wirklich zusätzlich ist
 
@@ -1844,40 +1845,50 @@ Echte Zusätze sind sieben: Drizzle (drei Pakete), `better-auth`,
 begründet, keines aus einer fremden Welt — kein `axios`, kein `lodash`, kein
 zweites Datums- oder Validierungspaket.
 
-### `nuxt-charts` — gemessen, nicht geschätzt
+**Drei Stufen, und sie zu vermischen wäre unehrlich:** Nuxt-Module im engen
+Sinn (`@nuxt/ui`, `@nuxt/eslint`, `@nuxt/test-utils`), Bibliotheken ohne
+Nuxt-Bezug, die die Nuxt-Welt standardmäßig benutzt (Drizzle, `better-auth`),
+und Werkzeug ohne jeden Bezug (`semantic-release`, `husky`, `commitlint`).
 
-Es ist ein echtes Nuxt-Modul, damit ökosystemisch richtig. Der Paketbaum
-erschreckt trotzdem: über `vue-chrts` und Unovis kommen `proj4`, `d3-geo`,
-Turf, **MapLibre** und Emotion mit, insgesamt **155 Pakete**.
+### Das Diagrammpaket — zweimal entschieden
 
-Der gebaute Stand sagt etwas anderes:
+Zuerst fiel die Wahl auf **`nuxt-charts`**: ein echtes Nuxt-Modul, sauber
+eingebaut, gemessen statt geschätzt (Diagramm-Brocken 928 KB / 307 KB gzip,
+**nachgeladen**, Einstiegsbündel unverändert bei 2,03 MB).
 
-| | vorher | nachher |
-| --- | --- | --- |
-| Bau gesamt | 8,92 MB | 9,01 MB |
-| **gzip gesamt** | **2,03 MB** | **2,03 MB** |
-| Diagramm-Brocken | — | 928 KB / **307 KB gzip**, **nachgeladen** |
+Auf die Frage, ob alle Abhängigkeiten ins Nuxt-Ökosystem passen, musste ich
+eine Einschränkung nennen: `nuxt-charts` hat genau **einen** Betreuer, und
+sein Unterbau Unovis zog `proj4`, `d3-geo`, Turf, MapLibre und Emotion mit —
+155 Pakete für ein Liniendiagramm. Der Inhaber hat daraufhin **Chart.js**
+gewählt.
 
-MapLibre, `d3-geo` und Turf sind vollständig herausgeschüttelt. Der Brocken
-liegt **nicht im Einstieg**: Anmeldeseite und Listen ohne Diagramm laden ihn
-nie. Entschieden als **E-25**.
+**Ohne Vue-Hülle.** `vue-chartjs` wäre der bequeme Weg und hat **ebenfalls
+genau einen Betreuer** — das Problem wäre nicht gelöst, nur verschoben.
+Chart.js selbst hat fünf Betreuer und eine Abhängigkeit. Direkt angesprochen
+kostet es ein `<canvas>`, ein `onMounted` und ein `watch`.
 
-### W-04 — Unovis zeichnet nicht in happy-dom
+| | eigenes SVG | `nuxt-charts` | **Chart.js direkt** |
+| --- | --- | --- | --- |
+| Pakete im Baum | 0 | 155 | **2** |
+| Betreuer des Kernpakets | — | 1 | **5** |
+| Nuxt-Modul | — | ja | nein |
+| SSR | ja | ja | nein (`<canvas>`) |
 
-Beim Umbau kam ein Fund, der mehr wert ist als das Diagramm selbst: Unovis
-fasst das DOM unmittelbar an, und in happy-dom bricht das in **beide**
-Richtungen. Lässt man die Komponente stehen, wirft ein Zeitgeber nach dem
-Ende des Laufs `document is not defined`; baut man sie ab, stirbt happy-doms
-`MutationObserver.disconnect`.
+**Registriert werden nur die sieben Bausteine einer Linie mit Fläche.**
+`Chart.register(...registerables)` nähme Balken, Torten, Radar und Blasen mit
+ins Bündel. Kommen später gestapelte Balken fürs Kassenbuch dazu, wird die
+Liste bewusst erweitert.
 
-Der erste Fall ist der gefährlichere: er zählt als „unhandled error" und
-**nicht** als fehlgeschlagener Test. Alle 1931 Tests waren grün, der Lauf
-trotzdem rot. Wer nur auf die Zahl sieht, hält so etwas für in Ordnung.
+**Die `sr-only`-Tabelle ist jetzt wichtiger als vorher.** Bei einem SVG könnte
+ein Screenreader noch etwas finden; ein `<canvas>` ist eine leere Fläche.
+`role="img"` sagt, worum es geht — was darin steht, sagt allein die Tabelle.
 
-Die Verlaufskurve wird deshalb im **Browser-Projekt** geprüft, in echtem
-Chromium. Ausdrücklich **nicht** getan: `document` in happy-dom stopfen, den
-Tooltip abschalten, Unovis mocken. Jede dieser Krücken hätte die Anwendung für
-die Testumgebung verbogen, und geprüft worden wäre danach die Krücke.
+### W-04 ist entfallen
+
+Der Unovis-Konflikt mit happy-dom betrifft uns nicht mehr. Die Erkenntnis
+daraus bleibt festgehalten: eine „unhandled error" färbt den Lauf rot, **ohne
+einen einzelnen Test rot zu färben**. 1931 Tests grün, Lauf trotzdem rot —
+wer nur auf die Zahl sieht, hält so etwas für in Ordnung.
 
 ### Vue Flow: nein
 
@@ -1891,5 +1902,5 @@ Graph, sondern Spalten mit Karten. Nicht installiert; in E-25 als
 | | |
 | --- | --- |
 | Tests | 1931 (81 Dateien) |
-| Abhängigkeiten | +1 direkt (`nuxt-charts`), +155 im Baum |
+| Abhängigkeiten | +1 direkt (`chart.js`), +2 im Baum |
 | Einstiegsgröße | unverändert 2,03 MB gzip |
