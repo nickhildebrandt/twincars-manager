@@ -102,5 +102,5 @@ export const ledgerAttachments = pgTable('ledger_attachments', {
     columns: [table.entryId],
     foreignColumns: [ledgerEntries.id],
     name: 'ledger_attachments_entry_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])

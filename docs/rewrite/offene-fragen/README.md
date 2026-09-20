@@ -7,11 +7,19 @@ Arbeit auf — es ist die Liste für das nächste gemeinsame Durchgehen.
 Jede Datei ist so geschrieben, dass sie ohne Vorwissen lesbar ist: worum es
 geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 
+## Offen
+
 | Nr. | Frage | Betrifft |
 | --- | --- | --- |
-| [01](01-loeschregel-termin-kostenvoranschlag.md) | Sperren Termin und Kostenvoranschlag wirklich das Löschen? | M-38, T-011 |
-| [02](02-stile-unsafe-inline.md) | Die Stile behalten `'unsafe-inline'` | M-40 |
-| [03](03-datumsfeld-englische-beschriftung.md) | Das Datumsfeld spricht für Screenreader englisch | W-02, T-009 |
-| [04](04-abnahmekriterien-t-009.md) | Zwei Abnahmekriterien reiten auf späteren Paketen mit | T-009, T-011, T-012 |
-| [05](05-adresssperre-gemeinsamer-anschluss.md) | Die Adresssperre trifft alle hinter derselben Adresse | P-15, T-007 |
-| [06](06-protokoll-oberflaeche.md) | Wie soll die Protokollansicht aussehen? | M-39, T-034 |
+| [07](07-eigene-teile-beim-loeschen.md) | Was „null Verweise" für die eigenen Teile eines Datensatzes heißt | M-38, T-011, T-012, T-022 |
+
+## Am 20.09.2026 entschieden
+
+| Nr. | Frage | Entscheidung |
+| --- | --- | --- |
+| [01](01-loeschregel-termin-kostenvoranschlag.md) | Sperren Termin und Kostenvoranschlag wirklich das Löschen? | Ja — strenge Lesart, jeder Verweis sperrt |
+| [02](02-stile-unsafe-inline.md) | Die Stile behalten `'unsafe-inline'` | Bleibt so, der Nuxt-Standard gilt |
+| [03](03-datumsfeld-englische-beschriftung.md) | Das Datumsfeld spricht für Screenreader englisch | Bleibt so, kein Eingriff ins Framework |
+| [04](04-abnahmekriterien-t-009.md) | Zwei Abnahmekriterien reiten auf späteren Paketen mit | Angenommen; Anlegen über drei Ebenen, voller Testumfang |
+| [05](05-adresssperre-gemeinsamer-anschluss.md) | Die Adresssperre trifft alle hinter derselben Adresse | Zwei Staffeln, sicherer Adressbereich, Knopf zum Aufheben |
+| [06](06-protokoll-oberflaeche.md) | Wie soll die Protokollansicht aussehen? | Eigener Menüpunkt mit Zähler, Liste, Dashboard-Kachel, E-Mail |

@@ -49,8 +49,17 @@ beforeEach(async () => {
   // In Abhängigkeitsrichtung: der Radsatz sperrt das Fahrzeug (M-05, P-12),
   // das Fahrzeug sperrt den Kunden (M-05). Wer von hinten aufräumt, räumt gar
   // nicht auf.
+  //
+  // Seit M-38 sperrt **jeder** Verweis, auch der der eigenen Teile: nichts
+  // geht mehr still mit. Wer löschen will, räumt die Teile ausdrücklich weg —
+  // genau das tut der Löschdienst später auch, in einer Transaktion.
   await sql`DELETE FROM audit_log`
   await sql`DELETE FROM wheel_sets`
+  await sql`DELETE FROM vehicle_license_plate_versions`
+  await sql`DELETE FROM vehicle_owner_history`
+  await sql`DELETE FROM vehicle_photos`
+  await sql`DELETE FROM vehicle_documents`
+  await sql`DELETE FROM vehicle_listings`
   await sql`DELETE FROM vehicles`
   await sql`DELETE FROM customers`
 })
@@ -224,7 +233,9 @@ describe('Reifen', () => {
     const columns = await columnsOf('tire_reminder_log')
     expect(columns).toContain('wheel_set_id')
     expect(columns).not.toContain('customer_id')
-    expect(await ruleOf('tire_reminder_log', 'wheel_set_id')).toBe('geht mit')
+    // Seit M-38 sperrt auch dieser Verweis: eine verschickte Erinnerung ist
+    // eine Spur, und Spuren verschwinden nicht still mit dem Radsatz.
+    expect(await ruleOf('tire_reminder_log', 'wheel_set_id')).toBe('sperrt')
   })
 })
 

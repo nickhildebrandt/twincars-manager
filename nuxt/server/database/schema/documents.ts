@@ -165,7 +165,7 @@ export const documentItems = pgTable('document_items', {
     columns: [table.documentId],
     foreignColumns: [documents.id],
     name: 'document_items_document_id_documents_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.itemId],
     foreignColumns: [items.id],
@@ -212,7 +212,7 @@ export const documentPdfs = pgTable('document_pdfs', {
     columns: [table.documentId],
     foreignColumns: [documents.id],
     name: 'document_pdfs_document_id_documents_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const reminders = pgTable('reminders', {
@@ -255,5 +255,5 @@ export const reminderPdfs = pgTable('reminder_pdfs', {
     columns: [table.reminderId],
     foreignColumns: [reminders.id],
     name: 'reminder_pdfs_reminder_id_reminders_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])

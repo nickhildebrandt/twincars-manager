@@ -497,6 +497,29 @@ nuxt/shared/utils/date.ts  picker-labels.ts
 - `MultiEntityPicker` transaktional mit „Übernehmen (N)".
 - Creation-Flow: Entwurf in `sessionStorage`, Rücksprung, automatische
   Auswahl, Schleifenschutz, Verfall nach einer Stunde.
+
+  **Er trägt mehr als zwei Ebenen** (festgelegt am 20.09.2026). Der Stapel ist
+  genau dafür ein Stapel und keine einzelne Rückkehradresse: wer beim Anlegen
+  einer Rechnung einen Kunden anlegt und von dort aus dessen Fahrzeug, muss am
+  Ende bei der Rechnung landen — mit Kunde **und** Fahrzeug eingetragen. Die
+  Ketten, die vorkommen, sind höchstens drei Ebenen tief:
+
+  | Kette | Tiefe |
+  | --- | --- |
+  | Auftrag → Kunde | 1 |
+  | Auftrag → Kunde → Fahrzeug | 2 |
+  | Rechnung → Kunde → Fahrzeug | 2 |
+  | Auftrag → Fahrzeug → Kunde (Halter) | 2 |
+
+  „Auftrag → Rechnung → Kunde → Fahrzeug" ist **keine** Kette dieser Art: eine
+  Rechnung wird aus einem fertigen Auftrag erzeugt, nicht beim Anlegen des
+  Auftrags aus einem Picker heraus. Der Stapel begrenzt die Tiefe trotzdem
+  nicht künstlich — er zählt, und der Schleifenschutz (`activeEntities`)
+  verhindert nur, dass dieselbe Art zweimal im Stapel steht.
+
+  **Das Zurücknavigieren ist Teil des Vorgangs**: „Abbrechen" auf Ebene 3
+  führt zurück auf Ebene 2, nicht zur Liste. Eine Brotkrumenleiste im Kopf des
+  Formulars zeigt, wo man steht.
 - Bestätigungsdialog über `useOverlay()` — liefert ein Promise.
 - `DateField` kapselt die Umrechnung ISO ↔ `CalendarDate`
   ([03-architektur.md](03-architektur.md) §8.3).
@@ -513,10 +536,24 @@ nuxt/shared/utils/date.ts  picker-labels.ts
 | 3   | Neuladen stellt Filter und Seite wieder her                                   | E2E-Test                                             |
 | 4   | Der Picker-Dialog fängt den Fokus, schließt mit Escape, gibt den Fokus zurück | Browsertest                                          |
 | 5   | Der Picker sucht serverseitig, nie im Client                                  | Integrationstest: 300 Datensätze, Antwort enthält 25 |
-| 6   | Creation-Flow über zwei Ebenen stellt den Entwurf wieder her                  | E2E-Test                                             |
+| 6   | Creation-Flow über **drei** Ebenen stellt jeden Entwurf wieder her            | E2E-Test: Rechnung → Kunde → Fahrzeug und zurück     |
+| 6a  | „Abbrechen" auf der tiefsten Ebene führt eine Ebene zurück, nicht zur Liste   | E2E-Test                                             |
+| 6b  | Der Schleifenschutz weist dieselbe Art ein zweites Mal im Stapel ab           | Komponententest                                      |
 | 7   | Der Mehrfach-Picker verwirft bei „Abbrechen"                                  | Komponententest                                      |
 | 8   | Jeder Picker-Endpoint verweigert ohne Recht                                   | Integrationstest                                     |
 | 9   | `DateField` rundet nicht und verschiebt keine Tage                            | Unit-Test über Zeitzonengrenzen                      |
+
+**Testumfang (festgelegt am 20.09.2026).** Für dieses Paket gilt die volle
+Breite aus [05-teststrategie.md](05-teststrategie.md), ohne Ausnahme:
+Unit-Tests für die reinen Rechnungen, Komponententests für jede Komponente,
+Integrationstests gegen echtes PostgreSQL für jeden Picker-Endpoint,
+Browsertests für Fokus, Tastatur und Overlays, E2E-Tests für die Ketten oben,
+**Barrierefreiheitstests** (Rollen, zugängliche Namen, Fokusreihenfolge,
+`prefers-reduced-motion`) und je behobenem Befund ein Regressionstest.
+
+**Nuxt UI wird dabei normal verwendet**, ohne Anpassungen: kein eigenes CSS,
+kein Zusammensetzen mehrerer Komponenten zu einer neuen. Was Nuxt UI nicht
+kann, wird nicht nachgebaut, sondern als offene Frage notiert (Regel 14).
 
 **Doku:** `docs/ui/` je Komponente mit Props, Ereignissen, Slots und Beispiel.
 
@@ -933,7 +970,7 @@ keinen Umständen; Dateinamen werden nie in eine Shell gereicht.
 
 **Features:** F-072–F-084, F-087, F-135 (15) · **Befunde:** B-046–B-051, B-059–B-061, B-064–B-067, B-073, B-077–B-078, B-080, B-093
 **Vorbedingungen:** T-007.
-**Modelländerungen:** M-04, P-13, P-14 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-04, M-39, P-13, P-14, P-15, P-22 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Verwaltung von Benutzern und Rollen mit Rechtematrix, Passwortzurücksetzung
 durch die Verwaltung, Deaktivierung, eigenes Passwort ändern.
@@ -944,13 +981,42 @@ und Grund. Ein Zurücksetzen als Selbstbedienung gibt es nicht und soll es nicht
 geben — der Administrator ist im Haus erreichbar, und ein Weg über die E-Mail
 machte das Postfach zum Schlüssel für die Anwendung.
 
+**Gesperrte Anschlüsse stehen in den Einstellungen** (P-15, festgelegt am
+20.09.2026): eine Liste mit Adresse, Anzahl der Fehlversuche, Zeitpunkt des
+letzten Versuchs und Art der Sperre, das Dringendste zuerst. Daneben je Zeile
+ein Knopf „Sperre aufheben". Darüber das Feld **sicherer Adressbereich**
+(P-22) — ein Eintrag je Zeile, geprüft beim Speichern; ein Eintrag, den die
+Anwendung nicht versteht, wird abgewiesen, statt wirkungslos gespeichert zu
+werden.
+
+**Das Protokoll bekommt einen eigenen Menüpunkt** (M-39, festgelegt am
+20.09.2026) — sichtbar **nur für Administratoren**, nicht als Reiter in den
+Einstellungen vergraben:
+
+- **Eine Liste, chronologisch**, mit Filter nach Gewicht (Sicherheit, Warnung,
+  Hinweis), nach Handlung, nach Person, nach betroffenem Datensatz und nach
+  Zeitraum. Serverseitige Pagination wie überall, fest 25.
+- **Ein Zähler am Menüpunkt**, solange ungesehene gravierende Vorfälle
+  anstehen — dieselbe Zahl, die auch die E-Mail auslöst.
+- **Eine Kachel auf dem Dashboard** (T-035) mit denselben Zahlen, die auf die
+  Liste führt.
+- **Sicherheit ist nicht auf die Anmeldung beschränkt.** Auch Fehler,
+  fehlgeschlagene Hintergrundläufe und verheerende Vorgänge (große
+  Löschmengen, misslungene Sicherungen) werden erfasst und über das Gewicht
+  eingeordnet.
+- **Das Protokoll rotiert sich selbst** — der wiederkehrende Lauf steht in
+  T-044, die Ansicht hier.
+
 **Besondere Akzeptanzkriterien:** der letzte **aktive** Inhaber aller Rechte
 lässt sich weder löschen noch deaktivieren noch entrechten (der Bestand prüft
 den Aktiv-Zustand nicht); eine Passwortänderung beendet die übrigen
 Sitzungen; Benutzernamen lassen sich nicht über einen Umweg selbst ändern;
 **P-13** — „Sperre aufheben" wirkt sofort, und der nächste Versuch kommt durch;
 **P-14** — ein Passwort von der Liste bekannter Passwörter wird abgewiesen, mit
-einem Satz, der sagt warum; Golden Flow G-15.
+einem Satz, der sagt warum; **P-15** — „Adresssperre aufheben" wirkt sofort,
+und eine Adresse im sicheren Bereich taucht in der Liste gar nicht erst auf;
+**M-39** — wer kein Administrator ist, sieht den Menüpunkt nicht und erhält
+auf den Endpoint 403; Golden Flow G-15.
 
 ## T-035 — Dashboard und globale Suche
 

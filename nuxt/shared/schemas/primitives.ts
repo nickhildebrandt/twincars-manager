@@ -10,6 +10,7 @@
  */
 import * as v from 'valibot'
 import { MESSAGES } from './messages'
+import { unknownEntries } from '../ip-range'
 
 /** Trimmed text with an upper bound. The workhorse of this module. */
 export const text = (max: number, message = MESSAGES.tooLong(max)) =>
@@ -249,6 +250,26 @@ export const searchSchema = v.pipe(
   v.string(),
   v.trim(),
   v.maxLength(200, 'Der Suchbegriff darf höchstens 200 Zeichen lang sein.'),
+)
+
+/* ── network ──────────────────────────────────────────────────────────── */
+
+/**
+ * Der sichere Adressbereich aus den Einstellungen (P-22).
+ *
+ * Ein Eintrag je Zeile. Ein Eintrag, den die Anwendung nicht versteht, wird
+ * **hier** zurückgewiesen — gespeichert wirkte er nie, und niemand merkte es,
+ * bis sich jemand aussperrt. Der Fehlertext nennt den Eintrag, damit klar ist,
+ * welche Zeile gemeint ist.
+ */
+export const safeIpRangesSchema = v.pipe(
+  v.string(),
+  v.trim(),
+  v.maxLength(2_000, MESSAGES.tooLong(2_000)),
+  v.check(
+    value => unknownEntries(value).length === 0,
+    'Mindestens ein Eintrag ist keine gültige Adresse, kein Netz und kein Bereich.',
+  ),
 )
 
 /* ── derived types ────────────────────────────────────────────────────── */

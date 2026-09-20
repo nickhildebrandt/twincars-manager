@@ -79,7 +79,7 @@ export const workOrderItems = pgTable('work_order_items', {
     columns: [table.workOrderId],
     foreignColumns: [workOrders.id],
     name: 'work_order_items_work_order_id_work_orders_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.itemId],
     foreignColumns: [items.id],
@@ -104,7 +104,7 @@ export const workOrderItemAssignees = pgTable('work_order_item_assignees', {
     columns: [table.workOrderItemId],
     foreignColumns: [workOrderItems.id],
     name: 'work_order_item_assignees_work_order_item_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   // Ein Mitarbeiter wird deaktiviert, nicht gelöscht (M-12). Ginge er doch,
   // verschwände die Auskunft, wer die Arbeit gemacht hat.
   foreignKey({

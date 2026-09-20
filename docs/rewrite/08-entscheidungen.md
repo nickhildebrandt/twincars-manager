@@ -362,6 +362,41 @@ langsamer Dienst darf das Anlegen eines Benutzers nicht aufhalten.
 
 ---
 
+## E-24 — Abhängigkeiten bleiben so, wie Nuxt sie aufsetzt
+
+**Datum:** 20.09.2026 · **Status:** festgelegt
+
+**Entscheidung.** Das Projekt bleibt auf dem Stand, den das Nuxt-Aufsetzskript
+erzeugt: neueste stabile Fassung des Rahmenwerks, und darunter genau die
+Fassungen, die Nuxt selbst mitbringt. Zusätzliche Pakete sind erlaubt, wenn sie
+für Nuxt gedacht sind und die Rangfolge aus `nuxt/CLAUDE.md` Regel 4 sie
+zulässt. Nicht erlaubt sind Pakete, die zufällig dasselbe können, aber aus
+einer anderen Welt stammen, und von Hand nachgezogene Fassungen einzelner
+Abhängigkeiten.
+
+**Warum.** Das Ziel ist ein Projekt, das sich in zwei Jahren mit einem Befehl
+anheben lässt. Jede von Hand gesetzte Fassung und jedes fremde Paket ist eine
+Stelle, an der das dann nicht geht — und man merkt es erst, wenn es zu spät
+ist. Beim Vorgänger war genau das der Grund, warum eine einzelne
+Rahmenwerk-Fassung (`svelte` 5.55.5) eine ganze Klasse von Listenfehlern
+auslöste und nicht einfach zurückgedreht werden konnte.
+
+**Was geprüft wurde.** Der Abhängigkeitsbaum ist sauber: `h3` steht auf genau
+der Fassung, die Nuxt selbst verlangt, exakt gepinnt. Die einzige doppelte
+Fassung im Baum liegt innerhalb von `@nuxt/eslint` und betrifft nur die
+Entwicklung. `pnpm outdated` war an diesem Tag nicht nutzbar — die Registry
+antwortete mit Zeitüberschreitungen; geprüft wurde deshalb lokal über
+`pnpm why`.
+
+**Konsequenzen.** Wo ein Fremdpaket an seine Grenze stößt, wird die Grenze
+dokumentiert statt umgangen. Zwei Fälle stehen schon so da: die englischen
+Segmentbeschriftungen des Datumsfelds
+([offene-fragen/03](offene-fragen/03-datumsfeld-englische-beschriftung.md)) und
+`'unsafe-inline'` für Stile
+([offene-fragen/02](offene-fragen/02-stile-unsafe-inline.md)).
+
+---
+
 ## Was danach noch entschieden wurde
 
 Am 13.09.2026 ist der Inhaber die fertige Modellübersicht durchgegangen und hat

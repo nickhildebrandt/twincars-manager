@@ -26,7 +26,7 @@
  * einem Änderungsprotokoll rückwärts zu rekonstruieren wäre die falsche
  * Antwort auf die falsche Frage.
  */
-import { pgTable, uuid, varchar, boolean, timestamp, index, jsonb, text, check } from 'drizzle-orm/pg-core'
+import { pgTable, uuid, varchar, boolean, timestamp, index, uniqueIndex, jsonb, text, check } from 'drizzle-orm/pg-core'
 import { oneOf, oneOfOrNull } from './_checks.ts'
 import { auditActions, auditSeverities, signInFailures } from '../../../shared/domain.ts'
 
@@ -101,6 +101,37 @@ export const auditLog = pgTable('audit_log', {
  * Der Benutzername wird festgehalten, **auch wenn es ihn nicht gibt** — gerade
  * dann ist der Versuch interessant. Deshalb kein Fremdschlüssel.
  */
+/**
+ * Was zu einer Adresse festgehalten werden muss (P-15, P-22).
+ *
+ * Die **ersten beiden** Stufen der Staffel werden gerechnet — aus den
+ * Fehlversuchen der letzten vierundzwanzig Stunden. Sie enden von selbst, und
+ * genau so soll es sein.
+ *
+ * Die **oberste** Stufe darf nicht gerechnet werden: gerechnet wäre sie nach
+ * vierundzwanzig Stunden von allein weg, weil die Fehlversuche aus dem
+ * Zählfenster fallen. Das wäre keine dauerhafte Sperre, sondern die zweite
+ * unter anderem Namen — derselbe Fehler, der bei den Konten schon einmal
+ * dringestanden hat. Also steht sie hier, als Datum.
+ *
+ * Daneben das Gegenstück: wann ein Administrator die Adresse wieder
+ * freigegeben hat. Ab diesem Zeitpunkt beginnt die Zählung neu.
+ */
+export const addressLocks = pgTable('address_locks', {
+  id: uuid().defaultRandom().primaryKey().notNull(),
+  /** Die Adresse, genau so geschrieben, wie gezählt wird. */
+  address: varchar({ length: 64 }).notNull(),
+  /** Wann sie dauerhaft gesperrt wurde. Leer heißt: nie. */
+  lockedAt: timestamp('locked_at', { withTimezone: true, mode: 'date' }),
+  /** Wann sie zuletzt freigegeben wurde. Später als `locked_at` hebt auf. */
+  unlockedAt: timestamp('unlocked_at', { withTimezone: true, mode: 'date' }),
+  /** Wer freigegeben hat. Kein Fremdschlüssel — der Eintrag überlebt den Benutzer. */
+  unlockedBy: text('unlocked_by'),
+  unlockedByName: varchar('unlocked_by_name', { length: 200 }),
+}, table => [
+  uniqueIndex('address_locks_address_idx').using('btree', table.address.asc().nullsLast()),
+])
+
 export const signInAttempts = pgTable('sign_in_attempts', {
   id: uuid().defaultRandom().primaryKey().notNull(),
   at: timestamp({ withTimezone: true, mode: 'string' }).defaultNow().notNull(),

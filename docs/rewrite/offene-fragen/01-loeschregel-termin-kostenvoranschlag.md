@@ -1,7 +1,6 @@
 # 01 — Sperren Termin und Kostenvoranschlag wirklich das Löschen?
 
-**Betrifft:** M-38, P-11, T-011 · **Stand:** offen, umgesetzt in der strengeren
-Auslegung
+**Betrifft:** M-38, P-11, T-011 · **Stand:** **entschieden am 20.09.2026**
 
 ## Worum es geht
 
@@ -52,3 +51,24 @@ Verweisen gibt.
 
 **A.** „Es hängt etwas dran, also wird archiviert" ist ein Satz, den man einem
 neuen Mitarbeiter in zehn Sekunden erklärt. Und Archivieren verliert nichts.
+
+
+---
+
+## Entschieden am 20.09.2026 — die strenge Lesart gilt
+
+> „Ein Datensatz ist nur löschbar, wenn er null Verweise hat — weder eigene
+> Verweise noch Verweise anderer Datensätze auf ihn. Anwendungsfall: frisch
+> angelegter Datensatz, sofort als falsch erkannt → vollständig löschbar.
+> Sobald irgendein Verweis existiert: kein Löschen mehr, nur noch archivieren."
+
+**Was daraufhin geschah.** Sechzehn Fremdschlüssel standen noch auf „geht mit"
+und wurden auf „sperrt" umgestellt. Übrig sind fünf Kaskaden, und keine davon
+ist fachlich: Sitzung, Zugang und Rollenzuweisung gehören zum Benutzerkonto
+und verschwinden mit ihm. Ein Test in `schema-drift.test.ts` prüft diese Liste
+**abschließend** — kommt irgendwo sonst ein „geht mit" hinzu, fällt er.
+
+Damit ist die Frage dieser Datei beantwortet: **ja**, ein Termin sperrt, und
+ein Kostenvoranschlag ebenso. Es gibt keine Abstufung mehr nach Belegart.
+
+Was daraus folgt, steht in [07-eigene-teile-beim-loeschen.md](07-eigene-teile-beim-loeschen.md).

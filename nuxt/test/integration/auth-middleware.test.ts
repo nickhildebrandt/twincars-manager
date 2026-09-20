@@ -26,7 +26,7 @@ const { recordSignInAttempt, failedAttemptsSince } = await import('../../server/
 const { signInAttempts } = await import('../../server/database/schema/index.ts')
 const { resetAuth, SIGN_IN_ATTEMPTS_PER_MINUTE } = await import('../../server/utils/auth.ts')
 const { createUserWithCredential } = await import('../../server/utils/auth-accounts.ts')
-const { auditLog, rolePermissions, roles, userRoles, users } = await import('../../server/database/schema/index.ts')
+const { addressLocks, auditLog, companySettings, rolePermissions, roles, userRoles, users } = await import('../../server/database/schema/index.ts')
 const { useDatabase, closeDatabase } = await import('../../server/utils/db.ts')
 const { requirePermission } = await import('../../server/utils/guards.ts')
 const { isExposedAuthEndpoint } = await import('../../server/utils/auth-paths.ts')
@@ -122,12 +122,14 @@ beforeEach(async () => {
   await db.delete(signInAttempts)
   await db.delete(users)
   await db.delete(roles)
+  await db.delete(addressLocks)
+  await db.delete(companySettings)
 })
 
 describe('Die Drossel', () => {
   it(`lässt ${SIGN_IN_ATTEMPTS_PER_MINUTE} Versuche zu und sperrt den nächsten`, async () => {
     // Mit **richtigem** Passwort, denn sonst greift vorher die Staffel (P-13):
-    // drei Fehlversuche sperren das Konto schon. Geprüft werden soll hier der
+    // fünf Fehlversuche sperren den Anschluss schon. Geprüft werden soll hier der
     // Minutenzähler — die erste, billige Abwehr, die noch vor jeder Abfrage
     // steht und eine Flut abfängt, egal ob sie richtig oder falsch rät.
     await createAccount('mmustermann')
@@ -142,17 +144,19 @@ describe('Die Drossel', () => {
   })
 
   it('P-13: die Staffel greift früher als der Minutenzähler', async () => {
-    // Die neue Reihenfolge, festgehalten: wer rät, ist nach drei Versuchen
-    // draußen — lange bevor der Minutenzähler bei zehn steht.
+    // Die Reihenfolge, festgehalten: der Anschluss ist nach fünf Fehlversuchen
+    // dicht — noch bevor der Minutenzähler bei zehn steht. Das Konto selbst
+    // hätte hier erst bei zehn zugemacht; die schärfere der beiden Staffeln
+    // gewinnt (P-15).
     await createAccount('mmustermann')
 
     const statuses: number[] = []
-    for (let attempt = 0; attempt < 5; attempt++) {
+    for (let attempt = 0; attempt < 7; attempt++) {
       statuses.push((await signIn('mmustermann', 'falsch-aber-lang-genug')).status)
     }
 
-    expect(statuses.slice(0, 3)).toEqual([401, 401, 401])
-    expect(statuses.slice(3)).toEqual([429, 429])
+    expect(statuses.slice(0, 5)).toEqual([401, 401, 401, 401, 401])
+    expect(statuses.slice(5)).toEqual([429, 429])
   })
 
   it('antwortet auf 429 mit einem deutschen Satz und Retry-After', async () => {
@@ -409,16 +413,16 @@ describe('M-36: die Drossel zählt auch je Konto', () => {
     config.trustProxy = 'on'
     try {
       const statuses: number[] = []
-      for (let attempt = 0; attempt < 5; attempt++) {
+      for (let attempt = 0; attempt < 12; attempt++) {
         statuses.push((await signIn('mmustermann', 'falsch-aber-lang-genug', {
           'x-forwarded-for': `203.0.113.${attempt}`,
         })).status)
       }
 
       // Jeder Versuch kam von einer anderen Adresse, der Adresszähler war also
-      // nie voll — und trotzdem ist nach dreien Schluss. Genau dafür gibt es
-      // die Zählung am Konto.
-      expect(statuses.slice(0, 3)).toEqual([401, 401, 401])
+      // nie voll — und trotzdem ist nach zehn Schluss. Genau dafür gibt es die
+      // Zählung am Konto.
+      expect(statuses.slice(0, 10)).toEqual(Array.from({ length: 10 }, () => 401))
       expect(statuses.at(-1)).toBe(429)
     }
     finally {
@@ -514,21 +518,31 @@ describe('M-36: die Drossel zählt auch je Konto', () => {
   })
 })
 
-/* ── P-13 und P-15: die gestaffelte Sperre ──────────────────────────────────
+/* ── P-13, P-15 und P-22: die gestaffelte Sperre ────────────────────────────
    Eine Minutengrenze ist eine Bremse: wer wartet, kommt durch. Hier zählt ein
-   Tag, und die Folgen steigen mit jeder Stufe — 3, 10, 20. Gesperrt wird das
-   Konto, die Adresse oder beides, je nachdem, ob es den Benutzernamen gibt. */
+   Tag, und die Folgen steigen mit jeder Stufe. Gezählt wird mit zwei Maßen:
+   das Konto großzügig (10/20/40), die Adresse streng (5/10/20) — wer einen
+   Namen errät, den es nicht gibt, sucht nicht sein Passwort. Was im sicheren
+   Bereich der Einstellungen liegt, wird nie gesperrt (P-22). */
 
 const {
   accountLock,
   addressLock,
   accountExists,
   unlockAccount,
+  unlockAddress,
+  lockedAddresses,
   noteSignInOutcome,
   lockMessage,
-  LOCK_STEPS,
+  safeRangeSetting,
+  ACCOUNT_STEPS,
+  ADDRESS_STEPS,
   LOCK_WINDOW_MS,
 } = await import('../../server/utils/account-lock.ts')
+
+/** Trägt einen sicheren Adressbereich in die Einstellungen ein (P-22). */
+const setSafeRanges = (ranges: string) =>
+  db.insert(companySettings).values({ safeIpRanges: ranges })
 
 /** Schreibt Fehlversuche ins Protokoll, älteste zuerst. */
 async function failAttempts(
@@ -619,15 +633,15 @@ describe('M-39: die Anmeldung landet im großen Protokoll', () => {
 })
 
 describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
-  it('P-13: zwei Fehlversuche sperren noch nichts', async () => {
+  it('P-13: neun Fehlversuche sperren das Konto noch nicht', async () => {
     await createAccount('mmustermann')
-    await failAttempts(2)
+    await failAttempts(9)
     expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
   })
 
-  it('P-13: ab drei Fehlversuchen sind es zehn Minuten', async () => {
+  it('P-13: ab zehn Fehlversuchen sind es zehn Minuten', async () => {
     await createAccount('mmustermann')
-    await failAttempts(3)
+    await failAttempts(10)
 
     const lock = await accountLock('mmustermann', new Date(), db)
     expect(lock.locked).toBe(true)
@@ -636,9 +650,9 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
     expect(lock.retryAfter).toBeLessThanOrEqual(10 * 60)
   })
 
-  it('P-13: ab zehn Fehlversuchen sind es 24 Stunden', async () => {
+  it('P-13: ab zwanzig Fehlversuchen sind es 24 Stunden', async () => {
     await createAccount('mmustermann')
-    await failAttempts(10)
+    await failAttempts(20)
 
     const lock = await accountLock('mmustermann', new Date(), db)
     expect(lock.locked).toBe(true)
@@ -646,10 +660,10 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
     expect(lock.retryAfter).toBeGreaterThan(23 * 60 * 60)
   })
 
-  it('P-13: ab zwanzig Fehlversuchen ist dauerhaft Schluss', async () => {
+  it('P-13: ab vierzig Fehlversuchen ist dauerhaft Schluss', async () => {
     // Hier läuft nichts mehr ab. Nur der Administrator öffnet wieder.
     await createAccount('mmustermann')
-    await failAttempts(20)
+    await failAttempts(40)
 
     const lock = await accountLock('mmustermann', new Date(), db)
     expect(lock.locked).toBe(true)
@@ -662,7 +676,7 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
     // wird: die Fehlversuche fallen nach einem Tag aus dem Fenster. Gerechnet
     // wäre die „dauerhafte" Sperre danach weg.
     await createAccount('mmustermann')
-    await failAttempts(20)
+    await failAttempts(40)
     await noteSignInOutcome({ username: 'mmustermann', succeeded: false, known: true }, new Date(), db)
 
     const inEinemJahr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
@@ -673,7 +687,7 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 
   it('P-13: die letzte Stufe wird erst festgehalten, wenn sie erreicht ist', async () => {
     await createAccount('mmustermann')
-    await failAttempts(19)
+    await failAttempts(39)
     await noteSignInOutcome({ username: 'mmustermann', succeeded: false, known: true }, new Date(), db)
 
     const [row] = await db.select({ lockedAt: users.lockedAt })
@@ -683,10 +697,12 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 
   it('P-13: ein unbekannter Name hält am Konto nichts fest', async () => {
     // Es gibt keines. Gesperrt wird dann die Adresse (P-15).
-    await failAttempts(20, { username: 'gibtsnicht', reason: 'unbekannt' })
+    await failAttempts(40, { username: 'gibtsnicht', reason: 'unbekannt' })
     await expect(
       noteSignInOutcome({ username: 'gibtsnicht', succeeded: false, known: false }, new Date(), db),
     ).resolves.toBeUndefined()
+
+    expect((await db.select().from(users)).length).toBe(0)
   })
 
   it('P-13: ein Fehler beim Festhalten sperrt die Anmeldung nicht', async () => {
@@ -700,9 +716,24 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
     ).resolves.toBeUndefined()
   })
 
+  it('P-13: eine gelungene Anmeldung hält gar nichts fest', async () => {
+    await createAccount('mmustermann')
+    await failAttempts(40)
+    await noteSignInOutcome(
+      { username: 'mmustermann', succeeded: true, known: true, clientAddress: '203.0.113.1' },
+      new Date(),
+      db,
+    )
+
+    const [row] = await db.select({ lockedAt: users.lockedAt })
+      .from(users).where(eq(users.username, 'mmustermann'))
+    expect(row?.lockedAt).toBeNull()
+    expect((await db.select().from(addressLocks)).length).toBe(0)
+  })
+
   it('P-13: die zehn Minuten laufen ab dem letzten Versuch', async () => {
     await createAccount('mmustermann')
-    await failAttempts(3, { minutesAgo: 9 })
+    await failAttempts(10, { minutesAgo: 9 })
 
     expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(true)
     const gleich = new Date(Date.now() + 2 * MINUTES)
@@ -710,14 +741,29 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
   })
 
   it('P-13: was älter als 24 Stunden ist, zählt nicht mehr', async () => {
+    // Der Punkt der Entscheidung: „fünf Fehlanmeldungen über ein Jahr verteilt
+    // dürfen nicht zur Sperre führen."
     await createAccount('mmustermann')
-    await failAttempts(10, { minutesAgo: 25 * 60 })
+    await failAttempts(20, { minutesAgo: 25 * 60 })
     expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-13: über ein Jahr verteilte Fehlversuche sperren nichts', async () => {
+    await createAccount('mmustermann')
+    for (let month = 0; month < 12; month++) {
+      await failAttempts(1, { minutesAgo: month * 30 * 24 * 60 + 60 })
+    }
+
+    // Nur der jüngste liegt noch im Zählfenster; die elf älteren sind heraus.
+    const lock = await accountLock('mmustermann', new Date(), db)
+    expect(lock.locked).toBe(false)
+    expect(lock.failures).toBe(1)
+    expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(false)
   })
 
   it('P-13: eine gelungene Anmeldung setzt die Zählung zurück', async () => {
     await createAccount('mmustermann')
-    await failAttempts(10, { minutesAgo: 30 })
+    await failAttempts(20, { minutesAgo: 30 })
     await db.insert(signInAttempts).values({
       username: 'mmustermann',
       clientAddress: '203.0.113.1',
@@ -733,7 +779,7 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 
   it('P-13: das Entsperren wirkt sofort, auch bei der dauerhaften Sperre', async () => {
     await createAccount('mmustermann')
-    await failAttempts(20)
+    await failAttempts(40)
     expect((await accountLock('mmustermann', new Date(), db)).permanent).toBe(true)
 
     expect(await unlockAccount('mmustermann', new Date(), db)).toBe(true)
@@ -742,32 +788,47 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 
   it('P-13: das Entsperren löscht das Protokoll nicht', async () => {
     await createAccount('mmustermann')
-    await failAttempts(20)
+    await failAttempts(40)
     await unlockAccount('mmustermann', new Date(), db)
 
-    expect((await db.select().from(signInAttempts)).length).toBe(20)
+    expect((await db.select().from(signInAttempts)).length).toBe(40)
   })
 
-  it('P-13: die Staffel steht so, wie M-36 sie festlegt', () => {
-    expect(LOCK_STEPS.map(step => step.failures)).toEqual([20, 10, 3])
-    expect(LOCK_STEPS[0].duration).toBeNull()
-    expect(LOCK_STEPS[1].duration).toBe(24 * 60 * 60 * 1000)
-    expect(LOCK_STEPS[2].duration).toBe(10 * 60 * 1000)
+  it('P-13: die Staffeln stehen so, wie P-15 sie festlegt', () => {
+    expect(ACCOUNT_STEPS.map(step => step.failures)).toEqual([40, 20, 10])
+    expect(ADDRESS_STEPS.map(step => step.failures)).toEqual([20, 10, 5])
+
+    for (const steps of [ACCOUNT_STEPS, ADDRESS_STEPS]) {
+      expect(steps[0]!.duration).toBeNull()
+      expect(steps[1]!.duration).toBe(24 * 60 * 60 * 1000)
+      expect(steps[2]!.duration).toBe(10 * 60 * 1000)
+    }
+
+    // Die Adresse ist überall strenger als das Konto — das ist der Kern der
+    // Entscheidung: „stimmt der Benutzername, 10 Fehlversuche; sonst 5."
+    for (let step = 0; step < ACCOUNT_STEPS.length; step++) {
+      expect(ADDRESS_STEPS[step]!.failures).toBeLessThan(ACCOUNT_STEPS[step]!.failures)
+    }
+
     expect(LOCK_WINDOW_MS).toBe(24 * 60 * 60 * 1000)
   })
 
   it('P-13: der Satz nennt die verbleibende Zeit in lesbaren Einheiten', () => {
-    expect(lockMessage({ locked: true, scope: 'konto', permanent: false, retryAfter: 600, failures: 3 }))
+    expect(lockMessage({ locked: true, scope: 'konto', permanent: false, retryAfter: 600, failures: 10 }))
       .toContain('10 Minuten')
-    expect(lockMessage({ locked: true, scope: 'konto', permanent: false, retryAfter: 86_400, failures: 10 }))
+    expect(lockMessage({ locked: true, scope: 'konto', permanent: false, retryAfter: 86_400, failures: 20 }))
       .toContain('24 Stunden')
-    expect(lockMessage({ locked: true, scope: 'konto', permanent: true, retryAfter: 0, failures: 20 }))
+    expect(lockMessage({ locked: true, scope: 'konto', permanent: true, retryAfter: 0, failures: 40 }))
       .toContain('Verwaltung')
   })
 
   it('P-13: die Anmeldung antwortet mit 429 und einem deutschen Satz', async () => {
+    // Zehn Fehlversuche von zehn verschiedenen Adressen: das Konto ist dicht,
+    // der Anschluss nicht. So steht im Satz wirklich „Dieses Konto".
     await createAccount('mmustermann')
-    await failAttempts(3)
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await failAttempts(1, { address: `203.0.113.${attempt + 20}` })
+    }
 
     const response = await signIn('mmustermann', PASSWORD)
     expect(response.status).toBe(429)
@@ -779,7 +840,9 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 
   it('P-13: auch das richtige Passwort kommt während der Sperre nicht durch', async () => {
     await createAccount('mmustermann')
-    await failAttempts(3)
+    for (let attempt = 0; attempt < 10; attempt++) {
+      await failAttempts(1, { address: `203.0.113.${attempt + 20}` })
+    }
     expect((await signIn('mmustermann', PASSWORD)).status).toBe(429)
 
     await unlockAccount('mmustermann', new Date(), db)
@@ -788,22 +851,35 @@ describe('P-13: die Staffel greift nach Anzahl der Fehlversuche', () => {
 })
 
 describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
-  it('P-15: ein unbekannter Benutzername sperrt den Anschluss', async () => {
+  it('P-15: ein unbekannter Benutzername sperrt den Anschluss ab fünf Versuchen', async () => {
     // Es gibt kein Konto, das man sperren könnte — und genau dieses Muster
-    // verrät den Angriff: jemand probiert Namen durch.
-    await failAttempts(3, { username: 'gibtsnicht', reason: 'unbekannt' })
+    // verrät den Angriff: jemand probiert Namen durch. Deshalb die Hälfte der
+    // Geduld, die ein bekanntes Konto bekommt.
+    await failAttempts(4, { username: 'gibtsnicht', reason: 'unbekannt' })
+    expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(false)
 
+    await failAttempts(1, { username: 'gibtsnicht', reason: 'unbekannt' })
     const lock = await addressLock('203.0.113.1', new Date(), db)
     expect(lock.locked).toBe(true)
     expect(lock.scope).toBe('adresse')
   })
 
   it('P-15: der Anschluss zählt über alle Benutzernamen hinweg', async () => {
-    await failAttempts(1, { username: 'anna', reason: 'unbekannt' })
-    await failAttempts(1, { username: 'bernd', reason: 'unbekannt' })
-    await failAttempts(1, { username: 'clara', reason: 'unbekannt' })
+    for (const name of ['anna', 'bernd', 'clara', 'dora', 'emil']) {
+      await failAttempts(1, { username: name, reason: 'unbekannt' })
+    }
 
     expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(true)
+  })
+
+  it('P-15: die Adressstaffel steigt wie die des Kontos', async () => {
+    await failAttempts(10, { username: 'gibtsnicht', reason: 'unbekannt' })
+    const nachZehn = await addressLock('203.0.113.1', new Date(), db)
+    expect(nachZehn.permanent).toBe(false)
+    expect(nachZehn.retryAfter).toBeGreaterThan(23 * 60 * 60)
+
+    await failAttempts(10, { username: 'gibtsnicht', reason: 'unbekannt' })
+    expect((await addressLock('203.0.113.1', new Date(), db)).permanent).toBe(true)
   })
 
   it('P-15: ein anderer Anschluss bleibt davon unberührt', async () => {
@@ -816,14 +892,14 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
   it('P-15: eine abgewiesene Anfrage zählt nicht als neuer Fehlversuch', async () => {
     // Sonst zählte sich eine Sperre selbst hoch: jeder abgewiesene Versuch
     // erzeugte einen Protokolleintrag, der die Sperre verlängert.
-    await failAttempts(2, { reason: 'passwort' })
+    await failAttempts(4, { reason: 'passwort' })
     await failAttempts(50, { reason: 'adresssperre' })
 
     expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(false)
   })
 
   it('P-15: eine gelungene Anmeldung von hier setzt die Zählung zurück', async () => {
-    await failAttempts(5, { minutesAgo: 30 })
+    await failAttempts(10, { minutesAgo: 30 })
     await db.insert(signInAttempts).values({
       username: 'mmustermann',
       clientAddress: '203.0.113.1',
@@ -841,7 +917,7 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
 
   it('P-15: ein bekanntes Konto sperrt beides — Konto und Anschluss', async () => {
     await createAccount('mmustermann')
-    await failAttempts(3, { reason: 'passwort' })
+    await failAttempts(10, { reason: 'passwort' })
 
     expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(true)
     expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(true)
@@ -851,7 +927,7 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
     // Der Punkt einer Adresssperre: wer sie sich verspielt hat, kommt von hier
     // aus gar nicht mehr weiter.
     await createAccount('zweiter')
-    await failAttempts(3, { username: 'gibtsnicht', address: '203.0.113.77', reason: 'unbekannt' })
+    await failAttempts(5, { username: 'gibtsnicht', address: '203.0.113.77', reason: 'unbekannt' })
 
     config.trustProxy = 'on'
     try {
@@ -868,7 +944,7 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
   it('P-15: das Entsperren des Kontos öffnet den Anschluss nicht mit', async () => {
     // Zwei verschiedene Sperren, zwei verschiedene Gründe.
     await createAccount('mmustermann')
-    await failAttempts(3)
+    await failAttempts(10)
     await unlockAccount('mmustermann', new Date(), db)
 
     expect((await accountLock('mmustermann', new Date(), db)).locked).toBe(false)
@@ -877,7 +953,7 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
 
   it('P-15: die Adresssperre steht als eigener Grund im Protokoll', async () => {
     await createAccount('mmustermann')
-    await failAttempts(3, { username: 'gibtsnicht', address: '203.0.113.78', reason: 'unbekannt' })
+    await failAttempts(5, { username: 'gibtsnicht', address: '203.0.113.78', reason: 'unbekannt' })
 
     config.trustProxy = 'on'
     try {
@@ -896,5 +972,265 @@ describe('P-15: Konto und Anschluss werden getrennt gezählt', () => {
     expect(await accountExists('MMustermann', db)).toBe(true)
     expect(await accountExists('gibtsnicht', db)).toBe(false)
     expect(await accountExists('', db)).toBe(false)
+  })
+})
+
+describe('P-15: die dauerhafte Adresssperre wird festgehalten', () => {
+  it('P-15: sie läuft auch nach einem Jahr nicht ab', async () => {
+    // Derselbe Grund wie beim Konto: gerechnet wäre sie nach 24 Stunden von
+    // selbst weg, weil die Fehlversuche aus dem Zählfenster fallen.
+    await failAttempts(20, { username: 'gibtsnicht', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.1' },
+      new Date(),
+      db,
+    )
+
+    const inEinemJahr = new Date(Date.now() + 365 * 24 * 60 * 60 * 1000)
+    const lock = await addressLock('203.0.113.1', inEinemJahr, db)
+    expect(lock.locked).toBe(true)
+    expect(lock.permanent).toBe(true)
+    expect(lock.scope).toBe('adresse')
+  })
+
+  it('P-15: unterhalb der obersten Stufe wird nichts festgehalten', async () => {
+    await failAttempts(19, { username: 'gibtsnicht', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.1' },
+      new Date(),
+      db,
+    )
+
+    expect((await db.select().from(addressLocks)).length).toBe(0)
+  })
+
+  it('P-15: ein zweiter Fehlversuch datiert die Sperre nicht vor', async () => {
+    // Sonst machte ein einzelnes Klopfen nach der Freigabe diese rückgängig.
+    await failAttempts(20, { username: 'gibtsnicht', reason: 'unbekannt' })
+    const zuerst = new Date(Date.now() - 5 * MINUTES)
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.1' },
+      zuerst,
+      db,
+    )
+
+    const [vorher] = await db.select().from(addressLocks)
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.1' },
+      new Date(),
+      db,
+    )
+
+    const [nachher] = await db.select().from(addressLocks)
+    expect(nachher?.lockedAt?.getTime()).toBe(vorher?.lockedAt?.getTime())
+  })
+})
+
+describe('P-15: der Administrator hebt eine Adresssperre auf', () => {
+  it('P-15: der Knopf wirkt sofort', async () => {
+    await failAttempts(5, { username: 'gibtsnicht', reason: 'unbekannt' })
+    expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(true)
+
+    expect(await unlockAddress('203.0.113.1', { userName: 'Chefin' }, new Date(), db)).toBe(true)
+    expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-15: er wirkt auch auf die dauerhafte Sperre', async () => {
+    await failAttempts(20, { username: 'gibtsnicht', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.1' },
+      new Date(),
+      db,
+    )
+    expect((await addressLock('203.0.113.1', new Date(), db)).permanent).toBe(true)
+
+    await unlockAddress('203.0.113.1', { userName: 'Chefin' }, new Date(), db)
+    expect((await addressLock('203.0.113.1', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-15: er hält fest, wer ihn gedrückt hat', async () => {
+    await unlockAddress('203.0.113.1', { userId: null, userName: 'Chefin' }, new Date(), db)
+
+    const [row] = await db.select().from(addressLocks)
+    expect(row?.address).toBe('203.0.113.1')
+    expect(row?.unlockedByName).toBe('Chefin')
+    expect(row?.unlockedAt).toBeInstanceOf(Date)
+  })
+
+  it('P-15: er wirkt auch, wenn es noch gar keine Zeile gab', async () => {
+    // Die gerechneten Stufen hinterlassen keine — trotzdem muss der Knopf
+    // wirken, sonst ist er in genau dem Fall wirkungslos, der am häufigsten
+    // vorkommt.
+    expect((await db.select().from(addressLocks)).length).toBe(0)
+    expect(await unlockAddress('198.51.100.3', {}, new Date(), db)).toBe(true)
+    expect((await db.select().from(addressLocks)).length).toBe(1)
+  })
+
+  it('P-15: eine zweite Freigabe legt keine zweite Zeile an', async () => {
+    await unlockAddress('203.0.113.1', { userName: 'Erste' }, new Date(), db)
+    await unlockAddress('203.0.113.1', { userName: 'Zweite' }, new Date(), db)
+
+    const rows = await db.select().from(addressLocks)
+    expect(rows.length).toBe(1)
+    expect(rows[0]?.unlockedByName).toBe('Zweite')
+  })
+
+  it('P-15: eine leere Adresse wird nicht freigegeben', async () => {
+    expect(await unlockAddress('   ', {}, new Date(), db)).toBe(false)
+    expect((await db.select().from(addressLocks)).length).toBe(0)
+  })
+
+  it('P-15: nach der Freigabe zählt nur noch, was danach kam', async () => {
+    await failAttempts(10, { username: 'gibtsnicht', minutesAgo: 10, reason: 'unbekannt' })
+    await unlockAddress('203.0.113.1', {}, new Date(Date.now() - 5 * MINUTES), db)
+    await failAttempts(2, { username: 'gibtsnicht', reason: 'unbekannt' })
+
+    const lock = await addressLock('203.0.113.1', new Date(), db)
+    expect(lock.locked).toBe(false)
+    expect(lock.failures).toBe(2)
+  })
+})
+
+describe('P-22: der sichere Adressbereich wird nie gesperrt', () => {
+  it('P-22: leer gelassen gilt die Sperre überall — auch im eigenen Netz', async () => {
+    // Die Voreinstellung. Eine Ausnahme soll jemand bewusst eintragen.
+    await setSafeRanges('')
+    await failAttempts(5, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+
+    expect((await addressLock('192.168.1.7', new Date(), db)).locked).toBe(true)
+  })
+
+  it('P-22: ohne Einstellungszeile gilt die Sperre ebenfalls überall', async () => {
+    await failAttempts(5, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+    expect(await safeRangeSetting(db)).toBe('')
+    expect((await addressLock('192.168.1.7', new Date(), db)).locked).toBe(true)
+  })
+
+  it('P-22: was eingetragen ist, wird nicht gesperrt', async () => {
+    await setSafeRanges('192.168.1.0/24')
+    await failAttempts(50, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+
+    const lock = await addressLock('192.168.1.7', new Date(), db)
+    expect(lock.locked).toBe(false)
+    expect(lock.permanent).toBe(false)
+  })
+
+  it('P-22: der Nachbar außerhalb des Bereichs wird sehr wohl gesperrt', async () => {
+    await setSafeRanges('192.168.1.0/24')
+    await failAttempts(5, { username: 'gibtsnicht', address: '192.168.2.7', reason: 'unbekannt' })
+
+    expect((await addressLock('192.168.2.7', new Date(), db)).locked).toBe(true)
+  })
+
+  it('P-22: auch eine festgehaltene Sperre gilt im sicheren Bereich nicht', async () => {
+    // Die Reihenfolge ist wichtig: erst der sichere Bereich, dann alles
+    // andere. Sonst bliebe eine Adresse gesperrt, die jemand nachträglich in
+    // den sicheren Bereich aufgenommen hat — und niemand käme mehr herein.
+    await failAttempts(20, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '192.168.1.7' },
+      new Date(),
+      db,
+    )
+    expect((await addressLock('192.168.1.7', new Date(), db)).permanent).toBe(true)
+
+    await setSafeRanges('192.168.1.0/24')
+    expect((await addressLock('192.168.1.7', new Date(), db)).locked).toBe(false)
+  })
+
+  it('P-22: im sicheren Bereich wird gar nichts erst festgehalten', async () => {
+    await setSafeRanges('192.168.0.0/16')
+    await failAttempts(50, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '192.168.1.7' },
+      new Date(),
+      db,
+    )
+
+    expect((await db.select().from(addressLocks)).length).toBe(0)
+  })
+
+  it('P-22: das Konto bleibt trotzdem sperrbar', async () => {
+    // Der sichere Bereich schützt den Anschluss, nicht das Passwort. Wer aus
+    // dem Büro heraus vierzigmal falsch rät, sperrt sein Konto.
+    await setSafeRanges('192.168.0.0/16')
+    await createAccount('mmustermann')
+    await failAttempts(40, { address: '192.168.1.7' })
+
+    expect((await addressLock('192.168.1.7', new Date(), db)).locked).toBe(false)
+    expect((await accountLock('mmustermann', new Date(), db)).permanent).toBe(true)
+  })
+
+  it('P-22: die Anmeldung aus dem sicheren Bereich kommt durch', async () => {
+    await setSafeRanges('203.0.113.0/24')
+    await createAccount('mmustermann')
+    await failAttempts(10, { username: 'gibtsnicht', address: '203.0.113.9', reason: 'unbekannt' })
+
+    config.trustProxy = 'on'
+    try {
+      const response = await signIn('mmustermann', PASSWORD, { 'x-forwarded-for': '203.0.113.9' })
+      expect(response.status).toBe(200)
+    }
+    finally {
+      config.trustProxy = 'off'
+    }
+  })
+})
+
+describe('P-15: die Übersicht der gesperrten Anschlüsse', () => {
+  it('P-15: nennt jeden gesperrten Anschluss mit Anzahl und Zeitpunkt', async () => {
+    await failAttempts(5, { username: 'gibtsnicht', address: '203.0.113.5', reason: 'unbekannt' })
+
+    const rows = await lockedAddresses(new Date(), db)
+    expect(rows.map(row => row.address)).toEqual(['203.0.113.5'])
+    expect(rows[0]?.failures).toBe(5)
+    expect(rows[0]?.lastAttemptAt).toBeTruthy()
+    expect(rows[0]?.scope).toBe('adresse')
+  })
+
+  it('P-15: lässt einen Anschluss weg, der noch unter der ersten Stufe liegt', async () => {
+    await failAttempts(4, { username: 'gibtsnicht', address: '203.0.113.5', reason: 'unbekannt' })
+    expect(await lockedAddresses(new Date(), db)).toEqual([])
+  })
+
+  it('P-15: zeigt auch den dauerhaft Gesperrten, dessen Versuche aus dem Fenster gefallen sind', async () => {
+    // Gerade der gehört in die Liste — und gerade der fehlte, wenn nur nach
+    // frischen Fehlversuchen gesucht würde.
+    await failAttempts(20, { username: 'gibtsnicht', address: '203.0.113.6', reason: 'unbekannt' })
+    await noteSignInOutcome(
+      { username: 'gibtsnicht', succeeded: false, known: false, clientAddress: '203.0.113.6' },
+      new Date(),
+      db,
+    )
+    await db.delete(signInAttempts)
+
+    const rows = await lockedAddresses(new Date(), db)
+    expect(rows.map(row => row.address)).toEqual(['203.0.113.6'])
+    expect(rows[0]?.permanent).toBe(true)
+    expect(rows[0]?.lockedAt).toBeInstanceOf(Date)
+    expect(rows[0]?.lastAttemptAt).toBeNull()
+  })
+
+  it('P-15: stellt das Dringendste nach vorn', async () => {
+    await failAttempts(10, { username: 'gibtsnicht', address: '203.0.113.7', reason: 'unbekannt' })
+    await failAttempts(5, { username: 'gibtsnicht', address: '203.0.113.8', reason: 'unbekannt' })
+    await failAttempts(20, { username: 'gibtsnicht', address: '203.0.113.9', reason: 'unbekannt' })
+
+    const rows = await lockedAddresses(new Date(), db)
+    expect(rows.map(row => row.address)).toEqual(['203.0.113.9', '203.0.113.7', '203.0.113.8'])
+    expect(rows[0]?.permanent).toBe(true)
+  })
+
+  it('P-15: lässt den sicheren Bereich heraus', async () => {
+    await setSafeRanges('192.168.0.0/16')
+    await failAttempts(20, { username: 'gibtsnicht', address: '192.168.1.7', reason: 'unbekannt' })
+    await failAttempts(5, { username: 'gibtsnicht', address: '203.0.113.5', reason: 'unbekannt' })
+
+    const rows = await lockedAddresses(new Date(), db)
+    expect(rows.map(row => row.address)).toEqual(['203.0.113.5'])
+  })
+
+  it('P-15: ist leer, solange nichts gesperrt ist', async () => {
+    expect(await lockedAddresses(new Date(), db)).toEqual([])
   })
 })

@@ -44,7 +44,7 @@ export const itemPriceVersions = pgTable('item_price_versions', {
     columns: [table.itemId],
     foreignColumns: [items.id],
     name: 'item_price_versions_item_id_items_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const tires = pgTable('tires', {
@@ -102,7 +102,7 @@ export const tirePriceVersions = pgTable('tire_price_versions', {
     columns: [table.tireId],
     foreignColumns: [tires.id],
     name: 'tire_price_versions_tire_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const tirePhotos = pgTable('tire_photos', {
@@ -119,5 +119,5 @@ export const tirePhotos = pgTable('tire_photos', {
     columns: [table.tireId],
     foreignColumns: [tires.id],
     name: 'tire_photos_tire_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])

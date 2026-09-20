@@ -810,11 +810,17 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
     }
   })
 
-  it('M-38: was reines Beiwerk ist, geht mit', async () => {
-    // Die Gegenprobe. Beiwerk existiert nur als Teil seines Datensatzes und
-    // wird ohne ihn sinnlos — es sperrt nicht, sonst ließe sich nie etwas
-    // löschen.
-    const beiwerk = [
+  it('M-38: auch das Beiwerk sperrt — nichts geht still mit', async () => {
+    // Die strenge Lesart der Entscheidung: „Ein Datensatz ist nur löschbar,
+    // wenn er null Verweise hat." Auch das, was nur als Teil seines
+    // Datensatzes existiert, sperrt auf Ebene der Datenbank.
+    //
+    // Das heißt **nicht**, dass eine frisch angelegte Rechnung wegen ihrer
+    // eigenen Positionen unlöschbar wäre. Es heißt, dass der Löschdienst die
+    // eigenen Teile in derselben Transaktion ausdrücklich wegräumen muss,
+    // bevor er den Datensatz löscht. Die Datenbank ist das Netz darunter:
+    // was niemand ausdrücklich löscht, verschwindet auch nicht.
+    const eigeneTeile = [
       ['vehicle_license_plate_versions', 'vehicle_id'],
       ['vehicle_owner_history', 'vehicle_id'],
       ['vehicle_photos', 'vehicle_id'],
@@ -832,9 +838,32 @@ describe('B-190: kein Verweis wird still gelöscht', () => {
       ['reminder_pdfs', 'reminder_id'],
     ] as const
 
-    for (const [table, column] of beiwerk) {
-      expect(await ruleOf(table, column), `${table}.${column}`).toBe('cascade')
+    for (const [table, column] of eigeneTeile) {
+      expect(await ruleOf(table, column), `${table}.${column}`).toBe('no action')
     }
+  })
+
+  it('M-38: „geht mit" gibt es nur noch für die Anmeldung selbst', async () => {
+    // Die einzige Ausnahme, und sie ist keine fachliche: eine Sitzung, ein
+    // Zugang und eine Rollenzuweisung sind kein Vorgang, den später jemand
+    // sucht. Sie gehören zum Konto und verschwinden mit ihm.
+    //
+    // Diese Liste ist absichtlich abschließend geprüft: kommt irgendwo sonst
+    // ein „geht mit" hinzu, fällt genau dieser Test.
+    const rows = await sql<{ name: string }[]>`
+      SELECT conname AS name
+      FROM pg_constraint
+      WHERE contype = 'f' AND connamespace = 'public'::regnamespace
+        AND confdeltype = 'c'
+      ORDER BY conname
+    `
+    expect(rows.map(row => row.name)).toEqual([
+      'accounts_user_id_users_id_fk',
+      'role_permissions_role_id_roles_id_fk',
+      'sessions_user_id_users_id_fk',
+      'user_roles_role_id_roles_id_fk',
+      'user_roles_user_id_users_id_fk',
+    ])
   })
 
   it('M-38: es gibt keine Löschregel mehr, die von einem Feldwert abhinge', async () => {

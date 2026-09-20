@@ -571,29 +571,60 @@ wer geduldig ist und die Adresse wechselt, kommt auf 20 Versuche je Minute. Im
 Haus ist das theoretisch — sobald die Anwendung auf einem eigenen Server im
 Internet steht, ist es das nicht mehr. Deshalb zusätzlich:
 
-- **Gestaffelte Sperre** (verschärft am 17.09.2026). Gezählt werden die
-  Fehlversuche der letzten **24 Stunden**:
+- **Gestaffelte Sperre** (verschärft am 17.09.2026, Schwellen festgelegt am
+  20.09.2026). Gezählt werden die Fehlversuche der letzten **24 Stunden** —
+  in **zwei getrennten Staffeln**, weil Konto und Adresse verschieden
+  verdächtig sind (P-15):
 
-  | Fehlversuche | Folge |
-  | --- | --- |
-  | 1–2 | nichts |
-  | **3** | 10 Minuten Ruhe |
-  | **10** | 24 Stunden Ruhe |
-  | **20** | **dauerhaft gesperrt** — nur der Administrator hebt das auf |
+  | Folge | Konto (Name stimmt) | Adresse |
+  | --- | --- | --- |
+  | 10 Minuten Ruhe | ab **10** | ab **5** |
+  | 24 Stunden Ruhe | ab **20** | ab **10** |
+  | **dauerhaft gesperrt** | ab **40** | ab **20** |
 
   Die Anmeldeseite zeigt die verbleibende Zeit als ablaufenden Zähler, damit
   niemand raten muss. Die Minutengrenzen bleiben zusätzlich bestehen; sie
   fangen die Flut ab, bevor überhaupt gerechnet wird.
 
-- **Konto und Adresse werden getrennt gezählt** (P-15). Wer einen
-  **unbekannten** Benutzernamen durchprobiert, sperrt seine **Adresse** — es
-  gibt kein Konto, das man sperren könnte, und genau dieses Muster verrät den
-  Angriff. Wer ein **bekanntes** Konto mit falschem Passwort beklopft, sperrt
-  **beides**: das Konto und die Adresse.
+  **Die ersten beiden Stufen werden gerechnet, die oberste festgehalten.** Eine
+  gerechnete Dauersperre wäre nach 24 Stunden von selbst weg, weil die
+  Fehlversuche aus dem Zählfenster fallen — das wäre die zweite Stufe unter
+  anderem Namen. Also steht sie als Datum: beim Konto in `users.locked_at`,
+  bei der Adresse in `address_locks.locked_at`.
+
+- **Konto und Adresse werden getrennt gezählt, mit verschiedenen Schwellen**
+  (P-15, festgelegt am 20.09.2026):
+
+  | Was passiert | Schwelle | Was gesperrt wird |
+  | --- | --- | --- |
+  | falsches Passwort auf ein **bekanntes** Konto | **10** | Konto **und** Adresse |
+  | **unbekannter** Benutzername | **5** | nur die Adresse |
+
+  Der unbekannte Name ist das verdächtigere Muster: wer Namen durchprobiert,
+  sucht. Wer sein eigenes Passwort verlegt, tippt sich fest — dafür sind zehn
+  Versuche angemessen.
 
   **Eine Adresssperre betrifft nur neue Anmeldungen.** Wer bereits angemeldet
-  ist, arbeitet weiter. Sonst legte ein Tippfehler den halben Betrieb still,
-  weil im Haus alle hinter derselben Adresse sitzen.
+  ist, arbeitet weiter.
+
+- **Der Betrieb läuft von innen und von außen** (P-22). Im Haus sitzen alle
+  hinter derselben Adresse; von unterwegs kommt jeder mit einer eigenen. Beides
+  muss gehen, und **auch eine interne Adresse darf gesperrt werden** — ein
+  Angriff kann auch aus dem eigenen Netz kommen.
+
+  Damit der Betrieb sich nicht selbst aussperrt, steht in den Einstellungen ein
+  **sicherer Adressbereich**: was darin liegt, wird nie gesperrt. Leer gelassen
+  gilt die Sperre überall.
+
+- **Der Administrator hebt auch eine Adresssperre auf** — eigener Knopf neben
+  dem für das Konto.
+
+- **In den Einstellungen ist zu sehen, was wann von wo gesperrt wurde**, und
+  dasselbe steht im großen Protokoll (M-39).
+
+- **Fehlversuche zählen nur innerhalb eines Zeitfensters.** Fünf Fehlanmeldungen
+  über ein Jahr verteilt sind kein Angriff, sondern ein Mensch. Das Fenster
+  beträgt 24 Stunden.
 
 - **Der Administrator hebt jede Sperre sofort auf.** Auf der Benutzerseite ein
   Knopf dafür, daneben die letzten Fehlversuche und „Passwort neu setzen".
@@ -660,8 +691,8 @@ Ein Backup, das nie zurückgespielt wurde, ist eine Vermutung.
 Anwendung gleich — Kunde, Fahrzeug, Reifen, Artikel, Mitarbeiter, Lieferant,
 Beleg, Auftrag.
 
-> **Hängt an einem Datensatz ein eigener Vorgang, wird er nicht gelöscht,
-> sondern archiviert.** Gelöscht wird nur, woran noch nichts hängt.
+> **Zeigt irgendein anderer Datensatz auf ihn, wird er nicht gelöscht,
+> sondern archiviert.** Gelöscht wird nur, worauf nichts zeigt.
 
 Der Anwendungsfall fürs Löschen ist eng und soll es bleiben: jemand legt etwas
 an, sieht sofort, dass es Unsinn war, und nimmt es zurück. Alles andere wird
@@ -674,7 +705,26 @@ Eine Datenbank, in der ein Vorgang verschwinden kann, beantwortet die Frage
 buchhalterisch relevant" ist im Einzelfall schwer zu ziehen — die Grenze „hängt
 da etwas dran" ist es nicht.
 
-**Was ein eigener Vorgang ist** (sperrt das Löschen):
+**Verschärft am 20.09.2026.** Die erste Fassung unterschied noch zwischen
+„eigenem Vorgang" (sperrt) und „Beiwerk" (geht mit). Diese Unterscheidung
+entfällt: **es sperrt jeder Verweis.** Ein Foto am Fahrzeug, eine
+Kennzeichen-Version, eine Belegposition — alles zeigt auf seinen Datensatz und
+hält ihn damit fest.
+
+**Warum noch strenger.** Die Grenze „was ist Beiwerk" war die letzte, die noch
+im Einzelfall zu ziehen war. Jetzt gibt es keine mehr: entweder zeigt etwas auf
+den Datensatz oder nicht, und das beantwortet die Datenbank ohne Auslegung.
+
+**Der Anwendungsfall bleibt vollständig abgedeckt.** Ein gerade angelegter
+Kunde, ein gerade angelegtes Fahrzeug — daran hängt nichts, also ist es
+löschbar. Das ist der einzige Fall, für den das Löschen gedacht ist.
+
+**Was mitgeht, geht nur noch dort mit, wo es keine Geschichte gibt:** die
+Anhängsel der Anmeldung und der Rechteverwaltung (Sitzungen, Konten,
+Rollenzuordnungen, Rechte einer Rolle). Sie tragen nichts, was später jemand
+nachvollziehen will, und ohne sie ließe sich ein Zugang nie wieder aufräumen.
+
+**Was sperrt** — also alles Fachliche:
 
 | | |
 | --- | --- |
@@ -689,25 +739,27 @@ da etwas dran" ist es nicht.
 | Anfragen | werden bearbeitet und haben einen Stand |
 | Gehaltsstände | Personalunterlagen |
 
-**Was Beiwerk ist** (geht mit):
+Dazu alles, was früher als Beiwerk mitging und jetzt ebenfalls sperrt:
+Kennzeichen- und Halter-Historie, Fotos, Unterlagen, Inserat, Belegpositionen
+und erzeugte PDFs, Auftragspositionen samt Zuweisungen, Preisstände,
+Abwesenheiten, Beleganhänge, Erinnerungsprotokoll.
+
+**Was weiterhin mitgeht** — und nur das:
 
 | | |
 | --- | --- |
-| Am Fahrzeug | Kennzeichen-Historie, Halter-Historie, Fotos, Unterlagen, Inserat |
-| Am Beleg | Positionen, erzeugte PDFs |
-| Am Auftrag | Positionen und deren Zuweisungen |
-| Am Reifen und am Artikel | Preisstände, Fotos |
-| Am Mitarbeiter | Abwesenheiten |
-| An der Buchung | Beleganhänge |
+| Am Benutzer | Sitzungen, Anmeldekonten, Rollenzuordnung |
+| An der Rolle | Rechte, Zuordnung zu Benutzern |
 
-Beiwerk hat keinen eigenen Vorgangscharakter: es existiert nur als Teil seines
-Datensatzes und wird ohne ihn sinnlos.
+Die Zugangsverwaltung trägt keine Geschichte. Ohne die Kaskade ließe sich ein
+Benutzer oder eine Rolle nie wieder entfernen, und das Protokoll überlebt den
+gelöschten Benutzer ohnehin — sein Name steht eingefroren darin (M-01).
 
 **Was der Bediener sieht.** Geht es nicht, steht der Grund da:
 
-> **Dieses Fahrzeug lässt sich nicht löschen.** Daran hängen 3 Rechnungen und
-> 1 Auftrag. Aus buchhalterischen Gründen bleibt beides erhalten — archivieren
-> Sie das Fahrzeug stattdessen.
+> **Dieses Fahrzeug lässt sich nicht löschen.** Daran hängen 3 Rechnungen,
+> 1 Auftrag und 12 Fotos. Damit nichts davon verloren geht, bleibt das Fahrzeug
+> erhalten — archivieren Sie es stattdessen.
 
 Und daneben die Schaltfläche zum Archivieren. Der Bediener entscheidet nichts
 über Verweise; er entscheidet nur, ob archiviert wird.
@@ -791,7 +843,36 @@ gelöscht hat, und ist wiederholbar.
 **nicht** der Vorgang — der Fehler landet im Serverlog. Ein volles Protokoll
 darf niemanden an der Arbeit hindern.
 
-Siehe **P-17** bis **P-20**.
+**Wo es zu sehen ist** (festgelegt am 20.09.2026): ein **eigener Menüpunkt**,
+sichtbar nur für Administratoren. Darin eine Liste, chronologisch, mit Filter
+nach Gewicht und allen weiteren Merkmalen. Der Menüpunkt trägt einen **Zähler**,
+wenn schwere Vorgänge anstehen — so fällt es auf, ohne dass jemand nachsehen
+muss.
+
+Dazu eine **Kachel auf dem Dashboard** mit ein paar Kennzahlen daraus.
+
+**Sicherheit ist nicht auf die Anmeldung beschränkt.** Auch Fehler,
+fehlgeschlagene Hintergrundarbeit und Vorgänge mit großer Wirkung werden
+erfasst und über ihr Gewicht eingeordnet.
+
+**Was von selbst meldet** (P-23). Bei gravierenden Vorfällen geht eine E-Mail an
+die Administratoradresse aus der Einrichtung:
+
+| Anlass | Warum |
+| --- | --- |
+| Eine **dauerhafte** Kontosperre | jemand hat zwanzigmal danebengegriffen |
+| Eine **Adresssperre** | ein Muster, das nach Angriff aussieht |
+| **Viele Datensätze auf einmal gelöscht** | fällt sonst erst auf, wenn sie fehlen |
+| Eine **Sicherung, die nicht durchlief** | eine Sicherung, von der niemand weiß, ist keine |
+| Eine **Hintergrundaufgabe, die scheiterte** | sie läuft nachts, es sieht sonst niemand |
+| Eine **Häufung von Fehlern** | ein Ausfall, der sich gerade aufbaut |
+| Eine **Änderung an Rollen oder Rechten** | wer darf plötzlich mehr, und wer hat es erlaubt |
+
+**Jede Meldung, die zu oft kommt, wird ignoriert** — das ist die eigentliche
+Gefahr. Deshalb ist die Liste kurz, jeder Anlass hat eine Untergrenze, und
+gleichartige Vorfälle werden zu **einer** Meldung zusammengefasst.
+
+Siehe **P-17** bis **P-20** und **P-23**.
 
 ### M-40 — Die Anwendung sagt dem Browser, was er darf
 
@@ -814,6 +895,17 @@ Jede Antwort trägt künftig:
 
 `Strict-Transport-Security` nur, wenn die Anwendung wirklich über HTTPS läuft —
 sonst sperrt sie sich in einer Entwicklungsumgebung selbst aus.
+
+**Skripte laufen nur mit Einmalwert.** Je Antwort ein gewürfelter Wert in
+`script-src 'nonce-…'`, geschrieben an jedes eingebettete Skript des Rahmens
+über den dafür vorgesehenen Nuxt-Haken `render:html`. `'unsafe-inline'` steht
+damit nicht mehr in der ausgelieferten Richtlinie.
+
+**Bei den Stilen bleibt `'unsafe-inline'`** (entschieden am 20.09.2026). Nuxt UI
+setzt Stile als Attribut am Element; ein Einmalwert deckt Attribute nicht ab.
+Hier wird **nicht** am Rahmenwerk vorbeigebaut — es gilt, was Nuxt vorgibt.
+Eingeschleustes CSS kann keinen Code ausführen und keine Daten abrufen; der
+Abstand zu eingeschleustem JavaScript ist groß.
 
 Siehe **P-21**.
 
@@ -839,15 +931,17 @@ Kennung beginnt.
 | **P-10** | Gehaltsdaten sind **ausschließlich** über das Personalmodul erreichbar | M-04 |
 | **P-11** | Hängt ein **eigener Vorgang** daran, sperrt er das Löschen; die Meldung nennt ihn und bietet das Archivieren an | M-38 |
 | **P-12** | Archiviertes verschwindet aus Listen, Auswahlen und Suche und ist **nur** über den Reiter „Archiviert" erreichbar | M-38 |
-| **P-13** | Anmeldeversuche werden **gestaffelt** gesperrt: 3 → 10 Minuten, 10 → 24 Stunden, 20 → dauerhaft | M-36 |
+| **P-13** | Anmeldeversuche werden **gestaffelt** gesperrt, mit zwei Staffeln: Konto 10/20/40, Adresse 5/10/20 → 10 Minuten, 24 Stunden, dauerhaft | M-36 |
 | **P-14** | Ein neu gesetztes Passwort erfüllt die **Mindestanforderung** und wird gegen bekannte Passwörter geprüft, **ohne es preiszugeben** | M-36 |
-| **P-15** | Ein Fehlversuch auf einen **unbekannten** Benutzernamen sperrt die **Adresse**; auf ein bekanntes Konto sperrt er **Konto und Adresse** | M-36 |
-| **P-16** | Eine dauerhafte Sperre und eine Adresssperre **melden sich per E-Mail** an die im Setup hinterlegte Adresse | M-36 |
+| **P-15** | Ein Fehlversuch auf einen **unbekannten** Benutzernamen sperrt die **Adresse** (ab 5); auf ein bekanntes Konto sperrt er **Konto und Adresse** (ab 10). Der Administrator hebt beides auf | M-36 |
+| **P-16** | Eine dauerhafte Sperre und eine Adresssperre **melden sich per E-Mail** an die im Setup hinterlegte Adresse — aufgegangen in **P-23** | M-36 |
 | **P-17** | Jede Änderung an einem Datensatz erzeugt **genau einen** Protokolleintrag mit altem und neuem Wert | M-01, M-39 |
 | **P-18** | Sicherheitsrelevante Vorgänge tragen das Gewicht `sicherheit` — auch der **abgewiesene** Zugriff | M-39 |
 | **P-19** | Das Protokoll wird **nie geändert**; nur die Rotation löscht, und zwar nach Alter | M-39 |
 | **P-20** | Die Rotation hält Buchhaltungsnahes 10 Jahre, Sicherheit 2 Jahre, alles andere 1 Jahr | M-39 |
 | **P-21** | Jede Antwort trägt die Sicherheits-Kopfzeilen; `Strict-Transport-Security` nur über HTTPS | M-40 |
+| **P-22** | Ein **sicherer Adressbereich** wird nie gesperrt; alles andere schon, auch intern | M-36 |
+| **P-23** | Gravierende Vorfälle **melden sich per E-Mail**, zusammengefasst statt einzeln | M-39 |
 
 ---
 
@@ -974,3 +1068,5 @@ jeder Kennung einen Test, dessen Name mit ihr beginnt.
 | P-19 | T-044 | das Protokoll wird nie geändert |
 | P-20 | T-044 | Rotation nach Gewicht und Gegenstand |
 | P-21 | T-044 | Sicherheits-Kopfzeilen auf jeder Antwort |
+| P-22 | T-007 | sicherer Adressbereich wird nie gesperrt |
+| P-23 | T-026 | gravierende Vorfälle melden sich per E-Mail |

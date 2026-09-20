@@ -68,7 +68,7 @@ async function noteAttempt(
     : known ? 'passwort' : 'unbekannt'
 
   await recordSignInAttempt({ username, clientAddress: address, succeeded, reason })
-  await noteSignInOutcome({ username, succeeded, known })
+  await noteSignInOutcome({ username, succeeded, known, clientAddress: address })
 
   // Dasselbe Ereignis noch einmal im großen Protokoll (M-39). `sign_in_attempts`
   // ist der Zähler für die Sperre und wird oft und schmal gelesen; das

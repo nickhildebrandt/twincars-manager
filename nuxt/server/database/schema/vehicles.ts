@@ -86,7 +86,7 @@ export const vehicleLicensePlateVersions = pgTable('vehicle_license_plate_versio
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_license_plate_versions_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const vehiclePurchases = pgTable('vehicle_purchases', {
@@ -157,7 +157,7 @@ export const vehicleListings = pgTable('vehicle_listings', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_listings_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const vehiclePhotos = pgTable('vehicle_photos', {
@@ -174,7 +174,7 @@ export const vehiclePhotos = pgTable('vehicle_photos', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_photos_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const vehicleDocuments = pgTable('vehicle_documents', {
@@ -193,7 +193,7 @@ export const vehicleDocuments = pgTable('vehicle_documents', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_documents_vehicle_id_vehicles_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 /**
@@ -219,7 +219,7 @@ export const vehicleOwnerHistory = pgTable('vehicle_owner_history', {
     columns: [table.vehicleId],
     foreignColumns: [vehicles.id],
     name: 'vehicle_owner_history_vehicle_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
   foreignKey({
     columns: [table.customerId],
     foreignColumns: [customers.id],

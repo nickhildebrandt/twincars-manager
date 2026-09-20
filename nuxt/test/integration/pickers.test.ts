@@ -48,10 +48,17 @@ const { openTestDatabase } = await import('../setup/drizzle')
 
 const { db, close } = openTestDatabase()
 
-afterAll(async () => {
-  // Aufräumen in Abhängigkeitsrichtung: das Fahrzeug sperrt den Kunden (M-05),
-  // also geht es zuerst. Nachfolgende Testdateien desselben Arbeiters finden
-  // sonst eine Datenbank vor, aus der sie nichts mehr löschen können.
+/**
+ * Räumt die Stammdaten dieser Datei weg — in Abhängigkeitsrichtung.
+ *
+ * Seit M-38 sperrt **jeder** Verweis, auch der der eigenen Teile: nichts geht
+ * mehr still mit. Wer löschen will, räumt die Teile ausdrücklich weg. Genau so
+ * arbeitet der Löschdienst später auch, nur in einer Transaktion.
+ */
+async function clearBusinessData(): Promise<void> {
+  await db.delete(itemPriceVersions)
+  await db.delete(tirePriceVersions)
+  await db.delete(vehicleLicensePlateVersions)
   await db.delete(documents)
   await db.delete(vehicles)
   await db.delete(customers)
@@ -59,18 +66,19 @@ afterAll(async () => {
   await db.delete(tires)
   await db.delete(employees)
   await db.delete(suppliers)
+}
+
+afterAll(async () => {
+  // Aufräumen in Abhängigkeitsrichtung: das Fahrzeug sperrt den Kunden (M-05),
+  // also geht es zuerst. Nachfolgende Testdateien desselben Arbeiters finden
+  // sonst eine Datenbank vor, aus der sie nichts mehr löschen können.
+  await clearBusinessData()
   await close()
   await closeDatabase()
 })
 
 beforeAll(async () => {
-  await db.delete(documents)
-  await db.delete(vehicles)
-  await db.delete(customers)
-  await db.delete(items)
-  await db.delete(tires)
-  await db.delete(employees)
-  await db.delete(suppliers)
+  await clearBusinessData()
 
   // 300 Kunden — deutlich mehr als eine Seite fasst.
   await db.insert(customers).values(

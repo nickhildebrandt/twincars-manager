@@ -76,7 +76,7 @@ export const employeeAbsences = pgTable('employee_absences', {
     columns: [table.employeeId],
     foreignColumns: [employees.id],
     name: 'employee_absences_employee_id_employees_id_fk',
-  }).onDelete('cascade'),
+  }).onDelete('no action'),
 ])
 
 export const employeeSalaryVersions = pgTable('employee_salary_versions', {

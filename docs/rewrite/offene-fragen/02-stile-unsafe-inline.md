@@ -1,6 +1,6 @@
 # 02 — Die Stile behalten `'unsafe-inline'`
 
-**Betrifft:** M-40, P-21 · **Stand:** bewusste Einschränkung, nicht behoben
+**Betrifft:** M-40, P-21 · **Stand:** **entschieden am 20.09.2026** — bleibt so
 
 ## Worum es geht
 
@@ -41,3 +41,17 @@ setzen — ein Kampf gegen die Komponentenbibliothek, den man dauerhaft führt.
 
 **A**, mit einer Wiedervorlage, falls Nuxt UI eines Tages ohne
 Attribut-Stile auskommt.
+
+
+---
+
+## Entschieden am 20.09.2026 — es bleibt
+
+> „`'unsafe-inline'` für Stile bleibt bestehen und wird dokumentiert. Bei
+> solchen tiefen Themen wird nicht im Framework herumgefummelt. Es gilt der
+> Standard, den Nuxt vorgibt."
+
+Damit ist die Einschränkung keine Lücke mehr, sondern eine festgelegte Grenze.
+Sie steht in `server/utils/security-headers.ts` im Kopfkommentar und hier.
+Sollte Nuxt UI eines Tages ohne Stil-Attribute auskommen, ist es eine Zeile —
+bis dahin wird nichts nachgebaut.

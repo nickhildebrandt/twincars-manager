@@ -1333,3 +1333,90 @@ steht in der Ausführungsanleitung.
 | Tests | 1682 (73 Dateien) |
 | Modelländerungen | 61 Kennungen, 28 fällig, 28 mit Nachweis |
 | Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |
+
+---
+
+## 20.09.2026 — Sechs Entscheidungen umgesetzt
+
+Der Inhaber ist die sechs offenen Fragen durchgegangen und hat sie beantwortet.
+Was daraus wurde:
+
+### Löschen: die strenge Lesart gilt (M-38)
+
+> „Ein Datensatz ist nur löschbar, wenn er null Verweise hat."
+
+Sechzehn Fremdschlüssel standen noch auf „geht mit" und stehen jetzt auf
+„sperrt". Übrig sind **fünf** Kaskaden, und keine davon ist fachlich: Sitzung,
+Zugang und Rollenzuweisung gehören zum Benutzerkonto. Ein Test prüft diese
+Liste **abschließend** — kommt irgendwo sonst eine hinzu, fällt er.
+
+Das heißt auch: die **eigenen Teile** eines Datensatzes (Rechnungsposition,
+Foto, Preisversion) verschwinden nicht mehr nebenbei. Der Löschdienst muss sie
+in derselben Transaktion ausdrücklich wegräumen; vergisst er einen, scheitert
+das Löschen laut statt still. Wo die Grenze zwischen „eigenem Teil" und
+„fremdem Vorgang" verläuft, steht als [offene Frage
+07](offene-fragen/07-eigene-teile-beim-loeschen.md) — mit zwei benannten
+Grenzfällen.
+
+### Anmeldesperre: zwei Staffeln und ein sicherer Bereich (P-15, P-22)
+
+> „Stimmt der Benutzername, 10 Fehlversuche; sonst 5."
+
+| Folge | Konto | Adresse |
+| --- | --- | --- |
+| 10 Minuten | ab 10 | ab 5 |
+| 24 Stunden | ab 20 | ab 10 |
+| dauerhaft | ab 40 | ab 20 |
+
+Dazu neu:
+
+- **Sicherer Adressbereich** in den Einstellungen (`safe_ip_ranges`). Versteht
+  einzelne Adressen, Netze (`192.168.1.0/24`) und Bereiche
+  (`192.168.1.10-50`), Notizen hinter `#` inklusive. **Leer ist die
+  Voreinstellung** — die Sperre gilt dann überall, auch im eigenen Netz. Ein
+  Eintrag, den die Anwendung nicht versteht, wird beim Speichern abgewiesen,
+  statt wirkungslos gespeichert zu werden; und er gilt **nie** als sicher.
+- **Knopf „Adresssperre aufheben"** (`address_locks`), getrennt vom Konto.
+  Wirkt auch für eine Adresse, zu der es noch keine Zeile gibt.
+- **Übersicht** `lockedAddresses` — was wann von wo gesperrt wurde, das
+  Dringendste zuerst, der sichere Bereich heraus.
+
+**Eine Lücke geschlossen.** Die dauerhafte Adresssperre war gerechnet und wäre
+nach 24 Stunden von selbst verschwunden, weil die Fehlversuche aus dem
+Zählfenster fallen — dieselbe Falle, die beim Konto schon einmal zuschnappte.
+Sie steht jetzt als Datum. Ebenso wichtig ist die **Reihenfolge**: der sichere
+Bereich wird zuerst geprüft, vor jeder festgehaltenen Sperre. Sonst bliebe eine
+Adresse gesperrt, die jemand nachträglich aufgenommen hat.
+
+### Das Übrige
+
+- **Stile behalten `'unsafe-inline'`** (M-40) — festgelegt, nicht geduldet.
+  Bei tiefen Themen gilt der Nuxt-Standard.
+- **Datumsfeld bleibt englisch beschriftet** (W-02), und daraus wurde eine
+  allgemeine Vorgabe: **E-24** — Abhängigkeiten bleiben so, wie Nuxt sie
+  aufsetzt. Ziel ist ein Projekt, das sich in zwei Jahren mit einem Befehl
+  anheben lässt.
+- **Anlegen über drei Ebenen** (T-009). Geprüft wurde dabei, ob „Auftrag →
+  Rechnung → Kunde → Fahrzeug" überhaupt sinnvoll ist: nein — eine Rechnung
+  entsteht aus einem fertigen Auftrag, nicht aus einem Picker. Die Ketten, die
+  vorkommen, sind höchstens drei Ebenen tief und stehen als Tabelle im Plan.
+  Dazu der volle Testumfang, Barrierefreiheitstests eingeschlossen.
+- **Protokollansicht** (M-39) — eigener Menüpunkt nur für Administratoren, mit
+  Zähler für gravierende Vorfälle, chronologischer Liste mit Filtern, Kachel
+  auf dem Dashboard und E-Mail an eine eigene Administrator-Adresse
+  (`admin_email`, getrennt von der Geschäftsadresse auf den Rechnungen).
+
+### Was offen bleibt
+
+Nur noch eine Frage: [07 — was „null Verweise" für die eigenen Teile
+heißt](offene-fragen/07-eigene-teile-beim-loeschen.md). Die Oberflächen zu
+Sperrliste und Protokoll gehören zu T-034 und stehen dort als
+Abnahmekriterien.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1759 (74 Dateien) |
+| Modelländerungen | 63 Kennungen, 29 fällig, 29 mit Nachweis |
+| Befund-Abdeckung | 80 von 80 fälligen mit Regressionstest |

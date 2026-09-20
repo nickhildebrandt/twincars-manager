@@ -1,6 +1,6 @@
 # 03 — Das Datumsfeld spricht für Screenreader englisch
 
-**Betrifft:** W-02, T-009 · **Stand:** Grenze eines Fremdpakets, nicht behoben
+**Betrifft:** W-02, T-009 · **Stand:** **entschieden am 20.09.2026** — bleibt so
 
 ## Worum es geht
 
@@ -40,3 +40,24 @@ Verliert den Kalender und die Pfeiltasten-Bedienung.
 
 **A.** Der Mangel ist real, aber klein, und jede Behebung kostet mehr, als sie
 bringt.
+
+
+---
+
+## Entschieden am 20.09.2026 — bleibt, und eine Regel dazu
+
+Die englischen Segmentbeschriftungen bleiben. Dazu eine allgemeine Vorgabe,
+die über diese Frage hinausgeht:
+
+> „Das Projekt muss so aufgesetzt sein, wie es bei Nuxt dokumentiert ist bzw.
+> wie es das Nuxt-Aufsetzungsskript macht. Neueste stabile Version des
+> Frameworks. Normale Abhängigkeitspakete sind in Ordnung, aber keine
+> zufälligen Pakete, die für das Framework nicht geeignet sind, und keine
+> Versionsmismatches, wie sie bei Handinstallation entstehen. Ziel: zukünftig
+> ohne große Probleme updatebar."
+
+Das heißt für diese Frage: **kein** Ausweichpaket für ein Datumsfeld, **kein**
+Nachbau, **kein** Eingriff in die Auslieferung von Reka UI. Die Beschriftung
+wird englisch bleiben, bis das Paket sie übersetzt.
+
+Die Vorgabe selbst ist als [E-24](../08-entscheidungen.md) festgehalten.

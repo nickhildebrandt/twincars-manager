@@ -47,6 +47,24 @@ export const companySettings = pgTable('company_settings', {
   reminderRecurEveryDays: integer('reminder_recur_every_days').default(14).notNull(),
   geoLat: numeric('geo_lat', { precision: 9, scale: 6 }),
   geoLon: numeric('geo_lon', { precision: 9, scale: 6 }),
+
+  /**
+   * Adressen, die nie gesperrt werden (P-22).
+   *
+   * Ein Eintrag je Zeile: eine einzelne Adresse, ein Netz (`192.168.1.0/24`)
+   * oder ein Bereich (`192.168.1.10-50`). **Leer ist die Voreinstellung** — die
+   * Sperre gilt dann überall, auch im eigenen Netz. Eine Ausnahme soll jemand
+   * bewusst eintragen, nicht geschenkt bekommen.
+   */
+  safeIpRanges: text('safe_ip_ranges').default('').notNull(),
+
+  /**
+   * Wohin gravierende Vorfälle gemeldet werden (P-23).
+   *
+   * Getrennt von `email`: die Geschäftsadresse steht auf jeder Rechnung, diese
+   * hier liest jemand, der etwas tun kann.
+   */
+  adminEmail: varchar('admin_email', { length: 254 }),
   /* ── Standardartikel (M-22) ────────────────────────────────────────────
      Der Ein-Klick-Reifenservice setzt diese Positionen ein. Fest verdrahtet
      müsste bei jeder Preisänderung der Entwickler ran. */
