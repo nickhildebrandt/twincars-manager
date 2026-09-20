@@ -50,7 +50,12 @@ export async function createUserWithCredential(
     email,
     emailVerified: false,
     username,
-    displayUsername: input.displayName.trim(),
+    // Die Schreibweise, die jemand **getippt** hat — dafür ist das Feld da.
+    // Bis zum 20.09.2026 stand hier der Anzeigename, also dasselbe wie in
+    // `name`: wer sich als „AChefin" anlegte, bekam „Anna Chefin" als
+    // Benutzernamen zurückgespiegelt. Gelesen hat es nie jemand, und genau
+    // deshalb fiel es nicht auf.
+    displayUsername: input.username.trim(),
     active: true,
   }, { method: 'admin' })
 

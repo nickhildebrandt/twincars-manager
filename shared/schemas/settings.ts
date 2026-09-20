@@ -175,14 +175,25 @@ export const documentDefaultsSchema = v.object({
 
 /* ── Schritt 5: Öffnungszeiten ────────────────────────────────────────── */
 
-/** Montag ist 1, Sonntag ist 7 — wie in ISO 8601, nicht wie in JavaScript. */
+/**
+ * **Sonntag ist 0, Samstag ist 6.**
+ *
+ * Nicht ISO 8601, wo Montag die 1 wäre — sondern genau das, was
+ * `businessWeekday()` in `shared/datetime.ts` liefert und was der Seed
+ * geschrieben hat. Eine zweite Zählweise daneben hieße, an jeder Stelle
+ * umzurechnen, an der geprüft wird, ob gerade offen ist. Genau dort entstehen
+ * Fehler, die sich als „montags geschlossen" zeigen.
+ *
+ * Die **Anzeige** beginnt trotzdem bei Montag; das ist eine Frage der
+ * Reihenfolge in der Tabelle, nicht der Speicherung.
+ */
 export const workshopHoursSchema = v.pipe(
   v.object({
     weekday: v.pipe(
       v.number(),
       v.integer(),
-      v.minValue(1, 'Wochentag außerhalb des Bereichs.'),
-      v.maxValue(7, 'Wochentag außerhalb des Bereichs.'),
+      v.minValue(0, 'Wochentag außerhalb des Bereichs.'),
+      v.maxValue(6, 'Wochentag außerhalb des Bereichs.'),
     ),
     closed: v.optional(v.boolean(), false),
     opensAt: timeSchema,

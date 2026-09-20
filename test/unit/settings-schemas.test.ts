@@ -226,31 +226,36 @@ describe('Öffnungszeiten', () => {
     // An einem geschlossenen Tag stehen die Zeiten aus der Vorgabe. Sie zu
     // prüfen hielte jemanden auf, der gar nichts eingegeben hat.
     expect(v.parse(workshopHoursSchema, {
-      weekday: 7, closed: true, opensAt: '17:00', closesAt: '08:00',
+      weekday: 0, closed: true, opensAt: '17:00', closesAt: '08:00',
     }).closed).toBe(true)
   })
 
-  it('zählt Montag als 1 und Sonntag als 7', () => {
-    // Wie in ISO 8601, nicht wie in JavaScript — dort wäre Sonntag die 0.
-    expect(reject(workshopHoursSchema, open(0))).toBe('Wochentag außerhalb des Bereichs.')
-    expect(reject(workshopHoursSchema, open(8))).toBe('Wochentag außerhalb des Bereichs.')
-    expect(v.parse(workshopHoursSchema, open(7)).weekday).toBe(7)
+  it('zählt Sonntag als 0 und Samstag als 6 — wie die ganze Anwendung', () => {
+    // Dieselbe Zählweise wie `businessWeekday()` und der Seed. Eine zweite
+    // daneben hiesse, an jeder Stelle umzurechnen, an der geprüft wird, ob
+    // gerade offen ist — und dort zeigt sich der Fehler als „montags
+    // geschlossen".
+    expect(v.parse(workshopHoursSchema, open(0)).weekday).toBe(0)
+    expect(v.parse(workshopHoursSchema, open(6)).weekday).toBe(6)
+    expect(reject(workshopHoursSchema, open(-1))).toBe('Wochentag außerhalb des Bereichs.')
+    expect(reject(workshopHoursSchema, open(7))).toBe('Wochentag außerhalb des Bereichs.')
   })
 
   it('verlangt alle sieben Tage', () => {
-    const week = [1, 2, 3, 4, 5, 6].map(open)
+    const week = [0, 1, 2, 3, 4, 5].map(open)
     expect(reject(workshopWeekSchema, week))
       .toBe('Es müssen alle sieben Wochentage angegeben sein.')
   })
 
   it('lässt keinen Tag doppelt zu', () => {
-    const week = [1, 1, 2, 3, 4, 5, 6].map(open)
+    const week = [0, 0, 1, 2, 3, 4, 5].map(open)
     expect(reject(workshopWeekSchema, week)).toBe('Jeder Wochentag darf nur einmal vorkommen.')
   })
 
   it('nimmt eine vollständige Woche an', () => {
+    // Genau der Stand, den der Seed schreibt: Mo–Fr offen, Sa und So zu.
     const week = [1, 2, 3, 4, 5].map(open).concat(
-      [6, 7].map(day => ({ weekday: day, closed: true, opensAt: '08:00', closesAt: '17:00' })),
+      [0, 6].map(day => ({ weekday: day, closed: true, opensAt: '08:00', closesAt: '17:00' })),
     )
     expect(v.parse(workshopWeekSchema, week)).toHaveLength(7)
   })
