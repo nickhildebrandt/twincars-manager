@@ -1,6 +1,27 @@
-// Visual configuration for the whole application. Component look, spacing and
-// variants belong here — never into a <style> block or a pile of utility
-// classes at the call site (../docs/rewrite/03-architektur.md §8.1).
+/**
+ * Die Farben der Anwendung — und sonst nichts.
+ *
+ * **Nuxt UI wird so verwendet, wie es kommt.** Keine Slot-Überschreibungen,
+ * keine eigenen Varianten, keine nachgebauten Komponenten. Was Nuxt UI
+ * mitbringt, wird benutzt; was es nicht mitbringt, wird zur offenen Frage
+ * (Regel 14) statt zu einem Nachbau.
+ *
+ * Bis zum 20.09.2026 standen hier drei Überschreibungen, und keine hat sich
+ * gerechnet:
+ *
+ *   - `card.slots.root` zwang jeder Karte `shadow-none` und einen eigenen
+ *     Radius auf. Das ist genau die „große Veränderung", die nicht sein soll —
+ *     und es verdeckte, dass Nuxt UI seine Karten bereits ruhig gestaltet.
+ *   - `button.defaultVariants` setzte `primary`/`solid`/`md`. Das **sind** die
+ *     Vorgaben von Nuxt UI; die Zeilen sahen nach Entscheidung aus und waren
+ *     wirkungslos.
+ *   - `table.slots.tr` bastelte einen Zeigefinger über ein erfundenes Attribut
+ *     `data-selectable`. `UTable` hat dafür `@select` und macht es selbst.
+ *
+ * Die Farbliste bleibt: sie ist keine Gestaltung, sondern die Zuordnung von
+ * Bedeutungen — was „Erfolg" heißt und was „Fehler", muss die Anwendung
+ * festlegen.
+ */
 export default defineAppConfig({
   ui: {
     colors: {
@@ -11,24 +32,6 @@ export default defineAppConfig({
       info: 'sky',
       warning: 'amber',
       error: 'red',
-    },
-
-    // The design language is flat, bordered and quiet: no shadows in the
-    // content column, no custom rounding, one accent colour.
-    card: {
-      slots: {
-        root: 'rounded-[var(--radius-box)] border border-default bg-default shadow-none',
-      },
-    },
-
-    button: {
-      defaultVariants: { color: 'primary', variant: 'solid', size: 'md' },
-    },
-
-    table: {
-      slots: {
-        tr: 'data-[selectable=true]:hover:bg-elevated data-[selectable=true]:cursor-pointer',
-      },
     },
   },
 })

@@ -16,6 +16,13 @@ import FilterBar from '~/components/data/FilterBar.vue'
 import StatusBadge from '~/components/data/StatusBadge.vue'
 import { documentStatuses, tireSeasons } from '#shared/domain'
 
+/** Ein Knopf über seine Beschriftung — so, wie ihn auch ein Mensch findet. */
+function buttonNamed(wrapper: { findAll: (selector: string) => { text: () => string, trigger: (event: string) => Promise<void> }[] }, label: string) {
+  const match = wrapper.findAll('button').find(button => button.text().includes(label))
+  if (!match) throw new Error(`Kein Knopf mit der Beschriftung „${label}".`)
+  return match
+}
+
 describe('ListPage', () => {
   const mount = (props: Record<string, unknown> = {}, slots: Record<string, string> = {}) =>
     mountSuspended(ListPage, {
@@ -71,13 +78,13 @@ describe('ListPage', () => {
 
   it('reicht die Anfrage nach einem neuen Versuch weiter', async () => {
     const wrapper = await mount({ failed: true, empty: true, total: 0 })
-    await wrapper.get('[data-testid="error-retry"]').trigger('click')
+    await buttonNamed(wrapper, 'Erneut laden').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 
   it('reicht das Zurücksetzen aus dem Leerzustand weiter', async () => {
     const wrapper = await mount({ empty: true, total: 0, filtered: true })
-    await wrapper.get('[data-testid="empty-reset"]').trigger('click')
+    await buttonNamed(wrapper, 'Filter zurücksetzen').trigger('click')
     expect(wrapper.emitted('reset')).toHaveLength(1)
   })
 
@@ -132,11 +139,11 @@ describe('EmptyState', () => {
     // Filter zurücknehmen.
     const leer = await mountSuspended(EmptyState)
     expect(leer.text()).toContain('Noch nichts vorhanden')
-    expect(leer.find('[data-testid="empty-reset"]').exists()).toBe(false)
+    expect(leer.findAll('button').some(b => b.text().includes('Filter zurücksetzen'))).toBe(false)
 
     const gefiltert = await mountSuspended(EmptyState, { props: { filtered: true } })
     expect(gefiltert.text()).toContain('Keine Treffer')
-    expect(gefiltert.find('[data-testid="empty-reset"]').exists()).toBe(true)
+    expect(gefiltert.findAll('button').some(b => b.text().includes('Filter zurücksetzen'))).toBe(true)
   })
 
   it('nimmt eigene Worte an', async () => {
@@ -153,7 +160,7 @@ describe('EmptyState', () => {
 
   it('meldet den Wunsch, den Filter zurückzunehmen', async () => {
     const wrapper = await mountSuspended(EmptyState, { props: { filtered: true } })
-    await wrapper.get('[data-testid="empty-reset"]').trigger('click')
+    await buttonNamed(wrapper, 'Filter zurücksetzen').trigger('click')
     expect(wrapper.emitted('reset')).toHaveLength(1)
   })
 })
@@ -172,7 +179,7 @@ describe('ErrorState', () => {
 
   it('meldet den Wunsch nach einem neuen Versuch', async () => {
     const wrapper = await mountSuspended(ErrorState)
-    await wrapper.get('[data-testid="error-retry"]').trigger('click')
+    await buttonNamed(wrapper, 'Erneut laden').trigger('click')
     expect(wrapper.emitted('retry')).toHaveLength(1)
   })
 })

@@ -1,18 +1,24 @@
 <script setup lang="ts">
 /**
- * Eine Historie als Zeitstrahl (M-02).
+ * Eine Historie als Zeitstrahl (M-02) — auf `UTimeline`.
  *
  * Wo es eine Historie gibt, wird sie grafisch gezeigt, nicht als Tabelle: beim
  * Fahrzeug die Halter- und Kennzeichenwechsel, beim Beleg der Statusverlauf,
- * beim Auftrag die Tafel, bei Preisen und Löhnen der Verlauf.
+ * bei Preisen und Löhnen der Verlauf, und seit M-45 die Stände jedes
+ * versionierten Datensatzes.
  *
- * Eine Tabelle beantwortet „was stand wann drin", ein Zeitstrahl beantwortet
- * „was ist passiert" — und das ist die Frage, die jemand stellt, der eine
- * Historie öffnet.
+ * **Die Darstellung kommt vollständig von Nuxt UI.** Diese Datei hat genau
+ * drei Aufgaben, und keine davon ist Gestaltung:
  *
- * Die Einträge kommen fertig herein. Diese Komponente rechnet nichts aus und
- * lädt nichts nach; sie stellt dar.
+ *   1. das Datum deutsch schreiben,
+ *   2. „wer" in die Beschreibung ziehen,
+ *   3. die Reihenfolge drehen, denn eine Historie liest man meist von hinten.
+ *
+ * Bis zum 20.09.2026 stand hier ein eigener Nachbau mit Punkten, Linien und
+ * hundert Zeilen Tailwind. `UTimeline` kann all das — inklusive waagerechter
+ * Ausrichtung, Größen und Auswahl, die der Nachbau nie hatte.
  */
+import type { TimelineItem } from '@nuxt/ui'
 import { formatDate } from '#shared/datetime'
 
 export type TimelineEntry = {
@@ -25,8 +31,6 @@ export type TimelineEntry = {
   description?: string
   /** Wer es getan hat. Leer, wenn es niemand war. */
   actor?: string
-  /** Farbe des Punkts. Für das, was hervorstechen soll. */
-  tone?: 'neutral' | 'primary' | 'success' | 'warning' | 'error'
   icon?: string
 }
 
@@ -40,82 +44,35 @@ const props = withDefaults(defineProps<{
   emptyText: 'Bisher ist nichts passiert.',
 })
 
-const TONE_CLASS = {
-  neutral: 'bg-elevated ring-default',
-  primary: 'bg-primary/15 ring-primary/40',
-  success: 'bg-success/15 ring-success/40',
-  warning: 'bg-warning/15 ring-warning/40',
-  error: 'bg-error/15 ring-error/40',
-} as const
+const items = computed<TimelineItem[]>(() => {
+  const ordered = [...props.entries].sort((a, b) =>
+    props.newestFirst ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date))
 
-const ordered = computed(() => {
-  const sorted = [...props.entries].sort((a, b) => a.date.localeCompare(b.date))
-  return props.newestFirst ? sorted.reverse() : sorted
+  return ordered.map(entry => ({
+    value: entry.id,
+    date: formatDate(entry.date),
+    title: entry.title,
+    // „Anschrift geändert · Anna Schmitt" — beides gehört zusammen und passt
+    // in eine Zeile, statt eine dritte aufzumachen.
+    description: [entry.description, entry.actor].filter(Boolean).join(' · ') || undefined,
+    icon: entry.icon ?? 'i-lucide-circle-dot',
+  }))
 })
 </script>
 
 <template>
   <div data-testid="timeline">
-    <p
-      v-if="ordered.length === 0"
-      class="px-3 py-6 text-sm text-muted"
+    <UEmpty
+      v-if="items.length === 0"
+      variant="naked"
+      icon="i-lucide-history"
+      :title="props.emptyText"
       data-testid="timeline-empty"
-    >
-      {{ props.emptyText }}
-    </p>
-
-    <ol
+    />
+    <UTimeline
       v-else
-      class="flex flex-col"
-    >
-      <li
-        v-for="(entry, index) in ordered"
-        :key="entry.id"
-        class="flex gap-3"
-        :data-testid="`timeline-entry-${entry.id}`"
-      >
-        <!-- Punkt und Linie. Die Linie endet beim letzten Eintrag. -->
-        <div class="flex flex-col items-center">
-          <span
-            class="flex size-7 shrink-0 items-center justify-center rounded-full ring-1"
-            :class="TONE_CLASS[entry.tone ?? 'neutral']"
-          >
-            <UIcon
-              :name="entry.icon ?? 'i-lucide-circle-dot'"
-              class="size-3.5"
-            />
-          </span>
-          <span
-            v-if="index < ordered.length - 1"
-            class="w-px grow bg-default"
-            aria-hidden="true"
-          />
-        </div>
-
-        <div class="flex flex-col gap-0.5 pb-5">
-          <time
-            :datetime="entry.date"
-            class="text-xs text-muted tabular-nums"
-          >
-            {{ formatDate(entry.date) }}
-          </time>
-          <p class="font-medium">
-            {{ entry.title }}
-          </p>
-          <p
-            v-if="entry.description"
-            class="text-sm text-toned"
-          >
-            {{ entry.description }}
-          </p>
-          <p
-            v-if="entry.actor"
-            class="text-xs text-dimmed"
-          >
-            {{ entry.actor }}
-          </p>
-        </div>
-      </li>
-    </ol>
+      :items="items"
+      data-testid="timeline-list"
+    />
   </div>
 </template>

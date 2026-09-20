@@ -1,21 +1,26 @@
 <script setup lang="ts">
 /**
- * Eine Kennzahl.
+ * Eine Kennzahl — auf `UPageCard`.
  *
- * Bewusst schmucklos: Zahl, Bezeichnung, und wenn es hilft, der Vergleich zum
- * Vorzeitraum. Kennzahlen werden **gerechnet**, nie zwischengespeichert
- * (P-09) — diese Komponente stellt nur dar, was ihr gereicht wird.
+ * Kennzahlen werden **gerechnet**, nie zwischengespeichert (P-09); diese
+ * Komponente stellt nur dar, was ihr gereicht wird.
+ *
+ * Die Kachel selbst ist Nuxt UI. Eigen ist hier nur eines, und es ist
+ * Fachlichkeit, keine Gestaltung: **mehr ist nicht immer besser.** Die Farbe
+ * der Veränderung sagt „hoch" oder „runter", nicht „gut" oder „schlecht" —
+ * bei den offenen Posten ist ein Plus das Gegenteil von einer guten Nachricht.
  */
-const props = withDefaults(defineProps<{
+const props = defineProps<{
   label: string
   value: string
   /** Veränderung gegenüber dem Vorzeitraum, in Prozent. */
   change?: number
   hint?: string
   icon?: string
-}>(), {})
+  /** Solange gerechnet wird, steht ein Platzhalter statt einer falschen Zahl. */
+  loading?: boolean
+}>()
 
-/** Mehr ist nicht immer besser — die Farbe sagt nur „hoch" oder „runter". */
 const direction = computed(() => {
   if (props.change === undefined || props.change === 0) return null
   return props.change > 0 ? 'up' : 'down'
@@ -23,44 +28,34 @@ const direction = computed(() => {
 </script>
 
 <template>
-  <div
-    class="flex flex-col gap-1 rounded-md border border-default bg-default px-4 py-3"
+  <UPageCard
+    :title="props.label"
+    :icon="props.icon"
+    :description="props.hint"
+    variant="outline"
     data-testid="stat-tile"
   >
-    <div class="flex items-center gap-2 text-sm text-muted">
-      <UIcon
-        v-if="props.icon"
-        :name="props.icon"
-        class="size-4"
-      />
-      {{ props.label }}
-    </div>
-
+    <USkeleton
+      v-if="props.loading"
+      class="h-8 w-24"
+      data-testid="stat-loading"
+    />
     <p
+      v-else
       class="text-2xl font-semibold tabular-nums"
       data-testid="stat-value"
     >
       {{ props.value }}
     </p>
 
-    <p
-      v-if="direction"
-      class="flex items-center gap-1 text-sm tabular-nums"
-      :class="direction === 'up' ? 'text-success' : 'text-error'"
+    <UBadge
+      v-if="direction && !props.loading"
+      :color="direction === 'up' ? 'success' : 'error'"
+      variant="subtle"
+      :icon="direction === 'up' ? 'i-lucide-trending-up' : 'i-lucide-trending-down'"
+      class="w-fit tabular-nums"
       data-testid="stat-change"
-    >
-      <UIcon
-        :name="direction === 'up' ? 'i-lucide-trending-up' : 'i-lucide-trending-down'"
-        class="size-4"
-      />
-      {{ props.change! > 0 ? '+' : '' }}{{ props.change }} %
-    </p>
-
-    <p
-      v-if="props.hint"
-      class="text-xs text-dimmed"
-    >
-      {{ props.hint }}
-    </p>
-  </div>
+      :label="`${props.change! > 0 ? '+' : ''}${props.change} %`"
+    />
+  </UPageCard>
 </template>

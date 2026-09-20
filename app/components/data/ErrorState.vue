@@ -1,45 +1,36 @@
 <script setup lang="ts">
 /**
- * Eine Liste, die nicht geladen werden konnte.
+ * Eine Liste, die nicht geladen werden konnte — auf `UEmpty`.
  *
- * Der deutsche Satz stand schon im Toast; hier steht, dass die Anzeige
- * womöglich veraltet ist, und ein Knopf zum erneuten Versuch. Eine leere
- * Tabelle ohne Erklärung sieht aus wie „nichts vorhanden" — und das ist etwas
- * ganz anderes.
+ * Zwei Fälle, weil sie verschieden schlimm sind: es gibt **gar nichts** zu
+ * zeigen, oder es steht noch der zuletzt geladene Stand da. Im zweiten Fall
+ * ist die Seite benutzbar, und das muss dabeistehen — sonst hält jemand
+ * veraltete Zahlen für aktuelle.
  */
+const props = withDefaults(defineProps<{
+  /** Ob noch ein älterer Stand angezeigt wird. */
+  stale?: boolean
+}>(), { stale: false })
+
 const emit = defineEmits<{ retry: [] }>()
 
-defineProps<{ stale?: boolean }>()
+const text = computed(() => props.stale
+  ? 'Angezeigt wird der zuletzt geladene Stand. Er kann veraltet sein.'
+  : 'Bitte versuchen Sie es erneut.')
 </script>
 
 <template>
-  <div
-    class="flex flex-col items-center gap-3 px-6 py-10 text-center"
+  <UEmpty
+    icon="i-lucide-cloud-off"
+    title="Die Liste konnte nicht geladen werden"
+    :description="text"
+    :actions="[{
+      label: 'Erneut laden',
+      icon: 'i-lucide-refresh-cw',
+      color: 'neutral' as const,
+      variant: 'outline' as const,
+      onClick: () => emit('retry'),
+    }]"
     data-testid="error-state"
-  >
-    <UIcon
-      name="i-lucide-cloud-off"
-      class="size-7 text-error"
-    />
-    <p class="font-medium">
-      Die Liste konnte nicht geladen werden
-    </p>
-    <p class="max-w-md text-sm text-muted">
-      <template v-if="stale">
-        Angezeigt wird der zuletzt geladene Stand. Er kann veraltet sein.
-      </template>
-      <template v-else>
-        Bitte versuchen Sie es erneut.
-      </template>
-    </p>
-    <UButton
-      color="neutral"
-      variant="outline"
-      icon="i-lucide-refresh-cw"
-      data-testid="error-retry"
-      @click="emit('retry')"
-    >
-      Erneut laden
-    </UButton>
-  </div>
+  />
 </template>

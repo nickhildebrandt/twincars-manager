@@ -1,12 +1,20 @@
 <script setup lang="ts">
 /**
- * Dateien ablegen oder auswählen.
+ * Dateien ablegen oder auswählen — auf `UFileUpload` (`variant="area"`).
  *
- * Zwei Dinge, die der Vorgänger falsch hatte:
+ * **Das Ablegen, die Vorschau und die Tastaturbedienung kommen von Nuxt UI.**
+ * Bis zum 20.09.2026 stand hier ein eigener Nachbau mit `@dragover`,
+ * verstecktem `<input type="file">` und einem Rahmen, der beim Darüberziehen
+ * die Farbe wechselte. Das kann `UFileUpload` alles — und zusätzlich das, was
+ * der Nachbau nie hatte: eine Dateiliste, das Entfernen einzelner Dateien und
+ * eine ordentliche Beschriftung für Screenreader.
+ *
+ * Eigen bleibt nur die **Prüfung**, und die ist Fachlichkeit. Zwei Dinge, die
+ * der Vorgänger falsch hatte:
  *
  *   - **Die erlaubten Arten sind an einer Stelle festgelegt** und gelten für
  *     den Dialog wie für das Ablegen. Dort prüfte das Ablegen nur auf
- *     „irgendein Bild" und ließ damit Formate durch, die der Dialog gar nicht
+ *     „irgendein Bild" und ließ Formate durch, die der Dialog gar nicht
  *     anbot (B-115).
  *   - **Ein Fehler wird gemeldet.** Dort verschwand er in einem leeren
  *     `catch`, und wer eine zu große Datei ablegte, sah gar nichts (B-100).
@@ -28,17 +36,17 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ files: [File[]] }>()
 
 const notify = useNotify()
-const input = useTemplateRef<HTMLInputElement>('input')
-const over = ref(false)
+
+/** Was `UFileUpload` gerade hält. Geprüft wird beim Wechsel, nicht beim Senden. */
+const selection = ref<File | File[] | null>(null)
 
 const acceptAttribute = computed(() => props.accept?.join(',') || undefined)
 
 /** Prüft jede Datei und meldet, was nicht durchgeht — statt still zu schlucken. */
-function take(files: FileList | null): void {
-  if (!files || files.length === 0) return
-
+function keep(files: File[]): File[] {
   const accepted: File[] = []
-  for (const file of Array.from(files)) {
+
+  for (const file of files) {
     if (props.accept && props.accept.length > 0 && !props.accept.includes(file.type)) {
       notify.error(`„${file.name}" hat ein Format, das hier nicht vorgesehen ist.`)
       continue
@@ -56,56 +64,27 @@ function take(files: FileList | null): void {
     accepted.push(file)
   }
 
-  if (accepted.length > 0) emit('files', props.multiple ? accepted : accepted.slice(0, 1))
+  return accepted
 }
 
-function onDrop(event: DragEvent): void {
-  over.value = false
-  if (props.disabled) return
-  take(event.dataTransfer?.files ?? null)
-}
+watch(selection, (value) => {
+  const files = value === null ? [] : Array.isArray(value) ? value : [value]
+  if (files.length === 0) return
+
+  const accepted = keep(files)
+  if (accepted.length > 0) emit('files', props.multiple ? accepted : accepted.slice(0, 1))
+})
 </script>
 
 <template>
-  <div
-    class="flex flex-col items-center gap-2 rounded-md border border-dashed px-4 py-8 text-center transition-colors"
-    :class="[
-      over ? 'border-primary bg-primary/5' : 'border-default',
-      props.disabled && 'opacity-60',
-    ]"
+  <UFileUpload
+    v-model="selection"
+    variant="area"
+    icon="i-lucide-upload"
+    :label="props.label"
+    :accept="acceptAttribute"
+    :multiple="props.multiple"
+    :disabled="props.disabled"
     data-testid="dropzone"
-    @dragover.prevent="over = true"
-    @dragleave="over = false"
-    @drop.prevent="onDrop"
-  >
-    <UIcon
-      name="i-lucide-upload"
-      class="size-6 text-dimmed"
-    />
-    <p class="text-sm text-muted">
-      {{ props.label }}
-    </p>
-
-    <UButton
-      color="neutral"
-      variant="outline"
-      size="sm"
-      :disabled="props.disabled"
-      data-testid="dropzone-browse"
-      @click="input?.click()"
-    >
-      Auswählen
-    </UButton>
-
-    <input
-      ref="input"
-      type="file"
-      class="hidden"
-      :accept="acceptAttribute"
-      :multiple="props.multiple"
-      :disabled="props.disabled"
-      data-testid="dropzone-input"
-      @change="take(($event.target as HTMLInputElement).files)"
-    >
-  </div>
+  />
 </template>

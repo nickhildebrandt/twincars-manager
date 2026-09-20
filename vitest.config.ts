@@ -132,7 +132,7 @@ export default defineConfig({
               mock: { intersectionObserver: true, indexedDb: true },
             },
           },
-          setupFiles: ['test/setup/env.ts'],
+          setupFiles: ['test/setup/env.ts', 'test/setup/object-url.ts'],
 
           /**
            * Nuxt baut sich für dieses Projekt einmal selbst — und das dauert
