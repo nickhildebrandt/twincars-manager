@@ -602,25 +602,64 @@ Deshalb stehen unten nur die Besonderheiten.
 
 **Features:** F-017, F-068, F-071, F-094, F-138–F-152, F-160–F-169, F-172, F-176–F-177, F-446 (33) · **Befunde:** B-001, B-046, B-077, B-117–B-118, B-120–B-126, B-128–B-131, B-141–B-144, B-148, B-150, B-152
 **Vorbedingungen:** T-007, T-009.
-**Modelländerungen:** M-22, P-14 ([09-modellaenderungen.md](09-modellaenderungen.md))
+**Modelländerungen:** M-22, M-39, M-46, P-14, P-22, P-23 ([09-modellaenderungen.md](09-modellaenderungen.md))
 
 Acht Schritte, Zwischenspeicherung, Wiederaufnahme nach Neuladen, Abschluss
 legt den ersten Administrator an und schaltet die Anwendung frei. Danach ist
-`/setup` dauerhaft gesperrt. Firmenstammdaten, Logo, §19-Regelung,
-Standard-Steuersatz, Zahlungsziel, Stundensatz, Endtext für Belege.
-**Das Setup-Gate läuft serverseitig**, nicht im Client.
+`/setup` dauerhaft gesperrt. **Das Setup-Gate läuft serverseitig**, nicht im
+Client.
+
+**Nach dem Assistenten ist die Anwendung vollständig eingerichtet**
+(festgelegt am 20.09.2026: „Alle wichtigen Einstellungen müssen dort
+abgebildet sein, sodass das System danach vollumfänglich konfiguriert ist").
+Der Bestand ließ Nummernkreise, Steuersatz, Zahlungsziel und Stundensatz
+ungefragt auf ihren Vorgaben stehen — F-177 hielt ausdrücklich fest, dass sie
+**nirgends** editierbar waren. Die acht Schritte decken deshalb jetzt alles
+ab, was der Betrieb braucht, bevor die erste Rechnung entsteht:
+
+| # | Schritt | Was darin steht |
+| --- | --- | --- |
+| 1 | **Willkommen** | Was bereitliegen sollte: Steuernummer, IBAN, Zugangsdaten des Mailservers |
+| 2 | **Firmendaten** | Name, Inhaber, Anschrift, Bundesland, Telefon, E-Mail, Web |
+| 3 | **Steuer & Bank** | Steuernummer, USt-IdNr., **§19-Regelung**, **Standard-Steuersatz**, IBAN, BIC, Bank |
+| 4 | **Belege** | Logo, Anrede (Sie/Du), **Zahlungsziel**, **Stundensatz** (M-22), Endtext, **Nummernkreise**: Format und Startwert je Art |
+| 5 | **Öffnungszeiten** | sieben Wochentage, geschlossen als Schalter |
+| 6 | **E-Mail** | SMTP (überspringbar) **und die Administrator-Adresse** für gravierende Vorfälle (P-23) |
+| 7 | **Zugang** | erster Administrator mit **P-14**; **sicherer Adressbereich** (P-22) |
+| 8 | **Prüfen** | alle Werte auf Karten, „Bearbeiten" springt zum Schritt, dann abschließen |
+
+**Die Nummernkreise gehören in Schritt 4**, und zwar sichtbar: der Betrieb
+übernimmt einen Altbestand, dessen Rechnungsnummern bis `20090446` laufen
+(M-44). Der neue Kreis darf einem anderen Schema folgen, muss aber **in sich**
+lückenlos und eindeutig sein. Wer das nicht einstellen kann, bekommt eine
+Rechnungsnummer, die neben der alten unsinnig aussieht — und merkt es beim
+ersten Ausdruck.
 
 **Hier entsteht das erste Passwort der Anwendung** — und es ist die einzige
-Hürde, weil es keinen zweiten Faktor gibt (M-36). Die Prüfung aus **P-14**
-(Mindestanforderung, Abgleich gegen die mitgelieferte Liste bekannter
-Passwörter, E-23) entsteht deshalb in diesem Paket und wird von T-034 und vom
-eigenen Passwortwechsel mitbenutzt.
+Hürde, weil es keinen zweiten Faktor gibt (M-36). **P-14** entsteht deshalb in
+diesem Paket und wird von T-034 und vom eigenen Passwortwechsel mitbenutzt.
+Die Prüfung hat **drei Lagen** (`shared/password-quality.ts`,
+`server/utils/password-breach.ts`, seit dem 20.09.2026):
+
+1. **Länge** — mindestens zwölf Zeichen. Keine Zusammensetzungsregeln: die
+   erzeugen `Passwort1!` und sonst nichts.
+2. **Muster** — Wort plus Jahreszahl, Tastaturreihe, Ziffernersetzung, der
+   eigene Name, der Firmenname. Läuft **ohne Netz** und fängt genau die
+   Passwörter, die in der Praxis fallen.
+3. **Abgleich gegen echte Datenlecks** über k-Anonymität (E-23). Nur fünf
+   Zeichen des SHA-1 verlassen den Server; ohne Internet entfällt die Lage,
+   **mit sichtbarem Hinweis** — eine Prüfung, die still durchwinkt, erzeugt
+   Vertrauen, die sie nicht deckt.
 
 **Besondere Akzeptanzkriterien:** frische Datenbank → Assistent → Dashboard
 ohne Umweg (E2E, Golden Flow G-01); ein zweiter Aufruf von `/setup` nach
 Abschluss leitet um; ein Neuladen mitten im Assistenten verliert nichts;
 **P-14** — `sommer2024` wird abgewiesen, mit einem Satz, der sagt warum, und
-die Prüfung läuft **ohne Internet**.
+zwar von Lage 2, also **auch ohne Internet**; ohne Netz erscheint der Hinweis
+aus E-23 und nicht etwa ein grünes Häkchen; das Passwort und sein voller Hash
+verlassen den Server **nie** (Unit-Test über die abgehende Adresse); nach dem
+Abschluss ist **jede** Einstellung aus der Tabelle oben gesetzt und über
+`/settings` wiederfindbar (E2E).
 
 ## T-011 — Kunden und Lieferanten
 
