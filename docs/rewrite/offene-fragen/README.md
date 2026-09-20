@@ -9,7 +9,15 @@ geht, wie es heute steht, was zur Wahl steht, und was ich empfehle.
 
 ## Offen
 
-Zurzeit keine. Was aus der Umsetzung neu entsteht, kommt hier hinein.
+Keine hält die Arbeit auf — alle drei sind vorläufig entschieden und laufen
+weiter. Sie stehen hier, weil ich die Entscheidung getroffen habe und nicht
+Sie.
+
+| Nr. | Frage | Betrifft |
+| --- | --- | --- |
+| [11](11-zahlarten-heute.md) | Welche Zahlarten bietet der Betrieb heute an? | M-46, T-021, T-033 |
+| [12](12-nummernkreis-startwert.md) | Wie sehen die neuen Belegnummern aus? | M-44, T-010, T-021 |
+| [13](13-mindestlaenge-passwort.md) | Zwölf Zeichen Mindestlänge — zu viel für den Alltag? | P-14, T-010 |
 
 ## Am 20.09.2026 entschieden oder beantwortet
 
