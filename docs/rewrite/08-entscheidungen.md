@@ -369,7 +369,7 @@ langsamer Dienst darf das Anlegen eines Benutzers nicht aufhalten.
 **Entscheidung.** Das Projekt bleibt auf dem Stand, den das Nuxt-Aufsetzskript
 erzeugt: neueste stabile Fassung des Rahmenwerks, und darunter genau die
 Fassungen, die Nuxt selbst mitbringt. Zusätzliche Pakete sind erlaubt, wenn sie
-für Nuxt gedacht sind und die Rangfolge aus `nuxt/CLAUDE.md` Regel 4 sie
+für Nuxt gedacht sind und die Rangfolge aus `CLAUDE.md` Regel 4 sie
 zulässt. Nicht erlaubt sind Pakete, die zufällig dasselbe können, aber aus
 einer anderen Welt stammen, und von Hand nachgezogene Fassungen einzelner
 Abhängigkeiten.

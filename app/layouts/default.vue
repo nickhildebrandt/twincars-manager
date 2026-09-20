@@ -61,14 +61,31 @@ useHead({ title })
       >
         <slot />
 
-        <!-- Stufe 3: sperrt den Inhalt, sobald es länger dauert. -->
+        <!--
+          Stufe 3: sperrt den Inhalt, sobald es länger dauert.
+
+          Bis zum 20.09.2026 stand hier nur ein Weichzeichner mit einem Satz
+          für Screenreader. Wer sehen konnte, sah eine milchige Fläche und
+          wusste nicht, ob die Anwendung arbeitet oder hängt. Jetzt steht
+          etwas da: das Ladesymbol des Designsystems und ein deutscher Satz.
+
+          `role="status"` statt einer stummen Fläche — dann meldet ein
+          Screenreader das Warten von selbst, ohne dass der Fokus springt.
+        -->
         <Transition name="overlay">
           <div
             v-if="busy.slow.value"
-            class="absolute inset-0 bg-default/60 backdrop-blur-[1px]"
+            class="absolute inset-0 flex items-center justify-center bg-default/70 backdrop-blur-[1px]"
+            role="status"
             data-testid="busy-overlay"
           >
-            <span class="sr-only">Wird geladen …</span>
+            <div class="flex items-center gap-3 rounded-lg bg-default px-4 py-3 ring ring-default">
+              <UIcon
+                name="i-lucide-loader-circle"
+                class="size-5 animate-spin text-primary motion-reduce:animate-none"
+              />
+              <span class="text-sm">Einen Moment, das dauert etwas länger …</span>
+            </div>
           </div>
         </Transition>
       </main>

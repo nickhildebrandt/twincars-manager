@@ -38,18 +38,30 @@ beforeEach(() => {
   navigate.mockClear()
 })
 
+/**
+ * Eine Zeile über ihre Position im Tabellenrumpf.
+ *
+ * Bis zum 20.09.2026 trug jede Zeile ein `data-testid="row-<id>"` aus einem
+ * eigenen `<table>`. Mit `UTable` gibt es das nicht mehr — und das ist
+ * richtig: `tbody tr` ist HTML und bleibt, ein Markup-Detail eines
+ * Fremdpakets nicht.
+ */
+const rowAt = (wrapper: Awaited<ReturnType<typeof mount>>, index: number) =>
+  wrapper.findAll('tbody tr')[index]!
+
 describe('Die Zeile führt zum Datensatz', () => {
   it('öffnet beim Klick auf die Zeile die Detailansicht', async () => {
     const wrapper = await mount({ to: (row: Row) => `/invoices/${row.id}` })
-    await wrapper.get('[data-testid="row-r-1"]').trigger('click')
+    await rowAt(wrapper, 0).trigger('click')
     expect(navigate).toHaveBeenCalledWith('/invoices/r-1')
   })
 
   it('ist ohne Ziel nicht anklickbar', async () => {
     const wrapper = await mount()
-    await wrapper.get('[data-testid="row-r-1"]').trigger('click')
+    await rowAt(wrapper, 0).trigger('click')
     expect(navigate).not.toHaveBeenCalled()
-    expect(wrapper.get('[data-testid="row-r-1"]').classes()).not.toContain('cursor-pointer')
+    // Ohne Ziel markiert Nuxt UI die Zeile gar nicht erst als auswählbar.
+    expect(rowAt(wrapper, 0).attributes('data-selectable')).toBe('false')
   })
 
   it('öffnet nichts, wenn eine Aktion in der Zeile gedrückt wird', async () => {
@@ -66,19 +78,19 @@ describe('Die Zeile führt zum Datensatz', () => {
 describe('Die Zellen', () => {
   it('nimmt den Wert unter dem Schlüssel, wenn nichts anderes gesagt ist', async () => {
     const wrapper = await mount()
-    expect(wrapper.get('[data-testid="row-r-1"]').text()).toContain('Meier GmbH')
+    expect(rowAt(wrapper, 0).text()).toContain('Meier GmbH')
   })
 
   it('nimmt die eigene Berechnung, wenn es eine gibt', async () => {
     const wrapper = await mount()
-    expect(wrapper.get('[data-testid="row-r-1"]').text()).toContain('119.00 €')
+    expect(rowAt(wrapper, 0).text()).toContain('119.00 €')
   })
 
   it('schreibt einen Gedankenstrich statt einer Lücke', async () => {
     // Eine leere Zelle sieht aus wie ein Fehler. Ein Strich sagt: hier steht
     // nichts, und das ist in Ordnung.
     const wrapper = await mount()
-    expect(wrapper.get('[data-testid="row-r-2"]').text()).toContain('—')
+    expect(rowAt(wrapper, 1).text()).toContain('—')
   })
 
   it('lässt sich eine Zelle von außen ersetzen', async () => {
@@ -90,7 +102,7 @@ describe('Die Zellen', () => {
 
   it('stellt Zahlen rechtsbündig', async () => {
     const wrapper = await mount()
-    const cells = wrapper.get('[data-testid="row-r-1"]').findAll('td')
+    const cells = rowAt(wrapper, 0).findAll('td')
     expect(cells.at(-1)?.classes()).toContain('text-right')
     expect(cells.at(-1)?.classes()).toContain('tabular-nums')
   })
@@ -110,17 +122,23 @@ describe('Sortieren', () => {
   })
 
   it('sagt einem Screenreader, wonach gerade sortiert ist', async () => {
+    // `aria-sort` gehört an das `<th>`, und dorthin lässt `UTable` keine
+    // eigenen Attribute. Angesagt wird deshalb über den zugänglichen Namen
+    // des Knopfes — des Elements, das man drückt, um daran etwas zu ändern.
     const ascending = await mount({ sort: 'number', dir: 'asc' })
-    const headers = ascending.findAll('th')
-    expect(headers[0]?.attributes('aria-sort')).toBe('ascending')
+    expect(ascending.get('[data-testid="sort-number"]').attributes('aria-label'))
+      .toContain('aufsteigend sortiert')
 
     const descending = await mount({ sort: 'number', dir: 'desc' })
-    expect(descending.findAll('th')[0]?.attributes('aria-sort')).toBe('descending')
+    expect(descending.get('[data-testid="sort-number"]').attributes('aria-label'))
+      .toContain('absteigend sortiert')
   })
 
   it('markiert keine Spalte, nach der nicht sortiert wird', async () => {
     const wrapper = await mount({ sort: 'number', dir: 'asc' })
-    expect(wrapper.findAll('th')[1]?.attributes('aria-sort')).toBeUndefined()
+    // Wonach man nicht sortieren kann, bekommt keinen Knopf — und damit auch
+    // keine Ansage, die etwas anderes behauptet.
+    expect(wrapper.find('[data-testid="sort-customer"]').exists()).toBe(false)
   })
 })
 
@@ -161,8 +179,15 @@ describe('Auf schmalen Geräten', () => {
 
 describe('Zustände', () => {
   it('meldet das Laden über die Tabelle, nicht über einen leeren Rumpf', async () => {
+    // Nuxt UI zeigt das Laden **nur sichtbar** — ein Balken in der Kopfzeile,
+    // der bei `prefers-reduced-motion` von selbst zu einem ruhigen Puls wird.
+    // Einem Screenreader sagt er nichts. Diese Lücke schließt die Anwendung
+    // an ihrem eigenen Element.
     const wrapper = await mount({ loading: true })
-    expect(wrapper.get('tbody').attributes('aria-busy')).toBe('true')
+    expect(wrapper.get('[data-testid="data-table"]').attributes('aria-busy')).toBe('true')
+
+    const ruhig = await mount({ loading: false })
+    expect(ruhig.get('[data-testid="data-table"]').attributes('aria-busy')).toBeUndefined()
   })
 
   it('nennt die Tabelle beim Namen, ohne ihn zu zeigen', async () => {
@@ -173,8 +198,12 @@ describe('Zustände', () => {
   })
 
   it('kommt mit einer leeren Liste zurecht', async () => {
+    // `UTable` setzt dann eine einzelne Zeile mit seinem Leertext — besser
+    // als ein leerer Rumpf, in dem die Spaltenbreiten zusammenfallen.
     const wrapper = await mount({ rows: [] })
-    expect(wrapper.findAll('tbody tr')).toHaveLength(0)
+    const rows = wrapper.findAll('tbody tr')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]?.html()).toContain('data-slot="empty"')
     expect(wrapper.get('[data-testid="data-cards"]').findAll('li')).toHaveLength(0)
   })
 })

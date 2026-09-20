@@ -4,7 +4,7 @@
  * **Nuxt UI wird so verwendet, wie es kommt.** Keine Slot-Überschreibungen,
  * keine eigenen Varianten, keine nachgebauten Komponenten. Was Nuxt UI
  * mitbringt, wird benutzt; was es nicht mitbringt, wird zur offenen Frage
- * (Regel 14) statt zu einem Nachbau.
+ * (Regel 15) statt zu einem Nachbau.
  *
  * Bis zum 20.09.2026 standen hier drei Überschreibungen, und keine hat sich
  * gerechnet:

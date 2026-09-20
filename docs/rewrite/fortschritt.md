@@ -1730,3 +1730,94 @@ Testsatz setzte das Feld nie, deshalb fiel es in 1900 Tests nicht auf.
 | `pnpm dev` | startet ohne Fehler und ohne Warnung aus eigenem Code |
 | `/` und `/login` | HTTP 200 |
 | `pnpm db:migrate`, `db:seed` | laufen gegen `twincars_dev` |
+
+---
+
+## 20.09.2026 (5) — Nuxt UI, wie es kommt
+
+Der Inhaber hat einen Verdacht geäußert: ich hätte die Standardeinstellungen
+nicht durchgesetzt und größere Änderungen vorgenommen. **Der Verdacht stimmte.**
+
+Nuxt UI v4 vereint das frühere Pro-Paket — **über 125 Komponenten, alle frei**.
+Mehrere meiner Eigenbauten waren schlicht überflüssig, und ich hatte vorher
+nicht nachgesehen, sondern geschätzt.
+
+### Was nachgebaut war und jetzt Nuxt UI ist
+
+| Eigenbau | Ersetzt durch | Was der Nachbau nicht konnte |
+| --- | --- | --- |
+| `DataTable` — eine handgeschriebene `<table>` | `UTable` | Zeilen mit `role="button"` und Tastaturfokus; Ladeanimation, die bei `prefers-reduced-motion` von selbst zum Puls wird; Fokusrahmen |
+| `Timeline` — 121 Zeilen Punkte und Linien | `UTimeline` | waagerechte Ausrichtung, Größen, Auswahl |
+| `EmptyState`, `ErrorState` | `UEmpty` | Ladezustand mit `aria-busy` |
+| `FileDropzone` — eigenes `@dragover` | `UFileUpload variant="area"` | Dateiliste, Entfernen einzelner Dateien, Beschriftung |
+| `StatTile` | `UPageCard` + `UBadge` + `USkeleton` | — |
+
+`app.config.ts` steht wieder auf Werkseinstellung. Die drei Überschreibungen
+sind weg, und keine hat sich gerechnet: `card.slots.root` zwang jeder Karte
+`shadow-none` auf; `button.defaultVariants` setzte genau die Werte, die Nuxt UI
+ohnehin vorgibt; `table.slots.tr` bastelte einen Zeigefinger über
+`data-[selectable=true]` — ein Attribut, das `UTable` **selbst setzt** und in
+seinem eigenen Thema bereits gestaltet, inklusive des Fokusrahmens, den mein
+Nachbau vergaß.
+
+### Drei Fehler, die dabei sichtbar wurden
+
+1. **`ListPage` nahm `loading` entgegen und benutzte es nirgends.** Die Liste
+   zeigte beim ersten Laden eine leere Fläche — nicht „wird geladen", sondern
+   „nichts da". Jetzt `UEmpty` mit Spinner und Satz.
+2. **Die Sperrfläche war ein Weichzeichner ohne Aussage.** Wer sehen konnte,
+   sah Milchglas und wusste nicht, ob die Anwendung arbeitet oder hängt. Jetzt
+   Ladesymbol, deutscher Satz und `role="status"`.
+3. **`UTable` meldet das Laden nur sichtbar** — kein `aria-busy`, keine
+   Lebendregion. Eine echte Lücke, und sie wird am **eigenen umgebenden
+   Element** geschlossen, nicht durch einen Eingriff ins Paket.
+
+### Was bewusst Eigenbau bleibt
+
+- **Die Kartenansicht auf schmalen Geräten.** Nuxt UI hat dafür nichts, und
+  eine Tabelle mit acht Spalten auf einem Telefon ist keine Tabelle. Sie steht
+  jetzt auf `UCard` statt auf einem eigenen Kasten.
+- **`TrendChart`.** Nuxt UI bringt kein Diagramm mit. Eine Handvoll
+  Koordinaten als SVG ist weniger Aufwand als ein Diagrammpaket mit eigener
+  Farbwelt (M-35).
+- **Die Seitenübergänge** in `main.css`. Das ist der von **Nuxt** dokumentierte
+  Weg — Nuxt liefert die Klassennamen, das CSS schreibt die Anwendung.
+
+### Die Tests haben mitgelernt
+
+Sie hingen am eigenen Markup: `data-testid` je Zeitstrahl-Eintrag, `drop`-
+Ereignisse auf eine selbstgebaute Fläche, `aria-sort` an einem `<th>`, das ich
+selbst schrieb. Jetzt prüfen sie **Verhalten**: Text und Reihenfolge, das echte
+`input[type="file"]`, Knöpfe über ihren zugänglichen Namen, `tbody tr` statt
+eigener Zeilenkennungen. An interne Markup-Details eines Fremdpakets zu prüfen
+macht jedes Update zum Testlauf.
+
+Eine Stelle brauchte dabei eine echte Entscheidung: `aria-sort` gehört an das
+`<th>`, und dorthin lässt `UTable` keine eigenen Attribute. Statt einzugreifen
+sagt jetzt der **zugängliche Name des Sortierknopfes** an, wonach sortiert ist
+— am Element, das man drückt, um es zu ändern.
+
+### Zwei Stolpersteine, festgehalten
+
+- `@select="bedingung ? fn : undefined"` sieht richtig aus und ist es nicht:
+  Vue macht daraus einen Aufrufer, der **immer** existiert. `UTable` hielt
+  jede Zeile für auswählbar, und geöffnet wurde trotzdem nichts. Der Handler
+  gehört als Wert ins Skript.
+- `UTable` zeigt den Fuß, sobald eine Spalte den Schlüssel `footer`
+  **besitzt** — `footer: undefined` zählt bereits. Ohne Summen darf er gar
+  nicht erst gesetzt werden.
+
+### Regeln nachgezogen
+
+`CLAUDE.md` Regel 4 sagt jetzt ausdrücklich: **Nuxt UI wird benutzt, wie es
+kommt**, mit der Liste der Komponenten, die ich übersehen hatte. Neu als
+Regel 9: **ein einziger Ladezustand** in drei Stufen, mit der Tabelle, welches
+Nuxt-UI-Mittel an welchem Ort gehört.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1931 (80 Dateien) |
+| Eigene Komponenten | 21 → 21, davon 5 jetzt auf Nuxt UI statt nachgebaut |
+| `app.config.ts` | 34 → 12 Zeilen Konfiguration, nur noch Farben |

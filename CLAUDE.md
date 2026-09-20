@@ -24,6 +24,19 @@ Reifenhandel, Gebrauchtwagenhandel. **Oberfläche deutsch, Code englisch.**
 4. **Nuxt UI zuerst**, dann Nuxt/Nitro, dann Eigenbau, zuletzt ein Fremdpaket.
    Jedes neue Paket braucht einen Eintrag in
    `./docs/rewrite/08-entscheidungen.md`.
+
+   **Nuxt UI wird benutzt, wie es kommt.** Keine Slot-Überschreibungen in
+   `app.config.ts` außer den Farben, keine eigenen Varianten, kein Nachbau
+   einer Komponente, die es schon gibt. Nuxt UI v4 hat **über 125**
+   Komponenten — vor jedem Eigenbau wird dort nachgesehen, nicht geschätzt.
+   Namentlich vorhanden und am 20.09.2026 als Nachbau vorgefunden: `UTable`,
+   `UTimeline`, `UEmpty`, `UFileUpload` (`variant="area"`), `UPageCard`.
+
+   Was Nuxt UI **nicht** kann, wird zur offenen Frage (Regel 15) — nicht zu
+   einer eigenen Komponente, die nebenher so aussieht wie die anderen. Die
+   einzige Ausnahme sind Lücken in der **Zugänglichkeit**: fehlt einem
+   Fremdpaket ein `aria-busy`, wird es am eigenen umgebenden Element ergänzt,
+   statt in das Paket hineinzugreifen.
 5. **Valibot an jeder Grenze**: Body, Query, Routenparameter, Header,
    Formulare, Umgebungsvariablen, Antworten externer Dienste, Uploads.
    Schemata liegen **nur** in `shared/schemas/`. Typen mit `v.InferOutput`
@@ -33,14 +46,27 @@ Reifenhandel, Gebrauchtwagenhandel. **Oberfläche deutsch, Code englisch.**
 7. **Serverseitige Pagination, fest 25.** Kein Größenwähler. Filterwechsel
    setzt auf Seite 1.
 8. **Toast bei jeder Mutation** — Erfolg wie Fehler, über `useNotify()`.
-9. **Mehrfachauswahl immer im modalen Dialog.**
-10. **Animationen** nach `./docs/rewrite/04-ux.md` §3.2, inklusive
+9. **Ein einziger Ladezustand**, `useBusy()`, in drei Stufen — und keine
+   zweite Anzeige daneben:
+
+   | Stufe | Wann | Was der Nutzer sieht |
+   | --- | --- | --- |
+   | 1 | jede laufende Anfrage | der Balken von `<NuxtLoadingIndicator>` — die **einzige** Ladeleiste |
+   | 2 | eine angeklickte Aktion | der Knopf selbst: `UButton :loading` bzw. `loading-auto` |
+   | 3 | länger als 250 ms | Sperrfläche über dem Inhalt, **mit Symbol und deutschem Satz** |
+
+   Dazu je Ort das Passende aus Nuxt UI: `UTable :loading` für die Tabelle,
+   `UEmpty :loading` für die noch leere Liste, `USkeleton` für einen
+   Platzhalter, der die spätere Form andeutet. Ein `let loading = ref(false)`
+   in einer Seite ist ein Regelverstoß, keine Geschmacksfrage.
+10. **Mehrfachauswahl immer im modalen Dialog.**
+11. **Animationen** nach `./docs/rewrite/04-ux.md` §3.2, inklusive
     `prefers-reduced-motion`.
-11. **Testselektoren**: `data-testid` oder Rolle mit zugänglichem Namen.
+12. **Testselektoren**: `data-testid` oder Rolle mit zugänglichem Namen.
     Niemals interne Nuxt-UI-Klassen.
-12. **Transaktion**, sobald mehr als eine Anweisung schreibt.
-13. **Tests und Doku gehören zum Paket.** Ohne sie ist nichts fertig.
-14. **Offene Fragen in eigene Dateien.** Alles, was einen Haken hat, über eine
+13. **Transaktion**, sobald mehr als eine Anweisung schreibt.
+14. **Tests und Doku gehören zum Paket.** Ohne sie ist nichts fertig.
+15. **Offene Fragen in eigene Dateien.** Alles, was einen Haken hat, über eine
     Vorgabe hinausgeht oder eine Entscheidung braucht, bekommt eine eigene
     Markdown-Datei unter `./docs/rewrite/offene-fragen/` und einen Eintrag in
     deren `README.md`. Nicht im Fließtext vergraben, nicht im Chat verloren.

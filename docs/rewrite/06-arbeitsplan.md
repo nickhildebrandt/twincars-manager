@@ -586,7 +586,7 @@ Browsertests für Fokus, Tastatur und Overlays, E2E-Tests für die Ketten oben,
 
 **Nuxt UI wird dabei normal verwendet**, ohne Anpassungen: kein eigenes CSS,
 kein Zusammensetzen mehrerer Komponenten zu einer neuen. Was Nuxt UI nicht
-kann, wird nicht nachgebaut, sondern als offene Frage notiert (Regel 14).
+kann, wird nicht nachgebaut, sondern als offene Frage notiert (Regel 15).
 
 **Doku:** `docs/ui/` je Komponente mit Props, Ereignissen, Slots und Beispiel.
 

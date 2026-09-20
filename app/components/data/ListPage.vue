@@ -57,10 +57,28 @@ const showEmpty = computed(() => !showError.value && props.empty)
 
     <slot name="filters" />
 
-    <UCard :ui="{ body: 'p-0 sm:p-0' }">
+    <UCard
+      :ui="{ body: 'p-0 sm:p-0' }"
+      :aria-busy="props.loading || undefined"
+    >
       <DataErrorState
         v-if="showError"
         @retry="emit('retry')"
+      />
+      <!--
+        Erstes Laden: es gibt noch nichts zu zeigen. Statt einer leeren Fläche
+        derselbe Leerzustand mit Spinner — `UEmpty` kann das, und der Nutzer
+        sieht, dass gewartet wird und nicht, dass nichts da ist.
+
+        Bei jedem **weiteren** Laden bleibt die alte Liste stehen (04-ux §3.3):
+        eine Tabelle, die beim Blättern kurz verschwindet, springt.
+      -->
+      <DataEmptyState
+        v-else-if="props.loading && props.empty"
+        loading
+        title="Wird geladen …"
+        description="Einen Moment, die Liste wird geholt."
+        data-testid="list-loading"
       />
       <DataEmptyState
         v-else-if="showEmpty"

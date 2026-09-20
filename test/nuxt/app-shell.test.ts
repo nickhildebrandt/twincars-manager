@@ -243,7 +243,12 @@ describe('Die Hülle', () => {
     useBusyState().value = { count: 1, slow: true }
     await nextTick()
 
-    expect(shell.find('[data-testid="busy-overlay"]').exists()).toBe(true)
+    const overlay = shell.get('[data-testid="busy-overlay"]')
+
+    // Sichtbar und benannt, nicht nur milchig: wer sehen kann, liest, dass
+    // gewartet wird; wer nicht sehen kann, hört es über `role="status"`.
+    expect(overlay.attributes('role')).toBe('status')
+    expect(overlay.text()).toContain('Einen Moment')
   })
 
   it('meldet den Inhaltsbereich als beschäftigt, nicht die ganze Seite', async () => {

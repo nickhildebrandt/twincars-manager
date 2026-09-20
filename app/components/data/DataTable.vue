@@ -1,21 +1,35 @@
 <script setup lang="ts" generic="T extends { id: string }">
 /**
- * Die Tabelle, die jede Liste benutzt.
+ * Die Tabelle, die jede Liste benutzt — auf `UTable`.
  *
- * Drei Dinge, die sie festschreibt:
+ * **Die Tabelle selbst gehört Nuxt UI.** Bis zum 20.09.2026 stand hier ein
+ * von Hand geschriebenes `<table>` mit eigenen `<thead>`, `<tbody>`,
+ * Sortierknöpfen und Zeilenklick. `UTable` kann das alles — und drei Dinge
+ * zusätzlich, die der Nachbau nicht hatte:
  *
- *   - **Die ganze Zeile ist anklickbar** und führt zur Detailansicht. Eine
- *     Tabelle, bei der man den einen unterstrichenen Text treffen muss, ist auf
- *     einem Werkstatt-Tablet unbedienbar.
+ *   - Eine anklickbare Zeile bekommt `role="button"` und `tabindex`, ist also
+ *     **mit der Tastatur erreichbar**. Ein `<tr @click>` ist das nicht.
+ *   - Der Ladezustand hat eine Animation, die bei `prefers-reduced-motion`
+ *     **von selbst** zu einem ruhigen Puls wird.
+ *   - Ausgewählte Zeilen bekommen einen Fokusrahmen, den ich vergessen hatte.
+ *
+ * Was hier bleibt, ist kein Aussehen, sondern **Vereinbarung**:
+ *
+ *   - **Die Spalten werden beschrieben, nicht als Tabellendefinition
+ *     durchgereicht.** Eine Liste aus `{ key, label, numeric }` ist an der
+ *     Aufrufstelle lesbar; die Übersetzung in das, was `UTable` erwartet,
+ *     steht einmal hier statt zwanzigmal in den Fachpaketen.
+ *   - **Die ganze Zeile führt zur Detailansicht.** Eine Tabelle, bei der man
+ *     den einen unterstrichenen Text treffen muss, ist auf einem
+ *     Werkstatt-Tablet unbedienbar.
  *   - **Aktionen in der Zeile schlucken den Klick**, sonst öffnet jeder Druck
  *     auf „Löschen" nebenbei die Detailseite.
  *   - **Auf schmalen Geräten wird aus jeder Zeile eine Karte.** Eine Tabelle
- *     mit acht Spalten auf einem Telefon ist keine Tabelle.
- *
- * Die Spalten werden hier beschrieben, nicht als Nuxt-UI-Definition
- * durchgereicht: so bleibt der Aufruf lesbar und die Darstellung an einer
- * Stelle.
+ *     mit acht Spalten auf einem Telefon ist keine Tabelle. Dafür hat Nuxt UI
+ *     nichts; das ist die einzige Stelle, an der hier noch Markup steht.
  */
+import type { TableColumn } from '@nuxt/ui'
+
 export type Column<Row> = {
   key: string
   label: string
@@ -47,123 +61,161 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ sort: [column: string] }>()
 
+/** Der angezeigte Wert einer Zelle. Leer wird zum Gedankenstrich, nie zu „null". */
 const cell = (row: T, column: Column<T>): string => {
   const raw = column.value ? column.value(row) : (row as Record<string, unknown>)[column.key]
   return raw === null || raw === undefined || raw === '' ? '—' : String(raw)
 }
 
-const ariaSort = (column: Column<T>) => {
-  if (!column.sortable || props.sort !== column.key) return undefined
-  return props.dir === 'asc' ? 'ascending' : 'descending'
+/**
+ * Die Spaltenbeschreibung, übersetzt für `UTable`.
+ *
+ * `meta.class` richtet Zahlenspalten rechtsbündig aus und stellt sie auf
+ * Tabellenziffern — sonst tanzen die Stellen untereinander.
+ */
+const tableColumns = computed<TableColumn<T>[]>(() => {
+  const list: TableColumn<T>[] = props.columns.map(column => ({
+    id: column.key,
+    accessorKey: column.key,
+    header: column.label,
+    // `UTable` zeigt den Fuß, sobald eine Spalte den Schlüssel `footer`
+    // **besitzt** — `undefined` zählt bereits. Ohne Summen darf er deshalb
+    // gar nicht erst gesetzt werden; eine leere Fußzeile unter jeder Liste
+    // wäre Lärm.
+    ...(props.totals ? { footer: '' } : {}),
+    meta: column.numeric
+      ? { class: { th: 'text-right', td: 'text-right tabular-nums' } }
+      : undefined,
+  }))
+
+  if (slots.actions) {
+    list.push({ id: '__actions', header: '', meta: { class: { td: 'text-right w-0' } } })
+  }
+
+  return list
+})
+
+const slots = defineSlots<{
+  actions?: (props: { row: T }) => unknown
+} & Record<string, (props: { row: T }) => unknown>>()
+
+/** Die Spalten, die auf einem Telefon gezeigt werden. */
+const primaryColumns = computed(() => props.columns.filter(column => !column.secondary))
+
+/**
+ * Wie der Sortierknopf einem Screenreader heißt.
+ *
+ * `aria-sort` gehört an das `<th>`, und dorthin lässt `UTable` keine eigenen
+ * Attribute. Das ist kein Grund, am Fremdpaket vorbeizubauen: die Sortierung
+ * darf ebenso gut über den **zugänglichen Namen des Knopfes** angesagt
+ * werden, und der Knopf ist genau das Element, das man drückt, um sie zu
+ * ändern.
+ */
+const sortLabel = (column: Column<T>): string => {
+  if (props.sort !== column.key) return `Nach ${column.label} sortieren`
+  return props.dir === 'asc'
+    ? `${column.label}, aufsteigend sortiert. Klicken für absteigend.`
+    : `${column.label}, absteigend sortiert. Klicken für aufsteigend.`
 }
+
+function open(row: T): void {
+  if (props.to) navigateTo(props.to(row))
+}
+
+/**
+ * Der Zeilenklick — als Wert, nicht als Ausdruck im Template.
+ *
+ * `@select="bedingung ? fn : undefined"` sieht richtig aus und ist es nicht:
+ * Vue macht daraus einen Aufrufer, der **immer** existiert. `UTable` hielte
+ * jede Zeile für auswählbar, und geöffnet würde trotzdem nichts.
+ */
+const onSelect = computed(() => props.to
+  ? (_event: Event, row: { original: T }) => open(row.original)
+  : undefined)
 </script>
 
 <template>
   <div>
-    <!-- Breite Geräte: eine echte Tabelle. -->
+    <!-- Breite Geräte: die Tabelle von Nuxt UI. -->
+    <!--
+      `aria-busy` steht hier und nicht an der Tabelle: `UTable` zeigt das Laden
+      **nur sichtbar**, über einen Balken in der Kopfzeile, und sagt einem
+      Screenreader nichts davon. Das ist eine echte Lücke, und sie wird an
+      einem eigenen Element geschlossen, statt am Fremdpaket vorbeizubauen.
+    -->
     <div
-      class="hidden overflow-x-auto md:block"
+      class="hidden md:block"
       data-testid="data-table"
+      :aria-busy="props.loading || undefined"
     >
-      <table class="w-full border-collapse text-sm">
-        <caption
-          v-if="props.caption"
-          class="sr-only"
+      <UTable
+        :data="props.rows"
+        :columns="tableColumns"
+        :loading="props.loading"
+        :caption="props.caption"
+        :on-select="onSelect"
+      >
+        <!-- Sortierbare Überschriften: ein Knopf, der den Namen nach oben gibt. -->
+        <template
+          v-for="column in props.columns.filter(c => c.sortable)"
+          :key="`${column.key}-header`"
+          #[`${column.key}-header`]
         >
-          {{ props.caption }}
-        </caption>
-        <thead>
-          <tr class="border-b border-default text-left">
-            <th
-              v-for="column in props.columns"
-              :key="column.key"
-              scope="col"
-              :aria-sort="ariaSort(column)"
-              class="px-3 py-2 font-medium text-muted"
-              :class="column.numeric && 'text-right'"
-            >
-              <button
-                v-if="column.sortable"
-                type="button"
-                class="inline-flex items-center gap-1 hover:text-default"
-                :data-testid="`sort-${column.key}`"
-                @click="emit('sort', column.key)"
-              >
-                {{ column.label }}
-                <UIcon
-                  v-if="props.sort === column.key"
-                  :name="props.dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down'"
-                  class="size-3"
-                />
-              </button>
-              <template v-else>
-                {{ column.label }}
-              </template>
-            </th>
-            <th
-              v-if="$slots.actions"
-              scope="col"
-              class="px-3 py-2"
-            >
-              <span class="sr-only">Aktionen</span>
-            </th>
-          </tr>
-        </thead>
+          <UButton
+            color="neutral"
+            variant="ghost"
+            size="xs"
+            :label="column.label"
+            :trailing-icon="props.sort === column.key
+              ? (props.dir === 'asc' ? 'i-lucide-arrow-up' : 'i-lucide-arrow-down')
+              : undefined"
+            :aria-label="sortLabel(column)"
+            :data-testid="`sort-${column.key}`"
+            @click="emit('sort', column.key)"
+          />
+        </template>
 
-        <tbody :aria-busy="props.loading">
-          <tr
-            v-for="row in props.rows"
-            :key="row.id"
-            class="border-b border-default/60 transition-colors hover:bg-elevated/60"
-            :class="props.to && 'cursor-pointer'"
-            :data-testid="`row-${row.id}`"
-            @click="props.to && navigateTo(props.to(row))"
+        <!-- Zellen: eigener Inhalt, wenn die Seite einen mitbringt. -->
+        <template
+          v-for="column in props.columns"
+          :key="`${column.key}-cell`"
+          #[`${column.key}-cell`]="{ row }"
+        >
+          <slot
+            :name="`cell-${column.key}`"
+            :row="(row.original as T)"
           >
-            <td
-              v-for="column in props.columns"
-              :key="column.key"
-              class="px-3 py-2"
-              :class="[column.numeric && 'text-right tabular-nums']"
-            >
-              <slot
-                :name="`cell-${column.key}`"
-                :row="row"
-              >
-                {{ cell(row, column) }}
-              </slot>
-            </td>
+            {{ cell(row.original as T, column) }}
+          </slot>
+        </template>
 
-            <!-- Aktionen schlucken den Klick, sonst öffnet sich die Detailseite. -->
-            <td
-              v-if="$slots.actions"
-              class="px-3 py-2 text-right"
-              @click.stop
-            >
-              <slot
-                name="actions"
-                :row="row"
-              />
-            </td>
-          </tr>
-        </tbody>
+        <!-- Aktionen schlucken den Klick, sonst öffnet sich die Detailseite. -->
+        <template
+          v-if="slots.actions"
+          #__actions-cell="{ row }"
+        >
+          <div @click.stop>
+            <slot
+              name="actions"
+              :row="(row.original as T)"
+            />
+          </div>
+        </template>
 
-        <tfoot v-if="props.totals">
-          <tr class="border-t-2 border-default font-medium">
-            <td
-              v-for="column in props.columns"
-              :key="column.key"
-              class="px-3 py-2"
-              :class="column.numeric && 'text-right tabular-nums'"
-            >
-              {{ props.totals[column.key] ?? '' }}
-            </td>
-            <td v-if="$slots.actions" />
-          </tr>
-        </tfoot>
-      </table>
+        <!-- Summenzeile: je Spalte ein Fuß. -->
+        <template
+          v-for="column in (props.totals ? props.columns : [])"
+          :key="`${column.key}-footer`"
+          #[`${column.key}-footer`]
+        >
+          <span :class="column.numeric && 'tabular-nums'">
+            {{ props.totals?.[column.key] ?? '' }}
+          </span>
+        </template>
+      </UTable>
     </div>
 
-    <!-- Schmale Geräte: je Zeile eine Karte. -->
+    <!-- Schmale Geräte: je Zeile eine Karte. Dafür hat Nuxt UI nichts. -->
     <ul
       class="flex flex-col gap-2 md:hidden"
       data-testid="data-cards"
@@ -171,33 +223,36 @@ const ariaSort = (column: Column<T>) => {
       <li
         v-for="row in props.rows"
         :key="row.id"
-        class="rounded-md border border-default bg-default p-3"
         :data-testid="`card-${row.id}`"
       >
-        <component
-          :is="props.to ? 'button' : 'div'"
-          class="flex w-full flex-col gap-1 text-left"
-          @click="props.to && navigateTo(props.to(row))"
-        >
-          <span
-            v-for="column in props.columns.filter(c => !c.secondary)"
-            :key="column.key"
-            class="flex justify-between gap-3"
+        <UCard :ui="{ body: 'p-3 sm:p-3' }">
+          <component
+            :is="props.to ? 'button' : 'div'"
+            class="flex w-full flex-col gap-1 text-left"
+            @click="open(row)"
           >
-            <span class="text-xs text-muted">{{ column.label }}</span>
-            <span :class="column.numeric && 'tabular-nums'">{{ cell(row, column) }}</span>
-          </span>
-        </component>
+            <span
+              v-for="column in primaryColumns"
+              :key="column.key"
+              class="flex justify-between gap-3"
+            >
+              <span class="text-xs text-muted">{{ column.label }}</span>
+              <span :class="column.numeric && 'tabular-nums'">{{ cell(row, column) }}</span>
+            </span>
+          </component>
 
-        <div
-          v-if="$slots.actions"
-          class="mt-2 flex justify-end gap-1 border-t border-default pt-2"
-        >
-          <slot
-            name="actions"
-            :row="row"
-          />
-        </div>
+          <template
+            v-if="slots.actions"
+            #footer
+          >
+            <div class="flex justify-end gap-1">
+              <slot
+                name="actions"
+                :row="row"
+              />
+            </div>
+          </template>
+        </UCard>
       </li>
     </ul>
   </div>
