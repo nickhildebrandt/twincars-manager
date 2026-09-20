@@ -9,11 +9,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mountSuspended, mockNuxtImport } from '@nuxt/test-utils/runtime'
 import Timeline from '~/components/ui/Timeline.vue'
-import TrendChart from '~/components/ui/TrendChart.vue'
 import StatTile from '~/components/ui/StatTile.vue'
 import FileDropzone from '~/components/ui/FileDropzone.vue'
 import type { TimelineEntry } from '~/components/ui/Timeline.vue'
-import { formatEuro } from '#shared/money'
 
 const { notifyError } = vi.hoisted(() => ({ notifyError: vi.fn() }))
 
@@ -98,102 +96,18 @@ describe('M-02: die Historie als Zeitstrahl', () => {
   })
 })
 
-describe('M-35: die Verlaufskurve', () => {
-  const POINTS = [
-    { at: '2026-01-31', value: 120_000 },
-    { at: '2026-02-28', value: 95_000 },
-    { at: '2026-03-31', value: 141_000 },
-  ]
+/* Die Verlaufskurve steht **nicht** hier, sondern in
+   `test/browser/trend-chart.test.ts`.
 
-  const chart = (props: Record<string, unknown> = {}) =>
-    mountSuspended(TrendChart, {
-      props: { points: POINTS, label: 'Umsatz', format: formatEuro, ...props },
-    })
+   Seit dem 20.09.2026 zeichnet `nuxt-charts` sie, und dessen Unterbau Unovis
+   fasst das DOM unmittelbar an: er hängt einen `MutationObserver` an den
+   Tooltip und lässt einen gedrosselten Zeitgeber laufen. In happy-dom bricht
+   beides — beim Stehenlassen („document is not defined" nach dem Testende)
+   wie beim Abbauen („Cannot read private member #listeners"). Siehe W-04 in
+   ../../docs/rewrite/blocker.md.
 
-  it('zeichnet eine Linie durch alle Punkte', async () => {
-    const wrapper = await chart()
-    const path = wrapper.get('path[stroke="currentColor"]').attributes('d') ?? ''
-    // Ein „M" und zwei „L": drei Punkte.
-    expect(path.match(/L /g)).toHaveLength(2)
-    expect(path.startsWith('M ')).toBe(true)
-  })
-
-  it('nennt den letzten Wert im Klartext', async () => {
-    const wrapper = await chart()
-    expect(wrapper.get('[data-testid="trend-latest"]').text()).toBe(formatEuro(141_000))
-  })
-
-  it('ist für einen Screenreader beschriftet', async () => {
-    const wrapper = await chart()
-    const label = wrapper.get('svg').attributes('aria-label') ?? ''
-    expect(label).toContain('Umsatz')
-    expect(label).toContain('31.01.2026')
-    expect(label).toContain('31.03.2026')
-  })
-
-  it('M-35: zeigt den Verlauf als Kurve und dieselben Zahlen als Tabelle', async () => {
-    // Ein Diagramm allein ist keine Auskunft: wer es nicht sehen kann, muss
-    // die Zahlen trotzdem bekommen.
-    const wrapper = await chart()
-    const table = wrapper.get('table')
-    expect(table.classes()).toContain('sr-only')
-    expect(table.text()).toContain('28.02.2026')
-    expect(table.text()).toContain(formatEuro(95_000))
-    expect(table.findAll('tbody tr')).toHaveLength(3)
-  })
-
-  it('beschriftet die Achse mit runden Werten', async () => {
-    const wrapper = await chart()
-    const ticks = wrapper.findAll('text').map(entry => entry.text())
-    expect(ticks.length).toBeGreaterThan(1)
-    expect(ticks).toContain(formatEuro(0))
-  })
-
-  it('sagt es, wenn es nichts zu zeigen gibt', async () => {
-    const wrapper = await chart({ points: [] })
-    expect(wrapper.get('[data-testid="trend-empty"]').text())
-      .toBe('Für diesen Zeitraum gibt es nichts zu zeigen.')
-    expect(wrapper.find('svg').exists()).toBe(false)
-  })
-
-  it('kommt auch mit einem einzigen Punkt zurecht', async () => {
-    const wrapper = await chart({ points: [{ at: '2026-01-31', value: 500 }] })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    expect(wrapper.get('[data-testid="trend-latest"]').text()).toBe(formatEuro(500))
-  })
-
-  it('zeichnet auch eine Reihe aus lauter Nullen', async () => {
-    // Ein Monat ohne Umsatz ist kein Fehler. Die Achse hat dann keine
-    // Spannweite — die Linie muss trotzdem irgendwo liegen.
-    const wrapper = await chart({
-      points: [
-        { at: '2026-01-31', value: 0 },
-        { at: '2026-02-28', value: 0 },
-      ],
-    })
-    expect(wrapper.find('svg').exists()).toBe(true)
-    const path = wrapper.get('path[stroke="currentColor"]').attributes('d') ?? ''
-    expect(path).not.toContain('NaN')
-  })
-
-  it('kommt ohne eigene Schreibweise aus', async () => {
-    const wrapper = await mountSuspended(TrendChart, {
-      props: { points: POINTS, label: 'Stück' },
-    })
-    expect(wrapper.get('[data-testid="trend-latest"]').text()).toBe('141000')
-  })
-
-  it('zeigt negative Werte mit sichtbarer Nulllinie', async () => {
-    const wrapper = await chart({
-      points: [
-        { at: '2026-01-31', value: -5000 },
-        { at: '2026-02-28', value: 8000 },
-      ],
-    })
-    const ticks = wrapper.findAll('text').map(entry => entry.text())
-    expect(ticks).toContain(formatEuro(0))
-  })
-})
+   Das ist kein Grund für eine Krücke: ein Diagramm ist eine Sache des
+   Browsers, und für Sachen des Browsers gibt es das Browser-Projekt. */
 
 describe('Die Kennzahl', () => {
   it('zeigt Bezeichnung und Wert', async () => {

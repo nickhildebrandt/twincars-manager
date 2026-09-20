@@ -1821,3 +1821,75 @@ Nuxt-UI-Mittel an welchem Ort gehört.
 | Tests | 1931 (80 Dateien) |
 | Eigene Komponenten | 21 → 21, davon 5 jetzt auf Nuxt UI statt nachgebaut |
 | `app.config.ts` | 34 → 12 Zeilen Konfiguration, nur noch Farben |
+
+---
+
+## 20.09.2026 (6) — Diagramme aus `nuxt-charts`, und die Abhängigkeitsliste
+
+Der Inhaber wollte die Liste der Zusatzabhängigkeiten mit Einschätzung, dazu
+**`nuxt-charts` statt Chart.js** und Vue Flow nur, falls wirklich gebraucht.
+
+### Die Liste — was wirklich zusätzlich ist
+
+Fünf Pakete, die nach Zusatz aussehen, sind keiner: `tailwindcss`,
+`@internationalized/date`, `@iconify-json/lucide`, `valibot` und `h3`. Die
+ersten vier stehen in Nuxt UIs **eigenen** `dependencies` bzw. `peers` —
+Valibot sogar namentlich neben zod, yup, joi und superstruct. `h3` ist Nuxts
+Serverkern, nur exakt auf dessen Fassung gepinnt. Die gesamte Testwelt
+(`vitest`, `@vue/test-utils`, `happy-dom`, Playwright, `eslint`) sind Peers
+von `@nuxt/test-utils` und `@nuxt/eslint`.
+
+Echte Zusätze sind sieben: Drizzle (drei Pakete), `better-auth`,
+`@valibot/i18n` und die Werkzeuge für Freigabe und Commit-Hygiene. Alle
+begründet, keines aus einer fremden Welt — kein `axios`, kein `lodash`, kein
+zweites Datums- oder Validierungspaket.
+
+### `nuxt-charts` — gemessen, nicht geschätzt
+
+Es ist ein echtes Nuxt-Modul, damit ökosystemisch richtig. Der Paketbaum
+erschreckt trotzdem: über `vue-chrts` und Unovis kommen `proj4`, `d3-geo`,
+Turf, **MapLibre** und Emotion mit, insgesamt **155 Pakete**.
+
+Der gebaute Stand sagt etwas anderes:
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Bau gesamt | 8,92 MB | 9,01 MB |
+| **gzip gesamt** | **2,03 MB** | **2,03 MB** |
+| Diagramm-Brocken | — | 928 KB / **307 KB gzip**, **nachgeladen** |
+
+MapLibre, `d3-geo` und Turf sind vollständig herausgeschüttelt. Der Brocken
+liegt **nicht im Einstieg**: Anmeldeseite und Listen ohne Diagramm laden ihn
+nie. Entschieden als **E-25**.
+
+### W-04 — Unovis zeichnet nicht in happy-dom
+
+Beim Umbau kam ein Fund, der mehr wert ist als das Diagramm selbst: Unovis
+fasst das DOM unmittelbar an, und in happy-dom bricht das in **beide**
+Richtungen. Lässt man die Komponente stehen, wirft ein Zeitgeber nach dem
+Ende des Laufs `document is not defined`; baut man sie ab, stirbt happy-doms
+`MutationObserver.disconnect`.
+
+Der erste Fall ist der gefährlichere: er zählt als „unhandled error" und
+**nicht** als fehlgeschlagener Test. Alle 1931 Tests waren grün, der Lauf
+trotzdem rot. Wer nur auf die Zahl sieht, hält so etwas für in Ordnung.
+
+Die Verlaufskurve wird deshalb im **Browser-Projekt** geprüft, in echtem
+Chromium. Ausdrücklich **nicht** getan: `document` in happy-dom stopfen, den
+Tooltip abschalten, Unovis mocken. Jede dieser Krücken hätte die Anwendung für
+die Testumgebung verbogen, und geprüft worden wäre danach die Krücke.
+
+### Vue Flow: nein
+
+Ein Editor für Knotengraphen. Der Zeitstrahl ist das Gegenteil — eine
+chronologische Liste, und `UTimeline` macht sie. Die Auftragstafel ist kein
+Graph, sondern Spalten mit Karten. Nicht installiert; in E-25 als
+„nicht genommen" begründet.
+
+**Zahlen**
+
+| | |
+| --- | --- |
+| Tests | 1931 (81 Dateien) |
+| Abhängigkeiten | +1 direkt (`nuxt-charts`), +155 im Baum |
+| Einstiegsgröße | unverändert 2,03 MB gzip |

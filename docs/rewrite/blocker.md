@@ -194,3 +194,42 @@ streichen.
 
 </details>
 
+
+---
+
+## W-04 — Unovis zeichnet nicht in happy-dom
+
+**Festgestellt:** 20.09.2026 · **Stand:** umgangen, nicht behoben ·
+**Betrifft:** M-35, T-009
+
+**Was passiert.** `nuxt-charts` (E-25) zeichnet über **Unovis**, und Unovis
+fasst das DOM unmittelbar an: es hängt einen `MutationObserver` an den Tooltip
+und lässt einen gedrosselten Zeitgeber laufen. In happy-dom — der Umgebung des
+`nuxt`-Testprojekts — bricht beides, und zwar in **beide** Richtungen:
+
+| Was man tut | Was kommt |
+| --- | --- |
+| die Komponente stehen lassen | `ReferenceError: document is not defined` in `_Tooltip._setContainerPosition`, **nach** dem Ende des Laufs — alle Tests grün, der Lauf trotzdem rot |
+| die Komponente abbauen | `TypeError: Cannot read private member #listeners` in happy-doms `MutationObserver.disconnect` |
+
+Der erste Fall ist der unangenehmere: er zählt als „unhandled error", nicht
+als fehlgeschlagener Test. Wer nur auf die Zahl der grünen Tests sieht, hält
+den Lauf für in Ordnung.
+
+**Was stattdessen gilt.** Die Verlaufskurve wird im **Browser-Projekt**
+geprüft (`test/browser/trend-chart.test.ts`, echtes Chromium), nicht im
+`nuxt`-Projekt. Das ist keine Abschwächung, sondern die richtige Ebene: ein
+Diagramm ist eine Sache des Browsers, und genau dafür gibt es das Projekt.
+
+**Was ausdrücklich nicht getan wurde.** Kein Stopfen von `document` in
+happy-dom, kein Abschalten des Tooltips, kein `vi.mock` auf Unovis. Jede
+dieser Krücken hätte die Anwendung für die Testumgebung verbogen — und die
+Prüfung wäre danach eine über die Krücke gewesen.
+
+**Wann es weg kann.** Sobald Unovis seinen Zeitgeber beim Abbau abräumt und
+happy-dom `MutationObserver.disconnect` über einen Proxy verträgt. Dann kann
+`test/browser/trend-chart.test.ts` zurück zu den übrigen Anzeigekomponenten
+wandern. Bis dahin kostet es nichts außer einer Datei an anderer Stelle.
+
+**Betroffene Fassungen:** `@unovis/ts` 1.7.0, `@unovis/vue` 1.7.0,
+happy-dom 20.14.5.

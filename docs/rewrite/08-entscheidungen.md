@@ -397,6 +397,62 @@ Segmentbeschriftungen des Datumsfelds
 
 ---
 
+## E-25 — Diagramme kommen aus `nuxt-charts`
+
+**Datum:** 20.09.2026 · **Status:** festgelegt
+
+**Entscheidung.** Alle Diagramme (M-35) werden mit **`nuxt-charts`**
+gezeichnet. Ein eigenes SVG gibt es nicht mehr, und ein anderes Diagrammpaket
+— namentlich Chart.js — kommt nicht in Frage.
+
+**Warum dieses und kein anderes.** `nuxt-charts` ist ein echtes Nuxt-Modul:
+`modules: ['nuxt-charts']`, die Komponenten werden auto-importiert, und die
+Beispiele der Doku benutzen Nuxt UI daneben. Damit erfüllt es Regel 4 und
+E-24: kein zufälliges Paket aus einer anderen Welt, sondern eines, das für
+dieses Rahmenwerk gebaut ist.
+
+**Was es ersetzt.** Bis zum 20.09.2026 stand in `TrendChart.vue` ein eigenes
+SVG mit Pfaden, Rastern und Achsenbeschriftung — rund 180 Zeilen. Es war
+lesbar und es funktionierte, aber es war ein Nachbau, und das Kassenbuch
+(M-35) braucht darüber hinaus gestapelte Balken und Kreisdiagramme. Die hätte
+der Eigenbau auch noch bekommen müssen.
+
+**Was es kostet, gemessen statt geschätzt.** Die Abhängigkeitskette ist
+schwer: `nuxt-charts` → `vue-chrts` → `@unovis/ts` + `@unovis/vue`, und daran
+hängen `proj4`, `d3-geo`, `@turf/boolean-point-in-polygon`, MapLibre und
+Emotion. 155 Pakete kamen dazu. Der gebaute Stand sagt aber etwas anderes als
+der Paketbaum:
+
+| | vorher | nachher |
+| --- | --- | --- |
+| Bau gesamt | 8,92 MB | 9,01 MB |
+| **gzip gesamt** | **2,03 MB** | **2,03 MB** |
+| Diagramm-Brocken | — | 928 KB / **307 KB gzip**, **nachgeladen** |
+
+MapLibre, `d3-geo` und Turf sind vollständig herausgeschüttelt; `proj4` und
+Emotion stecken im Diagramm-Brocken. Entscheidend ist, dass dieser Brocken
+**nicht im Einstieg** liegt: die Anmeldeseite und jede Liste ohne Diagramm
+laden ihn nicht. Wer eine Seite mit Diagramm öffnet, zahlt 307 KB — einmal,
+danach aus dem Zwischenspeicher.
+
+**Was dabei auffiel.** Unovis verträgt sich nicht mit happy-dom (**W-04**).
+Die Verlaufskurve wird deshalb im Browser-Projekt geprüft, in echtem
+Chromium. Das ist die richtige Ebene, keine Abschwächung.
+
+**Was daneben stehen bleibt.** Die Zahlen des Diagramms als `sr-only`-Tabelle.
+Ein Diagramm ist ein Bild; `role="img"` sagt, **worum** es geht, nicht **was
+darin steht**. Die Tabelle ist eine Ergänzung daneben, kein Eingriff in das
+Paket — Regel 4 lässt das für Zugänglichkeit ausdrücklich zu.
+
+**Nicht genommen:** **Vue Flow**. Es ist ein Editor für Knotengraphen —
+Kästen mit Verbindungslinien, die man zieht. Der Zeitstrahl ist das Gegenteil
+(eine chronologische Liste, `UTimeline` macht sie), und die Auftragstafel
+(T-020) ist kein Graph, sondern Spalten mit Karten. Sollte je ein
+Ablaufdiagramm gebraucht werden — etwa eine Statusmaschine zum Anschauen —,
+wird das hier neu bewertet.
+
+---
+
 ## Was danach noch entschieden wurde
 
 Am 13.09.2026 ist der Inhaber die fertige Modellübersicht durchgegangen und hat

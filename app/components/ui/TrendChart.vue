@@ -1,17 +1,20 @@
 <script setup lang="ts">
 /**
- * Ein Verlauf über die Zeit (M-35).
+ * Ein Verlauf über die Zeit (M-35) — auf `nuxt-charts`.
  *
- * Bewusst einfach: eine Linie, eine Fläche darunter, ein hervorgehobener
- * letzter Punkt, eine Achse mit runden Beschriftungen. Keine Bibliothek — das
- * hier ist eine Handvoll Koordinaten, und ein Diagrammpaket brächte
- * Farbwelten mit, die nicht zur Anwendung gehören.
+ * Alle Werte kommen **gerechnet** herein und werden nirgends
+ * zwischengespeichert (P-09). Diese Komponente stellt nur dar.
  *
- * Alle Werte kommen **gerechnet** herein und werden nirgends zwischengespeichert
- * (P-09). Die Rechnung selbst steht in `shared/chart.ts` und ist dort geprüft.
+ * Bis zum 20.09.2026 stand hier ein eigenes SVG mit Pfaden, Rastern und
+ * Achsenbeschriftung. Entschieden am 20.09.2026: Diagramme kommen aus
+ * `nuxt-charts` (E-25) — ein Nuxt-Modul, dessen Komponenten auto-importiert
+ * werden und dessen Beispiele Nuxt UI daneben benutzen.
+ *
+ * Eigen bleibt hier nur, was **Fachlichkeit** ist: die deutsche Beschriftung,
+ * das Format der Werte (meist Euro aus Cent) und der Leerzustand. Ein
+ * Diagramm ohne Daten zeigt keine leere Achse, sondern einen Satz.
  */
 import { formatDate } from '#shared/datetime'
-import { pathPoints, scaleFor } from '#shared/chart'
 import type { Point } from '#shared/chart'
 
 const props = withDefaults(defineProps<{
@@ -28,37 +31,24 @@ const props = withDefaults(defineProps<{
   emptyText: 'Für diesen Zeitraum gibt es nichts zu zeigen.',
 })
 
-const WIDTH = 640
-const PADDING = 28
+/** `nuxt-charts` erwartet eine Zeile je Punkt mit benannten Feldern. */
+const data = computed(() => props.points.map(point => ({ value: point.value })))
 
-const scale = computed(() => scaleFor(props.points.map(point => point.value)))
-
-const coordinates = computed(() => pathPoints(props.points, scale.value, {
-  width: WIDTH,
-  height: props.height,
-  padding: PADDING,
+const categories = computed(() => ({
+  value: { name: props.label, color: 'var(--ui-primary)' },
 }))
 
-const line = computed(() =>
-  coordinates.value.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' '))
+/** Wovon das Diagramm handelt — als Satz, für Beschriftung und Tabelle. */
+const description = computed(() => props.points.length === 0
+  ? props.label
+  : `${props.label}: ${props.points.length} Werte von `
+    + `${formatDate(props.points[0]!.at)} bis ${formatDate(props.points.at(-1)!.at)}`)
 
-/** Die Fläche schließt unten an der Nulllinie, nicht am Bildrand. */
-const area = computed(() => {
-  if (coordinates.value.length === 0) return ''
-  const base = props.height - PADDING
-  const first = coordinates.value[0]!
-  const last = coordinates.value.at(-1)!
-  return `${line.value} L ${last.x} ${base} L ${first.x} ${base} Z`
-})
-
-const tickY = (value: number) => {
-  const span = scale.value.max - scale.value.min
-  const inner = props.height - PADDING * 2
-  if (span === 0) return PADDING + inner / 2
-  return PADDING + inner * (1 - (value - scale.value.min) / span)
+/** Die Achse zeigt das Datum, nicht den Index. */
+const xFormatter = (index: number): string => {
+  const point = props.points[index]
+  return point ? formatDate(point.at) : ''
 }
-
-const last = computed(() => coordinates.value.at(-1))
 </script>
 
 <template>
@@ -77,101 +67,66 @@ const last = computed(() => coordinates.value.at(-1))
       </span>
     </figcaption>
 
-    <p
+    <UEmpty
       v-if="props.points.length === 0"
-      class="rounded-md bg-elevated px-3 py-8 text-center text-sm text-muted"
+      variant="naked"
+      icon="i-lucide-chart-line"
+      :title="props.emptyText"
       data-testid="trend-empty"
-    >
-      {{ props.emptyText }}
-    </p>
+    />
 
-    <div
-      v-else
-      class="overflow-x-auto"
-    >
-      <svg
-        :viewBox="`0 0 ${WIDTH} ${props.height}`"
-        :style="{ height: `${props.height}px` }"
-        class="w-full min-w-[320px]"
+    <template v-else>
+      <div
         role="img"
-        :aria-label="`${props.label}: ${props.points.length} Werte von ${formatDate(props.points[0]!.at)} bis ${formatDate(props.points.at(-1)!.at)}`"
+        :aria-label="description"
+        data-testid="trend-plot"
       >
-        <!-- Raster und Achsenbeschriftung. -->
-        <g>
-          <template
-            v-for="tick in scale.ticks"
-            :key="tick"
+        <AreaChart
+          :data="data"
+          :categories="categories"
+          :height="props.height"
+          :x-formatter="xFormatter"
+          :y-formatter="props.format"
+          :hide-legend="true"
+        />
+      </div>
+
+      <!--
+        Dieselben Zahlen als Tabelle, nur für Screenreader.
+
+        Ein Diagramm ist ein Bild; `role="img"` mit einer Beschriftung sagt,
+        **worum** es geht, aber nicht, **was darin steht**. Wer nicht sehen
+        kann, bekommt hier die Werte — dieselben, aus derselben Quelle, nicht
+        eine zweite Rechnung. Das ist kein Eingriff in `nuxt-charts`, sondern
+        eine Ergänzung daneben (Regel 4, Ausnahme für Zugänglichkeit).
+      -->
+      <table
+        class="sr-only"
+        data-testid="trend-table"
+      >
+        <caption>{{ description }}</caption>
+        <thead>
+          <tr>
+            <th scope="col">
+              Zeitpunkt
+            </th>
+            <th scope="col">
+              {{ props.label }}
+            </th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr
+            v-for="point in props.points"
+            :key="point.at"
           >
-            <line
-              :x1="PADDING"
-              :x2="WIDTH - PADDING"
-              :y1="tickY(tick)"
-              :y2="tickY(tick)"
-              stroke="currentColor"
-              stroke-width="1"
-              class="text-default"
-              :opacity="tick === 0 ? 0.5 : 0.18"
-            />
-            <text
-              :x="4"
-              :y="tickY(tick) + 4"
-              font-size="10"
-              fill="currentColor"
-              class="text-muted tabular-nums"
-            >
-              {{ props.format(tick) }}
-            </text>
-          </template>
-        </g>
-
-        <path
-          :d="area"
-          fill="currentColor"
-          class="text-primary"
-          opacity="0.12"
-        />
-        <path
-          :d="line"
-          fill="none"
-          stroke="currentColor"
-          stroke-width="2"
-          stroke-linejoin="round"
-          stroke-linecap="round"
-          class="text-primary"
-        />
-
-        <circle
-          v-if="last"
-          :cx="last.x"
-          :cy="last.y"
-          r="4"
-          fill="currentColor"
-          class="text-primary"
-        />
-      </svg>
-    </div>
-
-    <!-- Dieselben Zahlen als Text. Ein Diagramm allein ist keine Auskunft. -->
-    <table class="sr-only">
-      <caption>{{ props.label }}</caption>
-      <thead>
-        <tr>
-          <th scope="col">
-            Zeitpunkt
-          </th><th scope="col">
-            Wert
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        <tr
-          v-for="point in props.points"
-          :key="point.at"
-        >
-          <td>{{ formatDate(point.at) }}</td>
-          <td>{{ props.format(point.value) }}</td>
-        </tr>
-      </tbody>
-    </table>
+            <th scope="row">
+              {{ formatDate(point.at) }}
+            </th>
+            <td>{{ props.format(point.value) }}</td>
+          </tr>
+        </tbody>
+      </table>
+    </template>
   </figure>
 </template>

@@ -3,7 +3,9 @@
 import { scheduledTasksConfig } from './server/tasks/_registry'
 
 export default defineNuxtConfig({
-  modules: ['@nuxt/ui', '@nuxt/eslint'],
+  // `nuxt-charts` liefert die Diagramme (E-25). Es ist ein echtes Nuxt-Modul:
+  // die Komponenten werden auto-importiert, nichts davon wird hier registriert.
+  modules: ['@nuxt/ui', '@nuxt/eslint', 'nuxt-charts'],
 
   // Server-side rendering is on for every route; the application is entirely
   // session-bound, so nothing is prerendered.
